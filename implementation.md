@@ -2,55 +2,64 @@
 
 ## Currently implemented
 
-Nothing.
+Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4. Package
+installed in editable mode with `pip install -e ".[dev]"`. 104 tests passing;
+`ruff check` and `ruff format --check` clean.
 
-Repository initialised. Conda environment `rage` created with Python 3.14.6
-(SQLite 3.53.4).
+### 0. Project scaffolding — done
+
+`pyproject.toml` with a hatchling build, package under `src/rage/`, a
+`rage-server` console script, and `pytest` and `ruff` as development
+dependencies.
+
+### 1. Key handling — `src/rage/keys.py` — done
+
+Parses and validates keys against the grammar, splits the metadata suffix, and
+derives `doc_key`, `meta_name` and `parent`. Also `ancestors`, `depth` and
+`subtree_range`.
+
+`subtree_range` returns half open bounds rather than a `LIKE` prefix, for two
+reasons: `_` is legal in a segment but is a `LIKE` wildcard, and a prefix match
+would let `a.b` pick up `a.beta`. Everything under `a.b` sorts within
+`["a.b.", "a.b/")` because `.` immediately precedes `/`, so subtree scans stay
+exact index range scans.
+
+### 2. Data store — `src/rage/store.py` — done
+
+Directory resolution, schema creation under `PRAGMA user_version`, WAL mode, and
+all five operations with the semantics recorded in design.md. No MCP dependency.
+
+Formats are detected: content that parses as a JSON object or array is recorded
+as `json`, everything else as `markdown`, and an explicit argument overrides
+both.
+
+### 3. MCP server — `src/rage/server.py` — done
+
+Stdio server built on `MCPServer` from the MCP Python SDK, exposing
+`retrieve_document`, `store_document`, `list_keys`, `get_documents` and
+`delete_keys`. Argument shaping and result shaping only; all behaviour lives in
+the store. Argument constraints are declared with pydantic `Field`, so bad
+arguments are rejected before reaching the store, and read only and destructive
+tool annotations are set.
+
+Tested through the server's own tool dispatch rather than by calling the
+functions directly, so the generated schemas and the error paths are covered.
+
+Note the SDK in use is **mcp 2.0**, where `FastMCP` has become
+`mcp.server.MCPServer`, model fields are snake_case (`is_error`,
+`structured_content`, `input_schema`), and a failing tool raises `ToolError`
+rather than returning a result with an error flag.
 
 ## TODO
 
-Build order. Each step is intended to be independently testable, and the store
-is completed before the MCP server is written so that it can be exercised
-without a protocol harness.
+### 4. Integration with Claude Code — in progress
 
-### 0. Project scaffolding
-
-* `pyproject.toml`, package under `src/rage/`, console entry point for the
-  server.
-* `pytest` and `ruff` as development dependencies.
-
-### 1. Key handling — `src/rage/keys.py`
-
-* Parse and validate keys against the grammar in the design.
-* Split the metadata suffix; derive `doc_key`, `meta_name` and `parent`.
-* Tests covering valid and invalid keys, metadata on implicit keys, and the
-  `A.B` / `A.Beta` prefix collision.
-
-Done first because it pins the namespace semantics cheaply, before anything
-depends on them.
-
-### 2. Data store — `src/rage/store.py`
-
-* Directory resolution and schema creation, WAL mode.
-* Retrieve, with character range, literal substring search with occurrence
-  index, and capped reads with a continuation offset.
-* Store, overwriting.
-* List keys, including implicit intermediate keys and metadata.
-* Get documents, recursive with optional depth, filtered by key and metadata
-  name.
-* Delete, with an explicit recursive flag for subtrees.
-* Tests against a temporary directory.
-
-### 3. MCP server — `src/rage/server.py`
-
-* Stdio server exposing the five tools as a thin wrapper over the store.
-* No logic beyond argument validation and result shaping; behaviour lives in the
-  store.
-
-### 4. Integration with Claude Code
-
-* `.mcp.json` configuration passing `--dir`.
-* Exercise the tools live against a real project store.
+* `.mcp.json` written, registering the server for this project. Its `command` is
+  an absolute path into the conda environment and so is machine specific.
+* The server has been exercised end to end over stdio by an MCP client: tool
+  listing, store, survey by `:title`, read and recursive delete.
+* Still to do: use it from a real Claude Code session and see where the tool
+  descriptions or result shapes get in the way.
 
 ### 5. Skills
 
@@ -61,7 +70,7 @@ Expected to be the hardest part and the one that determines whether the system
 is actually used in practice; deliberately last, so it can be written against
 tools whose behaviour is already known.
 
-### Also outstanding
-
-* `README.md` is empty. It is intended to describe the documentation structure
-  and link to the design documents.
+The server's `instructions` string is a first, minimal attempt at this: it
+describes the key shape and steers towards storing a `:title` alongside each
+document, so a later session can survey the store cheaply before reading
+anything in full.

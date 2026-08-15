@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rage": {
+      "command": "/Users/john/miniforge3/envs/rage/bin/rage-server",
+      "args": ["--dir", ".rage"]
+    }
+  }
+}

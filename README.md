@@ -37,8 +37,15 @@ for the build order.
 ```sh
 conda env create -f environment.yml   # or: conda create -n rage -c conda-forge python=3.14
 conda activate rage
+pip install -e ".[dev]"
+pytest
+ruff check . && ruff format --check .
 ```
 
 The store lives in a directory given to the server by `--dir` or `RAGE_DIR`,
 defaulting to `./.rage/` in the working directory. See
 [design.md](design.md#store-location).
+
+`.mcp.json` registers the server for this project. Its `command` is an absolute
+path into the conda environment, so it is specific to the machine it was written
+on; adjust it after creating the environment elsewhere.
