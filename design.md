@@ -46,6 +46,19 @@ plus the operations that only make sense from a shell:
 * Bulk import of documents, for example a directory of markdown files mapped
   onto a key prefix, and the corresponding bulk export.
 * Inspecting and repairing a store outside an agent session.
+* Writing the MCP server configuration for a project, filling in the interpreter
+  or entry point location and the store location.
+
+The last of these removes most of the friction in first time setup. The server
+has to be launched by an absolute path into whichever environment it was
+installed in, and that path is only reliably known from inside that environment
+— which is exactly where the CLI is running. The initial `.mcp.json` in this
+repository was written out by hand for that reason, and is machine specific as a
+result.
+
+It should be able to write project scoped or user scoped configuration, should
+say what it is about to change and leave any unrelated servers in the file
+alone, and should be safe to re-run when the environment moves.
 
 It reads the same store directory, resolved the same way, so the working
 directory fallback described above is the normal case for the CLI rather than
@@ -201,6 +214,11 @@ SQLite runs in WAL mode to tolerate concurrent readers.
   the thing that installs them, which keeps the write under a command the user
   ran deliberately. Worth prototyping the read only half first and seeing
   whether the editing half is still wanted afterwards.
+
+  Note that the CLI already covers the server half of this: it writes the MCP
+  server configuration, as described under Components. So the question here is
+  narrower than it first appears — it is only about the skills, and only about
+  whether the server should be able to install them without the CLI.
 
 ## Open questions
 

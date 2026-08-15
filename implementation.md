@@ -78,11 +78,16 @@ anything in full.
 ### 6. Command line tool
 
 * A CLI over the store library, covering the same operations as the MCP server
-  plus bulk import and export.
+  plus bulk import and export, and a command that writes the MCP server
+  configuration for a project.
 
 Not yet scheduled, and deliberately after the skills: bulk import is most useful
 once the key conventions the skills establish are settled, since an import has
 to choose keys for whatever it ingests.
+
+The configuration writing command is the exception and could be pulled forward
+at any point, since it depends on nothing else and replaces the hand written
+`.mcp.json` currently in the repository.
 
 ## Not planned yet
 
