@@ -36,6 +36,24 @@ The intended normal usage is a per-project MCP configuration passing `--dir`
 explicitly, since an MCP server cannot be relied on to inherit the project
 working directory. The working directory fallback exists for CLI and test use.
 
+### Command line tool
+
+Not yet implemented.
+
+A CLI over the same store library, covering everything the MCP server exposes
+plus the operations that only make sense from a shell:
+
+* Bulk import of documents, for example a directory of markdown files mapped
+  onto a key prefix, and the corresponding bulk export.
+* Inspecting and repairing a store outside an agent session.
+
+It reads the same store directory, resolved the same way, so the working
+directory fallback described above is the normal case for the CLI rather than
+the exception.
+
+Because both the CLI and the MCP server are thin wrappers over the store
+library, neither should carry behaviour of its own.
+
 ### Skills
 
 Appropriate skills and/or agent definitions.
@@ -142,9 +160,47 @@ SQLite runs in WAL mode to tolerate concurrent readers.
 ## Deferred
 
 * **Versioning**, as a separate archive table.
+
 * **Semantic search**, implemented as additional metadata holding vectors. Not a
   current consideration, but the flat metadata namespace above is intended to
   accommodate it without a schema change.
+
+* **The command line tool** described under Components.
+
+* **Unicode keys.** Segments are currently restricted to `[A-Za-z0-9_-]`. The
+  intent is to widen this to most of Unicode, so that keys can carry natural
+  language. Three things need care when it happens:
+
+  * *Normalisation.* The same key typed two ways must not become two rows, so
+    keys should be normalised, presumably NFC, on the way in.
+  * *The delimiters.* `.` and `:` must stay reserved, along with anything that
+    could be confused with them.
+  * *Subtree bounds.* `subtree_range` currently relies on `.` sorting
+    immediately before `/` under SQLite's byte ordering, which holds only
+    because every legal segment character sorts outside that gap. Widening the
+    character set breaks that assumption, so the bound will need recomputing
+    against whatever set is allowed. This is the one change with a real chance
+    of silently returning wrong results, so it wants tests before the grammar
+    is relaxed rather than after.
+
+* **Bootstrapping the skill configuration from the MCP server.** The server
+  would help a session install or update the skills and configuration that make
+  the store useful, either by editing local configuration or by returning
+  instructions for doing so.
+
+  Worth separating the two halves, because they are not equally risky. A tool
+  that *returns* the configuration and instructions is unobjectionable: it is
+  just a document, the agent and the user decide what to do with it, and it
+  keeps the guidance versioned alongside the server that it describes. A tool
+  that *edits* local configuration is a different proposition — an MCP server
+  writing outside its own store directory is a surprising capability, it is
+  hard for a user to audit, and the failure mode is a corrupted configuration
+  rather than a bad answer.
+
+  The middle option is for the server to write the files and for the CLI to be
+  the thing that installs them, which keeps the write under a command the user
+  ran deliberately. Worth prototyping the read only half first and seeing
+  whether the editing half is still wanted afterwards.
 
 ## Open questions
 

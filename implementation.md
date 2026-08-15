@@ -74,3 +74,18 @@ The server's `instructions` string is a first, minimal attempt at this: it
 describes the key shape and steers towards storing a `:title` alongside each
 document, so a later session can survey the store cheaply before reading
 anything in full.
+
+### 6. Command line tool
+
+* A CLI over the store library, covering the same operations as the MCP server
+  plus bulk import and export.
+
+Not yet scheduled, and deliberately after the skills: bulk import is most useful
+once the key conventions the skills establish are settled, since an import has
+to choose keys for whatever it ingests.
+
+## Not planned yet
+
+Recorded in the Deferred section of design.md rather than here, since none of it
+is scheduled: versioning, semantic search, Unicode keys, and bootstrapping the
+skill configuration from the server.
