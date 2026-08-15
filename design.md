@@ -148,9 +148,4 @@ SQLite runs in WAL mode to tolerate concurrent readers.
 
 ## Open questions
 
-Assumptions currently written into this document that have not been confirmed:
-
-* Get documents recurses over the whole subtree by default, with an optional
-  depth limit, rather than returning immediate children only.
-* Retrieve document caps its response at 8000 characters and returns a
-  continuation offset, rather than always returning the whole document.
+None outstanding.

@@ -1,0 +1,5 @@
+name: rage
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
