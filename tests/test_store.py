@@ -1,0 +1,372 @@
+import pytest
+
+from rage import store as store_module
+from rage.keys import InvalidKeyError
+from rage.store import KeyNotFoundError, PatternNotFoundError, Store
+
+
+@pytest.fixture
+def store(tmp_path):
+    with Store(tmp_path / "store") as s:
+        yield s
+
+
+@pytest.fixture
+def populated(store):
+    store.store_document("context.a1b2.design", "# Store schema\n\nBody.")
+    store.store_document("context.a1b2.design:title", "Store schema")
+    store.store_document("context.a1b2.task", "Add a delete tool.")
+    store.store_document("context.a1b2.task:title", "Delete tool")
+    store.store_document("context.c3d4.design", "# Skill wording")
+    store.store_document("context.c3d4.design:title", "Skill wording")
+    store.store_document("project.reference.implementation", "Notes.")
+    return store
+
+
+# -- setup ---------------------------------------------------------------
+
+
+def test_creates_directory_and_database(tmp_path):
+    directory = tmp_path / "nested" / ".rage"
+    with Store(directory) as s:
+        assert s.path == directory / "store.sqlite"
+    assert (directory / "store.sqlite").exists()
+
+
+def test_reopening_keeps_content(tmp_path):
+    with Store(tmp_path) as s:
+        s.store_document("a", "hello")
+    with Store(tmp_path) as s:
+        assert s.retrieve_document("a").content == "hello"
+
+
+def test_resolve_directory_prefers_explicit_then_env_then_cwd(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv(store_module.ENV_DIR, raising=False)
+    assert store_module.resolve_directory() == tmp_path / ".rage"
+
+    monkeypatch.setenv(store_module.ENV_DIR, str(tmp_path / "from-env"))
+    assert store_module.resolve_directory() == tmp_path / "from-env"
+    assert store_module.resolve_directory(tmp_path / "explicit") == tmp_path / "explicit"
+
+
+def test_rejects_a_newer_schema(tmp_path):
+    with Store(tmp_path) as s:
+        s._conn.execute("PRAGMA user_version=999")
+        s._conn.commit()
+    with pytest.raises(RuntimeError, match="newer version"):
+        Store(tmp_path)
+
+
+# -- storing -------------------------------------------------------------
+
+
+def test_store_overwrites(store):
+    store.store_document("a.b", "first")
+    store.store_document("a.b", "second")
+    excerpt = store.retrieve_document("a.b")
+    assert excerpt.content == "second"
+    assert excerpt.total == len("second")
+
+
+def test_store_validates_the_key(store):
+    with pytest.raises(InvalidKeyError):
+        store.store_document("a..b", "x")
+
+
+def test_format_is_detected_but_can_be_overridden(store):
+    store.store_document("a.json", '{"title": "x"}')
+    store.store_document("a.md", "# Heading")
+    store.store_document("a.broken", "{not json")
+    store.store_document("a.forced", '{"title": "x"}', format="markdown")
+
+    assert store.retrieve_document("a.json").format == "json"
+    assert store.retrieve_document("a.md").format == "markdown"
+    assert store.retrieve_document("a.broken").format == "markdown"
+    assert store.retrieve_document("a.forced").format == "markdown"
+
+
+def test_format_must_be_known(store):
+    with pytest.raises(ValueError, match="format"):
+        store.store_document("a", "x", format="yaml")
+
+
+def test_metadata_and_document_are_independent(store):
+    store.store_document("a.b", "body")
+    store.store_document("a.b:title", "Title")
+    assert store.retrieve_document("a.b").content == "body"
+    assert store.retrieve_document("a.b:title").content == "Title"
+
+
+def test_metadata_may_attach_to_an_implicit_key(store):
+    store.store_document("context:title", "All contexts")
+    assert store.retrieve_document("context:title").content == "All contexts"
+
+
+# -- retrieving ----------------------------------------------------------
+
+
+def test_retrieve_missing_key(store):
+    with pytest.raises(KeyNotFoundError):
+        store.retrieve_document("a.b")
+
+
+def test_retrieve_returns_whole_short_document(store):
+    store.store_document("a", "hello")
+    excerpt = store.retrieve_document("a")
+    assert (excerpt.offset, excerpt.returned, excerpt.total) == (0, 5, 5)
+    assert excerpt.next_offset is None
+    assert not excerpt.truncated
+
+
+def test_retrieve_caps_and_pages(store):
+    store.store_document("a", "x" * 10_000)
+    first = store.retrieve_document("a")
+    assert first.returned == store_module.DEFAULT_MAX_CHARS
+    assert first.total == 10_000
+    assert first.next_offset == store_module.DEFAULT_MAX_CHARS
+    assert first.truncated
+
+    second = store.retrieve_document("a", offset=first.next_offset)
+    assert second.returned == 2_000
+    assert second.next_offset is None
+    assert first.content + second.content == "x" * 10_000
+
+
+def test_retrieve_character_range(store):
+    store.store_document("a", "abcdefghij")
+    excerpt = store.retrieve_document("a", offset=2, length=3)
+    assert excerpt.content == "cde"
+    assert excerpt.offset == 2
+    assert excerpt.next_offset == 5
+
+
+def test_length_is_capped_by_max_chars(store):
+    store.store_document("a", "abcdefghij")
+    assert store.retrieve_document("a", length=8, max_chars=3).content == "abc"
+
+
+def test_offset_past_the_end_returns_nothing(store):
+    store.store_document("a", "abc")
+    excerpt = store.retrieve_document("a", offset=99)
+    assert excerpt.content == ""
+    assert excerpt.offset == 3
+    assert excerpt.next_offset is None
+
+
+def test_retrieve_from_a_literal_pattern(store):
+    store.store_document("a", "intro\n## Design\nbody")
+    excerpt = store.retrieve_document("a", pattern="## Design")
+    assert excerpt.content == "## Design\nbody"
+    assert excerpt.offset == 6
+
+
+def test_pattern_occurrence_index(store):
+    store.store_document("a", "one XX two XX three XX")
+    assert store.retrieve_document("a", pattern="XX", occurrence=1).content == "XX three XX"
+    assert store.retrieve_document("a", pattern="XX", occurrence=2).content == "XX"
+
+
+def test_pattern_is_literal_not_regex(store):
+    store.store_document("a", "cost is $5.00 (approx)")
+    assert store.retrieve_document("a", pattern="$5.00").offset == 8
+    with pytest.raises(PatternNotFoundError):
+        store.retrieve_document("a", pattern=".*")
+
+
+def test_pattern_searches_from_the_offset(store):
+    store.store_document("a", "XX middle XX")
+    assert store.retrieve_document("a", pattern="XX", offset=1).offset == 10
+
+
+def test_pattern_not_found(store):
+    store.store_document("a", "body")
+    with pytest.raises(PatternNotFoundError):
+        store.retrieve_document("a", pattern="absent")
+    with pytest.raises(PatternNotFoundError):
+        store.retrieve_document("a", pattern="body", occurrence=1)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        ({"offset": -1}, "offset"),
+        ({"pattern": ""}, "pattern"),
+        ({"pattern": "a", "occurrence": -1}, "occurrence"),
+        ({"length": -1}, "length"),
+        ({"max_chars": 0}, "max_chars"),
+    ],
+)
+def test_retrieve_rejects_bad_arguments(store, kwargs, match):
+    store.store_document("a", "abc")
+    with pytest.raises(ValueError, match=match):
+        store.retrieve_document("a", **kwargs)
+
+
+# -- listing -------------------------------------------------------------
+
+
+def test_list_root(populated):
+    assert [e.key for e in populated.list_keys()] == ["context", "project"]
+    assert [e.kind for e in populated.list_keys()] == ["implicit", "implicit"]
+
+
+def test_list_includes_subkeys_and_metadata(populated):
+    entries = populated.list_keys("context.a1b2")
+    assert [(e.key, e.kind) for e in entries] == [
+        ("context.a1b2.design", "document"),
+        ("context.a1b2.task", "document"),
+    ]
+
+    entries = populated.list_keys("context.a1b2.design")
+    assert [(e.key, e.kind) for e in entries] == [("context.a1b2.design:title", "metadata")]
+
+
+def test_list_reports_sizes_and_timestamps(populated):
+    (entry,) = populated.list_keys("context.a1b2.task")
+    assert entry.key == "context.a1b2.task:title"
+    assert entry.size == len("Delete tool")
+    assert entry.format == "markdown"
+    assert entry.updated_at
+
+
+def test_implicit_keys_have_no_content(populated):
+    (entry,) = [e for e in populated.list_keys() if e.key == "context"]
+    assert entry.kind == "implicit"
+    assert entry.size is None
+    assert entry.updated_at is None
+
+
+def test_a_key_with_content_and_children_lists_as_a_document(store):
+    store.store_document("a", "body")
+    store.store_document("a.b", "child")
+    (entry,) = store.list_keys()
+    assert (entry.key, entry.kind) == ("a", "document")
+
+
+def test_list_does_not_confuse_sibling_prefixes(store):
+    store.store_document("a.b.c", "x")
+    store.store_document("a.beta.d", "y")
+    assert [e.key for e in store.list_keys("a")] == ["a.b", "a.beta"]
+    assert [e.key for e in store.list_keys("a.b")] == ["a.b.c"]
+
+
+def test_list_empty(store):
+    assert store.list_keys() == []
+    assert store.list_keys("nothing.here") == []
+
+
+# -- bulk reads ----------------------------------------------------------
+
+
+def test_get_documents_returns_the_subtree(populated):
+    keys_found = [e.key for e in populated.get_documents("context")]
+    assert keys_found == [
+        "context.a1b2.design",
+        "context.a1b2.task",
+        "context.c3d4.design",
+    ]
+
+
+def test_get_documents_includes_the_key_itself(store):
+    store.store_document("a", "body")
+    store.store_document("a.b", "child")
+    assert [e.key for e in store.get_documents("a")] == ["a", "a.b"]
+
+
+def test_get_documents_lists_titles_across_a_subtree(populated):
+    found = {e.key: e.content for e in populated.get_documents("context", meta_name="title")}
+    assert found == {
+        "context.a1b2.design:title": "Store schema",
+        "context.a1b2.task:title": "Delete tool",
+        "context.c3d4.design:title": "Skill wording",
+    }
+
+
+def test_get_documents_accepts_several_metadata_names(store):
+    store.store_document("a:title", "T")
+    store.store_document("a:summary", "S")
+    store.store_document("a:other", "O")
+    found = [e.key for e in store.get_documents("a", meta_name=["title", "summary"])]
+    assert found == ["a:summary", "a:title"]
+
+
+def test_get_documents_rejects_an_empty_metadata_list(store):
+    with pytest.raises(ValueError, match="meta_name"):
+        store.get_documents("a", meta_name=[])
+
+
+def test_get_documents_everything(populated):
+    assert len(populated.get_documents()) == 4
+
+
+def test_get_documents_depth(populated):
+    assert [e.key for e in populated.get_documents("context", depth=0)] == []
+    assert [e.key for e in populated.get_documents("context", depth=1)] == []
+    assert len(populated.get_documents("context", depth=2)) == 3
+    assert [e.key for e in populated.get_documents(depth=1)] == []
+
+
+def test_get_documents_truncates_each_document(store):
+    store.store_document("a.b", "x" * 5_000)
+    (excerpt,) = store.get_documents("a")
+    assert excerpt.returned == store_module.DEFAULT_BULK_MAX_CHARS
+    assert excerpt.total == 5_000
+    assert excerpt.next_offset == store_module.DEFAULT_BULK_MAX_CHARS
+
+
+def test_get_documents_does_not_confuse_sibling_prefixes(store):
+    store.store_document("a.b.c", "x")
+    store.store_document("a.beta.d", "y")
+    assert [e.key for e in store.get_documents("a.b")] == ["a.b.c"]
+
+
+# -- deleting ------------------------------------------------------------
+
+
+def test_delete_takes_metadata_with_the_document(populated):
+    removed = populated.delete("context.a1b2.design")
+    assert removed == ["context.a1b2.design", "context.a1b2.design:title"]
+    with pytest.raises(KeyNotFoundError):
+        populated.retrieve_document("context.a1b2.design:title")
+
+
+def test_delete_one_metadata_entry(populated):
+    assert populated.delete("context.a1b2.design:title") == ["context.a1b2.design:title"]
+    assert populated.retrieve_document("context.a1b2.design").content
+
+
+def test_delete_leaves_descendants_unless_recursive(populated):
+    assert populated.delete("context.a1b2") == []
+    assert populated.retrieve_document("context.a1b2.design").content
+
+
+def test_delete_recursive_removes_the_subtree(populated):
+    removed = populated.delete("context.a1b2", recursive=True)
+    assert removed == [
+        "context.a1b2.design",
+        "context.a1b2.design:title",
+        "context.a1b2.task",
+        "context.a1b2.task:title",
+    ]
+    assert [e.key for e in populated.list_keys("context")] == ["context.c3d4"]
+
+
+def test_delete_recursive_does_not_touch_sibling_prefixes(store):
+    store.store_document("a.b.c", "x")
+    store.store_document("a.beta.d", "y")
+    assert store.delete("a.b", recursive=True) == ["a.b.c"]
+    assert store.retrieve_document("a.beta.d").content == "y"
+
+
+def test_delete_missing_key_is_not_an_error(store):
+    assert store.delete("a.b") == []
+
+
+def test_storing_an_empty_document_is_not_a_deletion(store):
+    store.store_document("a.b", "body")
+    store.store_document("a.b", "")
+    excerpt = store.retrieve_document("a.b")
+    assert excerpt.content == ""
+    assert excerpt.total == 0
+    assert [e.key for e in store.list_keys("a")] == ["a.b"]
