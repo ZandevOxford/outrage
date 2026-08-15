@@ -14,6 +14,28 @@ Python library for storing data used by the MCP server.
 
 Data is stored in an SQLite database local to the current project.
 
+The store is kept independent of the MCP server: it has no knowledge of MCP and
+can be tested and reused on its own. Initially a single module; it may become a
+package later.
+
+#### Store location
+
+The server is given a *directory*, not a file, so that additional files can be
+added alongside the database later (indexes, exports, vector data).
+
+Resolution order:
+
+1. `--dir PATH` command line argument
+2. `RAGE_DIR` environment variable
+3. `./.rage/` relative to the server's working directory
+
+The database is `store.sqlite` within that directory. The directory is created
+on demand.
+
+The intended normal usage is a per-project MCP configuration passing `--dir`
+explicitly, since an MCP server cannot be relied on to inherit the project
+working directory. The working directory fallback exists for CLI and test use.
+
 ### Skills
 
 Appropriate skills and/or agent definitions.
@@ -33,6 +55,19 @@ For example:
 
 If A.B.C exists then A and A.B implicitly exist with no content.
 
+### Grammar
+
+* A key is one or more segments joined by `.`.
+* A segment matches `[A-Za-z0-9_-]+`.
+* A key may carry at most one metadata suffix, introduced by `:` and appearing
+  only at the end of the key. The metadata name is a single segment and may not
+  contain `.`, so the metadata namespace is flat.
+* Metadata may be attached to any key, including implicit keys with no content.
+
+Multiple metadata entries may be attached to one document, which is the intended
+mechanism for alternative summaries and, in future, embedding vectors to support
+different kinds of search.
+
 ## Values
 
 Values are strings which should either be markdown or json.
@@ -43,7 +78,79 @@ Values are strings which should either be markdown or json.
 * Store document: stores document or metadata at a key.
 * List keys: List keys immediately under a key, including subkeys and metadata.
 * Get documents: Get multiple documents or metadata, with a key and or metadata filter. It should be possible to for example list the titles of all documents under a key.
+* Delete keys: Delete a document and its metadata, optionally deleting the whole
+  subtree beneath it.
+
+### Tool semantics
+
+**Retrieve document.** The search pattern is a literal substring, not a regular
+expression: it is predictable for a model to construct, needs no escaping, and
+cannot backtrack pathologically on a large document. The index selects which
+occurrence to start from. Reads are capped at a default of 8000 characters per
+call; the response reports the offset, the number of characters returned, the
+total document length, and the next offset, so a large document can be paged
+without any single call flooding the agent's context.
+
+**Store document.** Overwrite only. Versioning is deferred and is expected to be
+implemented later as a separate archive table rather than by complicating reads.
+
+**Get documents.** Matches the given key and everything beneath it at any depth,
+with an optional depth limit. Recursion is the default because the motivating
+case — listing the titles of all documents under `context` — spans a level of
+nesting.
+
+**Delete keys.** Deleting a key removes its content and all of its metadata.
+Deleting a subtree requires an explicit recursive flag, so a mistyped key cannot
+silently remove a whole context. Storing an empty document is *not* a deletion;
+it leaves an empty document in place.
 
 ## Schema
 
 This can be stored in a single table, with an index on the key.
+
+```sql
+CREATE TABLE documents (
+  key        TEXT PRIMARY KEY,  -- full key, including any ':meta' suffix
+  doc_key    TEXT NOT NULL,     -- key with the metadata suffix removed
+  meta_name  TEXT,              -- metadata name, or NULL for a document
+  parent     TEXT NOT NULL,     -- derived: enclosing key
+  content    TEXT NOT NULL,
+  format     TEXT,              -- 'markdown' | 'json'
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX idx_documents_parent ON documents(parent);
+CREATE INDEX idx_documents_meta   ON documents(meta_name, doc_key);
+```
+
+`doc_key`, `meta_name` and `parent` are all derived from `key` on write. They
+are stored rather than computed at query time so that the two main access
+patterns are plain indexed lookups:
+
+* *List keys immediately under X* is an equality match on `parent`. The parent
+  of `A.B:title` is `A.B`, so a document's metadata lists alongside its
+  subkeys, as required. Implicit intermediate keys need never be materialised —
+  they fall out of a `DISTINCT parent` query.
+* *Get one metadata name across a subtree* is a range scan on
+  `(meta_name, doc_key)`.
+
+Deriving these columns instead of using `LIKE 'A.B%'` also avoids the prefix
+collision where `A.B` would match `A.Beta`.
+
+SQLite runs in WAL mode to tolerate concurrent readers.
+
+## Deferred
+
+* **Versioning**, as a separate archive table.
+* **Semantic search**, implemented as additional metadata holding vectors. Not a
+  current consideration, but the flat metadata namespace above is intended to
+  accommodate it without a schema change.
+
+## Open questions
+
+Assumptions currently written into this document that have not been confirmed:
+
+* Get documents recurses over the whole subtree by default, with an optional
+  depth limit, rather than returning immediate children only.
+* Retrieve document caps its response at 8000 characters and returns a
+  continuation offset, rather than always returning the whole document.
