@@ -74,14 +74,29 @@ rather than returning a result with an error flag.
   an absolute path into the conda environment and so is machine specific.
 * The server has been exercised end to end over stdio by an MCP client: tool
   listing, store, survey by `:title`, read and recursive delete.
-* Used from a real Claude Code session, which is what turned up the five points
-  below. Everything worked; what went wrong was that four results were
+* Used from a real Claude Code session, which is what turned up the six points
+  below. Everything worked; what went wrong was that five results were
   misleading and one convention was too easy to skip.
+* The five fixed points were then confirmed live against the reconnected
+  server, so they are known to work through the protocol and not only in the
+  tests.
 
-Note that a running session holds the server's `instructions` and tool
-descriptions from when it started, so the server has to be restarted for
-changes to either to reach the agent. The changes below were made from within a
-session and so are **not** live in it; they need another restart.
+#### Getting a changed server to the agent
+
+Reconnecting the server with `/mcp` and restarting the session are **not**
+equivalent, and the difference is worth knowing when iterating on the server
+from inside a session:
+
+* *Reconnecting* restarts the server process and refreshes the tool list. New
+  code, new arguments, new tool descriptions and new result shapes all take
+  effect, verified here by calling every one of the five changes below.
+* *The server's `instructions`* are delivered once and stayed at the old text
+  across the reconnect. They reached the agent only on a full session restart.
+
+So a reconnect is enough while changing tools, and only a change to
+`instructions` needs the session restarted. That matters because `instructions`
+is where the key conventions live, which is exactly what step 5 will be
+iterating on — the slow loop is the one that step is stuck with.
 
 #### What the session use changed
 
