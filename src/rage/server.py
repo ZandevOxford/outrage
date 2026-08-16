@@ -11,11 +11,39 @@ import dataclasses
 from typing import Annotated, Any
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from . import __version__
 from .store import DEFAULT_BULK_MAX_CHARS, DEFAULT_MAX_CHARS, Excerpt, Store
+
+
+def _forbid_unknown_arguments() -> None:
+    """Make an unrecognised tool argument an error rather than a silent no-op.
+
+    The SDK builds each tool's argument model on ``ArgModelBase``, which leaves
+    pydantic's default ``extra="ignore"``, so an argument the server does not
+    know is dropped before the tool function is entered — the tool cannot even
+    see that it happened. A caller then gets a success result for a call that
+    did only part of what it asked, which is how a server running stale code
+    comes to look like one running current code.
+
+    Setting the config here, before any tool is registered, propagates to every
+    argument model the SDK creates afterwards. It also puts
+    ``additionalProperties: false`` into the published schemas, so a client that
+    validates catches the mistake before the call is even made.
+
+    This reaches into the SDK's internals because it offers no supported way to
+    ask for strict tool arguments, though it does use ``extra="forbid"`` for its
+    own resource models. ``test_unknown_arguments_are_rejected`` fails loudly if
+    a future SDK stops honouring this, rather than letting the server quietly
+    fall back to accepting anything.
+    """
+    ArgModelBase.model_config["extra"] = "forbid"
+
+
+_forbid_unknown_arguments()
 
 INSTRUCTIONS = """\
 A store for notes, designs and task context that outlives a single session.

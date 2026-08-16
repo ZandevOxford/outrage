@@ -146,6 +146,24 @@ Values are strings which should either be markdown or json.
 * Delete keys: Delete a document and its metadata, optionally deleting the whole
   subtree beneath it.
 
+### The argument contract
+
+Tool arguments are a fixed, fully typed set. Every argument is declared with its
+type and constraints, and anything else is an error: an unrecognised argument is
+rejected and named, not quietly dropped.
+
+This is the direction the whole tool surface should move in, and it is worth
+being explicit about why, because permissiveness looks harmless. An argument
+that is ignored produces a *success* result for a call that did only part of
+what was asked. The caller cannot see the store, so it has no way to notice, and
+a misspelled argument then behaves exactly like a server running stale code.
+Strictness turns that into an error naming the argument, which is a better
+outcome than a plausible wrong one.
+
+The constraints belong in the declaration rather than in prose for the same
+reason a title belongs in the signature: what is declared is enforced, and what
+is merely described has to be remembered.
+
 ### Tool semantics
 
 **Retrieve document.** The search pattern is a literal substring, not a regular

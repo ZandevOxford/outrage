@@ -53,6 +53,35 @@ def test_tools_are_registered(server):
         assert tool.description
 
 
+def test_unknown_arguments_are_rejected(server):
+    """Guards a reach into the SDK; see server._forbid_unknown_arguments.
+
+    Silently dropping an unknown argument is how a server running stale code
+    passes for one running current code, so this failing means the server has
+    quietly gone permissive again, not merely that a detail changed.
+    """
+    message = call_expecting_error(server, "store_document", key="a/b", content="x", nonsense=1)
+    assert "nonsense" in message
+
+
+def test_a_misspelled_argument_is_named_rather_than_ignored(server):
+    message = call_expecting_error(server, "store_document", key="a/b", content="x", titel="typo")
+    assert "titel" in message
+    # The document must not have been written under a half-understood call.
+    assert "nothing is stored" in call_expecting_error(server, "retrieve_document", key="a/b")
+
+
+def test_schemas_tell_clients_that_arguments_are_fixed(server):
+    for tool in list_tools(server).values():
+        assert tool.input_schema.get("additionalProperties") is False, tool.name
+
+
+def test_known_arguments_still_pass(server):
+    """The strictness must not cost the optional arguments."""
+    assert call(server, "store_document", key="a/b", content="x", title="T", format="markdown")
+    assert call(server, "list_keys")["entries"]
+
+
 def test_tool_schemas_describe_their_arguments(server):
     tool = list_tools(server)["retrieve_document"]
     properties = tool.input_schema["properties"]

@@ -124,30 +124,38 @@ iterating on — the slow loop is the one that step is stuck with.
 5. *The invalid segment error did not say what a segment may contain*, leaving a
    caller to guess. It now names the character set.
 
-6. *Unknown arguments are accepted and silently dropped* — **not yet fixed, see
-   below.** Found by calling the new `title` argument against the server still
-   running the old code: the call succeeded, reported success, and wrote no
-   title. Same failure as 1 to 3, and the worst of them, since it makes a stale
-   server indistinguishable from a current one.
+6. *Unknown arguments were accepted and silently dropped.* Found by calling the
+   new `title` argument against the server still running the old code: the call
+   succeeded, reported success, and wrote no title. The same failure as 1 to 3
+   and the worst of them, since it makes a stale server indistinguishable from
+   a current one.
 
    The cause is in the SDK, not here: `ArgModelBase` in
    `mcp/server/mcpserver/utilities/func_metadata.py` leaves pydantic's default
-   `extra="ignore"`, and the arguments are filtered before a tool function is
+   `extra="ignore"`, and arguments are filtered before a tool function is
    entered, so a tool cannot see what was dropped. There is no per-tool strict
-   flag.
+   flag, and the middleware hook that might have served is documented as
+   unstable before v2 is final.
 
-   Fixing it means either forcing `extra="forbid"` onto the SDK's model config,
-   which is a monkeypatch of a dependency's internals affecting every tool, or
-   accepting the SDK's behaviour and relying on `additionalProperties: false` in
-   the published schema to make well behaved clients check. Left open
-   deliberately: it is a change to how strictly the server treats all client
-   input and should be a decision, not a side effect.
+   Fixed by `server._forbid_unknown_arguments`, which sets `extra="forbid"` on
+   that config at import, before any tool is registered. One line, and it buys
+   both halves: the SDK now rejects the call *and names the offending argument*,
+   and `additionalProperties: false` appears in all five published schemas, so a
+   validating client catches the mistake before calling.
 
 Worth noting that five of the six are about result *shapes* rather than
 behaviour, and four are the same failure: a result that cannot distinguish
 "nothing happened" from "it worked". Tool results are read by something that
 cannot see the store, so anything the result does not say is not merely absent,
 it is misleading.
+
+The reach into the SDK for point 6 is deliberate but load bearing, so it is
+guarded rather than trusted. Four tests in `test_server.py` — the rejection, the
+named misspelling, the published `additionalProperties`, and that known
+arguments still pass — fail if a future SDK stops honouring it. Verified by
+disabling the call and confirming three of them fail; a silent return to
+permissive arguments is the one outcome that must not be possible, since it is
+the failure the change exists to prevent.
 
 ### 5. Skills — next
 
