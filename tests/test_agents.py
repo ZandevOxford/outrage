@@ -20,7 +20,7 @@ AGENTS = Path(rage.__file__).parent / "agents"
 REPO = Path(__file__).resolve().parents[1]
 DOGFOOD = REPO / ".claude" / "agents"
 
-NAMES = ["rage-annotate", "rage-backfill"]
+NAMES = ["rage-annotate", "rage-backfill", "rage-search"]
 
 
 def _frontmatter(text: str) -> dict[str, str]:
@@ -79,6 +79,17 @@ def test_annotate_can_read_and_write_but_nothing_else():
     # that, and an agent that can delete is one bad key away from removing the
     # document it was asked to describe.
     assert "mcp__rage__delete_keys" not in tools
+
+
+def test_search_reads_at_both_levels_but_does_not_write():
+    tools = _tools("rage-search")
+
+    # The cascade needs both: metadata a level at a time, then whole documents
+    # for what the metadata could not decide.
+    assert tools == {"mcp__rage__get_documents", "mcp__rage__retrieve_document"}
+    # Searching is a read. An agent that answers a question should not be able
+    # to change the thing it was asked about.
+    assert "mcp__rage__store_document" not in tools
 
 
 def test_backfill_surveys_and_delegates_but_does_not_write():
