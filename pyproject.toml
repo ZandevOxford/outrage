@@ -14,6 +14,7 @@ dependencies = ["mcp>=1.2"]
 dev = ["pytest>=8", "ruff>=0.6"]
 
 [project.scripts]
+rage = "rage.cli:main"
 rage-server = "rage.server:main"
 
 [tool.hatch.build.targets.wheel]
