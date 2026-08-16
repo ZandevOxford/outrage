@@ -3,7 +3,7 @@
 ## Currently implemented
 
 Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4. Package
-installed in editable mode with `pip install -e ".[dev]"`. 170 tests passing;
+installed in editable mode with `pip install -e ".[dev]"`. 174 tests passing;
 `ruff check` and `ruff format --check` clean.
 
 ### 0. Project scaffolding — done
