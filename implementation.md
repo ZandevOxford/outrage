@@ -66,8 +66,6 @@ Note the SDK in use is **mcp 2.0**, where `FastMCP` has become
 `structured_content`, `input_schema`), and a failing tool raises `ToolError`
 rather than returning a result with an error flag.
 
-## TODO
-
 ### 4. Integration with Claude Code — done
 
 * `.mcp.json` written, registering the server for this project. Its `command` is
@@ -183,46 +181,21 @@ matter most — the start of a session, and just before context is lost — are 
 moments anything prompts an agent to reach. Both hooks emit static text and
 depend on nothing, so neither can fail in a way that costs a session.
 
-#### What is not yet confirmed
+#### Delivery
 
-Both hooks were pipe tested: each emits valid JSON carrying
-`hookSpecificOutput.additionalContext`. Neither can be fired from within the
-session that wrote it, so what is confirmed is the output, not the delivery.
-Three things a later session should check, in the order they will show up:
+Both hooks were pipe tested when written, so what was confirmed then was the
+output and not the delivery — neither hook can fire inside the session that
+wrote it, and `.claude/settings.json` did not exist when that session started.
 
-1. Whether the skill is listed at all, which is the test of whether a symlinked
-   skill directory is discovered. If it is not, replace the symlink with a copy
-   and let the CLI own keeping them in step with each other.
-2. Whether the `SessionStart` text arrives in context.
-3. Whether the `PreCompact` text arrives anywhere the model can still act on —
-   the least certain of the three, since compaction is not a turn.
+A later session has since confirmed two of the three: a symlinked skill
+directory *is* discovered, through the link rather than its target, and the
+`SessionStart` text *does* arrive in context ahead of the first turn. Whether
+`PreCompact` reaches somewhere the model can still act on is still open, since
+compaction is not a turn.
 
-Also worth noting that `.claude/settings.json` did not exist when this session
-started, so the hooks needed `/hooks` or a restart before taking effect here.
+## Planned work
 
-### 6. Command line tool — next
-
-* A CLI over the store library, covering the same operations as the MCP server
-  plus bulk import and export, a command that writes the MCP server
-  configuration for a project, and a command that installs the skill and hooks
-  into a project.
-
-Deliberately after the skills: bulk import is most useful once the key
-conventions the skills establish are settled, since an import has to choose keys
-for whatever it ingests. Those conventions now exist, so the ordering constraint
-is discharged.
-
-Installing the skill is new to this step, and belongs with the configuration
-writing rather than with the server: both are things a user runs deliberately,
-which is the distinction design.md draws when it defers letting the server edit
-local configuration.
-
-The configuration writing command is the exception and could be pulled forward
-at any point, since it depends on nothing else and replaces the hand written
-`.mcp.json` currently in the repository.
-
-## Not planned yet
-
-Recorded in the Deferred section of design.md rather than here, since none of it
-is scheduled: versioning, semantic search, Unicode keys, and bootstrapping the
-skill configuration from the server.
+Not recorded here. The CLI and everything after it live in the rage store, under
+`project/reference/planned`, so that a plan being worked from cannot go stale
+against a file nobody reopened. Deferred and unscheduled work stays in the
+Deferred section of design.md.
