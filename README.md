@@ -18,9 +18,9 @@ the store reports the key it chose.
 
 ## Status
 
-The store, the MCP server and the key handling are implemented; the skills that
-make them worth using are not. See [implementation.md](implementation.md) for
-what is done and what is next.
+The store, the MCP server, the key handling and the skill are implemented. The
+command line tool is next. See [implementation.md](implementation.md) for what
+is done and what is next.
 
 ## Documentation
 
@@ -35,8 +35,11 @@ what is done and what is next.
 * **MCP server** — Python, stdio, for local use. Exposes the store as tools.
 * **Data store** — a Python library over SQLite, independent of MCP so that it
   can be tested and reused on its own.
-* **Skills** — skill and agent definitions, initially for Claude Code, covering
-  when to store and retrieve and what key conventions to follow.
+* **Skill** — `src/rage/skills/rage/SKILL.md`, initially for Claude Code,
+  covering when to store and retrieve and what key conventions to follow. It
+  ships inside the package so that an install carries it. `SessionStart` and
+  `PreCompact` hooks in `.claude/settings.json` cover the two moments a skill
+  would not be reached for on its own.
 
 ## Development
 

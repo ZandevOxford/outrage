@@ -3,7 +3,7 @@
 ## Currently implemented
 
 Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4. Package
-installed in editable mode with `pip install -e ".[dev]"`. 174 tests passing;
+installed in editable mode with `pip install -e ".[dev]"`. 177 tests passing;
 `ruff check` and `ruff format --check` clean.
 
 ### 0. Project scaffolding — done
@@ -157,34 +157,65 @@ disabling the call and confirming three of them fail; a silent return to
 permissive arguments is the one outcome that must not be possible, since it is
 the failure the change exists to prevent.
 
-### 5. Skills — next
-
-* Skill and/or agent definitions telling the agent *when* to store and retrieve,
-  and what key conventions to follow.
+### 5. Skills — done
 
 Expected to be the hardest part and the one that determines whether the system
-is actually used in practice; deliberately last, so it can be written against
-tools whose behaviour is already known.
+is actually used in practice; deliberately last, so it could be written against
+tools whose behaviour was already known.
 
-The server's `instructions` string is a first, minimal attempt at this: it
-describes the key shape and steers towards giving each document a title, so a
-later session can survey the store cheaply before reading anything in full.
+* `src/rage/skills/rage/SKILL.md` — the skill. Inside the package rather than
+  only in the repository, so an install carries it and the CLI has something to
+  install.
+* `.claude/skills/rage` — a relative symlink to it, so this project uses the
+  copy it is editing.
+* `.claude/settings.json` — `SessionStart` and `PreCompact` hooks.
+* `tests/test_skill.py` — the skill is packaged, its frontmatter names it, and
+  the symlink still resolves to the packaged file.
 
-Step 4 gave this one useful piece of evidence. The instructions asked for a
-title on every document and a session that had just read them still stored one
-without. That is an argument for putting a convention in the tool signature
-where it can be complied with, rather than in prose that has to be remembered —
-and a caution against expecting the skills alone to carry the conventions.
+The skill carries only judgment: survey before reading, what the three key
+namespaces are for, what is worth storing and what the repository already
+records, storing as the work goes rather than at the end, and what to check
+before the end. It deliberately does not restate the key grammar or the argument
+rules, which the tool descriptions carry and enforce.
 
-### 6. Command line tool
+The hooks exist because a skill has to be reached for, and the two moments that
+matter most — the start of a session, and just before context is lost — are not
+moments anything prompts an agent to reach. Both hooks emit static text and
+depend on nothing, so neither can fail in a way that costs a session.
+
+#### What is not yet confirmed
+
+Both hooks were pipe tested: each emits valid JSON carrying
+`hookSpecificOutput.additionalContext`. Neither can be fired from within the
+session that wrote it, so what is confirmed is the output, not the delivery.
+Three things a later session should check, in the order they will show up:
+
+1. Whether the skill is listed at all, which is the test of whether a symlinked
+   skill directory is discovered. If it is not, replace the symlink with a copy
+   and let the CLI own keeping them in step with each other.
+2. Whether the `SessionStart` text arrives in context.
+3. Whether the `PreCompact` text arrives anywhere the model can still act on —
+   the least certain of the three, since compaction is not a turn.
+
+Also worth noting that `.claude/settings.json` did not exist when this session
+started, so the hooks needed `/hooks` or a restart before taking effect here.
+
+### 6. Command line tool — next
 
 * A CLI over the store library, covering the same operations as the MCP server
-  plus bulk import and export, and a command that writes the MCP server
-  configuration for a project.
+  plus bulk import and export, a command that writes the MCP server
+  configuration for a project, and a command that installs the skill and hooks
+  into a project.
 
-Not yet scheduled, and deliberately after the skills: bulk import is most useful
-once the key conventions the skills establish are settled, since an import has
-to choose keys for whatever it ingests.
+Deliberately after the skills: bulk import is most useful once the key
+conventions the skills establish are settled, since an import has to choose keys
+for whatever it ingests. Those conventions now exist, so the ordering constraint
+is discharged.
+
+Installing the skill is new to this step, and belongs with the configuration
+writing rather than with the server: both are things a user runs deliberately,
+which is the distinction design.md draws when it defers letting the server edit
+local configuration.
 
 The configuration writing command is the exception and could be pulled forward
 at any point, since it depends on nothing else and replaces the hand written

@@ -48,6 +48,9 @@ plus the operations that only make sense from a shell:
 * Inspecting and repairing a store outside an agent session.
 * Writing the MCP server configuration for a project, filling in the interpreter
   or entry point location and the store location.
+* Installing the packaged skill and its hooks into a project, for the same
+  reason: the skill ships inside the package, and the CLI is the thing that
+  knows where the package is.
 
 The last of these removes most of the friction in first time setup. The server
 has to be launched by an absolute path into whichever environment it was
@@ -69,9 +72,41 @@ library, neither should carry behaviour of its own.
 
 ### Skills
 
-Appropriate skills and/or agent definitions.
+Skill and hook definitions, initially for Claude Code.
 
-Initially to support Claude Code.
+The skill carries judgment: when to survey the store, what is worth storing,
+what the key namespaces are for, and when to write rather than wait. It does not
+restate the key grammar or the argument rules, because those live in the tool
+descriptions, where they are enforced rather than remembered. Step 4 is the
+argument for that split — a session that had just read the `instructions`
+asking for a title on every document stored one without.
+
+The skill ships inside the package rather than only in this repository, so that
+installing rage anywhere carries the skill it is meant to be used with, and the
+CLI has something to install. This project uses it through a symlink under
+`.claude/skills`, so the copy being iterated on is the copy in use.
+
+#### The trigger problem
+
+A skill is only loaded when something decides to load it, and its description is
+the only part that is always in context. That is enough for a skill invoked in
+the middle of work, but the two moments that matter most for a store like this
+are moments at which nothing prompts an agent to reach for one:
+
+* *The start of a session*, when the store holds what the session is about to
+  work out again from scratch.
+* *Just before context is lost*, which is the last chance to write anything down
+  and arrives without warning.
+
+Neither is a request, so neither reliably triggers a skill. Both are events, and
+events are what hooks are for, so a `SessionStart` hook points at the survey and
+a `PreCompact` hook asks for a checkpoint. Both emit static text and depend on
+nothing — not the store, not the interpreter path — so they cannot fail in a way
+that blocks a session.
+
+This is the same principle as putting `title` in the tool signature: the
+convention should be reachable at the moment it applies, rather than requiring
+that someone remembers it then.
 
 ## Key namespace
 
@@ -302,10 +337,11 @@ SQLite runs in WAL mode to tolerate concurrent readers.
   ran deliberately. Worth prototyping the read only half first and seeing
   whether the editing half is still wanted afterwards.
 
-  Note that the CLI already covers the server half of this: it writes the MCP
-  server configuration, as described under Components. So the question here is
-  narrower than it first appears — it is only about the skills, and only about
-  whether the server should be able to install them without the CLI.
+  Note that the CLI already covers both halves under Components: it writes the
+  MCP server configuration and installs the packaged skill. So what is deferred
+  here is narrower than it first appears — only whether the *server* should be
+  able to do either without the CLI, which is the half with the surprising
+  capability and no obvious need.
 
 ## Open questions
 
