@@ -61,8 +61,25 @@ leaves open.
 **3. Write it to the metadata key.**
 
 ```
-store_document(key="<document key>:<metadata name>", content=<the text>)
+store_document(
+    key="<document key>:<metadata name>",
+    content=<the text as a JSON string literal>,
+    encoding="json-string",
+)
 ```
+
+`content` is a **JSON string literal** — surrounded by double quotes, with `"`
+written `\"`, backslashes `\\`, and every newline `\n` rather than an actual
+line break. The store decodes it before writing, so what ends up stored is
+ordinary text and every reader sees prose.
+
+This exists because a value can be damaged between being written and arriving
+here, and a bare string has no shape to violate, so the damage is stored as
+though it were the summary. A JSON string literal does have a shape. If the
+write is rejected with `not a valid JSON string literal`, the value was
+damaged in transit or encoded wrongly: build the literal again from the
+summary and retry once. Do not switch to sending it unencoded — that removes
+the check rather than passing it.
 
 **Omit `title`.** Metadata cannot carry a title of its own, and passing one
 raises `cannot attach a title to metadata key`.

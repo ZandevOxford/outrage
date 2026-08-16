@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 import pytest
@@ -128,6 +129,66 @@ def test_format_is_detected_but_can_be_overridden(store):
 def test_format_must_be_known(store):
     with pytest.raises(ValueError, match="format"):
         store.store_document("a", "x", format="yaml")
+
+
+def test_json_string_encoding_decodes_before_storing(store):
+    store.store_document("a", '"Line one says \\"hi\\".\\nLine two."', encoding="json-string")
+
+    # What is stored is the string the literal denotes, not the literal.
+    assert store.retrieve_document("a").content == 'Line one says "hi".\nLine two.'
+
+
+def test_json_string_encoding_applies_to_title_too(store):
+    store.store_document("a", '"Body."', title='"A \\"quoted\\" title"', encoding="json-string")
+
+    assert store.retrieve_document("a").content == "Body."
+    assert store.retrieve_document("a:title").content == 'A "quoted" title'
+
+
+def test_encoding_must_be_known(store):
+    with pytest.raises(ValueError, match="encoding"):
+        store.store_document("a", '"x"', encoding="base64")
+
+
+# The three cases below are the ones this encoding exists to catch. Each is a
+# way a generated tool call has been seen to arrive damaged, and each must fail
+# rather than store something that reads as if it were correct.
+
+
+def test_json_string_encoding_rejects_trailing_scaffolding(store):
+    with pytest.raises(ValueError, match="not a valid JSON string literal"):
+        store.store_document("a", '"A summary."</content>\n</invoke>\n', encoding="json-string")
+
+    with pytest.raises(KeyNotFoundError):
+        store.retrieve_document("a")
+
+
+def test_json_string_encoding_rejects_scaffolding_inside_the_quotes(store):
+    # Raw newlines are not legal inside a JSON string, which is what catches
+    # scaffolding that lands before the closing quote rather than after it.
+    with pytest.raises(ValueError, match="not a valid JSON string literal"):
+        store.store_document("a", '"A summary.</content>\n</invoke>\n"', encoding="json-string")
+
+
+def test_json_string_encoding_rejects_unencoded_content(store):
+    # A caller that asks for the encoding and then forgets to apply it fails
+    # loudly, which is the property prose instructions cannot provide.
+    with pytest.raises(ValueError, match="not a valid JSON string literal"):
+        store.store_document("a", "A plain unencoded summary.", encoding="json-string")
+
+
+def test_json_string_encoding_rejects_non_strings(store):
+    with pytest.raises(ValueError, match="decoded to dict"):
+        store.store_document("a", '{"summary": "A summary."}', encoding="json-string")
+
+
+def test_json_string_encoding_survives_a_document_full_of_scaffolding(store):
+    # The store's own notes quote the scaffolding they describe. Encoding must
+    # carry that content intact, not treat it as damage.
+    text = "The leak looks like `</content>` followed by `</invoke>`.\n"
+    store.store_document("a", json.dumps(text), encoding="json-string")
+
+    assert store.retrieve_document("a").content == text
 
 
 def test_metadata_and_document_are_independent(store):

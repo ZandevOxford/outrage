@@ -37,6 +37,11 @@ DEFAULT_BULK_MAX_CHARS = 2000
 
 FORMATS = ("markdown", "json")
 
+#: Encodings a caller may use for the content and title it passes in. These
+#: describe the argument in transit, not the stored document, which is always
+#: decoded back to plain text before it is written. See ``_decode``.
+ENCODINGS = ("json-string",)
+
 SCHEMA_VERSION = 2
 
 #: A key segment that names a number, for the benefit of wildcard allocation.
@@ -178,6 +183,7 @@ class Store:
         format: str | None = None,
         *,
         title: str | None = None,
+        encoding: str | None = None,
     ) -> str:
         """Store ``content`` at ``key``, overwriting anything already there.
 
@@ -194,10 +200,24 @@ class Store:
         the title is what makes a document discoverable later, and a separate
         call is one that can simply be forgotten. It may not be combined with a
         ``key`` that is itself metadata, since metadata does not nest.
+
+        ``encoding`` describes how ``content`` and ``title`` arrived, not what
+        is stored: 'json-string' means each is a JSON string literal, quotes
+        and all, which is decoded before it is written. The stored document is
+        plain text either way, so readers are unaffected. Its purpose is to
+        make damage in transit loud — see ``_decode``.
         """
         parsed = keys.parse(key, allow_wildcard=True)
         if not isinstance(content, str):
             raise TypeError(f"content must be a string, got {type(content).__name__}")
+        if encoding is not None:
+            if encoding not in ENCODINGS:
+                raise ValueError(f"encoding must be one of {ENCODINGS}, got {encoding!r}")
+            content = _decode(content, encoding, "content")
+            if title is not None:
+                if not isinstance(title, str):
+                    raise TypeError(f"title must be a string, got {type(title).__name__}")
+                title = _decode(title, encoding, "title")
         if format is None:
             format = _detect_format(content)
         elif format not in FORMATS:
@@ -533,6 +553,40 @@ def open_store(directory: str | os.PathLike[str] | None = None) -> Iterator[Stor
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _decode(value: str, encoding: str, what: str) -> str:
+    """Decode one argument that arrived under ``encoding``.
+
+    Only 'json-string' exists: ``value`` is a JSON string literal, and what is
+    stored is the string it denotes. The point is not the encoding but the
+    check it makes possible. A tool call is generated as text before it is
+    parsed into arguments, and a model can emit its own closing scaffolding
+    into the middle of a value; that damage is invisible in a bare string,
+    which has no shape to violate. A JSON string literal has one, and every
+    form of the damage seen so far breaks it: trailing scaffolding is extra
+    data past the closing quote, and scaffolding pushed inside the quote
+    carries raw newlines, which JSON forbids in a string.
+
+    So this refuses rather than repairs. A value that arrives damaged is one
+    the caller can send again; a value that is silently trimmed is one nobody
+    ever learns was wrong.
+    """
+    try:
+        decoded = json.loads(value)
+    except ValueError as exc:
+        raise ValueError(
+            f"{what} is not a valid JSON string literal under encoding "
+            f"{encoding!r}: {exc}. Send it as a JSON string, quotes included, "
+            f"with nothing after the closing quote."
+        ) from exc
+    if not isinstance(decoded, str):
+        raise ValueError(
+            f"{what} decoded to {type(decoded).__name__} under encoding "
+            f"{encoding!r}, not a string. Send a JSON string literal, not an "
+            f"object or an array."
+        )
+    return decoded
 
 
 def _detect_format(content: str) -> str:

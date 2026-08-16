@@ -171,6 +171,37 @@ def test_store_document_detects_json(server):
     assert call(server, "retrieve_document", key="project/data")["format"] == "json"
 
 
+def test_store_document_decodes_a_json_string_encoding(server):
+    stored = call(
+        server,
+        "store_document",
+        key="a/b:summary",
+        content='"A summary saying \\"hi\\".\\nSecond line."',
+        encoding="json-string",
+    )
+    # `stored` counts what was stored, not the longer encoded form that arrived.
+    assert stored["stored"] == len('A summary saying "hi".\nSecond line.')
+    assert (
+        call(server, "retrieve_document", key="a/b:summary")["content"]
+        == 'A summary saying "hi".\nSecond line.'
+    )
+
+
+def test_store_document_rejects_scaffolding_under_a_json_string_encoding(server):
+    message = call_expecting_error(
+        server,
+        "store_document",
+        key="a/b:summary",
+        content='"A summary."</content>\n</invoke>\n',
+        encoding="json-string",
+    )
+    assert "not a valid JSON string literal" in message
+    # Nothing was written, so the caller can simply send it again.
+    assert "nothing is stored" in call_expecting_error(
+        server, "retrieve_document", key="a/b:summary"
+    )
+
+
 def test_list_keys_at_the_top_level(server):
     entries = call(server, "list_keys")["entries"]
     assert [(e["key"], e["kind"]) for e in entries] == [("context", "implicit")]

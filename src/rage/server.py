@@ -153,11 +153,28 @@ def build_server(store: Store) -> MCPServer:
                 )
             ),
         ] = None,
+        encoding: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "How `content` and `title` are encoded in this call, not how "
+                    "they are stored. Pass 'json-string' to send each as a JSON "
+                    "string literal, quotes and escapes included; it is decoded "
+                    "before storing, so the stored document is plain text either "
+                    "way. Use it when the value is long or generated: a damaged "
+                    "value then fails loudly here instead of being stored as if "
+                    "it were correct. Omit to send the text as-is."
+                )
+            ),
+        ] = None,
     ) -> dict[str, Any]:
-        written = store.store_document(key, content, format, title=title)
+        written = store.store_document(key, content, format, title=title, encoding=encoding)
+        # `content` is what arrived, which is not what was stored once it has
+        # been decoded, so the encoded path asks the store rather than guessing.
+        stored = len(content) if encoding is None else store.retrieve_document(written).total
         result: dict[str, Any] = {
             "key": written,
-            "stored": len(content),
+            "stored": stored,
             "generated": written != key,
         }
         if title is not None:
