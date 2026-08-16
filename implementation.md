@@ -109,8 +109,27 @@ session and so are **not** live in it; they need another restart.
 5. *The invalid segment error did not say what a segment may contain*, leaving a
    caller to guess. It now names the character set.
 
-Worth noting that four of the five are about result *shapes* rather than
-behaviour, and three are the same failure: a result that cannot distinguish
+6. *Unknown arguments are accepted and silently dropped* — **not yet fixed, see
+   below.** Found by calling the new `title` argument against the server still
+   running the old code: the call succeeded, reported success, and wrote no
+   title. Same failure as 1 to 3, and the worst of them, since it makes a stale
+   server indistinguishable from a current one.
+
+   The cause is in the SDK, not here: `ArgModelBase` in
+   `mcp/server/mcpserver/utilities/func_metadata.py` leaves pydantic's default
+   `extra="ignore"`, and the arguments are filtered before a tool function is
+   entered, so a tool cannot see what was dropped. There is no per-tool strict
+   flag.
+
+   Fixing it means either forcing `extra="forbid"` onto the SDK's model config,
+   which is a monkeypatch of a dependency's internals affecting every tool, or
+   accepting the SDK's behaviour and relying on `additionalProperties: false` in
+   the published schema to make well behaved clients check. Left open
+   deliberately: it is a change to how strictly the server treats all client
+   input and should be a decision, not a side effect.
+
+Worth noting that five of the six are about result *shapes* rather than
+behaviour, and four are the same failure: a result that cannot distinguish
 "nothing happened" from "it worked". Tool results are read by something that
 cannot see the store, so anything the result does not say is not merely absent,
 it is misleading.
