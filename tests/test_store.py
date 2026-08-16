@@ -142,6 +142,36 @@ def test_metadata_may_attach_to_an_implicit_key(store):
     assert store.retrieve_document("context:title").content == "All contexts"
 
 
+def test_title_argument_writes_the_metadata_alongside(store):
+    store.store_document("a/b", "body", title="A title")
+    assert store.retrieve_document("a/b:title").content == "A title"
+    assert store.retrieve_document("a/b:title").format == "markdown"
+
+
+def test_title_argument_follows_an_allocated_number(store):
+    written = store.store_document("context/?/design", "body", title="Design")
+    assert written == "context/1/design"
+    assert store.retrieve_document("context/1/design:title").content == "Design"
+
+
+def test_title_argument_overwrites_a_previous_title(store):
+    store.store_document("a/b", "body", title="First")
+    store.store_document("a/b", "body", title="Second")
+    assert store.retrieve_document("a/b:title").content == "Second"
+
+
+def test_title_argument_is_rejected_on_a_metadata_key(store):
+    with pytest.raises(ValueError, match="cannot attach a title"):
+        store.store_document("a/b:summary", "text", title="Nope")
+
+
+def test_a_failed_title_write_leaves_no_document_behind(store):
+    with pytest.raises(TypeError, match="title must be a string"):
+        store.store_document("a/b", "body", title=object())
+    with pytest.raises(KeyNotFoundError):
+        store.retrieve_document("a/b")
+
+
 def test_a_key_may_mirror_a_file_path(store):
     store.store_document("notes/src/myfile.py", "Notes about myfile.")
     assert store.retrieve_document("notes/src/myfile.py").content == "Notes about myfile."
@@ -238,8 +268,18 @@ def test_a_failed_write_leaves_no_allocation_behind(store):
 
 
 def test_retrieve_missing_key(store):
-    with pytest.raises(KeyNotFoundError):
+    with pytest.raises(KeyNotFoundError, match="nothing is stored at or below"):
         store.retrieve_document("a/b")
+
+
+def test_retrieve_says_when_a_key_is_a_container(populated):
+    with pytest.raises(KeyNotFoundError, match="4 key\\(s\\) lie beneath it"):
+        populated.retrieve_document("context/a1b2")
+
+
+def test_retrieve_missing_metadata_does_not_count_the_documents_descendants(populated):
+    with pytest.raises(KeyNotFoundError, match="nothing is stored at or below"):
+        populated.retrieve_document("context/a1b2:summary")
 
 
 def test_retrieve_returns_whole_short_document(store):
@@ -438,6 +478,28 @@ def test_get_documents_depth(populated):
     assert [e.key for e in populated.get_documents(depth=1)] == []
 
 
+def test_keys_missing_meta_names_what_a_title_survey_cannot_see(populated):
+    # Only project/reference/implementation was stored without a title.
+    assert populated.keys_missing_meta() == ["project/reference/implementation"]
+    assert populated.keys_missing_meta("context") == []
+
+
+def test_keys_missing_meta_follows_the_key_and_depth_filters(populated):
+    assert populated.keys_missing_meta("project") == ["project/reference/implementation"]
+    assert populated.keys_missing_meta("project", depth=1) == []
+
+
+def test_keys_missing_meta_takes_several_names(populated):
+    populated.store_document("project/reference/implementation:summary", "Notes.")
+    assert populated.keys_missing_meta(meta_name=["title", "summary"]) == []
+    assert populated.keys_missing_meta(meta_name="title") == ["project/reference/implementation"]
+
+
+def test_keys_missing_meta_rejects_an_empty_name_list(store):
+    with pytest.raises(ValueError, match="must not be an empty sequence"):
+        store.keys_missing_meta(meta_name=[])
+
+
 def test_get_documents_truncates_each_document(store):
     store.store_document("a/b", "x" * 5_000)
     (excerpt,) = store.get_documents("a")
@@ -492,6 +554,26 @@ def test_delete_recursive_does_not_touch_sibling_prefixes(store):
 
 def test_delete_missing_key_is_not_an_error(store):
     assert store.delete("a/b") == []
+
+
+def test_descendant_count_reports_what_a_plain_delete_would_keep(populated):
+    assert populated.descendant_count("context/a1b2") == 4
+    assert populated.delete("context/a1b2") == []
+    assert populated.descendant_count("context/a1b2") == 4
+    populated.delete("context/a1b2", recursive=True)
+    assert populated.descendant_count("context/a1b2") == 0
+
+
+def test_descendant_count_excludes_the_key_itself(store):
+    store.store_document("a/b", "x", title="T")
+    assert store.descendant_count("a/b") == 0
+    assert store.descendant_count("a") == 2
+
+
+def test_descendant_count_does_not_cross_a_sibling_prefix(store):
+    store.store_document("a/b/c", "x")
+    store.store_document("a/beta/d", "y")
+    assert store.descendant_count("a/b") == 1
 
 
 def test_storing_an_empty_document_is_not_a_deletion(store):

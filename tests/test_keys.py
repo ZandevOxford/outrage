@@ -76,6 +76,11 @@ def test_parse_rejects_invalid_keys(key):
         keys.parse(key)
 
 
+def test_rejecting_a_segment_says_what_a_segment_may_contain():
+    with pytest.raises(InvalidKeyError, match=r"A-Z a-z 0-9 _ \. -"):
+        keys.parse("context/1/notes on the build")
+
+
 def test_parse_rejects_non_strings():
     with pytest.raises(InvalidKeyError):
         keys.parse(None)

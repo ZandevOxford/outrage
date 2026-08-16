@@ -33,9 +33,13 @@ number for it: `context/?/design` writes to `context/1/design` in an empty
 store. The result reports the key actually written, which is what to use for
 anything else belonging with it, such as `context/1/task`.
 
-Prefer storing a document under a descriptive key and giving it a `:title`
-metadata entry, so that later sessions can survey what is stored with
-`get_documents(meta_name="title")` before reading anything in full.
+Prefer storing a document under a descriptive key and passing a `title`, so
+that later sessions can survey what is stored with
+`get_documents(meta_name=["title"])` before reading anything in full. That
+survey reports untitled documents separately, under `without_meta`.
+
+A key that holds nothing itself but has keys beneath it is a container: reading
+it fails, listing it does not.
 """
 
 
@@ -91,7 +95,10 @@ def build_server(store: Store) -> MCPServer:
             "is there. Content should be markdown or JSON. A whole segment given "
             "as `?` is replaced by a number the store allocates, so `tmp/?` "
             "writes to `tmp/1` in an empty store; the returned `key` is the one "
-            "actually written, and is what to use for related keys afterwards."
+            "actually written, and is what to use for related keys afterwards. "
+            "Pass `title` whenever you store a document: it is what later "
+            "sessions survey the store by, and a document stored without one is "
+            "hard to find again."
         ),
     )
     def store_document(
@@ -109,9 +116,25 @@ def build_server(store: Store) -> MCPServer:
             str | None,
             Field(description="'markdown' or 'json'; detected from the content when omitted"),
         ] = None,
+        title: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Short title, stored as the key's ':title' metadata in the "
+                    "same write. Omit only when key is itself metadata."
+                )
+            ),
+        ] = None,
     ) -> dict[str, Any]:
-        written = store.store_document(key, content, format)
-        return {"key": written, "stored": len(content), "generated": written != key}
+        written = store.store_document(key, content, format, title=title)
+        result: dict[str, Any] = {
+            "key": written,
+            "stored": len(content),
+            "generated": written != key,
+        }
+        if title is not None:
+            result["title_key"] = f"{written}:title"
+        return result
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -155,7 +178,18 @@ def build_server(store: Store) -> MCPServer:
         ] = DEFAULT_BULK_MAX_CHARS,
     ) -> dict[str, Any]:
         found = store.get_documents(key, meta_name=meta_name, depth=depth, max_chars=max_chars)
-        return {"key": key, "count": len(found), "documents": [_excerpt_result(e) for e in found]}
+        result: dict[str, Any] = {
+            "key": key,
+            "count": len(found),
+            "documents": [_excerpt_result(e) for e in found],
+        }
+        if meta_name is not None:
+            # A survey by metadata cannot see documents that lack it, so left
+            # alone it quietly under-reports the store.
+            missing = store.keys_missing_meta(key, meta_name=meta_name, depth=depth)
+            if missing:
+                result["without_meta"] = missing
+        return result
 
     @server.tool(
         annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=True),
@@ -172,7 +206,18 @@ def build_server(store: Store) -> MCPServer:
         ] = False,
     ) -> dict[str, Any]:
         removed = store.delete(key, recursive=recursive)
-        return {"key": key, "deleted": removed, "count": len(removed)}
+        result: dict[str, Any] = {"key": key, "deleted": removed, "count": len(removed)}
+        if not recursive:
+            # Without this a no-op delete and a successful one look identical,
+            # so a key left standing reads as a key removed.
+            remaining = store.descendant_count(key)
+            if remaining:
+                result["remaining"] = remaining
+                result["note"] = (
+                    f"{remaining} key(s) below {key!r} were kept; "
+                    f"pass recursive=true to delete them too"
+                )
+        return result
 
     return server
 

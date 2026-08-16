@@ -119,6 +119,24 @@ def test_store_document_reports_an_allocated_key(server):
     assert call(server, "retrieve_document", key="tmp/1")["content"] == "scratch"
 
 
+def test_store_document_writes_a_title_in_one_call(server):
+    stored = call(server, "store_document", key="project/notes", content="# Notes", title="Notes")
+    assert stored["title_key"] == "project/notes:title"
+    assert call(server, "retrieve_document", key="project/notes:title")["content"] == "Notes"
+
+
+def test_store_document_titles_the_key_it_allocated(server):
+    stored = call(server, "store_document", key="tmp/?", content="scratch", title="Scratch")
+    assert (stored["key"], stored["title_key"]) == ("tmp/1", "tmp/1:title")
+
+
+def test_store_document_rejects_a_title_on_a_metadata_key(server):
+    message = call_expecting_error(
+        server, "store_document", key="a/b:summary", content="text", title="Nope"
+    )
+    assert "cannot attach a title" in message
+
+
 def test_store_document_detects_json(server):
     call(server, "store_document", key="project/data", content='{"a": 1}')
     assert call(server, "retrieve_document", key="project/data")["format"] == "json"
@@ -146,6 +164,22 @@ def test_get_documents_surveys_titles(server):
     }
 
 
+def test_get_documents_survey_names_the_untitled(server):
+    call(server, "store_document", key="context/e5f6/note", content="No title here.")
+    result = call(server, "get_documents", key="context", meta_name=["title"])
+    assert result["count"] == 2
+    assert result["without_meta"] == ["context/e5f6/note"]
+
+
+def test_get_documents_survey_is_quiet_when_everything_is_titled(server):
+    assert "without_meta" not in call(server, "get_documents", key="context", meta_name=["title"])
+
+
+def test_get_documents_without_meta_says_nothing_about_untitled_documents(server):
+    call(server, "store_document", key="context/e5f6/note", content="No title here.")
+    assert "without_meta" not in call(server, "get_documents", key="context")
+
+
 def test_get_documents_truncates(server):
     result = call(server, "get_documents", key="context", max_chars=10)
     assert [d["returned"] for d in result["documents"]] == [10, 10]
@@ -166,6 +200,20 @@ def test_delete_keys_takes_metadata_with_the_document(server):
 def test_delete_keys_is_not_recursive_by_default(server):
     assert call(server, "delete_keys", key="context/a1b2")["count"] == 0
     assert call(server, "delete_keys", key="context/a1b2", recursive=True)["count"] == 2
+
+
+def test_delete_keys_reports_what_it_kept(server):
+    result = call(server, "delete_keys", key="context/a1b2")
+    assert result["remaining"] == 2
+    assert "recursive=true" in result["note"]
+
+
+def test_delete_keys_says_nothing_extra_when_it_kept_nothing(server):
+    result = call(server, "delete_keys", key="context/c3d4/task")
+    assert result["count"] == 2
+    assert "remaining" not in result
+    result = call(server, "delete_keys", key="context/a1b2", recursive=True)
+    assert "remaining" not in result
 
 
 def test_parse_args():

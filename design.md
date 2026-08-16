@@ -161,15 +161,38 @@ implemented later as a separate archive table rather than by complicating reads.
 The result reports the key written, which is the only way a caller learns a
 number allocated for a `?` segment.
 
+An optional `title` writes the `:title` metadata in the same transaction. The
+saved call matters less than the fact that a separate call is one that can be
+forgotten: the title is what makes a document findable later, so the convention
+has to be reachable without remembering it. It follows an allocated number, so
+`context/?/design` with a title titles `context/1/design`, not the wildcard. It
+is rejected on a key that is itself metadata, since metadata does not nest.
+
 **Get documents.** Matches the given key and everything beneath it at any depth,
 with an optional depth limit. Recursion is the default because the motivating
 case — listing the titles of all documents under `context` — spans a level of
 nesting.
 
+A survey by `meta_name` can only see documents that carry it, so on its own it
+under-reports the store, and does so silently — the caller has no way to tell a
+complete survey from a partial one. The result therefore also names the
+documents in range carrying none of the requested names, under `without_meta`.
+
 **Delete keys.** Deleting a key removes its content and all of its metadata.
 Deleting a subtree requires an explicit recursive flag, so a mistyped key cannot
 silently remove a whole context. Storing an empty document is *not* a deletion;
 it leaves an empty document in place.
+
+Deleting a key that holds nothing itself is a no-op, and an empty result is
+indistinguishable from a successful deletion of an empty key. A non-recursive
+delete therefore reports how many keys it left standing beneath the target, so
+the guard rail announces itself instead of looking like success.
+
+**Reading a container.** A key with descendants but no content of its own is a
+container, not a mistake, and the failure to read one should say so rather than
+report the same "not found" as a key that does not exist anywhere. The two are
+worth separating because they call for different next moves: list what is
+beneath, versus check the key.
 
 ## Schema
 

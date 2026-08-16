@@ -171,7 +171,14 @@ class Store:
 
     # -- writing ---------------------------------------------------------
 
-    def store_document(self, key: str, content: str, format: str | None = None) -> str:
+    def store_document(
+        self,
+        key: str,
+        content: str,
+        format: str | None = None,
+        *,
+        title: str | None = None,
+    ) -> str:
         """Store ``content`` at ``key``, overwriting anything already there.
 
         A ``?`` segment in ``key`` is replaced by a number unused among the
@@ -181,6 +188,12 @@ class Store:
 
         ``format`` defaults to 'json' when the content parses as a JSON object
         or array, and 'markdown' otherwise.
+
+        ``title`` writes the ``:title`` metadata alongside the document in the
+        same transaction. It saves a second call, but it exists mainly because
+        the title is what makes a document discoverable later, and a separate
+        call is one that can simply be forgotten. It may not be combined with a
+        ``key`` that is itself metadata, since metadata does not nest.
         """
         parsed = keys.parse(key, allow_wildcard=True)
         if not isinstance(content, str):
@@ -189,6 +202,11 @@ class Store:
             format = _detect_format(content)
         elif format not in FORMATS:
             raise ValueError(f"format must be one of {FORMATS}, got {format!r}")
+        if title is not None:
+            if parsed.is_metadata:
+                raise ValueError(f"cannot attach a title to metadata key {key!r}")
+            if not isinstance(title, str):
+                raise TypeError(f"title must be a string, got {type(title).__name__}")
 
         # Allocating reads before it writes, so the whole thing has to be one
         # transaction that excludes other writers: a deferred transaction would
@@ -197,27 +215,33 @@ class Store:
             if parsed.has_wildcard:
                 allocated = self._next_number(parsed.wildcard_parent)
                 parsed = keys.parse(keys.substitute_wildcard(parsed.key, allocated))
-            self._conn.execute(
-                """
-                INSERT INTO documents (key, doc_key, meta_name, parent, content, format,
-                                       updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(key) DO UPDATE SET
-                    content = excluded.content,
-                    format = excluded.format,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    parsed.key,
-                    parsed.doc_key,
-                    parsed.meta_name,
-                    parsed.parent,
-                    content,
-                    format,
-                    _now(),
-                ),
-            )
+            self._write(parsed, content, format)
+            if title is not None:
+                self._write(keys.parse(f"{parsed.key}{keys.META}title"), title, "markdown")
         return parsed.key
+
+    def _write(self, parsed: keys.Key, content: str, format: str) -> None:
+        """Insert or replace one row. Caller holds the transaction."""
+        self._conn.execute(
+            """
+            INSERT INTO documents (key, doc_key, meta_name, parent, content, format,
+                                   updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET
+                content = excluded.content,
+                format = excluded.format,
+                updated_at = excluded.updated_at
+            """,
+            (
+                parsed.key,
+                parsed.doc_key,
+                parsed.meta_name,
+                parsed.parent,
+                content,
+                format,
+                _now(),
+            ),
+        )
 
     @contextmanager
     def _transaction(self, immediate: bool = False) -> Iterator[None]:
@@ -295,6 +319,20 @@ class Store:
             self._conn.executemany("DELETE FROM documents WHERE key = ?", [(k,) for k in targets])
         return sorted(targets)
 
+    def descendant_count(self, key: str) -> int:
+        """How many stored rows lie strictly below ``key``.
+
+        Exists so a caller can report what a non-recursive delete left behind:
+        without it, deleting a key that holds nothing itself is indistinguishable
+        from deleting a key that does not exist.
+        """
+        lo, hi = keys.subtree_range(keys.parse(key).doc_key)
+        row = self._conn.execute(
+            "SELECT count(*) AS n FROM documents WHERE doc_key >= ? AND doc_key < ?",
+            (lo, hi),
+        ).fetchone()
+        return row["n"]
+
     # -- reading ---------------------------------------------------------
 
     def retrieve_document(
@@ -318,7 +356,16 @@ class Store:
             "SELECT * FROM documents WHERE key = ?", (keys.parse(key).key,)
         ).fetchone()
         if row is None:
-            raise KeyNotFoundError(f"no content stored at {key!r}")
+            # A key with descendants but no content of its own is a container,
+            # not a mistake. Saying so turns a dead end into the next call.
+            parsed = keys.parse(key)
+            beneath = 0 if parsed.is_metadata else self.descendant_count(key)
+            if beneath:
+                raise KeyNotFoundError(
+                    f"no content stored at {key!r}, but {beneath} key(s) lie beneath it; "
+                    f"use list_keys or get_documents to see them"
+                )
+            raise KeyNotFoundError(f"nothing is stored at or below {key!r}")
 
         content = row["content"]
         if offset < 0:
@@ -443,6 +490,35 @@ class Store:
             rows = [row for row in rows if keys.depth(row["doc_key"]) - base <= depth]
 
         return [_excerpt(row, 0, None, max_chars) for row in rows]
+
+    def keys_missing_meta(
+        self,
+        key: str | None = None,
+        *,
+        meta_name: str | Sequence[str] = "title",
+        depth: int | None = None,
+    ) -> list[str]:
+        """Document keys at and below ``key`` carrying none of ``meta_name``.
+
+        A survey by ``:title`` only sees documents that have one, so on its own
+        it silently under-reports the store. This names what the survey missed.
+        """
+        names = [meta_name] if isinstance(meta_name, str) else list(meta_name)
+        if not names:
+            raise ValueError("meta_name must not be an empty sequence")
+
+        # Deliberately the same call the survey makes, so the two lists agree on
+        # what was in range; only the content is thrown away.
+        documents = self.get_documents(key, depth=depth, max_chars=1)
+        having = {
+            row["doc_key"]
+            for row in self._conn.execute(
+                f"SELECT DISTINCT doc_key FROM documents "
+                f"WHERE meta_name IN ({', '.join('?' * len(names))})",
+                names,
+            )
+        }
+        return [excerpt.key for excerpt in documents if excerpt.key not in having]
 
 
 @contextmanager

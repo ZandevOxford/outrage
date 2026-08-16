@@ -3,7 +3,7 @@
 ## Currently implemented
 
 Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4. Package
-installed in editable mode with `pip install -e ".[dev]"`. 147 tests passing;
+installed in editable mode with `pip install -e ".[dev]"`. 170 tests passing;
 `ruff check` and `ruff format --check` clean.
 
 ### 0. Project scaffolding — done
@@ -38,7 +38,12 @@ both.
 `store_document` returns the key it wrote, which is how a caller learns the
 number allocated for a `?` segment. Allocation reads before it writes, so that
 path runs in an immediate transaction; concurrent writers block rather than
-picking the same number.
+picking the same number. Its optional `title` writes the `:title` metadata in
+the same transaction, after any wildcard has been resolved.
+
+`descendant_count` and `keys_missing_meta` exist to let a caller report what a
+result does *not* contain: what a non-recursive delete kept, and what a survey
+by metadata could not see. Both were added in step 4.
 
 Schema 2 changed the delimiter from `.` to `/`. Opening a schema 1 store
 rewrites its keys in place — exact, because no schema 1 segment could contain
@@ -63,20 +68,54 @@ rather than returning a result with an error flag.
 
 ## TODO
 
-### 4. Integration with Claude Code — in progress
+### 4. Integration with Claude Code — done
 
 * `.mcp.json` written, registering the server for this project. Its `command` is
   an absolute path into the conda environment and so is machine specific.
 * The server has been exercised end to end over stdio by an MCP client: tool
   listing, store, survey by `:title`, read and recursive delete.
-* Still to do: use it from a real Claude Code session and see where the tool
-  descriptions or result shapes get in the way.
+* Used from a real Claude Code session, which is what turned up the five points
+  below. Everything worked; what went wrong was that four results were
+  misleading and one convention was too easy to skip.
 
 Note that a running session holds the server's `instructions` and tool
 descriptions from when it started, so the server has to be restarted for
-changes to either to reach the agent.
+changes to either to reach the agent. The changes below were made from within a
+session and so are **not** live in it; they need another restart.
 
-### 5. Skills
+#### What the session use changed
+
+1. *A non-recursive delete of a key with descendants was a silent no-op.*
+   `delete_keys(key="context/2")` returned `{"deleted": [], "count": 0}` — the
+   same shape as a successful delete of an empty key — while the whole context
+   survived. Read as success, and the mistake is invisible. The result now
+   carries `remaining` and a note naming the flag. New `Store.descendant_count`.
+
+2. *Reading a container and reading a missing key gave the same error.* Both
+   said `no content stored at X`, so a correct key aimed at a container looked
+   like a wrong key. Now distinguished, and the container case points at
+   `list_keys`. Deliberately not applied to a metadata key, whose `doc_key`
+   descendants say nothing about whether the metadata exists.
+
+3. *A survey by `:title` silently omitted untitled documents.* Storing four
+   documents and surveying titles returned three, with nothing to say the
+   fourth existed. The survey now reports `without_meta`. New
+   `Store.keys_missing_meta`.
+
+4. *Titling a document was a second call that is easy to forget* — forgotten
+   once in this session despite the instructions pushing it. `store_document`
+   now takes `title` and writes both rows in one transaction.
+
+5. *The invalid segment error did not say what a segment may contain*, leaving a
+   caller to guess. It now names the character set.
+
+Worth noting that four of the five are about result *shapes* rather than
+behaviour, and three are the same failure: a result that cannot distinguish
+"nothing happened" from "it worked". Tool results are read by something that
+cannot see the store, so anything the result does not say is not merely absent,
+it is misleading.
+
+### 5. Skills — next
 
 * Skill and/or agent definitions telling the agent *when* to store and retrieve,
   and what key conventions to follow.
@@ -86,9 +125,14 @@ is actually used in practice; deliberately last, so it can be written against
 tools whose behaviour is already known.
 
 The server's `instructions` string is a first, minimal attempt at this: it
-describes the key shape and steers towards storing a `:title` alongside each
-document, so a later session can survey the store cheaply before reading
-anything in full.
+describes the key shape and steers towards giving each document a title, so a
+later session can survey the store cheaply before reading anything in full.
+
+Step 4 gave this one useful piece of evidence. The instructions asked for a
+title on every document and a session that had just read them still stored one
+without. That is an argument for putting a convention in the tool signature
+where it can be complied with, rather than in prose that has to be remembered —
+and a caution against expecting the skills alone to carry the conventions.
 
 ### 6. Command line tool
 

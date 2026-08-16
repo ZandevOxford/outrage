@@ -141,7 +141,10 @@ def _check_segment(segment: str, key: str, what: str = "segment") -> None:
     if segment in RESERVED_SEGMENTS:
         raise InvalidKeyError(f"{what} {segment!r} in key {key!r} is reserved")
     if not SEGMENT_RE.match(segment):
-        raise InvalidKeyError(f"{what} {segment!r} in key {key!r} is not valid")
+        raise InvalidKeyError(
+            f"{what} {segment!r} in key {key!r} is not valid: "
+            f"a {what} is one or more of A-Z a-z 0-9 _ . -"
+        )
 
 
 def is_valid(key: str, *, allow_wildcard: bool = False) -> bool:
