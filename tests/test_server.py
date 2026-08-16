@@ -13,10 +13,10 @@ from rage.store import Store
 @pytest.fixture
 def server(tmp_path):
     with Store(tmp_path) as store:
-        store.store_document("context.a1b2.design", "# Store schema\n\n" + "body " * 1000)
-        store.store_document("context.a1b2.design:title", "Store schema")
-        store.store_document("context.c3d4.task", "Add a delete tool.")
-        store.store_document("context.c3d4.task:title", "Delete tool")
+        store.store_document("context/a1b2/design", "# Store schema\n\n" + "body " * 1000)
+        store.store_document("context/a1b2/design:title", "Store schema")
+        store.store_document("context/c3d4/task", "Add a delete tool.")
+        store.store_document("context/c3d4/task:title", "Delete tool")
         yield build_server(store)
 
 
@@ -61,21 +61,21 @@ def test_tool_schemas_describe_their_arguments(server):
 
 
 def test_retrieve_document(server):
-    result = call(server, "retrieve_document", key="context.c3d4.task")
+    result = call(server, "retrieve_document", key="context/c3d4/task")
     assert result["content"] == "Add a delete tool."
     assert result["truncated"] is False
     assert result["next_offset"] is None
 
 
 def test_retrieve_document_pages(server):
-    first = call(server, "retrieve_document", key="context.a1b2.design", max_chars=20)
+    first = call(server, "retrieve_document", key="context/a1b2/design", max_chars=20)
     assert first["content"] == "# Store schema\n\nbody"
     assert first["truncated"] is True
 
     second = call(
         server,
         "retrieve_document",
-        key="context.a1b2.design",
+        key="context/a1b2/design",
         offset=first["next_offset"],
         max_chars=20,
     )
@@ -84,16 +84,21 @@ def test_retrieve_document_pages(server):
 
 
 def test_retrieve_document_by_pattern(server):
-    result = call(server, "retrieve_document", key="context.a1b2.design", pattern="body")
+    result = call(server, "retrieve_document", key="context/a1b2/design", pattern="body")
     assert result["offset"] == 16
 
 
 def test_retrieve_missing_key_is_a_tool_error(server):
-    assert "context.zzzz" in call_expecting_error(server, "retrieve_document", key="context.zzzz")
+    assert "context/zzzz" in call_expecting_error(server, "retrieve_document", key="context/zzzz")
 
 
 def test_invalid_key_is_a_tool_error(server):
-    assert "segment" in call_expecting_error(server, "retrieve_document", key="a..b")
+    assert "segment" in call_expecting_error(server, "retrieve_document", key="a//b")
+
+
+def test_a_wildcard_is_a_tool_error_when_reading(server):
+    message = call_expecting_error(server, "retrieve_document", key="context/?")
+    assert "only when storing" in message
 
 
 def test_argument_validation_rejects_a_negative_offset(server):
@@ -102,14 +107,21 @@ def test_argument_validation_rejects_a_negative_offset(server):
 
 
 def test_store_document_round_trip(server):
-    stored = call(server, "store_document", key="project.notes", content="# Notes")
-    assert stored == {"key": "project.notes", "stored": 7}
-    assert call(server, "retrieve_document", key="project.notes")["content"] == "# Notes"
+    stored = call(server, "store_document", key="project/notes", content="# Notes")
+    assert stored == {"key": "project/notes", "stored": 7, "generated": False}
+    assert call(server, "retrieve_document", key="project/notes")["content"] == "# Notes"
+
+
+def test_store_document_reports_an_allocated_key(server):
+    stored = call(server, "store_document", key="tmp/?", content="scratch")
+    assert stored == {"key": "tmp/1", "stored": 7, "generated": True}
+    assert call(server, "store_document", key="tmp/?", content="more")["key"] == "tmp/2"
+    assert call(server, "retrieve_document", key="tmp/1")["content"] == "scratch"
 
 
 def test_store_document_detects_json(server):
-    call(server, "store_document", key="project.data", content='{"a": 1}')
-    assert call(server, "retrieve_document", key="project.data")["format"] == "json"
+    call(server, "store_document", key="project/data", content='{"a": 1}')
+    assert call(server, "retrieve_document", key="project/data")["format"] == "json"
 
 
 def test_list_keys_at_the_top_level(server):
@@ -118,19 +130,19 @@ def test_list_keys_at_the_top_level(server):
 
 
 def test_list_keys_shows_subkeys_and_metadata(server):
-    entries = call(server, "list_keys", key="context.c3d4")["entries"]
-    assert [(e["key"], e["kind"]) for e in entries] == [("context.c3d4.task", "document")]
+    entries = call(server, "list_keys", key="context/c3d4")["entries"]
+    assert [(e["key"], e["kind"]) for e in entries] == [("context/c3d4/task", "document")]
 
-    entries = call(server, "list_keys", key="context.c3d4.task")["entries"]
-    assert [(e["key"], e["kind"]) for e in entries] == [("context.c3d4.task:title", "metadata")]
+    entries = call(server, "list_keys", key="context/c3d4/task")["entries"]
+    assert [(e["key"], e["kind"]) for e in entries] == [("context/c3d4/task:title", "metadata")]
 
 
 def test_get_documents_surveys_titles(server):
     result = call(server, "get_documents", key="context", meta_name=["title"])
     assert result["count"] == 2
     assert {d["key"]: d["content"] for d in result["documents"]} == {
-        "context.a1b2.design:title": "Store schema",
-        "context.c3d4.task:title": "Delete tool",
+        "context/a1b2/design:title": "Store schema",
+        "context/c3d4/task:title": "Delete tool",
     }
 
 
@@ -146,14 +158,14 @@ def test_get_documents_respects_depth(server):
 
 
 def test_delete_keys_takes_metadata_with_the_document(server):
-    result = call(server, "delete_keys", key="context.c3d4.task")
-    assert result["deleted"] == ["context.c3d4.task", "context.c3d4.task:title"]
+    result = call(server, "delete_keys", key="context/c3d4/task")
+    assert result["deleted"] == ["context/c3d4/task", "context/c3d4/task:title"]
     assert result["count"] == 2
 
 
 def test_delete_keys_is_not_recursive_by_default(server):
-    assert call(server, "delete_keys", key="context.a1b2")["count"] == 0
-    assert call(server, "delete_keys", key="context.a1b2", recursive=True)["count"] == 2
+    assert call(server, "delete_keys", key="context/a1b2")["count"] == 0
+    assert call(server, "delete_keys", key="context/a1b2", recursive=True)["count"] == 2
 
 
 def test_parse_args():

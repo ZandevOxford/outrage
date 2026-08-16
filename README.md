@@ -4,17 +4,23 @@ A simple retrieval system for coding agents: an MCP server, a data store, and
 skills that let an agent keep notes, designs and task context in a store local
 to the project it is working on.
 
-Retrieval is by key rather than by similarity. Keys are hierarchical strings
-such as `context.<guid>.design`, and any key may carry metadata such as
-`context.<guid>.design:title`. Since an agent knows the keys it wrote, lexical
-addressing is enough, and the system stays deterministic and free of external
-dependencies. Semantic search is a possible later addition, layered on as
-metadata rather than as a change to the model.
+Retrieval is by key rather than by similarity. Keys are hierarchical, slash
+delimited strings such as `context/<guid>/design`, and any key may carry
+metadata such as `context/<guid>/design:title`. Since an agent knows the keys it
+wrote, lexical addressing is enough, and the system stays deterministic and free
+of external dependencies. Semantic search is a possible later addition, layered
+on as metadata rather than as a change to the model.
+
+Keys are not paths, but they are shaped like them, so a key can mirror one:
+`notes/src/myfile.py` for notes about a source file. A key being written may
+also use `?` in place of a segment — storing at `tmp/?` writes to `tmp/1`, and
+the store reports the key it chose.
 
 ## Status
 
-Design only. Nothing is implemented yet — see [implementation.md](implementation.md)
-for the build order.
+The store, the MCP server and the key handling are implemented; the skills that
+make them worth using are not. See [implementation.md](implementation.md) for
+what is done and what is next.
 
 ## Documentation
 

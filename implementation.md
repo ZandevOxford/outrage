@@ -3,7 +3,7 @@
 ## Currently implemented
 
 Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4. Package
-installed in editable mode with `pip install -e ".[dev]"`. 104 tests passing;
+installed in editable mode with `pip install -e ".[dev]"`. 147 tests passing;
 `ruff check` and `ruff format --check` clean.
 
 ### 0. Project scaffolding — done
@@ -15,23 +15,34 @@ dependencies.
 ### 1. Key handling — `src/rage/keys.py` — done
 
 Parses and validates keys against the grammar, splits the metadata suffix, and
-derives `doc_key`, `meta_name` and `parent`. Also `ancestors`, `depth` and
-`subtree_range`.
+derives `doc_key`, `meta_name` and `parent`. Also `ancestors`, `depth`,
+`subtree_range`, and the `?` wildcard: `parse` accepts one only when asked, so
+reads and deletes reject it rather than treating it as a pattern.
 
 `subtree_range` returns half open bounds rather than a `LIKE` prefix, for two
 reasons: `_` is legal in a segment but is a `LIKE` wildcard, and a prefix match
-would let `a.b` pick up `a.beta`. Everything under `a.b` sorts within
-`["a.b.", "a.b/")` because `.` immediately precedes `/`, so subtree scans stay
-exact index range scans.
+would let `a/b` pick up `a/beta`. Everything under `a/b` sorts within
+`["a/b/", "a/b0")` because `/` and `0` are adjacent code points, so subtree
+scans stay exact index range scans no matter what a segment may contain.
 
 ### 2. Data store — `src/rage/store.py` — done
 
-Directory resolution, schema creation under `PRAGMA user_version`, WAL mode, and
-all five operations with the semantics recorded in design.md. No MCP dependency.
+Directory resolution, schema creation and migration under `PRAGMA user_version`,
+WAL mode, and all five operations with the semantics recorded in design.md. No
+MCP dependency.
 
 Formats are detected: content that parses as a JSON object or array is recorded
 as `json`, everything else as `markdown`, and an explicit argument overrides
 both.
+
+`store_document` returns the key it wrote, which is how a caller learns the
+number allocated for a `?` segment. Allocation reads before it writes, so that
+path runs in an immediate transaction; concurrent writers block rather than
+picking the same number.
+
+Schema 2 changed the delimiter from `.` to `/`. Opening a schema 1 store
+rewrites its keys in place — exact, because no schema 1 segment could contain
+either character.
 
 ### 3. MCP server — `src/rage/server.py` — done
 
@@ -60,6 +71,10 @@ rather than returning a result with an error flag.
   listing, store, survey by `:title`, read and recursive delete.
 * Still to do: use it from a real Claude Code session and see where the tool
   descriptions or result shapes get in the way.
+
+Note that a running session holds the server's `instructions` and tool
+descriptions from when it started, so the server has to be restarted for
+changes to either to reach the agent.
 
 ### 5. Skills
 

@@ -75,29 +75,63 @@ Initially to support Claude Code.
 
 ## Key namespace
 
-The key namespace is an arbitrary string, with period delimiters. A colon instead of a period indicates metadata.
+The key namespace is an arbitrary string, with slash delimiters. A colon instead
+of a slash indicates metadata.
 
 For example:
 
-* context.<guid>.task  could contain a summary of the task for a particular context
-* context.<guid>.design  could contain a design document
-* context.<guid>.design:title  could contain the title of the design document
-* project.reference.implementation  could contain the implementation notes for the project
+* context/<guid>/task  could contain a summary of the task for a particular context
+* context/<guid>/design  could contain a design document
+* context/<guid>/design:title  could contain the title of the design document
+* project/reference/implementation  could contain the implementation notes for the project
+* notes/src/myfile.py  could contain notes about a particular source file
 
-If A.B.C exists then A and A.B implicitly exist with no content.
+If A/B/C exists then A and A/B implicitly exist with no content.
+
+Keys are *not* paths, and are never resolved against a filesystem, but the
+delimiter is `/` so that a key may usefully mirror one. That is why `.` is an
+ordinary segment character: a key naming a file has to be able to carry its
+extension. `.` and `..` are rejected as whole segments, since they can only
+suggest a navigation that does not exist here.
 
 ### Grammar
 
-* A key is one or more segments joined by `.`.
-* A segment matches `[A-Za-z0-9_-]+`.
+* A key is one or more segments joined by `/`.
+* A segment matches `[A-Za-z0-9_.-]+`, and is not `.` or `..`.
 * A key may carry at most one metadata suffix, introduced by `:` and appearing
   only at the end of the key. The metadata name is a single segment and may not
-  contain `.`, so the metadata namespace is flat.
+  contain `/`, so the metadata namespace is flat.
 * Metadata may be attached to any key, including implicit keys with no content.
+* A key *being written* may use `?` in place of one whole segment, asking the
+  store to allocate a number for it. See Autonumbering below. `?` is otherwise
+  not a legal character, so it is unambiguous, and it is rejected outright by
+  every other operation.
 
 Multiple metadata entries may be attached to one document, which is the intended
 mechanism for alternative summaries and, in future, embedding vectors to support
 different kinds of search.
+
+### Autonumbering
+
+Storing at `tmp/?` writes to `tmp/1` in an empty store, `tmp/2` next, and so on.
+The wildcard may be any segment, not only the last, so `context/?/design` opens
+a numbered context; the write reports the key it actually used, which is how a
+caller learns the number and can then write `context/1/task` alongside it.
+
+This exists so that an agent can create a container without inventing an
+identifier. Inventing one is what a guid is for, but a guid is expensive to
+carry in a prompt and impossible to type, and picking a name commits to a
+description before the work is understood.
+
+The allocated number is one past the highest number already used among the
+children of the key enclosing the wildcard, counting keys that exist only
+implicitly or only carry metadata. That makes the number unique but not
+reserved: deleting the highest frees it again. Anything that needs a permanent
+identity should use a name, not a number.
+
+Because allocating reads the store before writing to it, the whole operation
+runs in one immediate transaction, so two concurrent writers cannot pick the
+same number.
 
 ## Values
 
@@ -124,6 +158,8 @@ without any single call flooding the agent's context.
 
 **Store document.** Overwrite only. Versioning is deferred and is expected to be
 implemented later as a separate archive table rather than by complicating reads.
+The result reports the key written, which is the only way a caller learns a
+number allocated for a `?` segment.
 
 **Get documents.** Matches the given key and everything beneath it at any depth,
 with an optional depth limit. Recursion is the default because the motivating
@@ -159,14 +195,24 @@ are stored rather than computed at query time so that the two main access
 patterns are plain indexed lookups:
 
 * *List keys immediately under X* is an equality match on `parent`. The parent
-  of `A.B:title` is `A.B`, so a document's metadata lists alongside its
+  of `A/B:title` is `A/B`, so a document's metadata lists alongside its
   subkeys, as required. Implicit intermediate keys need never be materialised —
   they fall out of a `DISTINCT parent` query.
 * *Get one metadata name across a subtree* is a range scan on
   `(meta_name, doc_key)`.
 
-Deriving these columns instead of using `LIKE 'A.B%'` also avoids the prefix
-collision where `A.B` would match `A.Beta`.
+Deriving these columns instead of using `LIKE 'A/B%'` also avoids the prefix
+collision where `A/B` would match `A/Beta`.
+
+A subtree is bounded by `["A/B/", "A/B0")` rather than by a prefix match. `/`
+and `0` are adjacent code points, so the only strings in that range are `A/B/`
+itself and the keys beneath it — a property of the delimiter alone, holding
+whatever segments are allowed to contain.
+
+The schema carries a version in `PRAGMA user_version`. Version 2 is the current
+one; version 1 was the same schema with period delimited keys, and is migrated
+by rewriting `.` to `/` in the three key columns. That rewrite is exact because
+no version 1 segment could contain either character.
 
 SQLite runs in WAL mode to tolerate concurrent readers.
 
@@ -180,21 +226,21 @@ SQLite runs in WAL mode to tolerate concurrent readers.
 
 * **The command line tool** described under Components.
 
-* **Unicode keys.** Segments are currently restricted to `[A-Za-z0-9_-]`. The
+* **Unicode keys.** Segments are currently restricted to `[A-Za-z0-9_.-]`. The
   intent is to widen this to most of Unicode, so that keys can carry natural
-  language. Three things need care when it happens:
+  language. Two things need care when it happens:
 
   * *Normalisation.* The same key typed two ways must not become two rows, so
     keys should be normalised, presumably NFC, on the way in.
-  * *The delimiters.* `.` and `:` must stay reserved, along with anything that
-    could be confused with them.
-  * *Subtree bounds.* `subtree_range` currently relies on `.` sorting
-    immediately before `/` under SQLite's byte ordering, which holds only
-    because every legal segment character sorts outside that gap. Widening the
-    character set breaks that assumption, so the bound will need recomputing
-    against whatever set is allowed. This is the one change with a real chance
-    of silently returning wrong results, so it wants tests before the grammar
-    is relaxed rather than after.
+  * *The delimiters.* `/`, `:` and `?` must stay reserved, along with anything
+    that could be confused with them — the fullwidth and division-slash
+    lookalikes especially, since a key that displays as `a/b` but stores as one
+    segment is a silent trap.
+
+  Subtree bounds used to be the third concern here: under the period delimiter
+  they depended on no segment character sorting between `.` and `/`. Bounding
+  on the adjacent code points `/` and `0` removed that dependency, so widening
+  the character set no longer threatens the range scans.
 
 * **Bootstrapping the skill configuration from the MCP server.** The server
   would help a session install or update the skills and configuration that make

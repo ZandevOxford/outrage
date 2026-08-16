@@ -8,17 +8,17 @@ from rage.keys import InvalidKeyError
     ("key", "doc_key", "meta_name", "parent"),
     [
         ("context", "context", None, ""),
-        ("context.a1b2", "context.a1b2", None, "context"),
-        ("context.a1b2.design", "context.a1b2.design", None, "context.a1b2"),
-        ("context.a1b2.design:title", "context.a1b2.design", "title", "context.a1b2.design"),
+        ("context/a1b2", "context/a1b2", None, "context"),
+        ("context/a1b2/design", "context/a1b2/design", None, "context/a1b2"),
+        ("context/a1b2/design:title", "context/a1b2/design", "title", "context/a1b2/design"),
         ("context:title", "context", "title", "context"),
         (
-            "project.reference.implementation",
-            "project.reference.implementation",
+            "project/reference/implementation",
+            "project/reference/implementation",
             None,
-            "project.reference",
+            "project/reference",
         ),
-        ("a_b-c.d9:x_1", "a_b-c.d9", "x_1", "a_b-c.d9"),
+        ("a_b-c/d9:x_1", "a_b-c/d9", "x_1", "a_b-c/d9"),
     ],
 )
 def test_parse_derives_columns(key, doc_key, meta_name, parent):
@@ -28,27 +28,47 @@ def test_parse_derives_columns(key, doc_key, meta_name, parent):
     assert parsed.meta_name == meta_name
     assert parsed.parent == parent
     assert parsed.is_metadata == (meta_name is not None)
+    assert not parsed.has_wildcard
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["notes/src/myfile.py", "notes/README.md", "a.b", "v1.2.3/notes"],
+)
+def test_periods_are_ordinary_segment_characters(key):
+    # The point of the slash delimiter: a key can mirror a path.
+    assert keys.is_valid(key)
+    assert keys.parse(key).doc_key == key
+
+
+def test_a_filename_like_key_nests_under_its_directory():
+    parsed = keys.parse("notes/src/myfile.py")
+    assert parsed.parent == "notes/src"
+    assert keys.ancestors("notes/src/myfile.py") == ["notes", "notes/src"]
 
 
 @pytest.mark.parametrize(
     "key",
     [
         "",
-        ".",
+        "/",
         ":",
         ":title",
-        ".context",
-        "context.",
-        "context..a1b2",
+        "/context",
+        "context/",
+        "context//a1b2",
         "context:",
         "context:title:extra",
-        "context:sub.title",
-        "context.a1b2:",
+        "context:sub/title",
+        "context/a1b2:",
         "con text",
-        "context/a1b2",
-        "context.a1b2!",
+        "context/a1b2!",
         "café",
         "context\n",
+        "a/./b",
+        "a/../b",
+        "a:.",
+        "a/?",
     ],
 )
 def test_parse_rejects_invalid_keys(key):
@@ -62,8 +82,8 @@ def test_parse_rejects_non_strings():
 
 
 def test_is_valid():
-    assert keys.is_valid("a.b:c")
-    assert not keys.is_valid("a..b")
+    assert keys.is_valid("a/b:c")
+    assert not keys.is_valid("a//b")
 
 
 def test_metadata_may_attach_to_an_implicit_key():
@@ -71,33 +91,89 @@ def test_metadata_may_attach_to_an_implicit_key():
     assert keys.parse("context:title").parent == "context"
 
 
+# -- wildcards -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("key", "wildcard_parent"),
+    [("?", ""), ("tmp/?", "tmp"), ("context/?/design", "context"), ("tmp/?:title", "tmp")],
+)
+def test_wildcard_parent_is_the_key_enclosing_the_wildcard(key, wildcard_parent):
+    parsed = keys.parse(key, allow_wildcard=True)
+    assert parsed.has_wildcard
+    assert parsed.wildcard_parent == wildcard_parent
+
+
+def test_wildcard_is_rejected_unless_allowed():
+    # Reads and deletes parse without it, so `?` can never read as a pattern.
+    with pytest.raises(InvalidKeyError, match="only when storing"):
+        keys.parse("tmp/?")
+
+
+@pytest.mark.parametrize("key", ["tmp/?/?", "tmp/a?b", "tmp/?x", "tmp/x:?"])
+def test_invalid_wildcards(key):
+    with pytest.raises(InvalidKeyError):
+        keys.parse(key, allow_wildcard=True)
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("tmp/?", "tmp/7"),
+        ("context/?/design", "context/7/design"),
+        ("tmp/?:title", "tmp/7:title"),
+        ("?", "7"),
+    ],
+)
+def test_substitute_wildcard(key, expected):
+    assert keys.substitute_wildcard(key, "7") == expected
+
+
+def test_substitute_wildcard_needs_a_wildcard():
+    with pytest.raises(InvalidKeyError):
+        keys.substitute_wildcard("tmp/a", "7")
+
+
+# -- derived values ------------------------------------------------------
+
+
 def test_ancestors():
     assert keys.ancestors("context") == []
-    assert keys.ancestors("context.a1b2.design") == ["context", "context.a1b2"]
-    assert keys.ancestors("context.a1b2.design:title") == [
+    assert keys.ancestors("context/a1b2/design") == ["context", "context/a1b2"]
+    assert keys.ancestors("context/a1b2/design:title") == [
         "context",
-        "context.a1b2",
-        "context.a1b2.design",
+        "context/a1b2",
+        "context/a1b2/design",
     ]
 
 
 def test_depth_ignores_the_metadata_suffix():
     assert keys.depth("context") == 1
-    assert keys.depth("context.a1b2") == 2
-    assert keys.depth("context.a1b2:title") == 2
+    assert keys.depth("context/a1b2") == 2
+    assert keys.depth("context/a1b2:title") == 2
+    assert keys.depth("notes/src/myfile.py") == 3
 
 
 def test_subtree_range_covers_the_whole_subtree():
-    lo, hi = keys.subtree_range("a.b")
-    assert lo <= "a.b.c" < hi
-    assert lo <= "a.b.c.d.e" < hi
+    lo, hi = keys.subtree_range("a/b")
+    assert lo <= "a/b/c" < hi
+    assert lo <= "a/b/c/d/e" < hi
 
 
-@pytest.mark.parametrize("other", ["a.beta", "a.b_c", "a.b-c", "a.b", "a.c", "a", "a-b.c"])
+@pytest.mark.parametrize(
+    "other",
+    ["a/beta", "a/b_c", "a/b-c", "a/b.c", "a/b0", "a/b", "a/c", "a", "a-b/c"],
+)
 def test_subtree_range_excludes_prefix_collisions(other):
-    lo, hi = keys.subtree_range("a.b")
+    lo, hi = keys.subtree_range("a/b")
     assert not (lo <= other < hi)
 
 
+def test_subtree_bounds_are_adjacent_code_points():
+    # Nothing can sort between them but the subtree itself, whatever a segment
+    # is allowed to contain.
+    assert ord(keys._AFTER_DELIMITER) == ord(keys.DELIMITER) + 1
+
+
 def test_subtree_range_of_metadata_key_uses_the_document_key():
-    assert keys.subtree_range("a.b:title") == keys.subtree_range("a.b")
+    assert keys.subtree_range("a/b:title") == keys.subtree_range("a/b")

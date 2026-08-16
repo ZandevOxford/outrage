@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
@@ -36,7 +37,12 @@ DEFAULT_BULK_MAX_CHARS = 2000
 
 FORMATS = ("markdown", "json")
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+#: A key segment that names a number, for the benefit of wildcard allocation.
+#: Deliberately not str.isdigit, which accepts superscripts and other digits
+#: that int() then rejects.
+_NUMBER_RE = re.compile(r"\A[0-9]+\Z")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -126,14 +132,33 @@ class Store:
     def _migrate(self) -> None:
         with self._conn:
             version = self._conn.execute("PRAGMA user_version").fetchone()[0]
-            if version == 0:
-                self._conn.executescript(_SCHEMA)
-                self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-            elif version > SCHEMA_VERSION:
+            if version > SCHEMA_VERSION:
                 raise RuntimeError(
                     f"{self.path} was written by a newer version of rage "
                     f"(schema {version}, this build understands {SCHEMA_VERSION})"
                 )
+            if version == 0:
+                self._conn.executescript(_SCHEMA)
+            elif version < 2:
+                self._migrate_delimiter_to_slash()
+            if version != SCHEMA_VERSION:
+                self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    def _migrate_delimiter_to_slash(self) -> None:
+        """Schema 1 to 2: keys were period delimited.
+
+        A segment could not contain ``.`` or ``/`` under the old grammar, and a
+        metadata name could not contain ``.`` either, so every ``.`` in a
+        schema 1 key was a delimiter and the rewrite is unambiguous.
+        """
+        self._conn.execute(
+            """
+            UPDATE documents SET
+                key     = replace(key, '.', '/'),
+                doc_key = replace(doc_key, '.', '/'),
+                parent  = replace(parent, '.', '/')
+            """
+        )
 
     def close(self) -> None:
         self._conn.close()
@@ -146,13 +171,18 @@ class Store:
 
     # -- writing ---------------------------------------------------------
 
-    def store_document(self, key: str, content: str, format: str | None = None) -> None:
+    def store_document(self, key: str, content: str, format: str | None = None) -> str:
         """Store ``content`` at ``key``, overwriting anything already there.
+
+        A ``?`` segment in ``key`` is replaced by a number unused among the
+        children of the key enclosing it, so ``tmp/?`` writes to ``tmp/1`` in
+        an empty store. Returns the key actually written, which is the only way
+        the caller learns an allocated number.
 
         ``format`` defaults to 'json' when the content parses as a JSON object
         or array, and 'markdown' otherwise.
         """
-        parsed = keys.parse(key)
+        parsed = keys.parse(key, allow_wildcard=True)
         if not isinstance(content, str):
             raise TypeError(f"content must be a string, got {type(content).__name__}")
         if format is None:
@@ -160,7 +190,13 @@ class Store:
         elif format not in FORMATS:
             raise ValueError(f"format must be one of {FORMATS}, got {format!r}")
 
-        with self._conn:
+        # Allocating reads before it writes, so the whole thing has to be one
+        # transaction that excludes other writers: a deferred transaction would
+        # let two callers pick the same number.
+        with self._transaction(immediate=parsed.has_wildcard):
+            if parsed.has_wildcard:
+                allocated = self._next_number(parsed.wildcard_parent)
+                parsed = keys.parse(keys.substitute_wildcard(parsed.key, allocated))
             self._conn.execute(
                 """
                 INSERT INTO documents (key, doc_key, meta_name, parent, content, format,
@@ -181,6 +217,52 @@ class Store:
                     _now(),
                 ),
             )
+        return parsed.key
+
+    @contextmanager
+    def _transaction(self, immediate: bool = False) -> Iterator[None]:
+        """Commit on success, roll back on failure.
+
+        ``immediate`` takes the write lock up front, so reads made while
+        deciding what to write cannot be overtaken by another writer.
+        """
+        if immediate:
+            self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            yield
+        except BaseException:
+            self._conn.rollback()
+            raise
+        else:
+            self._conn.commit()
+
+    def _next_number(self, parent: str) -> str:
+        """A numeric segment not already in use among the children of ``parent``.
+
+        One past the highest number in use rather than the lowest number free,
+        so that deleting a key in the middle does not hand its number to
+        something unrelated. Numbers are only unique, not permanently reserved:
+        deleting the highest does free it again.
+        """
+        used = [int(name) for name in self._child_names(parent) if _NUMBER_RE.match(name)]
+        return str(max(used) + 1) if used else "1"
+
+    def _child_names(self, parent: str) -> set[str]:
+        """The final segments of the keys immediately below ``parent``.
+
+        Covers implicit children too, so a number is not reused just because
+        the key holding it has content only further down.
+        """
+        prefix_len = len(parent) + 1 if parent != keys.ROOT else 0
+        names = {
+            row["doc_key"][prefix_len:]
+            for row in self._conn.execute(
+                "SELECT DISTINCT doc_key FROM documents WHERE parent = ? AND meta_name IS NULL",
+                (parent,),
+            )
+        }
+        names.update(child[prefix_len:] for child in self._implicit_children(parent))
+        return names
 
     def delete(self, key: str, recursive: bool = False) -> list[str]:
         """Delete ``key``, returning the keys actually removed.
@@ -308,7 +390,7 @@ class Store:
             value = row["parent"]
             if not value:
                 continue
-            head, _, _ = value[prefix_len:].partition(".")
+            head, _, _ = value[prefix_len:].partition(keys.DELIMITER)
             child = value[:prefix_len] + head
             if child not in seen:
                 seen.add(child)

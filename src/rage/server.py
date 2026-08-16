@@ -20,10 +20,18 @@ from .store import DEFAULT_BULK_MAX_CHARS, DEFAULT_MAX_CHARS, Excerpt, Store
 INSTRUCTIONS = """\
 A store for notes, designs and task context that outlives a single session.
 
-Keys are hierarchical, period delimited strings such as
-`context.<id>.design`. A colon introduces metadata attached to a key, such as
-`context.<id>.design:title`. Intermediate keys exist implicitly; nothing needs
+Keys are hierarchical, slash delimited strings such as `context/<id>/design`.
+A colon introduces metadata attached to a key, such as
+`context/<id>/design:title`. Intermediate keys exist implicitly; nothing needs
 to be created before writing to a key beneath it.
+
+Keys are not file paths, but they read like them, so a key may mirror one:
+notes about a file can live at `notes/src/myfile.py`.
+
+When storing, a `?` in place of a whole segment asks the store to allocate a
+number for it: `context/?/design` writes to `context/1/design` in an empty
+store. The result reports the key actually written, which is what to use for
+anything else belonging with it, such as `context/1/task`.
 
 Prefer storing a document under a descriptive key and giving it a `:title`
 metadata entry, so that later sessions can survey what is stored with
@@ -49,7 +57,7 @@ def build_server(store: Store) -> MCPServer:
         ),
     )
     def retrieve_document(
-        key: Annotated[str, Field(description="Key to read, e.g. context.a1b2.design")],
+        key: Annotated[str, Field(description="Key to read, e.g. context/a1b2/design")],
         offset: Annotated[int, Field(description="Character offset to start at", ge=0)] = 0,
         length: Annotated[
             int | None, Field(description="Characters to return; capped by max_chars", ge=0)
@@ -80,14 +88,20 @@ def build_server(store: Store) -> MCPServer:
         annotations=ToolAnnotations(idempotent_hint=True),
         description=(
             "Store a document or a metadata value at a key, overwriting whatever "
-            "is there. Content should be markdown or JSON."
+            "is there. Content should be markdown or JSON. A whole segment given "
+            "as `?` is replaced by a number the store allocates, so `tmp/?` "
+            "writes to `tmp/1` in an empty store; the returned `key` is the one "
+            "actually written, and is what to use for related keys afterwards."
         ),
     )
     def store_document(
         key: Annotated[
             str,
             Field(
-                description="Key to write, e.g. context.a1b2.design or context.a1b2.design:title"
+                description=(
+                    "Key to write, e.g. context/a1b2/design, "
+                    "context/a1b2/design:title, or context/?/design to allocate"
+                )
             ),
         ],
         content: Annotated[str, Field(description="Document content")],
@@ -96,8 +110,8 @@ def build_server(store: Store) -> MCPServer:
             Field(description="'markdown' or 'json'; detected from the content when omitted"),
         ] = None,
     ) -> dict[str, Any]:
-        store.store_document(key, content, format)
-        return {"key": key, "stored": len(content)}
+        written = store.store_document(key, content, format)
+        return {"key": written, "stored": len(content), "generated": written != key}
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -119,7 +133,7 @@ def build_server(store: Store) -> MCPServer:
         description=(
             "Read every document at and below a key. Pass `meta_name` to get that "
             "metadata across the subtree instead, which is the cheap way to survey "
-            "what is stored: `get_documents(key='context', meta_name='title')` "
+            "what is stored: `get_documents(key='context', meta_name=['title'])` "
             "lists the titles of everything under `context`. Each result is "
             "truncated; use retrieve_document to read one in full."
         ),

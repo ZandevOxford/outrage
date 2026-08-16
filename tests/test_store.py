@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from rage import store as store_module
@@ -13,13 +15,13 @@ def store(tmp_path):
 
 @pytest.fixture
 def populated(store):
-    store.store_document("context.a1b2.design", "# Store schema\n\nBody.")
-    store.store_document("context.a1b2.design:title", "Store schema")
-    store.store_document("context.a1b2.task", "Add a delete tool.")
-    store.store_document("context.a1b2.task:title", "Delete tool")
-    store.store_document("context.c3d4.design", "# Skill wording")
-    store.store_document("context.c3d4.design:title", "Skill wording")
-    store.store_document("project.reference.implementation", "Notes.")
+    store.store_document("context/a1b2/design", "# Store schema\n\nBody.")
+    store.store_document("context/a1b2/design:title", "Store schema")
+    store.store_document("context/a1b2/task", "Add a delete tool.")
+    store.store_document("context/a1b2/task:title", "Delete tool")
+    store.store_document("context/c3d4/design", "# Skill wording")
+    store.store_document("context/c3d4/design:title", "Skill wording")
+    store.store_document("project/reference/implementation", "Notes.")
     return store
 
 
@@ -58,32 +60,69 @@ def test_rejects_a_newer_schema(tmp_path):
         Store(tmp_path)
 
 
+def test_migrates_period_delimited_keys_to_slashes(tmp_path):
+    """A schema 1 store was written before the delimiter changed."""
+    directory = tmp_path / ".rage"
+    directory.mkdir()
+    conn = sqlite3.connect(directory / "store.sqlite")
+    conn.executescript(store_module._SCHEMA)
+    conn.executemany(
+        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, 'markdown', 'then')",
+        [
+            ("context.a1b2.design", "context.a1b2.design", None, "context.a1b2", "Body."),
+            (
+                "context.a1b2.design:title",
+                "context.a1b2.design",
+                "title",
+                "context.a1b2.design",
+                "Store schema",
+            ),
+        ],
+    )
+    conn.execute("PRAGMA user_version=1")
+    conn.commit()
+    conn.close()
+
+    with Store(directory) as s:
+        assert s._conn.execute("PRAGMA user_version").fetchone()[0] == store_module.SCHEMA_VERSION
+        assert s.retrieve_document("context/a1b2/design").content == "Body."
+        assert [e.key for e in s.list_keys("context/a1b2")] == ["context/a1b2/design"]
+        assert [e.key for e in s.get_documents("context", meta_name="title")] == [
+            "context/a1b2/design:title"
+        ]
+
+
 # -- storing -------------------------------------------------------------
 
 
 def test_store_overwrites(store):
-    store.store_document("a.b", "first")
-    store.store_document("a.b", "second")
-    excerpt = store.retrieve_document("a.b")
+    store.store_document("a/b", "first")
+    store.store_document("a/b", "second")
+    excerpt = store.retrieve_document("a/b")
     assert excerpt.content == "second"
     assert excerpt.total == len("second")
 
 
+def test_store_returns_the_key_written(store):
+    assert store.store_document("a/b", "x") == "a/b"
+
+
 def test_store_validates_the_key(store):
     with pytest.raises(InvalidKeyError):
-        store.store_document("a..b", "x")
+        store.store_document("a//b", "x")
 
 
 def test_format_is_detected_but_can_be_overridden(store):
-    store.store_document("a.json", '{"title": "x"}')
-    store.store_document("a.md", "# Heading")
-    store.store_document("a.broken", "{not json")
-    store.store_document("a.forced", '{"title": "x"}', format="markdown")
+    store.store_document("a/json", '{"title": "x"}')
+    store.store_document("a/md", "# Heading")
+    store.store_document("a/broken", "{not json")
+    store.store_document("a/forced", '{"title": "x"}', format="markdown")
 
-    assert store.retrieve_document("a.json").format == "json"
-    assert store.retrieve_document("a.md").format == "markdown"
-    assert store.retrieve_document("a.broken").format == "markdown"
-    assert store.retrieve_document("a.forced").format == "markdown"
+    assert store.retrieve_document("a/json").format == "json"
+    assert store.retrieve_document("a/md").format == "markdown"
+    assert store.retrieve_document("a/broken").format == "markdown"
+    assert store.retrieve_document("a/forced").format == "markdown"
 
 
 def test_format_must_be_known(store):
@@ -92,10 +131,10 @@ def test_format_must_be_known(store):
 
 
 def test_metadata_and_document_are_independent(store):
-    store.store_document("a.b", "body")
-    store.store_document("a.b:title", "Title")
-    assert store.retrieve_document("a.b").content == "body"
-    assert store.retrieve_document("a.b:title").content == "Title"
+    store.store_document("a/b", "body")
+    store.store_document("a/b:title", "Title")
+    assert store.retrieve_document("a/b").content == "body"
+    assert store.retrieve_document("a/b:title").content == "Title"
 
 
 def test_metadata_may_attach_to_an_implicit_key(store):
@@ -103,12 +142,104 @@ def test_metadata_may_attach_to_an_implicit_key(store):
     assert store.retrieve_document("context:title").content == "All contexts"
 
 
+def test_a_key_may_mirror_a_file_path(store):
+    store.store_document("notes/src/myfile.py", "Notes about myfile.")
+    assert store.retrieve_document("notes/src/myfile.py").content == "Notes about myfile."
+    assert [e.key for e in store.list_keys("notes/src")] == ["notes/src/myfile.py"]
+
+
+# -- autonumbering -------------------------------------------------------
+
+
+def test_wildcard_numbers_from_one(store):
+    assert store.store_document("tmp/?", "first") == "tmp/1"
+    assert store.store_document("tmp/?", "second") == "tmp/2"
+    assert store.retrieve_document("tmp/1").content == "first"
+
+
+def test_wildcard_at_the_top_level(store):
+    assert store.store_document("?", "x") == "1"
+
+
+def test_wildcard_may_be_any_segment(store):
+    assert store.store_document("context/?/design", "d") == "context/1/design"
+    assert store.store_document("context/?/design", "d") == "context/2/design"
+    # The allocated context is now addressable directly.
+    store.store_document("context/2/task", "t")
+    assert [e.key for e in store.list_keys("context/2")] == ["context/2/design", "context/2/task"]
+
+
+def test_wildcard_counts_from_the_highest_number_in_use(store):
+    store.store_document("tmp/1", "x")
+    store.store_document("tmp/9", "x")
+    store.store_document("tmp/notes", "x")
+    assert store.store_document("tmp/?", "x") == "tmp/10"
+
+
+def test_wildcard_does_not_fill_a_gap_left_by_a_deletion(store):
+    store.store_document("tmp/?", "x")
+    store.store_document("tmp/?", "x")
+    store.delete("tmp/1")
+    assert store.store_document("tmp/?", "x") == "tmp/3"
+
+
+def test_wildcard_reuses_the_highest_number_once_it_is_deleted(store):
+    # Numbers are unique among what exists, not reserved forever.
+    store.store_document("tmp/?", "x")
+    store.delete("tmp/1")
+    assert store.store_document("tmp/?", "x") == "tmp/1"
+
+
+def test_wildcard_avoids_keys_that_only_exist_implicitly(store):
+    store.store_document("tmp/4/design", "x")
+    assert store.store_document("tmp/?", "x") == "tmp/5"
+
+
+def test_wildcard_avoids_a_number_carrying_only_metadata(store):
+    store.store_document("tmp/4:title", "x")
+    assert store.store_document("tmp/?", "x") == "tmp/5"
+
+
+def test_wildcard_numbering_is_per_parent(store):
+    store.store_document("a/1", "x")
+    store.store_document("a/2", "x")
+    assert store.store_document("b/?", "x") == "b/1"
+    assert store.store_document("a/?", "x") == "a/3"
+
+
+def test_wildcard_ignores_the_metadata_of_its_own_parent(store):
+    store.store_document("tmp:title", "Scratch")
+    assert store.store_document("tmp/?", "x") == "tmp/1"
+
+
+def test_wildcard_on_a_metadata_key(store):
+    assert store.store_document("tmp/?:title", "Title") == "tmp/1:title"
+
+
+def test_wildcard_is_rejected_when_reading_or_deleting(store):
+    store.store_document("tmp/1", "x")
+    with pytest.raises(InvalidKeyError):
+        store.retrieve_document("tmp/?")
+    with pytest.raises(InvalidKeyError):
+        store.delete("tmp/?")
+    with pytest.raises(InvalidKeyError):
+        store.get_documents("tmp/?")
+    with pytest.raises(InvalidKeyError):
+        store.list_keys("tmp/?")
+
+
+def test_a_failed_write_leaves_no_allocation_behind(store):
+    with pytest.raises(ValueError, match="format"):
+        store.store_document("tmp/?", "x", format="yaml")
+    assert store.store_document("tmp/?", "x") == "tmp/1"
+
+
 # -- retrieving ----------------------------------------------------------
 
 
 def test_retrieve_missing_key(store):
     with pytest.raises(KeyNotFoundError):
-        store.retrieve_document("a.b")
+        store.retrieve_document("a/b")
 
 
 def test_retrieve_returns_whole_short_document(store):
@@ -212,19 +343,19 @@ def test_list_root(populated):
 
 
 def test_list_includes_subkeys_and_metadata(populated):
-    entries = populated.list_keys("context.a1b2")
+    entries = populated.list_keys("context/a1b2")
     assert [(e.key, e.kind) for e in entries] == [
-        ("context.a1b2.design", "document"),
-        ("context.a1b2.task", "document"),
+        ("context/a1b2/design", "document"),
+        ("context/a1b2/task", "document"),
     ]
 
-    entries = populated.list_keys("context.a1b2.design")
-    assert [(e.key, e.kind) for e in entries] == [("context.a1b2.design:title", "metadata")]
+    entries = populated.list_keys("context/a1b2/design")
+    assert [(e.key, e.kind) for e in entries] == [("context/a1b2/design:title", "metadata")]
 
 
 def test_list_reports_sizes_and_timestamps(populated):
-    (entry,) = populated.list_keys("context.a1b2.task")
-    assert entry.key == "context.a1b2.task:title"
+    (entry,) = populated.list_keys("context/a1b2/task")
+    assert entry.key == "context/a1b2/task:title"
     assert entry.size == len("Delete tool")
     assert entry.format == "markdown"
     assert entry.updated_at
@@ -239,21 +370,21 @@ def test_implicit_keys_have_no_content(populated):
 
 def test_a_key_with_content_and_children_lists_as_a_document(store):
     store.store_document("a", "body")
-    store.store_document("a.b", "child")
+    store.store_document("a/b", "child")
     (entry,) = store.list_keys()
     assert (entry.key, entry.kind) == ("a", "document")
 
 
 def test_list_does_not_confuse_sibling_prefixes(store):
-    store.store_document("a.b.c", "x")
-    store.store_document("a.beta.d", "y")
-    assert [e.key for e in store.list_keys("a")] == ["a.b", "a.beta"]
-    assert [e.key for e in store.list_keys("a.b")] == ["a.b.c"]
+    store.store_document("a/b/c", "x")
+    store.store_document("a/beta/d", "y")
+    assert [e.key for e in store.list_keys("a")] == ["a/b", "a/beta"]
+    assert [e.key for e in store.list_keys("a/b")] == ["a/b/c"]
 
 
 def test_list_empty(store):
     assert store.list_keys() == []
-    assert store.list_keys("nothing.here") == []
+    assert store.list_keys("nothing/here") == []
 
 
 # -- bulk reads ----------------------------------------------------------
@@ -262,24 +393,24 @@ def test_list_empty(store):
 def test_get_documents_returns_the_subtree(populated):
     keys_found = [e.key for e in populated.get_documents("context")]
     assert keys_found == [
-        "context.a1b2.design",
-        "context.a1b2.task",
-        "context.c3d4.design",
+        "context/a1b2/design",
+        "context/a1b2/task",
+        "context/c3d4/design",
     ]
 
 
 def test_get_documents_includes_the_key_itself(store):
     store.store_document("a", "body")
-    store.store_document("a.b", "child")
-    assert [e.key for e in store.get_documents("a")] == ["a", "a.b"]
+    store.store_document("a/b", "child")
+    assert [e.key for e in store.get_documents("a")] == ["a", "a/b"]
 
 
 def test_get_documents_lists_titles_across_a_subtree(populated):
     found = {e.key: e.content for e in populated.get_documents("context", meta_name="title")}
     assert found == {
-        "context.a1b2.design:title": "Store schema",
-        "context.a1b2.task:title": "Delete tool",
-        "context.c3d4.design:title": "Skill wording",
+        "context/a1b2/design:title": "Store schema",
+        "context/a1b2/task:title": "Delete tool",
+        "context/c3d4/design:title": "Skill wording",
     }
 
 
@@ -308,7 +439,7 @@ def test_get_documents_depth(populated):
 
 
 def test_get_documents_truncates_each_document(store):
-    store.store_document("a.b", "x" * 5_000)
+    store.store_document("a/b", "x" * 5_000)
     (excerpt,) = store.get_documents("a")
     assert excerpt.returned == store_module.DEFAULT_BULK_MAX_CHARS
     assert excerpt.total == 5_000
@@ -316,57 +447,57 @@ def test_get_documents_truncates_each_document(store):
 
 
 def test_get_documents_does_not_confuse_sibling_prefixes(store):
-    store.store_document("a.b.c", "x")
-    store.store_document("a.beta.d", "y")
-    assert [e.key for e in store.get_documents("a.b")] == ["a.b.c"]
+    store.store_document("a/b/c", "x")
+    store.store_document("a/beta/d", "y")
+    assert [e.key for e in store.get_documents("a/b")] == ["a/b/c"]
 
 
 # -- deleting ------------------------------------------------------------
 
 
 def test_delete_takes_metadata_with_the_document(populated):
-    removed = populated.delete("context.a1b2.design")
-    assert removed == ["context.a1b2.design", "context.a1b2.design:title"]
+    removed = populated.delete("context/a1b2/design")
+    assert removed == ["context/a1b2/design", "context/a1b2/design:title"]
     with pytest.raises(KeyNotFoundError):
-        populated.retrieve_document("context.a1b2.design:title")
+        populated.retrieve_document("context/a1b2/design:title")
 
 
 def test_delete_one_metadata_entry(populated):
-    assert populated.delete("context.a1b2.design:title") == ["context.a1b2.design:title"]
-    assert populated.retrieve_document("context.a1b2.design").content
+    assert populated.delete("context/a1b2/design:title") == ["context/a1b2/design:title"]
+    assert populated.retrieve_document("context/a1b2/design").content
 
 
 def test_delete_leaves_descendants_unless_recursive(populated):
-    assert populated.delete("context.a1b2") == []
-    assert populated.retrieve_document("context.a1b2.design").content
+    assert populated.delete("context/a1b2") == []
+    assert populated.retrieve_document("context/a1b2/design").content
 
 
 def test_delete_recursive_removes_the_subtree(populated):
-    removed = populated.delete("context.a1b2", recursive=True)
+    removed = populated.delete("context/a1b2", recursive=True)
     assert removed == [
-        "context.a1b2.design",
-        "context.a1b2.design:title",
-        "context.a1b2.task",
-        "context.a1b2.task:title",
+        "context/a1b2/design",
+        "context/a1b2/design:title",
+        "context/a1b2/task",
+        "context/a1b2/task:title",
     ]
-    assert [e.key for e in populated.list_keys("context")] == ["context.c3d4"]
+    assert [e.key for e in populated.list_keys("context")] == ["context/c3d4"]
 
 
 def test_delete_recursive_does_not_touch_sibling_prefixes(store):
-    store.store_document("a.b.c", "x")
-    store.store_document("a.beta.d", "y")
-    assert store.delete("a.b", recursive=True) == ["a.b.c"]
-    assert store.retrieve_document("a.beta.d").content == "y"
+    store.store_document("a/b/c", "x")
+    store.store_document("a/beta/d", "y")
+    assert store.delete("a/b", recursive=True) == ["a/b/c"]
+    assert store.retrieve_document("a/beta/d").content == "y"
 
 
 def test_delete_missing_key_is_not_an_error(store):
-    assert store.delete("a.b") == []
+    assert store.delete("a/b") == []
 
 
 def test_storing_an_empty_document_is_not_a_deletion(store):
-    store.store_document("a.b", "body")
-    store.store_document("a.b", "")
-    excerpt = store.retrieve_document("a.b")
+    store.store_document("a/b", "body")
+    store.store_document("a/b", "")
+    excerpt = store.retrieve_document("a/b")
     assert excerpt.content == ""
     assert excerpt.total == 0
-    assert [e.key for e in store.list_keys("a")] == ["a.b"]
+    assert [e.key for e in store.list_keys("a")] == ["a/b"]
