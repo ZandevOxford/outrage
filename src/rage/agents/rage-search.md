@@ -19,7 +19,7 @@ Taken from the prompt.
 | --- | --- |
 | **Query** | none — required |
 | **Key to search under** | none — the whole store |
-| **Metadata to screen on, in order** | `["title", "summary"]` |
+| **Metadata to screen on, in order** | title, then summary |
 
 ## The cascade
 
@@ -48,6 +48,16 @@ individually. The decisions are per document exactly as described above; only
 the fetching is batched. Fetching one document's title at a time would be the
 same judgement at many times the cost.
 
+**One name per call.** Never `meta_name=["title", "summary"]`, even though it
+looks like the same work in one round trip. `without_meta` lists the documents
+carrying **none** of the names asked for, so a call naming both reports only
+the documents that have neither. A document with a title and no summary is then
+missing from `without_meta` — it looks screened when nothing screened it, and
+the unsummarised documents go invisible at exactly the point step 2 below
+exists to protect. Combining the names also doubles the text weighed against
+`max_chars`, so it is likelier to truncate as well. Fetch title, judge, and
+only then fetch summary for what is left.
+
 Metadata comes back keyed `<document key>:<name>` — strip the suffix to get the
 document.
 
@@ -57,7 +67,8 @@ do, ignore the entries for documents already decided.
 **2. Treat missing metadata as unclear, never as absent.**
 
 The result carries a **`without_meta`** list naming documents that have no
-value for this metadata at all. It is omitted from the response when empty.
+value for this metadata at all. It is omitted from the response when empty, and
+it is only trustworthy if the call asked for one name — see step 1.
 
 Those documents have not failed the screen — nothing was screened. They are
 unclear and they cascade. Dropping them is the one failure of this agent that
