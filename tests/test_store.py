@@ -745,3 +745,130 @@ def test_work_done_on_a_caller_s_behalf_is_recorded_too(logged, tmp_path):
     # keys_missing_meta reads the subtree to decide what is missing. One call
     # being more than one access is exactly what the log is for.
     assert [e["op"] for e in events(tmp_path)][-2:] == ["get_documents", "keys_missing_meta"]
+
+
+# -- backup --------------------------------------------------------------
+
+
+def documents_in(path) -> int:
+    """Row count in a database file, read the way a restorer would."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_backup_holds_what_the_store_holds(populated):
+    result = populated.backup()
+
+    assert result.integrity == "ok"
+    assert result.documents == 7
+    assert result.bytes > 0
+    assert documents_in(result.path) == 7
+
+
+def test_backup_captures_writes_that_are_still_only_in_the_wal(populated, tmp_path):
+    """The whole reason this lives in the store rather than in a caller.
+
+    Nothing has been checkpointed, so the .sqlite file on its own is a database
+    that opens cleanly and has almost nothing in it. Copying the file is the
+    failure being guarded against, so the test states it directly.
+    """
+    copied = tmp_path / "copied.sqlite"
+    copied.write_bytes(populated.path.read_bytes())
+    try:
+        by_copy = documents_in(copied)
+    except sqlite3.DatabaseError:
+        by_copy = 0  # Not even a schema yet, which is the same failure, harder.
+
+    result = populated.backup()
+
+    assert by_copy < 7, "a file copy would have been good enough, so this test proves nothing"
+    assert documents_in(result.path) == 7
+
+
+def test_a_backup_is_a_store_that_can_be_opened(populated, tmp_path):
+    result = populated.backup()
+
+    restored_dir = tmp_path / "restored"
+    restored_dir.mkdir()
+    (restored_dir / store_module.DB_FILENAME).write_bytes(result.path.read_bytes())
+
+    with Store(restored_dir) as restored:
+        assert restored.retrieve_document("context/a1b2/task").content == "Add a delete tool."
+
+
+def test_backup_defaults_to_a_timestamped_name_below_the_store(populated):
+    result = populated.backup()
+
+    assert result.path.parent == (populated.directory / store_module.BACKUP_DIR_NAME).resolve()
+    assert result.path.name.startswith("store-")
+    assert result.path.suffix == ".sqlite"
+
+
+def test_a_destination_directory_gets_the_default_name(populated, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    result = populated.backup(elsewhere)
+
+    assert result.path.parent == elsewhere.resolve()
+    assert result.path.name.startswith("store-")
+
+
+def test_a_named_destination_is_used_as_given(populated, tmp_path):
+    result = populated.backup(tmp_path / "snapshots" / "monday.sqlite")
+
+    assert result.path == (tmp_path / "snapshots" / "monday.sqlite").resolve()
+
+
+def test_an_existing_destination_is_refused(populated, tmp_path):
+    target = tmp_path / "taken.sqlite"
+    target.write_text("not a database")
+
+    with pytest.raises(store_module.BackupError, match="already exists"):
+        populated.backup(target)
+
+    assert target.read_text() == "not a database"
+
+
+def test_an_existing_destination_can_be_replaced_on_purpose(populated, tmp_path):
+    target = tmp_path / "taken.sqlite"
+    target.write_text("not a database")
+
+    result = populated.backup(target, overwrite=True)
+
+    assert documents_in(result.path) == 7
+
+
+def test_the_store_itself_is_refused_as_a_destination(populated):
+    with pytest.raises(store_module.BackupError, match="the store itself"):
+        populated.backup(populated.path)
+
+    # The refusal has to come before anything is unlinked, or the check that
+    # protects the store is what destroys it.
+    assert populated.retrieve_document("context/a1b2/task").content == "Add a delete tool."
+
+
+def test_a_short_backup_is_refused_rather_than_returned(populated, monkeypatch):
+    """The count is the only check that catches a copy which opens cleanly."""
+    monkeypatch.setattr(
+        store_module.Store,
+        "_verify_backup",
+        lambda self, target: (_ for _ in ()).throw(
+            store_module.BackupError("holds 0 documents but the store holds 7")
+        ),
+    )
+
+    with pytest.raises(store_module.BackupError, match="holds 0 documents"):
+        populated.backup()
+
+
+def test_a_backup_is_logged_with_what_it_wrote(logged, tmp_path):
+    logged.store_document("a/b", "body")
+    result = logged.backup(tmp_path / "snapshot.sqlite")
+
+    (event,) = [e for e in events(tmp_path) if e["op"] == "backup"]
+    assert event["result"]["documents"] == 1
+    assert event["result"]["path"] == str(result.path)

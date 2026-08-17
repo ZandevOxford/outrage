@@ -13,9 +13,10 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__, eventlog
+from . import __version__, eventlog, store
 from . import config as config_module
 from .config import ConfigError
+from .store import BackupError
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -100,6 +101,50 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     config.set_defaults(handler=config_command)
 
+    backup = subcommands.add_parser(
+        "backup",
+        help="copy the store to a verified snapshot",
+        description=(
+            "Copy the database through SQLite itself and check what came out: "
+            "an integrity check, the schema version, and a row count against "
+            "the source. Copying the files instead is what this exists to "
+            "avoid, since a store in WAL mode keeps recent writes in a sidecar "
+            "and the copy left behind still opens cleanly."
+        ),
+    )
+    backup.add_argument(
+        "--dir",
+        dest="directory",
+        metavar="PATH",
+        default=None,
+        help=(
+            f"Store directory to back up. Defaults to {store.ENV_DIR}, then "
+            f"{store.DEFAULT_DIR_NAME} in the working directory."
+        ),
+    )
+    backup.add_argument(
+        "--to",
+        dest="destination",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Where to write, as a file or a directory. Defaults to a "
+            f"timestamped name under {store.BACKUP_DIR_NAME}/ in the store "
+            "directory."
+        ),
+    )
+    backup.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace the destination if it already exists.",
+    )
+    backup.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report where the backup would go without writing it.",
+    )
+    backup.set_defaults(handler=backup_command)
+
     return parser.parse_args(argv)
 
 
@@ -119,6 +164,30 @@ def config_command(args: argparse.Namespace, out: TextIO) -> int:
 
     if change.writes and not args.dry_run:
         config_module.write_config(path, merged, original)
+    return 0
+
+
+def backup_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Snapshot the store, or say where the snapshot would go."""
+    directory = store.resolve_directory(args.directory)
+    if not (directory / store.DB_FILENAME).exists():
+        # Opening one would create it, and backing up a store the caller never
+        # had is a success that answers the wrong question.
+        raise BackupError(f"no store in {directory}")
+
+    with store.open_store(directory) as opened:
+        if args.dry_run:
+            target = opened.backup_path(args.destination, overwrite=args.overwrite)
+            print(f"would back up {opened.path} to {target}", file=out)
+            return 0
+
+        result = opened.backup(args.destination, overwrite=args.overwrite)
+
+    print(f"backed up {directory / store.DB_FILENAME} to {result.path}", file=out)
+    print(
+        f"  {result.documents} documents, {result.bytes} bytes, integrity {result.integrity}",
+        file=out,
+    )
     return 0
 
 
@@ -152,9 +221,9 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     args = parse_args(argv)
     try:
         return args.handler(args, out or sys.stdout)
-    except ConfigError as exc:
+    except (ConfigError, BackupError) as exc:
         print(f"rage: {exc}", file=sys.stderr)
         return 1
 
 
-__all__ = ["config_command", "main", "parse_args"]
+__all__ = ["backup_command", "config_command", "main", "parse_args"]

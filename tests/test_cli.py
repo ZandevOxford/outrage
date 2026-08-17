@@ -148,3 +148,66 @@ def test_scope_defaults_to_project():
 def test_a_command_is_required():
     with pytest.raises(SystemExit):
         parse_args([])
+
+
+# -- backup --------------------------------------------------------------
+
+
+def a_store(directory: Path) -> None:
+    from rage.store import Store
+
+    with Store(directory) as store:
+        store.store_document("context/1/task", "Build the backup command.", title="Task")
+
+
+def test_backup_writes_a_snapshot_and_says_what_it_checked(tmp_path):
+    a_store(tmp_path / ".rage")
+
+    status, output = run("backup", "--dir", str(tmp_path / ".rage"))
+
+    assert status == 0
+    (written,) = (tmp_path / ".rage" / "backups").glob("store-*.sqlite")
+    assert str(written) in output
+    assert "2 documents" in output
+    assert "integrity ok" in output
+
+
+def test_backup_takes_a_destination(tmp_path):
+    a_store(tmp_path / ".rage")
+
+    status, _ = run("backup", "--dir", str(tmp_path / ".rage"), "--to", str(tmp_path / "s.sqlite"))
+
+    assert status == 0
+    assert (tmp_path / "s.sqlite").exists()
+
+
+def test_backup_dry_run_names_the_destination_without_writing(tmp_path):
+    a_store(tmp_path / ".rage")
+
+    status, output = run("backup", "--dir", str(tmp_path / ".rage"), "--dry-run")
+
+    assert status == 0
+    assert "would back up" in output
+    assert not (tmp_path / ".rage" / "backups").exists()
+
+
+def test_backing_up_a_store_that_is_not_there_is_refused(tmp_path, capsys):
+    status = main(["backup", "--dir", str(tmp_path / "absent")], io.StringIO())
+
+    assert status == 1
+    assert "no store in" in capsys.readouterr().err
+    # Refused rather than created, or the backup would be of a store the
+    # caller never had.
+    assert not (tmp_path / "absent").exists()
+
+
+def test_an_existing_destination_reaches_the_user_as_a_message(tmp_path, capsys):
+    a_store(tmp_path / ".rage")
+    target = tmp_path / "taken.sqlite"
+    target.write_text("mine")
+
+    status = main(["backup", "--dir", str(tmp_path / ".rage"), "--to", str(target)], io.StringIO())
+
+    assert status == 1
+    assert "already exists" in capsys.readouterr().err
+    assert target.read_text() == "mine"

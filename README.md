@@ -19,8 +19,9 @@ the store reports the key it chose.
 ## Status
 
 The store, the MCP server, the key handling and the skill are implemented. The
-command line tool is next. See [implementation.md](implementation.md) for what
-is done and what is next.
+command line tool is under way: it can write the MCP configuration (`rage
+config`) and take a verified backup (`rage backup`). See
+[implementation.md](implementation.md) for what is done and what is next.
 
 ## Documentation
 
@@ -43,6 +44,10 @@ is done and what is next.
 * **Event log** — an optional JSON lines record of the requests made and the
   store accesses beneath them, for answering afterwards what a session actually
   did. Off unless `rage config --log` or `rage-server --log` asks for it.
+* **Backup** — `rage backup` copies the database through SQLite and checks what
+  it wrote. In the library rather than the tool, because a store in WAL mode
+  keeps recent writes in a sidecar file and copying the `.sqlite` alone yields a
+  near-empty database that still opens cleanly.
 
 ## Development
 

@@ -30,6 +30,11 @@ DEFAULT_DIR_NAME = ".rage"
 
 DB_FILENAME = "store.sqlite"
 
+#: Where backups go when no destination is given, relative to the store
+#: directory, and how they are named within it.
+BACKUP_DIR_NAME = "backups"
+BACKUP_STAMP = "%Y%m%d-%H%M%S"
+
 ENV_DIR = "RAGE_DIR"
 
 #: Cap on a single retrieve, so one oversized document cannot flood an agent's
@@ -77,6 +82,10 @@ class PatternNotFoundError(LookupError):
     """Raised when a search pattern does not occur in a document."""
 
 
+class BackupError(RuntimeError):
+    """Raised when a backup cannot be taken, or cannot be shown to be good."""
+
+
 @dataclass(frozen=True, slots=True)
 class Excerpt:
     """Some or all of one document's content."""
@@ -97,6 +106,18 @@ class Excerpt:
     @property
     def truncated(self) -> bool:
         return self.next_offset is not None
+
+
+@dataclass(frozen=True, slots=True)
+class Backup:
+    """A copy of the database, and the evidence that it is a real one."""
+
+    path: Path
+    bytes: int
+    documents: int
+    """Rows copied, checked against the source rather than assumed."""
+    integrity: str
+    """What SQLite's own integrity_check said. 'ok' when sound."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -609,6 +630,104 @@ class Store:
         }
         return [excerpt.key for excerpt in documents if excerpt.key not in having]
 
+    # -- maintenance -----------------------------------------------------
+
+    @_logged("backup")
+    def backup(
+        self,
+        destination: str | os.PathLike[str] | None = None,
+        *,
+        overwrite: bool = False,
+    ) -> Backup:
+        """Copy the database to ``destination``, through SQLite, and verify it.
+
+        Here rather than in a caller because taking a correct copy needs to know
+        that this is a live WAL-mode database, which is this class's business
+        and nobody else's. Almost everything written since the last checkpoint
+        is in the ``-wal`` sidecar rather than the ``.sqlite`` file — 4 KB of
+        database against 2 MB of WAL, observed on 2026-08-17 — so copying the
+        file yields a near-empty database that opens cleanly and passes an
+        integrity check. That is a failure indistinguishable from success, which
+        is the one kind worth paying for in the library.
+
+        ``destination`` may name a file or a directory, and defaults to a
+        timestamped name under ``backups/`` in the store directory. Missing
+        parents are created. An existing file is refused unless ``overwrite``.
+        """
+        target = self.backup_path(destination, overwrite=overwrite)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Remove rather than write over: whatever is there need not be a
+        # database at all, and SQLite refuses to open what it did not write.
+        target.unlink(missing_ok=True)
+
+        copy = sqlite3.connect(target)
+        try:
+            with copy:
+                self._conn.backup(copy)
+        except sqlite3.Error as exc:
+            copy.close()
+            target.unlink(missing_ok=True)
+            raise BackupError(f"could not write {target}: {exc}") from exc
+        copy.close()
+
+        return self._verify_backup(target)
+
+    def backup_path(self, destination: str | os.PathLike[str] | None, *, overwrite: bool) -> Path:
+        """Settle where the copy goes, and refuse the destinations that destroy.
+
+        Public so that a caller can report the destination, and hit the same
+        refusals, without writing anything — which is what ``--dry-run`` needs.
+        """
+        default_name = f"store-{time.strftime(BACKUP_STAMP)}.sqlite"
+        if destination is None:
+            target = self.directory / BACKUP_DIR_NAME / default_name
+        else:
+            target = Path(destination).expanduser()
+            if target.is_dir():
+                target = target / default_name
+
+        target = target.resolve()
+        if target == self.path.resolve():
+            raise BackupError(f"{target} is the store itself, not a backup of it")
+        if target.exists() and not overwrite:
+            raise BackupError(f"{target} already exists; pass overwrite to replace it")
+        return target
+
+    def _verify_backup(self, target: Path) -> Backup:
+        """Check the copy is sound and complete, since a bad one still opens.
+
+        The row count is compared after the copy rather than before it, so a
+        concurrent write from another process can make a good backup look
+        short. That is deliberate: this fails loudly and is cheap to re-run,
+        whereas the alternative is trusting a count nobody checked.
+        """
+        expected = self._conn.execute("SELECT count(*) FROM documents").fetchone()[0]
+        copy = sqlite3.connect(f"file:{target}?mode=ro", uri=True)
+        try:
+            integrity = copy.execute("PRAGMA integrity_check").fetchone()[0]
+            documents = copy.execute("SELECT count(*) FROM documents").fetchone()[0]
+            version = copy.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            copy.close()
+
+        if integrity != "ok":
+            raise BackupError(f"{target} failed its integrity check: {integrity}")
+        if version != SCHEMA_VERSION:
+            raise BackupError(
+                f"{target} came out at schema {version}, but the store is at {SCHEMA_VERSION}"
+            )
+        if documents != expected:
+            raise BackupError(
+                f"{target} holds {documents} documents but the store holds {expected}; "
+                "a concurrent write can cause this, so try again before suspecting the copy"
+            )
+        return Backup(
+            path=target,
+            bytes=target.stat().st_size,
+            documents=documents,
+            integrity=integrity,
+        )
+
 
 @contextmanager
 def open_store(
@@ -657,6 +776,12 @@ def _summarise(log: EventLog, result: object) -> dict[str, object]:
                 "returned": result.returned,
                 "next_offset": result.next_offset,
                 "content": log.content_field(result.content),
+            }
+        case Backup():
+            return {
+                "path": str(result.path),
+                "bytes": result.bytes,
+                "documents": result.documents,
             }
         case str():
             return {"key": result}

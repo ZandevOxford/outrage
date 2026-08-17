@@ -49,6 +49,16 @@ Schema 2 changed the delimiter from `.` to `/`. Opening a schema 1 store
 rewrites its keys in place — exact, because no schema 1 segment could contain
 either character.
 
+`backup` copies the database through SQLite's own backup API and then checks
+what came out: `integrity_check`, the schema version, and a row count against
+the source. It is here rather than in the CLI because the reason it cannot be a
+file copy — WAL mode keeps recent writes in a sidecar, and the `.sqlite` file
+alone was observed at 4 KB against a 2 MB WAL — is knowledge this module
+already has and no caller should need. A copied file opens cleanly and passes an
+integrity check, so the row count is the only check that catches it. The count
+is taken after the copy, which means a concurrent write can fail a good backup;
+that is preferred to trusting a count nobody took.
+
 ### 3. MCP server — `src/rage/server.py` — done
 
 Stdio server built on `MCPServer` from the MCP Python SDK, exposing
