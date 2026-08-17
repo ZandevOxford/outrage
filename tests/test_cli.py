@@ -211,3 +211,157 @@ def test_an_existing_destination_reaches_the_user_as_a_message(tmp_path, capsys)
     assert status == 1
     assert "already exists" in capsys.readouterr().err
     assert target.read_text() == "mine"
+
+
+# -- log -------------------------------------------------------------------
+
+
+def a_log(directory: Path) -> Path:
+    """A log holding a discovery process and a serving one, as a real file does."""
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "log.jsonl"
+    records = [
+        {
+            "ts": "2026-08-17T19:43:04.079+00:00",
+            "seq": 1,
+            "session": "aaa",
+            "event": "start",
+            "pid": 1,
+            "version": "0.1.0",
+        },
+        {
+            "ts": "2026-08-17T19:43:04.107+00:00",
+            "seq": 2,
+            "session": "aaa",
+            "event": "request",
+            "call": 1,
+            "method": "server/discover",
+            "result": {"ok": True},
+        },
+        {
+            "ts": "2026-08-17T19:43:05.000+00:00",
+            "seq": 1,
+            "session": "bbb",
+            "event": "start",
+            "pid": 2,
+            "version": "0.1.0",
+        },
+        {
+            "ts": "2026-08-17T19:43:06.000+00:00",
+            "seq": 2,
+            "session": "bbb",
+            "event": "store",
+            "call": 1,
+            "op": "retrieve_document",
+            "args": {"key": "context/5/state", "offset": 0},
+            "result": {
+                "total": 100,
+                "returned": 60,
+                "next_offset": 60,
+                "content": {"len": 100, "head": "HEAD-MARK", "tail": "TAIL-MARK"},
+            },
+        },
+        {
+            "ts": "2026-08-17T19:43:06.100+00:00",
+            "seq": 3,
+            "session": "bbb",
+            "event": "request",
+            "call": 1,
+            "method": "tools/call",
+            "params": {"name": "retrieve_document", "arguments": {"key": "context/5/state"}},
+            "result": {"ok": True},
+        },
+    ]
+    path.write_text("".join(json.dumps(r) + "\n" for r in records), encoding="utf-8")
+    return path
+
+
+def test_log_groups_events_under_the_process_that_wrote_them(tmp_path):
+    a_log(tmp_path / ".rage")
+
+    status, output = run("log", "--dir", str(tmp_path / ".rage"))
+
+    assert status == 0
+    # The header is what says which process the sequence numbers belong to;
+    # one file holds more than one and their numbering collides.
+    assert "session aaa" in output and "session bbb" in output
+    assert "discovery only" in output
+    assert "retrieve_document" in output
+
+
+def test_log_filters_by_operation(tmp_path):
+    a_log(tmp_path / ".rage")
+
+    status, output = run("log", "--dir", str(tmp_path / ".rage"), "--op", "retrieve_document")
+
+    assert status == 0
+    assert "server/discover" not in output
+
+
+def test_log_summary_reports_truncation_and_whether_it_was_resumed(tmp_path):
+    a_log(tmp_path / ".rage")
+
+    status, output = run("log", "--dir", str(tmp_path / ".rage"), "--summary")
+
+    assert status == 0
+    assert "1 document reads, 1 truncated" in output
+    assert "0 of those resumed" in output
+
+
+def test_log_content_is_shown_only_when_asked_for(tmp_path):
+    a_log(tmp_path / ".rage")
+
+    _, without = run("log", "--dir", str(tmp_path / ".rage"))
+    _, with_content = run("log", "--dir", str(tmp_path / ".rage"), "--content")
+
+    assert "HEAD-MARK" not in without
+    assert "HEAD-MARK" in with_content and "TAIL-MARK" in with_content
+
+
+def test_log_json_prints_the_records_as_they_were_written(tmp_path):
+    a_log(tmp_path / ".rage")
+
+    _, output = run("log", "--dir", str(tmp_path / ".rage"), "--op", "retrieve_document", "--json")
+
+    (record,) = [json.loads(line) for line in output.splitlines() if line.strip()]
+    # The whole record: the line summary drops an offset of 0 as noise, and
+    # --json is what that trade is defensible against.
+    assert record["args"]["offset"] == 0
+    assert record["result"]["next_offset"] == 60
+
+
+def test_log_limit_keeps_the_end_and_says_what_it_dropped(tmp_path):
+    a_log(tmp_path / ".rage")
+
+    _, output = run("log", "--dir", str(tmp_path / ".rage"), "--limit", "1")
+
+    assert "4 earlier matching events not shown" in output
+    assert "session bbb" in output and "session aaa" not in output
+
+
+def test_log_finds_the_file_beside_the_store_by_default(tmp_path, monkeypatch):
+    a_log(tmp_path / ".rage")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("RAGE_LOG", raising=False)
+    monkeypatch.delenv("RAGE_DIR", raising=False)
+
+    status, output = run("log")
+
+    assert status == 0
+    assert "session bbb" in output
+
+
+def test_a_missing_log_reaches_the_user_as_a_message(tmp_path, capsys):
+    status = main(["log", "--dir", str(tmp_path / "absent")], io.StringIO())
+
+    assert status == 1
+    assert "no log file at" in capsys.readouterr().err
+
+
+def test_a_filter_matching_nothing_says_so(tmp_path):
+    a_log(tmp_path / ".rage")
+
+    status, output = run("log", "--dir", str(tmp_path / ".rage"), "--op", "delete")
+
+    assert status == 0
+    assert "no matching events" in output

@@ -9,13 +9,15 @@ front ends needs it.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__, eventlog, store
+from . import __version__, eventlog, logread, store
 from . import config as config_module
 from .config import ConfigError
+from .logread import LogError
 from .store import BackupError
 
 
@@ -145,6 +147,74 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     backup.set_defaults(handler=backup_command)
 
+    log = subcommands.add_parser(
+        "log",
+        help="read back the event log",
+        description=(
+            "Show what the server was asked for and what it touched. Events are "
+            "grouped by session, because one file holds more than one process "
+            "and the sequence numbers restart with each of them. Only written "
+            "when the server was configured with --log."
+        ),
+    )
+    log.add_argument(
+        "--dir",
+        dest="directory",
+        metavar="PATH",
+        default=None,
+        help=(
+            f"Store directory the log sits beside. Defaults to {store.ENV_DIR}, "
+            f"then {store.DEFAULT_DIR_NAME} in the working directory."
+        ),
+    )
+    log.add_argument(
+        "--path",
+        metavar="PATH",
+        default=None,
+        help=(
+            f"Log file to read, overriding {eventlog.ENV_LOG} and the default of "
+            f"{eventlog.DEFAULT_LOG_NAME} in the store directory."
+        ),
+    )
+    log.add_argument("--session", default=None, help="Only this session; a prefix is enough.")
+    log.add_argument("--call", type=int, default=None, help="Only this call number.")
+    log.add_argument("--op", default=None, help="Only this store operation, e.g. get_documents.")
+    log.add_argument("--method", default=None, help="Only this MCP method, e.g. tools/call.")
+    log.add_argument(
+        "--event", default=None, help="Only this kind of event: start, request, notify or store."
+    )
+    log.add_argument("--key", default=None, help="Only events whose key contains this substring.")
+    log.add_argument(
+        "--errors", action="store_true", help="Only failures, raised or returned as an error."
+    )
+    log.add_argument(
+        "--content",
+        action="store_true",
+        help="Show the document text the log kept, marking where it was cut.",
+    )
+    log.add_argument(
+        "--summary",
+        action="store_true",
+        help=(
+            "Report the numbers instead of the events: accesses per call, how "
+            "often a read was truncated, and how often one was resumed."
+        ),
+    )
+    log.add_argument(
+        "--json",
+        dest="as_json",
+        action="store_true",
+        help="Print the matching records as they were written, one per line.",
+    )
+    log.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        metavar="N",
+        help="Show at most the last N matching events. 0 for all. Default 50.",
+    )
+    log.set_defaults(handler=log_command)
+
     return parser.parse_args(argv)
 
 
@@ -191,6 +261,65 @@ def backup_command(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
+def log_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Show the event log, or the numbers over it."""
+    log = logread.read_log(_log_path(args))
+    selected = logread.Filter(
+        session=args.session,
+        call=args.call,
+        op=args.op,
+        method=args.method,
+        event=args.event,
+        key=args.key,
+        errors=args.errors,
+    ).select(log.events)
+
+    if args.summary:
+        for line in logread.format_summary(logread.summarise(log, selected)):
+            print(line, file=out)
+        return 0
+
+    shown, dropped = _limited(selected, args.limit)
+    if args.as_json:
+        for event in shown:
+            print(json.dumps(event.record, ensure_ascii=False), file=out)
+        return 0
+
+    if dropped:
+        print(f"({dropped} earlier matching events not shown; --limit 0 for all)", file=out)
+    for session in logread.sessions(shown):
+        # The header is not decoration: it is what says which process the
+        # sequence numbers below it belong to.
+        print(f"\nsession {logread.format_session(session)}", file=out)
+        for event in session.events:
+            for line in logread.format_event(event, content=args.content):
+                print(line, file=out)
+    if not shown:
+        print(f"no matching events in {log.path}", file=out)
+    if log.malformed:
+        print(f"\n{len(log.malformed)} unparseable lines skipped", file=out)
+    return 0
+
+
+def _log_path(args: argparse.Namespace) -> Path:
+    """Locate the log: --path, then the environment, then beside the store.
+
+    The last step is the reader's own, not ``eventlog.resolve_path``'s: for the
+    writer there is no default location because the default is not to log at
+    all, but a reader given nothing is being asked about the log this project
+    would have written.
+    """
+    directory = store.resolve_directory(args.directory)
+    return eventlog.resolve_path(args.path, directory) or directory / eventlog.DEFAULT_LOG_NAME
+
+
+def _limited(events: list[logread.Event], limit: int) -> tuple[list[logread.Event], int]:
+    """Keep the last ``limit`` events, since a log is usually read from its end."""
+    if limit <= 0 or len(events) <= limit:
+        return events, 0
+    return events[-limit:], len(events) - limit
+
+
 def _report(change: config_module.Change, out: TextIO, *, dry_run: bool) -> None:
     """Say what is about to change, in enough detail to notice a wrong answer.
 
@@ -221,9 +350,9 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     args = parse_args(argv)
     try:
         return args.handler(args, out or sys.stdout)
-    except (ConfigError, BackupError) as exc:
+    except (ConfigError, BackupError, LogError) as exc:
         print(f"rage: {exc}", file=sys.stderr)
         return 1
 
 
-__all__ = ["backup_command", "config_command", "main", "parse_args"]
+__all__ = ["backup_command", "config_command", "log_command", "main", "parse_args"]
