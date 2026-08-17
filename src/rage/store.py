@@ -6,17 +6,22 @@ design.md for the key namespace, the tool semantics and the schema.
 
 from __future__ import annotations
 
+import functools
+import inspect
 import json
 import os
 import re
 import sqlite3
-from collections.abc import Iterator, Sequence
+import time
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any, TypeVar
 
-from . import keys
+from . import eventlog, keys
+from .eventlog import EventLog
 from .keys import Key
 
 #: Default directory name, relative to the working directory, when neither
@@ -121,10 +126,67 @@ def resolve_directory(explicit: str | os.PathLike[str] | None = None) -> Path:
     return Path.cwd() / DEFAULT_DIR_NAME
 
 
+_Method = TypeVar("_Method", bound=Callable[..., Any])
+
+
+def _logged(op: str) -> Callable[[_Method], _Method]:
+    """Record one event per call to the decorated method.
+
+    A decorator rather than a block inside each method, for two reasons. The
+    method bodies stay exactly as they were, so the diff that added logging
+    cannot have changed behaviour; and the recording stays visibly separable
+    from a store that is meant to be usable without it.
+
+    The signature is read once, at decoration, so the only per-call cost when
+    logging is on is binding the arguments — and none at all when it is off.
+    """
+
+    def decorate(method: _Method) -> _Method:
+        signature = inspect.signature(method)
+
+        @functools.wraps(method)
+        def wrapper(self: Store, *args: Any, **kwargs: Any) -> Any:
+            log = self._log
+            if not log.enabled:
+                return method(self, *args, **kwargs)
+
+            bound = signature.bind(self, *args, **kwargs)
+            bound.apply_defaults()
+            # Everything but `self`, so the record names the arguments the
+            # caller actually passed, defaults included.
+            fields = log.arguments(dict(list(bound.arguments.items())[1:]))
+            started = time.monotonic_ns()
+            try:
+                result = method(self, *args, **kwargs)
+            except Exception as exc:
+                log.emit(
+                    "store",
+                    op=op,
+                    args=fields,
+                    ms=_ms(started),
+                    error={"type": type(exc).__name__, "message": str(exc)},
+                )
+                raise
+            log.emit("store", op=op, args=fields, ms=_ms(started), result=_summarise(log, result))
+            return result
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorate
+
+
 class Store:
     """A document store held in a single SQLite database."""
 
-    def __init__(self, directory: str | os.PathLike[str] | None = None) -> None:
+    def __init__(
+        self,
+        directory: str | os.PathLike[str] | None = None,
+        *,
+        log: EventLog | None = None,
+    ) -> None:
+        # A null log rather than None, so nothing below has to ask whether
+        # logging is on before recording anything.
+        self._log = log if log is not None else eventlog.NULL
         self.directory = resolve_directory(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / DB_FILENAME
@@ -176,6 +238,7 @@ class Store:
 
     # -- writing ---------------------------------------------------------
 
+    @_logged("store_document")
     def store_document(
         self,
         key: str,
@@ -308,6 +371,7 @@ class Store:
         names.update(child[prefix_len:] for child in self._implicit_children(parent))
         return names
 
+    @_logged("delete")
     def delete(self, key: str, recursive: bool = False) -> list[str]:
         """Delete ``key``, returning the keys actually removed.
 
@@ -339,6 +403,7 @@ class Store:
             self._conn.executemany("DELETE FROM documents WHERE key = ?", [(k,) for k in targets])
         return sorted(targets)
 
+    @_logged("descendant_count")
     def descendant_count(self, key: str) -> int:
         """How many stored rows lie strictly below ``key``.
 
@@ -355,6 +420,7 @@ class Store:
 
     # -- reading ---------------------------------------------------------
 
+    @_logged("retrieve_document")
     def retrieve_document(
         self,
         key: str,
@@ -406,6 +472,7 @@ class Store:
 
         return _excerpt(row, start, length, max_chars)
 
+    @_logged("list_keys")
     def list_keys(self, key: str | None = None) -> list[Entry]:
         """List the keys immediately below ``key``, or below the root.
 
@@ -463,6 +530,7 @@ class Store:
                 seen.add(child)
                 yield child
 
+    @_logged("get_documents")
     def get_documents(
         self,
         key: str | None = None,
@@ -511,6 +579,7 @@ class Store:
 
         return [_excerpt(row, 0, None, max_chars) for row in rows]
 
+    @_logged("keys_missing_meta")
     def keys_missing_meta(
         self,
         key: str | None = None,
@@ -542,9 +611,13 @@ class Store:
 
 
 @contextmanager
-def open_store(directory: str | os.PathLike[str] | None = None) -> Iterator[Store]:
+def open_store(
+    directory: str | os.PathLike[str] | None = None,
+    *,
+    log: EventLog | None = None,
+) -> Iterator[Store]:
     """Open a store, closing it on exit."""
-    store = Store(directory)
+    store = Store(directory, log=log)
     try:
         yield store
     finally:
@@ -553,6 +626,58 @@ def open_store(directory: str | os.PathLike[str] | None = None) -> Iterator[Stor
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _ms(started: int) -> float:
+    """Elapsed milliseconds, from the monotonic clock a time change cannot move."""
+    return round((time.monotonic_ns() - started) / 1_000_000, 3)
+
+
+#: Cap on the keys named in one logged result. A log line has to stay small
+#: enough to be written in a single call, or two processes appending can
+#: interleave; a survey of a large subtree would otherwise be unbounded.
+_MAX_LOGGED_KEYS = 50
+
+
+def _summarise(log: EventLog, result: object) -> dict[str, object]:
+    """Describe a return value in the terms an investigation later asks in.
+
+    Not the value itself. The point of a summary is that the questions being
+    asked are about shape — how much was returned, whether it was cut short,
+    which keys were touched — and a log holding whole results is a second copy
+    of the store rather than a record of what happened to it.
+    """
+    match result:
+        case Excerpt():
+            # `next_offset` is the truncation evidence: it is what says a
+            # caller was handed part of a document, and following the log
+            # forward is what says whether they ever came back for the rest.
+            return {
+                "total": result.total,
+                "returned": result.returned,
+                "next_offset": result.next_offset,
+                "content": log.content_field(result.content),
+            }
+        case str():
+            return {"key": result}
+        case int():
+            return {"count": result}
+        case []:
+            return {"count": 0}
+        case [Excerpt(), *_]:
+            return {
+                "count": len(result),
+                "truncated": sum(1 for excerpt in result if excerpt.truncated),
+            }
+        case [Entry(), *_]:
+            return {"count": len(result)}
+        case [str(), *_]:
+            summary: dict[str, object] = {"count": len(result)}
+            if len(result) <= _MAX_LOGGED_KEYS:
+                summary["keys"] = result
+            return summary
+        case _:
+            return {"type": type(result).__name__}
 
 
 def _decode(value: str, encoding: str, what: str) -> str:

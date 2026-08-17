@@ -4,6 +4,7 @@ import sqlite3
 import pytest
 
 from rage import store as store_module
+from rage.eventlog import EventLog
 from rage.keys import InvalidKeyError
 from rage.store import KeyNotFoundError, PatternNotFoundError, Store
 
@@ -12,6 +13,19 @@ from rage.store import KeyNotFoundError, PatternNotFoundError, Store
 def store(tmp_path):
     with Store(tmp_path / "store") as s:
         yield s
+
+
+@pytest.fixture
+def logged(tmp_path):
+    """A store that records what it is asked to do."""
+    log = EventLog(tmp_path / "log.jsonl")
+    with Store(tmp_path / "store", log=log) as s:
+        yield s
+    log.close()
+
+
+def events(tmp_path) -> list[dict]:
+    return [json.loads(line) for line in (tmp_path / "log.jsonl").read_text().splitlines()]
 
 
 @pytest.fixture
@@ -644,3 +658,90 @@ def test_storing_an_empty_document_is_not_a_deletion(store):
     assert excerpt.content == ""
     assert excerpt.total == 0
     assert [e.key for e in store.list_keys("a")] == ["a/b"]
+
+
+# -- the event log ---------------------------------------------------------
+
+
+def test_a_store_without_a_log_writes_nothing(tmp_path):
+    with Store(tmp_path / "store") as s:
+        s.store_document("a/b", "body")
+        s.retrieve_document("a/b")
+
+    # The store has to stay usable as a plain library, so the default has to
+    # leave no trace at all rather than merely a small one.
+    assert [p.name for p in tmp_path.iterdir()] == ["store"]
+
+
+@pytest.mark.parametrize(
+    ("call", "op"),
+    [
+        (lambda s: s.store_document("a/b", "body"), "store_document"),
+        (lambda s: s.retrieve_document("a/b"), "retrieve_document"),
+        (lambda s: s.list_keys("a"), "list_keys"),
+        (lambda s: s.get_documents("a"), "get_documents"),
+        (lambda s: s.keys_missing_meta("a"), "keys_missing_meta"),
+        (lambda s: s.descendant_count("a"), "descendant_count"),
+        (lambda s: s.delete("a/b"), "delete"),
+    ],
+)
+def test_every_public_operation_is_recorded(logged, tmp_path, call, op):
+    logged.store_document("a/b", "body")
+    call(logged)
+
+    assert op in [event["op"] for event in events(tmp_path)]
+
+
+def test_the_arguments_recorded_are_the_ones_the_caller_passed(logged, tmp_path):
+    logged.store_document("a/b", "body")
+    logged.retrieve_document("a/b", max_chars=50)
+
+    (event,) = [e for e in events(tmp_path) if e["op"] == "retrieve_document"]
+    assert event["args"]["key"] == "a/b"
+    assert event["args"]["max_chars"] == 50
+
+
+def test_a_truncated_read_records_where_it_stopped(logged, tmp_path):
+    logged.store_document("a/b", "x" * 500)
+    logged.retrieve_document("a/b", max_chars=100)
+
+    (event,) = [e for e in events(tmp_path) if e["op"] == "retrieve_document"]
+    # Following the log forward from here is what says whether the caller ever
+    # came back for the rest, which nothing else records.
+    assert event["result"]["next_offset"] == 100
+    assert event["result"]["total"] == 500
+
+
+def test_a_failed_call_is_recorded_with_its_error(logged, tmp_path):
+    with pytest.raises(KeyNotFoundError):
+        logged.retrieve_document("nope")
+
+    (event,) = [e for e in events(tmp_path) if e["op"] == "retrieve_document"]
+    assert event["error"]["type"] == "KeyNotFoundError"
+    assert "result" not in event
+
+
+def test_stored_text_is_recorded_under_the_content_policy(logged, tmp_path):
+    logged.store_document("a/b", "body", title="A title")
+
+    (event,) = [e for e in events(tmp_path) if e["op"] == "store_document"]
+    assert event["args"]["content"]["text"] == "body"
+    assert event["args"]["title"]["text"] == "A title"
+    assert event["args"]["key"] == "a/b"
+
+
+def test_a_delete_records_the_keys_it_removed(logged, tmp_path):
+    logged.store_document("a/b", "body", title="A title")
+    logged.delete("a/b")
+
+    (event,) = [e for e in events(tmp_path) if e["op"] == "delete"]
+    assert event["result"]["keys"] == ["a/b", "a/b:title"]
+
+
+def test_work_done_on_a_caller_s_behalf_is_recorded_too(logged, tmp_path):
+    logged.store_document("a/b", "body")
+    logged.keys_missing_meta("a")
+
+    # keys_missing_meta reads the subtree to decide what is missing. One call
+    # being more than one access is exactly what the log is for.
+    assert [e["op"] for e in events(tmp_path)][-2:] == ["get_documents", "keys_missing_meta"]

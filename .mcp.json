@@ -2,7 +2,11 @@
   "mcpServers": {
     "rage": {
       "command": "/Users/john/miniforge3/envs/rage/bin/rage-server",
-      "args": ["--dir", ".rage"]
+      "args": [
+        "--dir",
+        "/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/.rage",
+        "--log"
+      ]
     }
   }
 }

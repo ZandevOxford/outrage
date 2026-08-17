@@ -1,12 +1,17 @@
 """Tests driving the tools through the MCP server's own dispatch."""
 
+import json
 from typing import Any
 
 import anyio
 import pytest
+from mcp.client.session import ClientSession
 from mcp.server.mcpserver.exceptions import ToolError
+from mcp.shared.memory import create_client_server_memory_streams
 
-from rage.server import build_server, parse_args
+from rage import eventlog
+from rage.eventlog import EventLog
+from rage.server import RequestLog, build_server, parse_args
 from rage.store import Store
 
 
@@ -279,3 +284,127 @@ def test_delete_keys_says_nothing_extra_when_it_kept_nothing(server):
 def test_parse_args():
     assert parse_args([]).directory is None
     assert parse_args(["--dir", "/tmp/x"]).directory == "/tmp/x"
+
+
+def test_parse_args_leaves_logging_off():
+    assert parse_args([]).log is None
+    assert parse_args(["--log"]).log is eventlog.DEFAULT
+    assert parse_args(["--log", "/tmp/l.jsonl"]).log == "/tmp/l.jsonl"
+    assert parse_args([]).log_content == "excerpt"
+
+
+# -- the request log -------------------------------------------------------
+#
+# `call` above drives `server.call_tool`, which goes straight to the tool
+# manager and never runs the middleware chain. So these drive a real client
+# session instead: the whole reason for logging at the middleware tier is the
+# calls that fail before a tool is entered, and a stub that returns whatever it
+# was told to return would not be evidence of anything.
+
+
+def session_calls(tmp_path, *calls, content="excerpt"):
+    """Run a real client session against a logged server, and return the log."""
+    log = EventLog(tmp_path / "log.jsonl", content=content)
+
+    async def drive():
+        with Store(tmp_path / "store", log=log) as store:
+            store.store_document("a/b", "hello there", title="A doc")
+            server = build_server(store, log)
+            low = server._lowlevel_server
+            async with create_client_server_memory_streams() as (client, serving):
+                async with anyio.create_task_group() as tasks:
+                    tasks.start_soon(
+                        lambda: low.run(
+                            serving[0],
+                            serving[1],
+                            low.create_initialization_options(),
+                            raise_exceptions=True,
+                        )
+                    )
+                    async with ClientSession(client[0], client[1]) as session:
+                        await session.initialize()
+                        for name, arguments in calls:
+                            await session.call_tool(name, arguments)
+                    tasks.cancel_scope.cancel()
+
+    anyio.run(drive)
+    log.close()
+    return [json.loads(line) for line in (tmp_path / "log.jsonl").read_text().splitlines()]
+
+
+def test_the_middleware_is_registered_only_when_there_is_a_log(tmp_path):
+    with Store(tmp_path) as store:
+        plain = build_server(store)
+        logged = build_server(store, EventLog(tmp_path / "log.jsonl"))
+
+    assert not any(isinstance(m, RequestLog) for m in plain.middleware)
+    assert any(isinstance(m, RequestLog) for m in logged.middleware)
+
+
+def test_the_middleware_is_reached(tmp_path):
+    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b"}))
+
+    # `MCPServer.middleware` is documented as provisional. If a future SDK
+    # stops calling it, this fails rather than logging silently stopping.
+    methods = [e["method"] for e in recorded if e["event"] == "request"]
+    assert methods[0] == "initialize"
+    assert "tools/call" in methods
+
+
+def test_the_client_that_connected_is_recorded(tmp_path):
+    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b"}))
+
+    (initialize,) = [e for e in recorded if e.get("method") == "initialize"]
+    assert initialize["params"]["clientInfo"]["name"]
+
+
+def test_a_rejected_call_is_recorded_as_an_error(tmp_path):
+    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b", "bogus": 1}))
+
+    (called,) = [e for e in recorded if e.get("method") == "tools/call"]
+    assert called["result"]["ok"] is False
+    assert "bogus" in called["result"]["message"]
+
+
+def test_a_rejected_call_never_reaches_the_store(tmp_path):
+    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b", "bogus": 1}))
+
+    # The absence is the finding: an argument the server does not know is
+    # refused before the tool function is entered, which is the failure a log
+    # wrapped around those functions could not see at all.
+    (called,) = [e for e in recorded if e.get("method") == "tools/call"]
+    assert not [e for e in recorded if e["event"] == "store" and e.get("call") == called["call"]]
+
+
+def test_store_accesses_are_grouped_under_the_call_that_caused_them(tmp_path):
+    recorded = session_calls(tmp_path, ("get_documents", {"key": "a", "meta_name": ["title"]}))
+
+    (called,) = [e for e in recorded if e.get("method") == "tools/call"]
+    beneath = [
+        e["op"] for e in recorded if e["event"] == "store" and e.get("call") == called["call"]
+    ]
+    # One tool call, more than one access: the survey, and the check for what
+    # the survey could not see.
+    assert beneath == ["get_documents", "get_documents", "keys_missing_meta"]
+
+
+def test_the_setup_writes_are_not_attributed_to_any_call(tmp_path):
+    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b"}))
+
+    (setup,) = [e for e in recorded if e.get("op") == "store_document"]
+    assert "call" not in setup
+
+
+def test_the_content_policy_reaches_the_request_layer(tmp_path):
+    recorded = session_calls(
+        tmp_path,
+        ("store_document", {"key": "c/d", "content": "secret body"}),
+        content="none",
+    )
+
+    # Scrubbing only the store layer would leave whole documents in the log
+    # anyway, making --log-content=none a setting that reads as if it worked.
+    (called,) = [e for e in recorded if e.get("method") == "tools/call"]
+    written = called["params"]["arguments"]["content"]
+    assert written["len"] == len("secret body")
+    assert "text" not in written and "head" not in written

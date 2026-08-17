@@ -125,6 +125,22 @@ def test_user_scope_targets_the_home_file(tmp_path, monkeypatch):
     assert "rage" in servers(tmp_path / ".claude.json")
 
 
+def test_config_leaves_logging_off_by_default(tmp_path):
+    run("config", "--project-dir", str(tmp_path))
+
+    # It records document text, so it is never turned on by a command that was
+    # not asked to turn it on.
+    assert "--log" not in servers(tmp_path / ".mcp.json")["rage"]["args"]
+
+
+def test_config_can_turn_logging_on(tmp_path):
+    status, output = run("config", "--project-dir", str(tmp_path), "--log")
+
+    assert status == 0
+    assert servers(tmp_path / ".mcp.json")["rage"]["args"][-1] == "--log"
+    assert "--log" in output
+
+
 def test_scope_defaults_to_project():
     assert parse_args(["config"]).scope == "project"
 

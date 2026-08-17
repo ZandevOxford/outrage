@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__
+from . import __version__, eventlog
 from . import config as config_module
 from .config import ConfigError
 
@@ -75,6 +75,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=f"Name to register the server under (default: {config_module.SERVER_NAME}).",
     )
     config.add_argument(
+        "--log",
+        nargs="?",
+        const=eventlog.DEFAULT,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Record the server's requests and store accesses as JSON lines. "
+            f"Without a path, writes {eventlog.DEFAULT_LOG_NAME} in the store "
+            "directory. Omitted, and so off, unless asked for."
+        ),
+    )
+    config.add_argument(
+        "--log-content",
+        dest="log_content",
+        choices=eventlog.CONTENT_POLICIES,
+        default=None,
+        help="How much document text the log keeps. Only used alongside --log.",
+    )
+    config.add_argument(
         "--dry-run",
         action="store_true",
         help="Report what would change without writing anything.",
@@ -93,7 +112,7 @@ def config_command(args: argparse.Namespace, out: TextIO) -> int:
         else config_module.config_path(args.scope, project_dir)
     )
     directory = args.directory or config_module.default_store_dir(project_dir)
-    entry = config_module.server_entry(directory)
+    entry = config_module.server_entry(directory, log=args.log, log_content=args.log_content)
 
     change, merged, original = config_module.plan(path, args.scope, entry, name=args.name)
     _report(change, out, dry_run=args.dry_run)

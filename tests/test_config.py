@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from rage import config as config_module
+from rage import eventlog
 from rage.config import (
     Change,
     ConfigError,
@@ -90,6 +91,31 @@ def test_entry_keeps_extra_command_arguments(tmp_path):
     entry = server_entry(tmp_path, command=[sys.executable, "-m", "rage"])
     assert entry["command"] == sys.executable
     assert entry["args"] == ["-m", "rage", "--dir", str(tmp_path.resolve())]
+
+
+def test_an_entry_asks_for_no_logging_unless_told_to(tmp_path):
+    assert "--log" not in server_entry(tmp_path, command=["rage-server"])["args"]
+
+
+def test_a_bare_log_flag_leaves_the_path_to_the_server(tmp_path):
+    entry = server_entry(tmp_path, command=["rage-server"], log=eventlog.DEFAULT)
+    assert entry["args"][-1] == "--log"
+
+
+def test_a_log_path_is_recorded_absolute(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    entry = server_entry(tmp_path, command=["rage-server"], log="log.jsonl")
+
+    # Same reason the store directory is: a relative path resolves against
+    # wherever the client happened to launch the server.
+    assert entry["args"][-1] == str((tmp_path / "log.jsonl").resolve())
+
+
+def test_the_content_policy_travels_with_the_flag(tmp_path):
+    entry = server_entry(
+        tmp_path, command=["rage-server"], log=eventlog.DEFAULT, log_content="none"
+    )
+    assert entry["args"][-2:] == ["--log-content", "none"]
 
 
 # -- scopes --------------------------------------------------------------

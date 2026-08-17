@@ -40,6 +40,9 @@ is done and what is next.
   ships inside the package so that an install carries it. `SessionStart` and
   `PreCompact` hooks in `.claude/settings.json` cover the two moments a skill
   would not be reached for on its own.
+* **Event log** — an optional JSON lines record of the requests made and the
+  store accesses beneath them, for answering afterwards what a session actually
+  did. Off unless `rage config --log` or `rage-server --log` asks for it.
 
 ## Development
 
@@ -54,6 +57,11 @@ ruff check . && ruff format --check .
 The store lives in a directory given to the server by `--dir` or `RAGE_DIR`,
 defaulting to `./.rage/` in the working directory. See
 [design.md](design.md#store-location).
+
+`rage-server --log` records requests and store accesses as JSON lines, by
+default in `log.jsonl` beside the store. It is off otherwise, since it records
+document text. `--log-content none|excerpt|full` controls how much of that text
+it keeps.
 
 `.mcp.json` registers the server for this project. Its `command` is an absolute
 path into the conda environment, so it is specific to the machine it was written

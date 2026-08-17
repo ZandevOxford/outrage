@@ -8,14 +8,19 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import itertools
+import time
 from typing import Annotated, Any
 
 from mcp.server import MCPServer
+from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from . import __version__
+from . import __version__, eventlog
+from . import store as store_module
+from .eventlog import EventLog
 from .store import DEFAULT_BULK_MAX_CHARS, DEFAULT_MAX_CHARS, Excerpt, Store
 
 
@@ -71,12 +76,82 @@ it fails, listing it does not.
 """
 
 
-def build_server(store: Store) -> MCPServer:
+class RequestLog:
+    """Record every inbound message, from the layer that can still see the failures.
+
+    Wrapping the five tool functions instead would be simpler and would miss
+    the calls that matter most. An argument the server does not know is refused
+    by the tool's own argument model — see ``_forbid_unknown_arguments`` — and
+    that refusal becomes a ``CallToolResult`` carrying ``is_error`` without the
+    tool function ever being entered. A log wired inside those functions is
+    structurally blind to it, which would leave the one failure this server
+    goes out of its way to catch as the one failure it cannot record.
+
+    From here the raw parameters are visible before validation, ``initialize``
+    is visible along with the client that sent it, and a refusal is visible
+    either as a raised error or as an error result. Both are recorded.
+
+    ``MCPServer.middleware`` is documented as provisional and expected to
+    change before v2 is final, so this depends on something that may move. The
+    risk is accepted on the same terms as ``extra="forbid"``: what a change
+    would cost is logging silently ceasing to happen, and
+    ``test_the_middleware_is_reached`` fails loudly rather than letting it.
+    """
+
+    def __init__(self, log: EventLog) -> None:
+        self._log = log
+        self._calls = itertools.count(1)
+
+    async def __call__(
+        self, ctx: ServerRequestContext[Any, Any], call_next: CallNext
+    ) -> HandlerResult:
+        if not self._log.enabled:
+            return await call_next(ctx)
+
+        # Every store access made while serving this message reads the call
+        # number back out of the context variable, which is what groups the
+        # accesses under the request that caused them.
+        call = next(self._calls)
+        token = eventlog.current_call.set(call)
+        event = "request" if ctx.request_id is not None else "notify"
+        params = _request_params(self._log, ctx.params)
+        started = time.monotonic_ns()
+        try:
+            try:
+                result = await call_next(ctx)
+            except Exception as exc:
+                self._log.emit(
+                    event,
+                    method=ctx.method,
+                    params=params,
+                    ms=_ms(started),
+                    error={"type": type(exc).__name__, "message": str(exc)},
+                )
+                raise
+            self._log.emit(
+                event,
+                method=ctx.method,
+                params=params,
+                ms=_ms(started),
+                result=_result_summary(result),
+            )
+            return result
+        finally:
+            # After the emits, deliberately: resetting first would strip the
+            # call number off the very event that reports the call.
+            eventlog.current_call.reset(token)
+
+
+def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
     """Build a server exposing ``store``."""
+    log = log if log is not None else eventlog.NULL
     server = MCPServer(
         name="rage",
         version=__version__,
         instructions=INSTRUCTIONS,
+        # Registered only when there is somewhere to write, so that the default
+        # configuration adds nothing to the SDK's chain at all.
+        middleware=[RequestLog(log)] if log.enabled else None,
     )
 
     @server.tool(
@@ -271,6 +346,70 @@ def _excerpt_result(excerpt: Excerpt) -> dict[str, Any]:
     return dataclasses.asdict(excerpt) | {"truncated": excerpt.truncated}
 
 
+def _ms(started: int) -> float:
+    return round((time.monotonic_ns() - started) / 1_000_000, 3)
+
+
+def _request_params(log: EventLog, params: Any) -> Any:
+    """Apply the content policy to the arguments of a tool call.
+
+    Without this the request layer would keep writing whole documents into the
+    log after the store layer had been told not to, which would make
+    ``--log-content=none`` a setting that reads as if it worked.
+    """
+    if not isinstance(params, dict):
+        return params
+    arguments = params.get("arguments")
+    if not isinstance(arguments, dict):
+        return params
+    return params | {"arguments": log.arguments(arguments)}
+
+
+def _result_summary(result: HandlerResult) -> dict[str, Any] | None:
+    """Whether the call succeeded, and what it said if it did not.
+
+    Not the result itself: what the tool returned is already described by the
+    store events underneath it, and a request layer that repeated them would
+    double the log to say nothing new. What only this layer knows is that a
+    call failed without reaching a tool at all.
+    """
+    if result is None:
+        return None
+    failed = _failed(result)
+    summary: dict[str, Any] = {"ok": not failed}
+    if failed:
+        summary["message"] = _error_text(result)
+    return summary
+
+
+def _failed(result: Any) -> bool:
+    """Read the error flag from a result in either of the shapes it arrives in.
+
+    ``HandlerResult`` is a model *or* a dict, and by the time a tool result
+    reaches the middleware it has been serialised: the flag is the wire's
+    ``isError`` rather than the model's ``is_error``. Reading only the model
+    spelling reports every rejected call as a success — which is the exact
+    failure this log was built to catch, so it is worth being careful about
+    twice. ``test_a_rejected_call_is_recorded_as_an_error`` drives a real
+    session rather than a stub for the same reason.
+    """
+    if isinstance(result, dict):
+        return bool(result.get("isError") or result.get("is_error"))
+    return bool(getattr(result, "is_error", False) or getattr(result, "isError", False))
+
+
+def _error_text(result: Any) -> str | None:
+    if isinstance(result, dict):
+        content = result.get("content")
+    else:
+        content = getattr(result, "content", None)
+    for block in content or ():
+        text = block.get("text") if isinstance(block, dict) else getattr(block, "text", None)
+        if text:
+            return text
+    return None
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="rage-server", description="MCP server for the Rage document store"
@@ -285,13 +424,50 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "then ./.rage in the working directory."
         ),
     )
+    parser.add_argument(
+        "--log",
+        nargs="?",
+        const=eventlog.DEFAULT,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Record requests and store accesses as JSON lines. Without a path, "
+            f"writes {eventlog.DEFAULT_LOG_NAME} in the store directory. "
+            f"Defaults to the {eventlog.ENV_LOG} environment variable, then to "
+            "not logging at all."
+        ),
+    )
+    parser.add_argument(
+        "--log-content",
+        dest="log_content",
+        choices=eventlog.CONTENT_POLICIES,
+        default="excerpt",
+        help=(
+            "How much document text the log keeps: 'none' for a length and a "
+            "hash, 'excerpt' for both ends of it (default), 'full' for all of it."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
-    with Store(args.directory) as store:
-        build_server(store).run("stdio")
+    # Resolved here rather than left to the store, because the log defaults to
+    # a file beside the database and so needs the same answer.
+    directory = store_module.resolve_directory(args.directory)
+    log = EventLog(
+        eventlog.resolve_path(args.log, directory),
+        content=args.log_content,
+    )
+    log.start(version=__version__, directory=str(directory), log=str(log.path))
+    try:
+        with Store(directory, log=log) as store:
+            build_server(store, log).run("stdio")
+    finally:
+        # A process that is killed writes no stop event, which is itself worth
+        # being able to see in the log.
+        log.stop()
+        log.close()
 
 
-__all__ = ["INSTRUCTIONS", "build_server", "main", "parse_args"]
+__all__ = ["INSTRUCTIONS", "RequestLog", "build_server", "main", "parse_args"]

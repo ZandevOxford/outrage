@@ -36,6 +36,49 @@ The intended normal usage is a per-project MCP configuration passing `--dir`
 explicitly, since an MCP server cannot be relied on to inherit the project
 working directory. The working directory fallback exists for CLI and test use.
 
+The event log, when it is on, is `log.jsonl` in the same directory. It is the
+first use of the room the directory was created to leave.
+
+### Event log
+
+An append-only record of what the server was asked for and what the store was
+asked to do. Off unless `--log` is given.
+
+It exists because of the failure that keeps recurring in this project: a
+success that cannot be told from a real one. Unknown arguments dropped in
+silence, truncation past `next_offset` that nothing downstream can detect,
+scaffolding appended to a summary that reads correctly to its last sentence.
+Each was found by hand, afterwards, from evidence that no longer existed.
+
+It records at two grains, correlated by a call number:
+
+* **Requests**, from a `ServerMiddleware` wrapping every inbound message. This
+  tier rather than the tool functions, because an argument the server does not
+  know is refused before any tool function is entered — so the one failure the
+  server goes out of its way to catch is the one a tool-level log could not
+  see. It also sees `initialize`, and so the client and the moment it connected.
+* **Store accesses**, from a sink the store is given. One tool call is often
+  more than one access, and this is also the grain the CLI will log at once it
+  gains store operations.
+
+The store takes the log as an argument and defaults it to a null object, so it
+stays independent of MCP and unchanged when nothing is logging.
+
+Document text is subject to a content policy, `--log-content`. The default
+keeps a length, a hash of the whole, and — for anything long — both ends of it.
+The tail is not symmetry: the leak that prompted this appended scaffolding
+*after* content that read correctly to its last sentence, so a head-only
+excerpt would miss the exact failure it was built to catch.
+
+Two constraints the implementation follows from. Nothing may be written to
+stdout, which carries the protocol. And a failure in the log must disable the
+log rather than fail the call: a logging system that can take the store down is
+a worse trade than no logging system.
+
+The reading half — querying and summarising a log — is deliberately not built
+yet. What it should answer is better decided by the first investigation that
+uses one.
+
 ### Command line tool
 
 Not yet implemented.

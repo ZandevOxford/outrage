@@ -193,6 +193,44 @@ directory *is* discovered, through the link rather than its target, and the
 `PreCompact` reaches somewhere the model can still act on is still open, since
 compaction is not a turn.
 
+### 8. Event log — `src/rage/eventlog.py` — done
+
+Steps 6 and 7 — the CLI and the packaged agents — are recorded in the rage
+store under `project/reference/implementation` rather than here.
+
+Off unless `--log` is given, since it records document text. Design and
+reasoning in design.md; what it is *for* is that every open question in this
+project turned out to need evidence about what an agent actually did, and none
+of it was being kept.
+
+* `src/rage/eventlog.py` — the sink. One JSON object per line, written with a
+  single `os.write` to an `O_APPEND` descriptor so that two processes sharing a
+  log cannot interleave. Content is bounded by a policy, which is also what
+  keeps a line short enough for that to hold.
+* `src/rage/store.py` — a `_logged` decorator over the seven public methods,
+  and a `log` argument defaulting to a null object. Method bodies are
+  untouched, so the change that added logging could not have altered
+  behaviour.
+* `src/rage/server.py` — `RequestLog`, a `ServerMiddleware`. Registered only
+  when there is somewhere to write.
+* `--log`, `--log-content` on the server; the same two on `rage config`, which
+  writes them into `.mcp.json`.
+* `tests/test_eventlog.py`, plus additions to the store, server, config and CLI
+  suites.
+
+Two things the build found that prose would not have:
+
+* The middleware receives a tool result **already serialised to a dict**, so
+  the error flag is the wire's `isError`, not the model's `is_error`. Reading
+  only the model spelling reported every rejected call as a success — the exact
+  failure the log exists to catch, reproduced inside the log itself. Caught by
+  driving a real client session rather than a stub, which is why that test
+  stays end-to-end.
+* `MCPServer.call_tool` does not run the middleware chain, so the existing test
+  helper cannot reach it. `MCPServer.middleware` is also documented as
+  provisional, so `test_the_middleware_is_reached` guards it the way the
+  `extra="forbid"` tests guard that.
+
 ## Planned work
 
 Not recorded here. The CLI and everything after it live in the rage store, under

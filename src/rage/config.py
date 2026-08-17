@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .eventlog import DEFAULT as LOG_BESIDE_STORE
 from .store import DEFAULT_DIR_NAME
 
 #: The name this server is registered under. Also the key that a re-run
@@ -90,6 +91,9 @@ def launch_command(executable: str | os.PathLike[str] | None = None) -> list[str
 def server_entry(
     directory: str | os.PathLike[str],
     command: list[str] | None = None,
+    *,
+    log: Any = None,
+    log_content: str | None = None,
 ) -> dict[str, Any]:
     """Build the configuration entry for a store at ``directory``.
 
@@ -97,12 +101,22 @@ def server_entry(
     to launch the server in the project working directory, so a relative
     ``--dir`` would resolve against somewhere unpredictable and quietly produce
     a second, empty store rather than an error.
+
+    ``log`` adds ``--log``: a path, or the ``eventlog.DEFAULT`` sentinel for the
+    file beside the store. Logging is off unless it is asked for here, and it is
+    asked for here rather than by hand because an entry edited by hand is the
+    failure this module exists to prevent.
     """
     argv = list(command) if command is not None else launch_command()
-    return {
-        "command": argv[0],
-        "args": [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())],
-    }
+    args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
+    if log is not None:
+        args.append("--log")
+        # Absolute for the same reason the store directory is.
+        if log is not LOG_BESIDE_STORE:
+            args.append(str(Path(log).expanduser().resolve()))
+        if log_content is not None:
+            args += ["--log-content", log_content]
+    return {"command": argv[0], "args": args}
 
 
 def config_path(scope: str, project_dir: str | os.PathLike[str] | None = None) -> Path:
