@@ -62,14 +62,21 @@ Keys are not file paths, but they read like them, so a key may mirror one:
 notes about a file can live at `notes/src/myfile.py`.
 
 When storing, a `?` in place of a whole segment asks the store to allocate a
-number for it: `context/?/design` writes to `context/1/design` in an empty
-store. The result reports the key actually written, which is what to use for
-anything else belonging with it, such as `context/1/task`.
+number for it, at any depth: `context/?/design` writes to `context/1/design` in
+an empty store, and `context/1/findings/?` writes the next document beneath
+`findings`. The result reports the key actually written, which is what to use
+for anything else belonging with it, such as `context/1/task`.
 
 Prefer storing a document under a descriptive key and passing a `title`, so
 that later sessions can survey what is stored with
 `get_documents(meta_name=["title"])` before reading anything in full. That
 survey reports untitled documents separately, under `without_meta`.
+
+Prefer several small documents to one large one. A document should answer one
+question and be readable in a single call, and a key can hold content *and*
+have keys beneath it, so a general document can stay where it is with the
+detail below it. When there is more to add, add a document rather than growing
+one — `?` allocates the key, so this costs no naming decision.
 
 A key that holds nothing itself but has keys beneath it is a container: reading
 it fails, listing it does not.

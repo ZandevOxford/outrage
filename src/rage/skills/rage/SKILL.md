@@ -49,6 +49,14 @@ place as they change.
 Pass `title` on every document. It is what the survey above can see, and a
 document without one is findable only by someone who already knows its key.
 
+Store a `:summary` as well for any document whose subject its title cannot
+carry. `rage-search` screens on title *then* summary, so a document with a
+title and no summary is judged on the title alone — and "Notes from the Tuesday
+run" is an honest title that tells a reader nothing. Aim for about a fifth of
+the document: a summary that approaches the length of its document costs as much
+to screen as the document costs to read. `rage-backfill` fills these in across a subtree,
+which is the right thing to run after adding several documents at once.
+
 ## What is worth storing
 
 Store what cost something to learn and that nothing else in the project
@@ -79,6 +87,32 @@ what makes this cheap.
 
 Keep `project/reference/…` current when the facts under it change. A stale
 reference is worse than an absent one, because it is believed.
+
+## One document, one question
+
+Rewriting a key keeps it current; it is not licence to let it grow. When there
+is more to keep, prefer **adding a document beneath it** to extending the one
+that is there. Sub-documents are the intended shape, and `?` allocates a key at
+any depth — `context/1/findings/?` writes the next document under `findings` —
+so adding one costs no naming decision and no thought about where it goes.
+
+A document should be readable in one call. `retrieve_document` returns 8000
+characters by default, so a longer document is read in slices, and a session
+that judges it from the first slice judges it wrongly and silently.
+
+Size is the symptom; scope is the cause. `project/reference/planned` reached
+11389 characters because it answered five questions at once — what CLI pieces
+remain, what is open on the agents, what the log reader should do, how the
+checkpoint prompt gets delivered, which files are stale. No title and no
+summary can route a reader to the right part of a document like that, so it is
+read whole or not at all.
+
+Split along the questions, not by length. A key can hold content *and* have
+keys beneath it, so the general document stays where it is and the detail goes
+below: `project/reference/planned` is now a short index over `planned/cli`,
+`planned/agents`, `planned/log-reader` and the rest. Anything already pointing
+at the old key still lands somewhere useful, which is what makes a split safe
+to do late — but adding as you go is cheaper than splitting afterwards.
 
 ## Before the end
 

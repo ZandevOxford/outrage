@@ -49,10 +49,15 @@ Two failures to handle rather than retry:
 **2. Do what the instruction says.**
 
 Follow the instruction against the content just read. For the default summary:
-up to three paragraphs, prose, no heading. Summarise what the document says —
-not what it is about, and not that it is a document. Someone reading only the
-summary should learn the substance and be able to decide whether they need the
-document itself.
+prose, no heading, and **short enough to screen with**. A summary is read
+*instead of* the document, by a search deciding whether the document is worth
+opening, so it earns nothing if it approaches the length of what it replaces.
+Aim for about a fifth of the document; going over sometimes is fine. A short
+document needs one sentence, not a proportional summary.
+
+Summarise what the document says — not what it is about, and not that it is a
+document. Someone reading only the summary should learn the substance and be
+able to decide whether they need the document itself.
 
 Keep it to what the document actually contains. Do not pull in what you know
 about the project from elsewhere, and do not resolve a question the document
@@ -80,6 +85,12 @@ write is rejected with `not a valid JSON string literal`, the value was
 damaged in transit or encoded wrongly: build the literal again from the
 summary and retry once. Do not switch to sending it unencoded — that removes
 the check rather than passing it.
+
+**Escape exactly once.** `"` is written `\"`, never `\\\"`. The check catches
+damage that breaks the shape, not damage that keeps it: over-escaping produces
+a perfectly valid literal that decodes to prose carrying stray backslashes, so
+nothing rejects it and the summary is stored subtly wrong. Observed on
+2026-08-17 in `project/reference/planned/cli:summary`; see `context/5/dogfood`.
 
 **Omit `title`.** Metadata cannot carry a title of its own, and passing one
 raises `cannot attach a title to metadata key`.
