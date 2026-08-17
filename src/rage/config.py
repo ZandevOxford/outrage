@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .errors import RageError
 from .eventlog import DEFAULT as LOG_BESIDE_STORE
 from .store import DEFAULT_DIR_NAME
 
@@ -50,7 +51,7 @@ SCRIPT_NAME = "rage-server"
 _DEFAULT_INDENT = 2
 
 
-class ConfigError(RuntimeError):
+class ConfigError(RageError, RuntimeError):
     """Raised when existing configuration cannot be safely updated."""
 
 

@@ -15,12 +15,13 @@ import sqlite3
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
 from . import eventlog, keys
+from .errors import RageError
 from .eventlog import EventLog
 from .keys import Key
 
@@ -74,15 +75,15 @@ CREATE INDEX IF NOT EXISTS idx_documents_meta   ON documents(meta_name, doc_key)
 """
 
 
-class KeyNotFoundError(LookupError):
+class KeyNotFoundError(RageError, LookupError):
     """Raised when a key holds no content."""
 
 
-class PatternNotFoundError(LookupError):
+class PatternNotFoundError(RageError, LookupError):
     """Raised when a search pattern does not occur in a document."""
 
 
-class BackupError(RuntimeError):
+class BackupError(RageError, RuntimeError):
     """Raised when a backup cannot be taken, or cannot be shown to be good."""
 
 
@@ -247,6 +248,17 @@ class Store:
                 parent  = replace(parent, '.', '/')
             """
         )
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """The open database, for asking questions about the file itself.
+
+        Exposed for :mod:`rage.maintenance`, which checks integrity, the schema
+        version and the row invariants — none of which are questions about
+        documents, so none of them belong on this class. Reaching through it to
+        read or write documents defeats every guarantee the methods above make.
+        """
+        return self._conn
 
     def close(self) -> None:
         self._conn.close()
@@ -743,6 +755,41 @@ def open_store(
         store.close()
 
 
+def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
+    """Read a whole document, following ``next_offset`` until there is no more.
+
+    A function beside the store rather than a method on it, deliberately.
+    Whether the *library* should stop handing out silent partial documents is
+    an open design question — the options are weighed in
+    ``project/reference/planned/agents`` and none has been chosen. This settles
+    only what the command line does, which is a narrower question with an
+    obvious answer: a person redirecting a document to a file wants the
+    document, and a slice is available by asking for one.
+
+    The returned excerpt reports the whole content with ``next_offset`` of
+    ``None``, so a caller cannot tell it apart from a document that fitted.
+    That is the point.
+    """
+    first = store.retrieve_document(key, **kwargs)
+    if first.next_offset is None:
+        return first
+
+    parts = [first.content]
+    offset = first.next_offset
+    while offset is not None:
+        # Only the offset changes: a pattern would re-seek from the new start
+        # and a length would re-cap each slice, so both are spent by the first
+        # read and must not be carried into the continuations.
+        following = store.retrieve_document(
+            key, offset=offset, max_chars=kwargs.get("max_chars", DEFAULT_MAX_CHARS)
+        )
+        parts.append(following.content)
+        offset = following.next_offset
+
+    content = "".join(parts)
+    return replace(first, content=content, returned=len(content), next_offset=None)
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -894,5 +941,6 @@ __all__ = [
     "PatternNotFoundError",
     "Store",
     "open_store",
+    "read_all",
     "resolve_directory",
 ]

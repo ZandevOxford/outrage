@@ -14,11 +14,9 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__, eventlog, logread, store
+from . import __version__, eventlog, logread, maintenance, store
 from . import config as config_module
-from .config import ConfigError
-from .logread import LogError
-from .store import BackupError
+from .errors import RageError
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -215,7 +213,180 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     log.set_defaults(handler=log_command)
 
+    get = subcommands.add_parser(
+        "get",
+        help="print the document stored at a key",
+        description=(
+            "Read a key and print its content. Metadata is a key like any "
+            "other, so `rage get notes/x:title` prints the title. The whole "
+            "document is printed by default: the tool's own read truncates at "
+            "a cap and hands back a continuation offset, which is right for an "
+            "agent's context window and wrong for a person redirecting a "
+            "document to a file. Ask for a slice and you get exactly the slice."
+        ),
+    )
+    _store_option(get)
+    get.add_argument("key", help="Key to read, e.g. context/1/task or context/1/task:title.")
+    get.add_argument("--offset", type=int, default=0, help="Character offset to start at.")
+    get.add_argument("--length", type=int, default=None, help="Characters to return.")
+    get.add_argument("--pattern", default=None, help="Literal substring to start the read from.")
+    get.add_argument(
+        "--occurrence",
+        type=int,
+        default=0,
+        help="Which appearance of --pattern to use, 0 being the first.",
+    )
+    get.add_argument(
+        "--max-chars",
+        dest="max_chars",
+        type=int,
+        default=None,
+        help=(
+            "Cap the read at this many characters, which turns off reading to "
+            f"the end. Matches the tool's own cap at {store.DEFAULT_MAX_CHARS}."
+        ),
+    )
+    get.set_defaults(handler=get_command)
+
+    set_ = subcommands.add_parser(
+        "set",
+        help="store a document, from a file or from standard input",
+        description=(
+            "Write content to a key, overwriting whatever is there. Content "
+            "comes from standard input unless --file or --content is given, so "
+            "a document can be piped in. A `?` segment in the key is replaced "
+            "by a number the store allocates, and the key actually written is "
+            "printed — which is the only way to learn the allocated number."
+        ),
+    )
+    _store_option(set_)
+    set_.add_argument("key", help="Key to write, e.g. notes/thing or notes/? to allocate.")
+    set_.add_argument("--content", default=None, help="Content, instead of reading it in.")
+    set_.add_argument("--file", default=None, metavar="PATH", help="Read the content from a file.")
+    set_.add_argument(
+        "--title",
+        default=None,
+        help=(
+            "Title to store alongside, as the key's :title metadata. What "
+            "later surveys find the document by. Not allowed on a metadata key."
+        ),
+    )
+    set_.add_argument(
+        "--format",
+        dest="format",
+        choices=store.FORMATS,
+        default=None,
+        help="Detected from the content when omitted.",
+    )
+    set_.set_defaults(handler=set_command)
+
+    ls = subcommands.add_parser(
+        "ls",
+        help="list the keys immediately below a key",
+        description=(
+            "List one level. Includes documents, metadata, and keys that exist "
+            "only because something beneath them does — a container holds "
+            "nothing itself and cannot be read, which is why listing and "
+            "reading disagree about whether it is there."
+        ),
+    )
+    _store_option(ls)
+    ls.add_argument("key", nargs="?", default=None, help="Key to list below. Omit for the top.")
+    ls.add_argument(
+        "--recursive",
+        "-r",
+        action="store_true",
+        help="Descend the whole subtree rather than one level.",
+    )
+    ls.set_defaults(handler=ls_command)
+
+    dump = subcommands.add_parser(
+        "dump",
+        help="print every document at and below a key",
+        description=(
+            "Read a subtree. With --meta the result holds that metadata "
+            "instead of the documents, which is how the titles of everything "
+            "under a key are surveyed in one pass. Documents are capped "
+            "individually and a capped one is marked, since a survey that "
+            "silently shows half a document is one judged on half a document."
+        ),
+    )
+    _store_option(dump)
+    dump.add_argument("key", nargs="?", default=None, help="Key whose subtree to read.")
+    dump.add_argument(
+        "--meta",
+        dest="meta_name",
+        action="append",
+        default=None,
+        metavar="NAME",
+        help="Return this metadata instead of documents. Repeatable.",
+    )
+    dump.add_argument("--depth", type=int, default=None, help="Levels below key to descend.")
+    dump.add_argument(
+        "--max-chars",
+        dest="max_chars",
+        type=int,
+        default=store.DEFAULT_BULK_MAX_CHARS,
+        help=f"Cap per document (default {store.DEFAULT_BULK_MAX_CHARS}).",
+    )
+    dump.set_defaults(handler=dump_command)
+
+    rm = subcommands.add_parser(
+        "rm",
+        help="delete a key",
+        description=(
+            "Delete a key and the metadata attached to it. Descendants survive "
+            "unless --recursive is given, so a mistyped key cannot silently "
+            "discard a subtree; what was left behind is reported either way."
+        ),
+    )
+    _store_option(rm)
+    rm.add_argument("key", help="Key to delete.")
+    rm.add_argument(
+        "--recursive", "-r", action="store_true", help="Also delete everything beneath the key."
+    )
+    rm.add_argument(
+        "--dry-run", action="store_true", help="Report what would go without deleting it."
+    )
+    rm.set_defaults(handler=rm_command)
+
+    check = subcommands.add_parser(
+        "check",
+        help="check the store file, and optionally repair it",
+        description=(
+            "Ask whether the file is sound: SQLite's own integrity check, the "
+            "schema version, the row invariants, and how much of the store is "
+            "sitting in the write-ahead log rather than in the database. That "
+            "last one is invisible in normal use and is what makes a copy of "
+            "the database file alone lose recent writes."
+        ),
+    )
+    _store_option(check)
+    check.add_argument(
+        "--repair",
+        action="store_true",
+        help=(
+            "Fold the write-ahead log back into the database and compact it. "
+            "Neither step changes a document."
+        ),
+    )
+    check.set_defaults(handler=check_command)
+
     return parser.parse_args(argv)
+
+
+def _store_option(parser: argparse.ArgumentParser) -> None:
+    """The store directory, spelled the same way on every subcommand."""
+    parser.add_argument(
+        "--dir",
+        dest="directory",
+        metavar="PATH",
+        default=None,
+        help=(
+            f"Store directory. Defaults to {store.ENV_DIR}, then "
+            f"{store.DEFAULT_DIR_NAME} in the working directory."
+        ),
+    )
 
 
 def config_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -243,7 +414,7 @@ def backup_command(args: argparse.Namespace, out: TextIO) -> int:
     if not (directory / store.DB_FILENAME).exists():
         # Opening one would create it, and backing up a store the caller never
         # had is a success that answers the wrong question.
-        raise BackupError(f"no store in {directory}")
+        raise store.BackupError(f"no store in {directory}")
 
     with store.open_store(directory) as opened:
         if args.dry_run:
@@ -320,6 +491,216 @@ def _limited(events: list[logread.Event], limit: int) -> tuple[list[logread.Even
     return events[-limit:], len(events) - limit
 
 
+def get_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Print a document, whole unless a slice was asked for."""
+    with _open_existing(args) as opened:
+        slicing = {
+            "offset": args.offset,
+            "length": args.length,
+            "pattern": args.pattern,
+            "occurrence": args.occurrence,
+        }
+        if args.max_chars is None:
+            excerpt = store.read_all(opened, args.key, **slicing)
+        else:
+            excerpt = opened.retrieve_document(args.key, max_chars=args.max_chars, **slicing)
+
+    # No trailing newline of our own: the content is the output, and a document
+    # round-tripped through `rage get > f` and `rage set < f` has to come back
+    # the same length it went in.
+    out.write(excerpt.content)
+    if excerpt.truncated:
+        print(
+            f"\nrage: {excerpt.returned} of {excerpt.total} characters; "
+            f"more from --offset {excerpt.next_offset}",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def set_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Write a document from an argument, a file, or standard input."""
+    content = _content(args)
+    directory = store.resolve_directory(args.directory)
+    with store.open_store(directory) as opened:
+        written = opened.store_document(args.key, content, args.format, title=args.title)
+
+    # The resolved directory, not the one asked for: a mistyped --dir creates a
+    # store rather than failing, so the only defence is saying where it went.
+    print(f"{written}  {len(content)} characters in {directory / store.DB_FILENAME}", file=out)
+    return 0
+
+
+def _content(args: argparse.Namespace) -> str:
+    """Content from --content, --file, or standard input, in that order."""
+    if args.content is not None and args.file is not None:
+        raise ConflictingSource("give --content or --file, not both")
+    if args.content is not None:
+        return args.content
+    if args.file is not None:
+        path = Path(args.file).expanduser()
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ConflictingSource(f"cannot read {path}: {exc}") from exc
+    if sys.stdin.isatty():
+        # Otherwise the command hangs on an empty terminal looking like it
+        # worked, and the store ends up with an empty document at a good key.
+        raise ConflictingSource("nothing to store: pass --content, --file, or pipe it in")
+    return sys.stdin.read()
+
+
+class ConflictingSource(RageError):
+    """Raised when the content to store cannot be determined from the arguments."""
+
+
+def ls_command(args: argparse.Namespace, out: TextIO) -> int:
+    """List one level, or the whole subtree."""
+    with _open_existing(args) as opened:
+        entries = _walk(opened, args.key) if args.recursive else opened.list_keys(args.key)
+
+    for entry in entries:
+        size = "-" if entry.size is None else str(entry.size)
+        print(f"{entry.kind:<9} {size:>8}  {entry.updated_at or '-':<20}  {entry.key}", file=out)
+    if not entries:
+        print(f"nothing below {args.key or 'the top level'}", file=out)
+    return 0
+
+
+def _walk(opened: store.Store, key: str | None) -> list[store.Entry]:
+    """Every key below ``key``, depth first.
+
+    Built from repeated ``list_keys`` rather than from ``get_documents``,
+    because only ``list_keys`` reports the containers — a key holding nothing
+    itself but with documents beneath it does not appear in a subtree read at
+    all, and leaving it out of a listing is how its children look parentless.
+    """
+    found: list[store.Entry] = []
+    for entry in opened.list_keys(key):
+        found.append(entry)
+        if entry.kind != "metadata":
+            found.extend(_walk(opened, entry.key))
+    return found
+
+
+def dump_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Print a subtree, one document at a time."""
+    with _open_existing(args) as opened:
+        excerpts = opened.get_documents(
+            args.key,
+            meta_name=args.meta_name,
+            depth=args.depth,
+            max_chars=args.max_chars,
+        )
+
+    for excerpt in excerpts:
+        header = f"=== {excerpt.key}"
+        if excerpt.truncated:
+            # Named on the line above the content, so that a reader sees it
+            # before reading rather than after acting on half a document.
+            header += f"  [{excerpt.returned} of {excerpt.total} characters]"
+        print(header, file=out)
+        print(excerpt.content, file=out)
+    if not excerpts:
+        print(f"nothing at or below {args.key or 'the top level'}", file=out)
+    return 0
+
+
+def rm_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Delete a key, saying what went and what stayed."""
+    with _open_existing(args) as opened:
+        beneath = opened.descendant_count(args.key)
+        if args.dry_run:
+            # Asking the store rather than predicting: a dry run that computes
+            # its own answer is one that can disagree with what it previews.
+            doomed = opened.list_keys(args.key) if args.recursive else []
+            print(f"would delete {args.key}", file=out)
+            for entry in doomed:
+                print(f"  and below: {entry.key}", file=out)
+            _report_remainder(args, beneath, out, dry_run=True)
+            return 0
+
+        removed = opened.delete(args.key, recursive=args.recursive)
+
+    for key in removed:
+        print(f"deleted {key}", file=out)
+    if not removed:
+        print(f"nothing stored at {args.key}", file=out)
+    _report_remainder(args, beneath - (len(removed) - 1 if args.recursive else 0), out)
+    return 0
+
+
+def _report_remainder(
+    args: argparse.Namespace, beneath: int, out: TextIO, *, dry_run: bool = False
+) -> None:
+    """Say what a non-recursive delete leaves behind.
+
+    Without this, deleting a key that holds nothing itself but has a subtree
+    under it looks identical to deleting nothing at all — which is exactly the
+    case where a caller most needs to know the subtree is still there.
+    """
+    if args.recursive or beneath <= 0:
+        return
+    verb = "would remain" if dry_run else "remain"
+    print(f"  {beneath} keys below {args.key} {verb}; --recursive to take them too", file=out)
+
+
+def check_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Report on the store file, and optionally fold its sidecar back in."""
+    with _open_existing(args) as opened:
+        report = maintenance.check(opened)
+        _print_report(report, out)
+
+        if not args.repair:
+            if report.repairable:
+                print("\n--repair can fix:", file=out)
+                for problem in report.repairable:
+                    print(f"  {problem.summary}", file=out)
+            return 0 if report.sound else 1
+
+        print("\nrepairing", file=out)
+        for done in maintenance.repair(opened):
+            print(f"  {done.action}: {done.before} -> {done.after} bytes", file=out)
+
+    # Re-opened deliberately: the point of the second check is what the file
+    # looks like now, and reusing the first report would be reporting the claim
+    # rather than the result.
+    with _open_existing(args) as reopened:
+        after = maintenance.check(reopened)
+    print("", file=out)
+    _print_report(after, out)
+    return 0 if after.sound else 1
+
+
+def _print_report(report: maintenance.Report, out: TextIO) -> None:
+    print(f"{report.path}", file=out)
+    print(
+        f"  schema {report.schema}, integrity {report.integrity}, "
+        f"{report.documents} documents, {report.metadata} metadata, "
+        f"{report.characters} characters",
+        file=out,
+    )
+    print(f"  {report.main_bytes} bytes in the database, {report.wal_bytes} in its log", file=out)
+    for problem in report.problems:
+        print(f"  {problem.severity}: {problem.summary}", file=out)
+        if problem.detail:
+            print(f"    {problem.detail}", file=out)
+    if report.sound and not report.problems:
+        print("  nothing wrong", file=out)
+
+
+def _open_existing(args: argparse.Namespace):
+    """Open a store that is already there, refusing to create one.
+
+    ``Store.__init__`` creates what is missing, so a command acting on an
+    existing store has to check first — otherwise a mistyped --dir reports a
+    perfectly healthy empty store, which is a wrong answer delivered as a clean
+    bill of health.
+    """
+    directory = maintenance.require_store(store.resolve_directory(args.directory))
+    return store.open_store(directory)
+
+
 def _report(change: config_module.Change, out: TextIO, *, dry_run: bool) -> None:
     """Say what is about to change, in enough detail to notice a wrong answer.
 
@@ -350,9 +731,24 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     args = parse_args(argv)
     try:
         return args.handler(args, out or sys.stdout)
-    except (ConfigError, BackupError, LogError) as exc:
+    except RageError as exc:
+        # One base rather than a tuple that grows with each command. A failure
+        # that is not a RageError is a bug in rage, and a traceback is the right
+        # output for a bug.
         print(f"rage: {exc}", file=sys.stderr)
         return 1
 
 
-__all__ = ["backup_command", "config_command", "log_command", "main", "parse_args"]
+__all__ = [
+    "backup_command",
+    "check_command",
+    "config_command",
+    "dump_command",
+    "get_command",
+    "log_command",
+    "ls_command",
+    "main",
+    "parse_args",
+    "rm_command",
+    "set_command",
+]
