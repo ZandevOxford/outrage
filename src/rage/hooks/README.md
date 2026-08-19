@@ -21,9 +21,11 @@ checkpoint hook, when it exists, will have to read the store and so will have
 to call the `rage` console script by absolute path; see
 `project/reference/planned/hook-install` in the store.
 
-**Unsolved:** how a re-run recognises rage's own entry in order to replace it
-rather than append a second one. `hooks.SessionStart` is a list, so there is no
-name to key on the way `mcpServers` has one.
+A re-run recognises its own entry by a marker carried as a shell comment on
+the command — `# rage-managed:session-start:v1`, matched on the prefix so a
+version bump still identifies it. `hooks.SessionStart` is a list with no name
+to key on the way `mcpServers` has one, and an unknown JSON key would depend on
+the client tolerating one. See `project/reference/planned/hook-install/marker`.
 
 **Untested on Windows**, and the `echo` form is unlikely to survive `cmd.exe`,
 where single quotes are ordinary text rather than quoting — the hook would exit
