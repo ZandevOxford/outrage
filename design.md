@@ -8,6 +8,17 @@ Python implemented MCP server primarily for use in local mode.
 
 Provides access to the data store.
 
+**The store introduces itself.** The document at the key `readme` is a store's
+entry point — what it holds and what to read first — and the server appends it
+to its own instructions at startup, so it reaches a session without a tool call
+and without the session knowing to ask. A line telling a reader to go and read
+a key is a line that can be read past; this is the same argument that puts
+`title` in the tool signature rather than in a convention document. It is
+capped: over `README_MAX_CHARS` the length is reported and nothing is inlined,
+because a silently shortened entry point is the failure the entry point exists
+to prevent. Instructions are sent once at initialisation, so a readme written
+during a session reaches the next one.
+
 ### Data store
 
 Python library for storing data used by the MCP server.

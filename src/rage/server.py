@@ -21,7 +21,7 @@ from pydantic import Field
 from . import __version__, eventlog
 from . import store as store_module
 from .eventlog import EventLog
-from .store import DEFAULT_BULK_MAX_CHARS, DEFAULT_MAX_CHARS, Excerpt, Store
+from .store import DEFAULT_BULK_MAX_CHARS, DEFAULT_MAX_CHARS, Excerpt, KeyNotFoundError, Store
 
 
 def _forbid_unknown_arguments() -> None:
@@ -114,7 +114,64 @@ one — `?` allocates the key, so this costs no naming decision.
 
 A key that holds nothing itself but has keys beneath it is a container: reading
 it fails, listing it does not.
+
+The document at `readme` is the store's entry point: what this particular store
+holds, and what to read before anything else. It is appended below when there
+is one, so a session starts with it rather than having to know to ask. It is
+read once, when the server starts, so a readme written or changed during a
+session reaches the next one and not this one.
 """
+
+#: The key whose document introduces the store. One name, so that a session
+#: arriving at a store nobody described to it has somewhere to look, and a
+#: session that learns how one is organised has somewhere to write it.
+README_KEY = "readme"
+
+#: How much of the readme is carried in the instructions. It rides in the
+#: context of every session against this store, so it is a routing document and
+#: not a manual: names what is here, points at what to read, and stops.
+README_MAX_CHARS = 2000
+
+#: What is said when the store has no readme. The empty store is exactly where
+#: naming the convention is worth most, since the session that goes on to learn
+#: the layout is the one that can write it down.
+NO_README = (
+    f"This store has no `{README_KEY}` document. If you work out how it is "
+    f"organised, or what a later session should read first, store that there."
+)
+
+
+def instructions(store: Store) -> str:
+    """The static instructions, with this store's own readme appended.
+
+    Delivered rather than requested. A line telling a session to go and read a
+    key is a line that can be read past, and this project has two records of
+    exactly that happening -- see `planned/agents` on trap 2, and
+    `project/reference/agents` on the search cascade. The readme costs no tool
+    call and cannot be skipped, which is the same argument that puts `title` in
+    the tool signature: reachable at the moment it applies, rather than
+    depending on somebody remembering it then.
+
+    Over ``README_MAX_CHARS`` nothing is inlined and the length is reported
+    instead. A silently shortened entry point would be the project's own
+    recurring failure at the one document meant to prevent it, and a reader
+    told the size can decide to go and read the rest.
+    """
+    try:
+        excerpt = store.retrieve_document(README_KEY, max_chars=README_MAX_CHARS)
+    except KeyNotFoundError:
+        # Also the container case: a key with documents beneath it and nothing
+        # of its own introduces nothing.
+        return f"{INSTRUCTIONS}\n{NO_README}\n"
+
+    if excerpt.truncated:
+        return (
+            f"{INSTRUCTIONS}\n"
+            f"The `{README_KEY}` document here is {excerpt.total} characters, too long to "
+            f"carry in these instructions. Read it before starting.\n"
+        )
+    heading = f"--- `{README_KEY}`, this store's own introduction ---"
+    return f"{INSTRUCTIONS}\n{heading}\n\n{excerpt.content}\n"
 
 
 class RequestLog:
@@ -189,7 +246,7 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
     server = MCPServer(
         name="rage",
         version=__version__,
-        instructions=INSTRUCTIONS,
+        instructions=instructions(store),
         # Registered only when there is somewhere to write, so that the default
         # configuration adds nothing to the SDK's chain at all.
         middleware=[RequestLog(log)] if log.enabled else None,
@@ -627,4 +684,12 @@ def main(argv: list[str] | None = None) -> None:
         log.close()
 
 
-__all__ = ["INSTRUCTIONS", "RequestLog", "build_server", "main", "parse_args"]
+__all__ = [
+    "INSTRUCTIONS",
+    "README_KEY",
+    "RequestLog",
+    "build_server",
+    "instructions",
+    "main",
+    "parse_args",
+]

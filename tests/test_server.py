@@ -10,9 +10,16 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
 from rage import eventlog
+from rage import server as server_module
 from rage.eventlog import EventLog
 from rage.server import RequestLog, build_server, parse_args
 from rage.store import Store
+
+
+@pytest.fixture
+def store(tmp_path):
+    with Store(tmp_path) as opened:
+        yield opened
 
 
 @pytest.fixture
@@ -616,3 +623,53 @@ def test_paging_a_survey_tiles_its_windows(tmp_path):
     # could double counts `a/x` and loses nothing visibly.
     assert sorted(seen) == sorted(every) == ["a/x", "b", "b/p"]
     assert len(seen) == len(set(seen))
+
+
+# -- the readme, delivered rather than requested --------------------------
+
+
+def test_a_readme_is_carried_in_the_instructions(store):
+    store.store_document("readme", "# This store\n\nRead `project` next.")
+
+    text = server_module.instructions(store)
+
+    # Delivered, not requested: a line telling a session to go and read a key
+    # is a line that can be read past, and the whole point is that this one
+    # arrives before the session has to know to ask.
+    assert "Read `project` next." in text
+    assert text.startswith(server_module.INSTRUCTIONS)
+
+
+def test_a_store_with_no_readme_is_told_the_convention(store):
+    text = server_module.instructions(store)
+
+    # The empty store is where naming the convention is worth most: the session
+    # that works out the layout is the one that can write it down.
+    assert "no `readme` document" in text
+
+
+def test_a_container_at_the_readme_key_introduces_nothing(store):
+    store.store_document("readme/notes", "beneath, not at")
+
+    assert "no `readme` document" in server_module.instructions(store)
+
+
+def test_an_oversized_readme_is_named_rather_than_shortened(store):
+    store.store_document("readme", "x" * 2500)
+
+    text = server_module.instructions(store)
+
+    # A silently shortened entry point would be this project's own recurring
+    # failure at the one document meant to prevent it. Told the size, a reader
+    # can decide to go and read the rest.
+    assert "x" * 2500 not in text
+    assert "2500 characters" in text
+    assert "Read it before starting" in text
+
+
+def test_the_server_is_built_with_the_readme_in_place(store):
+    store.store_document("readme", "the store's own introduction")
+
+    built = server_module.build_server(store)
+
+    assert "the store's own introduction" in built.instructions
