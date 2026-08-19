@@ -765,10 +765,10 @@ def test_ls_lists_a_level_larger_than_one_page(tmp_path):
 
 
 def test_ls_pages_rather_than_asking_for_everything(tmp_path, monkeypatch):
-    import rage.cli
+    import rage.bulk
 
     a_wide_store(tmp_path / ".rage", 20)
-    monkeypatch.setattr(rage.cli, "PAGE", 3)
+    monkeypatch.setattr(rage.bulk, "PAGE", 3)
 
     _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
 
@@ -776,13 +776,13 @@ def test_ls_pages_rather_than_asking_for_everything(tmp_path, monkeypatch):
 
 
 def test_ls_recursive_pages_at_every_level(tmp_path, monkeypatch):
-    import rage.cli
+    import rage.bulk
     from rage.store import Store
 
     with Store(tmp_path / ".rage") as store:
         for number in range(1, 8):
             store.store_document(f"deep/{number}/leaf", "content")
-    monkeypatch.setattr(rage.cli, "PAGE", 2)
+    monkeypatch.setattr(rage.bulk, "PAGE", 2)
 
     _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive", "deep")
 
@@ -802,10 +802,10 @@ def test_ls_limit_shows_less_and_says_so(tmp_path, capsys):
 
 
 def test_dump_exports_more_than_one_page_whole(tmp_path, monkeypatch):
-    import rage.cli
+    import rage.bulk
 
     a_wide_store(tmp_path / ".rage", 10, content="x" * 3000)
-    monkeypatch.setattr(rage.cli, "PAGE", 2)
+    monkeypatch.setattr(rage.bulk, "PAGE", 2)
 
     _, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes")
 
@@ -828,11 +828,12 @@ def test_dump_limit_shows_less_and_says_so(tmp_path, capsys):
 def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
     import argparse
 
+    import rage.bulk
     import rage.cli
     from rage.store import Store
 
     a_wide_store(tmp_path / ".rage", 10)
-    monkeypatch.setattr(rage.cli, "PAGE", 2)
+    monkeypatch.setattr(rage.bulk, "PAGE", 2)
 
     calls = 0
     original = Store.get_documents
@@ -894,3 +895,120 @@ def test_a_malformed_key_is_one_line_and_not_a_traceback(tmp_path, capsys):
     assert "metadata segment" in err
     assert "Traceback" not in err
     assert err.count("\n") == 1
+
+
+# -- export and import ---------------------------------------------------
+
+
+def an_exportable_store(directory: Path) -> Path:
+    from rage.store import Store
+
+    with Store(directory) as store:
+        store.store_document("project", "# Project", title="The project")
+        store.store_document("project/reference/env", '{"python": "3.14"}')
+    return directory
+
+
+def test_export_writes_a_file_per_document(tmp_path, capsys):
+    an_exportable_store(tmp_path / ".rage")
+
+    status, output = run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+
+    assert status == 0
+    assert (tmp_path / "out/project.md").read_text() == "# Project"
+    assert (tmp_path / "out/project/!title.md").read_text() == "The project"
+    assert (tmp_path / "out/project/reference/env.json").exists()
+    assert "wrote" in output
+    # The counts go to stderr, so a report piped onward is not corrupted by a
+    # note about itself.
+    assert "3 written" in capsys.readouterr().err
+
+
+def test_export_dry_run_writes_nothing(tmp_path):
+    an_exportable_store(tmp_path / ".rage")
+
+    status, output = run(
+        "export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"), "--dry-run"
+    )
+
+    assert status == 0
+    assert "would write" in output
+    assert not (tmp_path / "out").exists()
+
+
+def test_export_refuses_a_store_that_is_not_there(tmp_path, capsys):
+    status, _ = run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+
+    assert status == 1
+    assert "rage:" in capsys.readouterr().err
+
+
+def test_import_stores_a_directory_and_says_where(tmp_path, capsys):
+    an_exportable_store(tmp_path / ".rage")
+    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+
+    status, output = run("import", "--dir", str(tmp_path / "fresh"), str(tmp_path / "out"))
+
+    assert status == 0
+    assert "wrote" in output
+    # A first write may create the store, as `rage set` may: seeding an empty
+    # one from a directory is that write in bulk. Saying where it went is then
+    # the only thing that makes a mistyped --dir visible.
+    assert str(tmp_path / "fresh" / "store.sqlite") in capsys.readouterr().err
+
+    _, listed = run("ls", "--dir", str(tmp_path / "fresh"), "--recursive")
+    assert "project/reference/env" in listed
+
+
+def test_import_leaves_what_is_already_stored(tmp_path):
+    an_exportable_store(tmp_path / ".rage")
+    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    (tmp_path / "out/project.md").write_text("# Changed on disk")
+
+    status, output = run("import", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+
+    assert status == 0
+    assert "skipped" in output
+    _, content = run("get", "--dir", str(tmp_path / ".rage"), "project")
+    assert content == "# Project"
+
+
+def test_import_overwrites_when_asked(tmp_path):
+    an_exportable_store(tmp_path / ".rage")
+    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    (tmp_path / "out/project.md").write_text("# Changed on disk")
+
+    run(
+        "import",
+        "--dir",
+        str(tmp_path / ".rage"),
+        str(tmp_path / "out"),
+        "--on-conflict",
+        "overwrite",
+    )
+
+    _, content = run("get", "--dir", str(tmp_path / ".rage"), "project")
+    assert content == "# Changed on disk"
+
+
+def test_import_stopping_at_a_conflict_is_a_failed_run(tmp_path):
+    an_exportable_store(tmp_path / ".rage")
+    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+
+    status, output = run(
+        "import", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"), "--on-conflict", "stop"
+    )
+
+    # The exit status is the only part of a partial run a script can see.
+    assert status == 1
+    assert "stopped" in output
+
+
+def test_import_under_a_key_grafts_the_tree(tmp_path):
+    an_exportable_store(tmp_path / ".rage")
+    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+
+    run("import", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"), "archive/2026")
+
+    _, content = run("get", "--dir", str(tmp_path / ".rage"), "archive/2026/project")
+    assert content == "# Project"

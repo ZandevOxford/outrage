@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__, eventlog, logread, maintenance, store
+from . import __version__, bulk, eventlog, logread, maintenance, store
 from . import config as config_module
 from .errors import RageError
 
@@ -343,6 +343,72 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _limit_option(dump, "documents")
     dump.set_defaults(handler=dump_command)
 
+    export = subcommands.add_parser(
+        "export",
+        help="write a subtree out as a directory of files",
+        description=(
+            "Export documents to files, one file per document: a key segment "
+            "is a directory, and the last one is a file with an extension "
+            "naming its format. The extension is what lets a key be both a "
+            "document and a container, since a path cannot be both a file and "
+            "a directory. Metadata is a segment like any other, so a title is "
+            "exported as the file !title.md beside its document's directory. "
+            "Paths are written from the top of the key namespace rather than "
+            "from the key asked for, so an export of a subtree imports back to "
+            "where it came from. This is not a backup: it carries the "
+            "documents and nothing the database holds about them, and `rage "
+            "backup` is the copy that keeps the rest."
+        ),
+    )
+    _store_option(export)
+    export.add_argument(
+        "target", metavar="DIRECTORY", help="Directory to write into. Created if missing."
+    )
+    export.add_argument("key", nargs="?", default=None, help="Key whose subtree to export.")
+    _conflict_option(export, "A file already there is")
+    export.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be written without writing it.",
+    )
+    export.set_defaults(handler=export_command)
+
+    import_ = subcommands.add_parser(
+        "import",
+        help="store a directory of files as documents",
+        description=(
+            "Import files as documents, inverting `rage export`: a path "
+            "becomes a key, and a .md or .json extension is stripped and read "
+            "as the format. Any other name is kept whole, so a file at "
+            "src/myfile.py is stored at the key src/myfile.py. Nothing already "
+            "stored is replaced unless --on-conflict says so. There is no mode "
+            "that refuses the whole import unless every key is free: a "
+            "directory could be walked twice to promise that and a stream "
+            "could not, and --dry-run answers the same question without "
+            "promising anything it might later have to take back."
+        ),
+    )
+    _store_option(import_)
+    import_.add_argument(
+        "source", metavar="DIRECTORY", help="Directory to read documents from."
+    )
+    import_.add_argument(
+        "key",
+        nargs="?",
+        default=None,
+        help="Key prefix to store beneath. The top level by default.",
+    )
+    _conflict_option(import_, "A key already holding a document is")
+    import_.add_argument(
+        "--hidden",
+        action="store_true",
+        help="Include files and directories whose name begins with a dot.",
+    )
+    import_.add_argument(
+        "--dry-run", action="store_true", help="Report what would be stored without storing it."
+    )
+    import_.set_defaults(handler=import_command)
+
     rm = subcommands.add_parser(
         "rm",
         help="delete a key",
@@ -403,6 +469,26 @@ def _limit_option(parser: argparse.ArgumentParser, what: str) -> None:
         default=None,
         metavar="N",
         help=f"Show at most N {what}, and say so on stderr. Everything by default.",
+    )
+
+
+def _conflict_option(parser: argparse.ArgumentParser, what: str) -> None:
+    """What to do about something already at the far end, spelled once.
+
+    Per item rather than for the run as a whole, which is the only promise a
+    stream can keep: 'stop' stops at the first conflict and says what it had
+    already done, rather than claiming an all-or-nothing it would have to
+    abandon the moment the source stopped being a directory it can pre-walk.
+    """
+    parser.add_argument(
+        "--on-conflict",
+        dest="on_conflict",
+        choices=bulk.CONFLICTS,
+        default=bulk.SKIP,
+        help=(
+            f"{what} left alone (skip, the default), replaced (overwrite), or "
+            f"stops the run where it stands (stop)."
+        ),
     )
 
 
@@ -585,18 +671,11 @@ class ConflictingSource(RageError):
     """Raised when the content to store cannot be determined from the arguments."""
 
 
-#: How much of a collection one internal query asks for. The command line reads
-#: to the end regardless, so this only decides how many round trips that takes
-#: and how much is held at once: large enough to be one query for an ordinary
-#: level, small enough that a huge one is never held whole.
-PAGE = 200
-
-
 def ls_command(args: argparse.Namespace, out: TextIO) -> int:
     """List one level, or the whole subtree, printing as it goes."""
     shown = 0
     with _open_existing(args) as opened:
-        entries = _walk(opened, args.key) if args.recursive else _level(opened, args.key)
+        entries = bulk.walk(opened, args.key) if args.recursive else bulk.levels(opened, args.key)
         for entry in entries:
             if args.limit is not None and shown >= args.limit:
                 # On stderr, so a listing piped into something else is not
@@ -612,38 +691,6 @@ def ls_command(args: argparse.Namespace, out: TextIO) -> int:
     if not shown:
         print(f"nothing below {args.key or 'the top level'}", file=out)
     return 0
-
-
-def _level(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
-    """One level, a page at a time, to the end.
-
-    The store pages and the command line does not: a person listing a key wants
-    the level, and a listing that stops at an internal page size is the silent
-    partial answer this project keeps finding. Streaming is what makes it both
-    complete and bounded in memory — and it fails better, since a long listing
-    interrupted has already shown its first thousand lines rather than nothing.
-    """
-    cursor = None
-    while True:
-        page = opened.list_keys(key, limit=PAGE, after=cursor)
-        yield from page.items
-        if page.next_cursor is None:
-            return
-        cursor = page.next_cursor
-
-
-def _walk(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
-    """Every key below ``key``, depth first.
-
-    Built from repeated ``list_keys`` rather than from ``get_documents``,
-    because only ``list_keys`` reports the containers — a key holding nothing
-    itself but with documents beneath it does not appear in a subtree read at
-    all, and leaving it out of a listing is how its children look parentless.
-    """
-    for entry in _level(opened, key):
-        yield entry
-        if entry.kind != "metadata":
-            yield from _walk(opened, entry.key)
 
 
 def dump_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -683,7 +730,7 @@ def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.
             meta_name=args.meta_name,
             depth=args.depth,
             max_chars=args.max_chars or store.DEFAULT_BULK_MAX_CHARS,
-            limit=PAGE,
+            limit=bulk.PAGE,
             after=cursor,
         )
         for found in page.items:
@@ -701,6 +748,96 @@ def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.
         cursor = page.next_cursor
 
 
+def export_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Write a subtree out as files, reporting each document as it lands."""
+    with _open_existing(args) as opened:
+        transfers = bulk.export_tree(
+            opened,
+            args.key,
+            args.target,
+            on_conflict=args.on_conflict,
+            dry_run=args.dry_run,
+        )
+        return _report_transfers(transfers, args, out, source_first=False)
+
+
+def import_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Store a directory of files, reporting each file as it goes in."""
+    # Creating rather than refusing, for the reason `set` does: a first write
+    # has to be able to make the store it writes to, and seeding an empty one
+    # from a directory is that write in bulk. The resolved path is printed for
+    # the same reason too — it is the only thing that makes a mistyped --dir
+    # visible rather than silently successful.
+    directory = store.resolve_directory(args.directory)
+    with store.open_store(directory) as opened:
+        transfers = bulk.import_tree(
+            opened,
+            args.source,
+            args.key,
+            on_conflict=args.on_conflict,
+            dry_run=args.dry_run,
+            hidden=args.hidden,
+        )
+        status = _report_transfers(transfers, args, out, source_first=True)
+    print(f"rage: into {directory / store.DB_FILENAME}", file=sys.stderr)
+    return status
+
+
+def _report_transfers(
+    transfers: Iterator[bulk.Transfer],
+    args: argparse.Namespace,
+    out: TextIO,
+    *,
+    source_first: bool,
+) -> int:
+    """Print one line per document as it crosses, then a count, and say how it went.
+
+    A line at a time rather than a summary at the end, because the operation
+    streams: what has been reported is what has actually happened, so an
+    interrupted run leaves a true record rather than none. The counts go to
+    stderr, so a report piped onward is not corrupted by a note about itself.
+    """
+    counted: dict[str, int] = {}
+    for transfer in transfers:
+        counted[transfer.action] = counted.get(transfer.action, 0) + 1
+        left, right = transfer.key, transfer.path
+        if source_first:
+            left, right = right, left
+        line = f"{_verb(transfer.action, args.dry_run):<11} {left or '-'}  ->  {right or '-'}"
+        if transfer.reason is not None:
+            line += f"  ({transfer.reason})"
+        print(line, file=out)
+
+    if not counted:
+        print("nothing to transfer", file=out)
+    else:
+        counts = ", ".join(f"{count} {NOUNS[action]}" for action, count in counted.items())
+        prefix = "dry run, nothing changed: " if args.dry_run else ""
+        print(f"rage: {prefix}{counts}", file=sys.stderr)
+    # A run that stopped or failed is not a run that worked, and the exit
+    # status is the only part of that a script can see.
+    return 1 if counted.get(bulk.FAILED) or counted.get(bulk.STOPPED) else 0
+
+
+#: What to call each action when counting them up, as against when reporting
+#: one as it happens: "5 written" rather than "5 wrote".
+NOUNS = {
+    bulk.WROTE: "written",
+    bulk.SKIPPED: "skipped",
+    bulk.FAILED: "failed",
+    bulk.STOPPED: "stopped",
+}
+
+
+def _verb(action: str, dry_run: bool) -> str:
+    """What to call an action that a dry run did not take."""
+    if not dry_run:
+        return action
+    return {bulk.WROTE: "would write", bulk.SKIPPED: "would skip", bulk.STOPPED: "would stop"}.get(
+        action, action
+    )
+
+
 def rm_command(args: argparse.Namespace, out: TextIO) -> int:
     """Delete a key, saying what went and what stayed."""
     with _open_existing(args) as opened:
@@ -714,7 +851,7 @@ def rm_command(args: argparse.Namespace, out: TextIO) -> int:
                 # the first level of a deletion reaching five is not a preview
                 # of what --recursive takes.
                 previewed = 0
-                for entry in _walk(opened, args.key):
+                for entry in bulk.walk(opened, args.key):
                     if args.limit is not None and previewed >= args.limit:
                         print(f"  and {beneath - previewed} more", file=out)
                         break
@@ -847,7 +984,9 @@ __all__ = [
     "check_command",
     "config_command",
     "dump_command",
+    "export_command",
     "get_command",
+    "import_command",
     "log_command",
     "ls_command",
     "main",

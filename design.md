@@ -81,7 +81,9 @@ uses one.
 
 ### Command line tool
 
-Not yet implemented.
+Partly implemented: `rage get`, `set`, `ls`, `dump`, `rm`, `check`, `export`,
+`import`, `config`, `backup` and `log`. Installing the packaged skill and its
+hooks is the piece still outstanding.
 
 A CLI over the same store library, covering everything the MCP server exposes
 plus the operations that only make sense from a shell:
@@ -94,6 +96,23 @@ plus the operations that only make sense from a shell:
 * Installing the packaged skill and its hooks into a project, for the same
   reason: the skill ships inside the package, and the CLI is the thing that
   knows where the package is.
+
+**Documents as files.** `rage export` and `rage import` map the key namespace
+onto a directory by one rule: a segment is a path component, and a document
+gains an extension naming its format — `.md` or `.json`. `a/b` is the file
+`a/b.md`, and anything below `a/b` is in the directory `a/b/`. The extension is
+what makes that possible at all, since a key is a document and a container at
+once and a path cannot be both a file and a directory. Metadata is a segment
+like any other, so a title is the file `a/b/!title.md`. Nothing is escaped,
+which is what the widened character set bought: what a filename can hold, a
+segment can hold. The two exceptions are the two segments a filesystem reads as
+navigation — `.` and `..` are legal keys with no path, and an export refuses
+them rather than climbing out of the directory it was given.
+
+Paths are written from the top of the namespace rather than from the key being
+exported, so an exported subtree imports back to where it came from and the
+import's key prefix is what grafts it elsewhere. This is not a backup: it
+carries documents and formats, and nothing else the database holds about them.
 
 The last of these removes most of the friction in first time setup. The server
 has to be launched by an absolute path into whichever environment it was

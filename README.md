@@ -19,8 +19,10 @@ the store reports the key it chose.
 ## Status
 
 The store, the MCP server, the key handling and the skill are implemented. The
-command line tool is under way: it can write the MCP configuration (`rage
-config`) and take a verified backup (`rage backup`). See
+command line tool is under way: it covers the store operations (`rage get`,
+`set`, `ls`, `dump`, `rm`), bulk export and import to a directory of files
+(`rage export`, `rage import`), the MCP configuration (`rage config`), a
+verified backup (`rage backup`), and the event log (`rage log`). See
 [implementation.md](implementation.md) for what is done and what is next.
 
 ## Documentation

@@ -630,6 +630,21 @@ class Store:
         ).fetchone()
         return row["n"]
 
+    def exists(self, key: str) -> bool:
+        """Whether ``key`` itself holds a document.
+
+        Not the same question as whether anything is below it: a bulk import
+        asks this per file to decide about one key, and a container that holds
+        nothing itself is free for a document to be written to.
+
+        Deliberately cheaper than a read, since the answer is wanted for every
+        file in an import and the content is not.
+        """
+        row = self._conn.execute(
+            "SELECT 1 FROM documents WHERE key = ?", (keys.parse(key).key,)
+        ).fetchone()
+        return row is not None
+
     # -- reading ---------------------------------------------------------
 
     @_logged("retrieve_document")
