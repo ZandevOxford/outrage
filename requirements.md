@@ -8,7 +8,7 @@ file is the short human-readable version that should outlive both.
 
 ## What rage is for
 
-Three uses. They pull in different directions, and most of the tension in the
+Four uses. They pull in different directions, and most of the tension in the
 design comes from that.
 
 **Session context.** Notes, decisions, findings and task state that outlive a
@@ -33,7 +33,17 @@ reference corpus is imported once and read thereafter; codebase notes are
 written continuously, as the code they describe is read and changed, and they
 go stale when it moves underneath them.
 
-Everything built up to 2026-08-19 assumed the first use. The other two were
+**Agents working in parallel.** Several agents running at once, collating
+findings into one store and using it to pass work between them — one writes what
+it found, another reads it. Autonumbering exists for this: a `?` segment lets an
+agent add a document without coordinating over names and without risking a
+clash with another agent doing the same thing at the same time.
+
+This use has no single author. Documents arrive concurrently from processes
+that cannot see each other, and a reader may be paging through a subtree while
+it is still being written to.
+
+Everything built up to 2026-08-19 assumed the first use. The other three were
 always intended but had never been written down, which is how several parts of
 the system came to quietly assume a store small enough to read in full.
 
@@ -54,7 +64,20 @@ over time, and interleaved with reads — possibly from more than one session at
 once. A store that answers reference-base reads well but serialises or loses
 concurrent writes has met half the requirement.
 
-### 2. Everything that returns data is bounded
+### 2. Concurrent use loses nothing
+
+Several writers at once is an ordinary case, not a stressed one — parallel
+agents in use 4, and more than one session in use 3.
+
+Two things follow. Allocating a `?` number must be atomic against other
+writers, or the feature meant to prevent clashes causes them. And a reader
+paging through a subtree while it is written to must not silently miss what
+arrives, which is what requirement 3 is about.
+
+Neither can be left to callers being careful. Agents cannot see each other by
+construction, so there is nobody to be careful.
+
+### 3. Everything that returns data is bounded
 
 No call may return an amount of data determined by how much happens to be in
 the store. This holds on both axes:
@@ -67,7 +90,17 @@ A bounded call needs a way to ask for the next part, so bounding implies
 pagination. The point is not to make big answers small; it is that the caller,
 not the store's contents, decides how much arrives.
 
-### 3. A partial answer says how big the whole is
+**A continuation must name a stable point, not a count.** "Resume after key K",
+never "skip the first 200". Under uses 3 and 4 the store is being written to
+while it is being read, and a positional cursor shifts whenever something lands
+before it, so a page silently repeats or skips. A key does not move.
+
+This is also why documents are expected to be small and usually read whole. The
+collection axis is the one that has to be got right; the content axis matters
+less when a document fits in one read, and keeping documents small is what
+makes that true.
+
+### 4. A partial answer says how big the whole is
 
 Any component returning part of something must also report the size of the
 whole — the library function, the MCP tool, and the skill's own guidance about
@@ -83,7 +116,7 @@ sample.
 `total` and a continuation offset. That shape is the model; what is missing is
 the same discipline everywhere else.
 
-### 4. A subtree can be understood without reading it
+### 5. A subtree can be understood without reading it
 
 There must be calls that describe a body of documents in a result whose size
 does not depend on the size of that body: how many documents lie beneath a key,
@@ -94,7 +127,7 @@ Pagination alone does not satisfy this. Paging through forty thousand titles
 does answer "what is in here", but only by reading all of it, and reading all
 of it is precisely what must not be required.
 
-### 5. No success that cannot be told from a real one
+### 6. No success that cannot be told from a real one
 
 The failure this project keeps meeting: an operation that reports success while
 having done something less than it appears. Unknown arguments dropped in
@@ -108,7 +141,7 @@ belongs in the library, paid for once, rather than in prose telling every
 caller to remember. A rule that nothing enforces is a rule that survives until
 the next edit.
 
-### 6. Guidance must scale with the store
+### 7. Guidance must scale with the store
 
 The advice the system gives about itself is part of the system. The MCP server
 instructions and the packaged skill currently both say to survey the store by
@@ -128,6 +161,11 @@ Deferred section of `design.md`.
 Bulk import, on-disk size, whether metadata values want their own index, and
 whether a reference corpus belongs in the same store as session context all
 follow from requirement 1 and none of them are settled.
+
+Requirement 2 has a live defect behind it: allocated numbers are not padded, so
+`findings/10` sorts before `findings/2` and a key-based cursor would skip what
+arrives after it. Measured, and written up in the store under
+`planned/pagination/key-ordering`. Allocation itself is already atomic.
 
 The codebase-notes use raises two more, both open. There is no way to **move or
 rename a key or a subtree** — the store can write and delete, nothing else — so
