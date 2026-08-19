@@ -1,4 +1,10 @@
-"""Installing rage's hooks into a project's ``.claude/settings.json``.
+"""Setting a project up: the MCP entry, the hook, and the skill and agents.
+
+``init`` is the whole of ``rage init`` and the three parts are separable: the
+server entry is :mod:`rage.config`'s and is called rather than repeated, the
+hook is written into ``.claude/settings.json`` here, and the packaged skill and
+agents are copied into ``.claude/``. Most of what follows is about the hook,
+because it is the part with something to say.
 
 The settings file belongs to the user, not to rage. It holds their model, their
 permissions and their own hooks, so this writes the one entry it owns and
@@ -45,10 +51,13 @@ to retire this.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from . import config
 from .config import ConfigError, read_config, write_config
 
 #: The hook event rage installs into. One today; the marker names which hook an
@@ -84,6 +93,10 @@ class HookChange:
     """The entry being replaced, when there was one."""
     duplicates: int = 0
     """Extra entries of ours removed, from a run that could not identify them."""
+
+    @property
+    def writes(self) -> bool:
+        return self.action != "unchanged"
 
     def describe(self) -> str:
         line = f"{self.path}: {self.action}"
@@ -189,21 +202,205 @@ def install(project_dir: str | Path, dry_run: bool = False) -> HookChange:
     """
     path = settings_path(project_dir)
     change, merged, original = plan(path)
-    if not dry_run and change.action != "unchanged":
+    if not dry_run and change.writes:
         write_config(path, merged, original)
     return change
 
 
+# -- the packaged skill and agents ---------------------------------------
+
+
+#: Packaged directories that install into ``.claude/``, copied whole. Markdown
+#: a client reads directly: nothing here is executed, so nothing here needs an
+#: interpreter or an absolute path, and a copy of it is complete on its own.
+ASSET_DIRS = ("skills", "agents")
+
+CLAUDE_DIR = ".claude"
+
+
+@dataclass(frozen=True, slots=True)
+class FileChange:
+    """What installing one packaged file would do, or did."""
+
+    path: Path
+    source: Path
+    action: str
+    """'created', 'updated', 'unchanged' or 'linked'."""
+
+    @property
+    def writes(self) -> bool:
+        return self.action in ("created", "updated")
+
+    def describe(self) -> str:
+        return f"{self.path}: {self.action}"
+
+
+def asset_sources() -> list[tuple[Path, Path]]:
+    """Every packaged file to install, as a source and a path below ``.claude``."""
+    found: list[tuple[Path, Path]] = []
+    for name in ASSET_DIRS:
+        root = Path(__file__).parent / name
+        if not root.is_dir():  # pragma: no cover - a broken install
+            raise InstallError(f"packaged {name} missing at {root}")
+        for source in sorted(root.rglob("*")):
+            if source.is_file() and not source.name.startswith("."):
+                found.append((source, Path(name) / source.relative_to(root)))
+    if not found:  # pragma: no cover - a broken install
+        raise InstallError(f"packaged {CLAUDE_DIR} content is empty at {Path(__file__).parent}")
+    return found
+
+
+def plan_assets(project_dir: str | Path) -> list[FileChange]:
+    """Work out which packaged files a project is missing or has an older copy of."""
+    root = Path(project_dir) / CLAUDE_DIR
+    changes = []
+    for source, relative in asset_sources():
+        path = root / relative
+        if _through_a_link(root, relative):
+            action = "linked"
+        elif not path.exists():
+            action = "created"
+        elif path.read_bytes() == source.read_bytes():
+            action = "unchanged"
+        else:
+            action = "updated"
+        changes.append(FileChange(path=path, source=source, action=action))
+    return changes
+
+
+def write_assets(changes: list[FileChange]) -> None:
+    """Copy across the files that differ, atomically and one at a time."""
+    for change in changes:
+        if not change.writes:
+            continue
+        change.path.parent.mkdir(parents=True, exist_ok=True)
+        _replace(change.path, change.source.read_bytes())
+
+
+def _through_a_link(root: Path, relative: Path) -> bool:
+    """Whether anything on the way down to ``relative`` is a symlink.
+
+    A destination reached through a link is reported and left alone. This
+    repository points ``.claude/skills/rage`` at its own source tree
+    deliberately, so that an edit to the skill is live without reinstalling;
+    writing through such a link would edit the package rather than the project.
+    Copy is right for an installed project and symlink is right for this one,
+    and an installer that cannot tell them apart has to be wrong in one of them.
+    """
+    walked = root
+    for part in relative.parts:
+        walked = walked / part
+        if walked.is_symlink():
+            return True
+    return False
+
+
+def _replace(path: Path, content: bytes) -> None:
+    """Write ``content`` to ``path`` through a temporary file, as config.py does.
+
+    Same reason: an interrupted write must not leave a truncated file behind,
+    and an existing file's permissions are the user's rather than mkstemp's.
+    """
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(content)
+        os.chmod(temporary, _mode_for(path))
+        os.replace(temporary, path)
+    except BaseException:
+        Path(temporary).unlink(missing_ok=True)
+        raise
+
+
+def _mode_for(path: Path) -> int:
+    """Keep an existing file's permissions; a new one is readable like a checkout."""
+    try:
+        return path.stat().st_mode & 0o7777
+    except FileNotFoundError:
+        return 0o644
+
+
+# -- setting a whole project up ------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class Installation:
+    """Everything ``rage init`` does to a project, or would do."""
+
+    project_dir: Path
+    server: config.Change
+    hook: HookChange
+    assets: tuple[FileChange, ...]
+
+    @property
+    def writes(self) -> bool:
+        return self.server.writes or self.hook.writes or any(a.writes for a in self.assets)
+
+
+def init(
+    project_dir: str | Path,
+    directory: str | Path | None = None,
+    *,
+    log: Any = None,
+    log_content: str | None = None,
+    dry_run: bool = False,
+) -> Installation:
+    """Set a project up: the MCP server entry, the hook, and the skill and agents.
+
+    The whole of it is planned before any of it is written, so a refusal — a
+    settings file that does not parse, a ``.mcp.json`` that does not — stops
+    the run rather than leaving a project half arranged. The dry run stops
+    after the same planning the real run does, so it cannot preview something a
+    write would disagree with.
+
+    ``rage config`` writes the server entry alone and this calls it rather than
+    repeating it, which is also why ``log`` and ``log_content`` are passed
+    through: without them a re-run of ``init`` would quietly switch off logging
+    somebody had turned on.
+    """
+    project = Path(project_dir).expanduser().resolve()
+
+    assets = plan_assets(project)
+
+    hook_path = settings_path(project)
+    hook, settings, settings_text = plan(hook_path)
+
+    server_path = config.config_path("project", project)
+    entry = config.server_entry(
+        directory if directory is not None else config.default_store_dir(project),
+        log=log,
+        log_content=log_content,
+    )
+    server, servers, servers_text = config.plan(server_path, "project", entry)
+
+    if not dry_run:
+        if server.writes:
+            config.write_config(server_path, servers, servers_text)
+        if hook.writes:
+            config.write_config(hook_path, settings, settings_text)
+        write_assets(assets)
+
+    return Installation(project_dir=project, server=server, hook=hook, assets=tuple(assets))
+
+
 __all__ = [
+    "ASSET_DIRS",
+    "CLAUDE_DIR",
     "HOOK_EVENT",
     "HOOKS_FIELD",
     "MARKER",
     "TEMPLATE",
+    "FileChange",
     "HookChange",
     "InstallError",
+    "Installation",
+    "asset_sources",
+    "init",
     "install",
     "is_ours",
     "plan",
+    "plan_assets",
     "settings_path",
     "template_entry",
+    "write_assets",
 ]
