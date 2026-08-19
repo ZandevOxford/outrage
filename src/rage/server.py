@@ -94,8 +94,13 @@ Every listing is a page, not the whole store. Each one reports `returned`
 beside `total`, and a `next_cursor` when more remains: pass it back as `after`
 to continue from exactly where the page stopped. Read `total` before treating a
 result as everything there is — the difference between 20 of 22 and 20 of
-40000 is the difference between a listing and a sample. The survey also reports
-untitled documents under `without_meta`, as a count with a few examples.
+40000 is the difference between a listing and a sample. Every `next_cursor`
+goes back as `after` on the tool that produced it, with no exceptions.
+
+A survey also reports the untitled documents under `without_meta`, as a count
+and a few examples covering the same stretch of the store as the page itself.
+It is stats, not a listing, so it carries no cursor: page the survey and the
+windows tile; to enumerate what it counts, call `keys_missing_meta`.
 
 Prefer several small documents to one large one. A document should answer one
 question and be readable in a single call, and a key can hold content *and*
@@ -334,7 +339,12 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             "so a survey of short metadata usually arrives whole while a read "
             "of real documents does not: "
             "compare `returned` with `total`, and pass `next_cursor` back as "
-            "`after` to continue from where it stopped."
+            "`after` to continue from where it stopped. With `meta_name`, "
+            "`without_meta` counts the documents in this same page's window "
+            "that carry none of it — what the survey structurally cannot "
+            "show. It is always present, and describes exactly the stretch "
+            "this page covers, so paging the survey tiles those windows "
+            "without gap or overlap. Use keys_missing_meta to list them."
         ),
     )
     def get_documents(
@@ -384,17 +394,26 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
         }
         if meta_name is not None:
             # A survey by metadata cannot see documents that lack it, so left
-            # alone it quietly under-reports the store. A count says that at any
-            # size; at reference scale the list of them would be the corpus.
-            missing = store.keys_missing_meta(
-                key, meta_name=meta_name, depth=depth, limit=WITHOUT_META_SAMPLE
+            # alone it quietly under-reports the store. Reported over this
+            # page's own window -- the same bounds that produced `documents`,
+            # so the two halves describe one stretch of the store and the
+            # windows tile as a caller pages. Always present, because "no block"
+            # and "none missing here" are answers a caller must be able to tell
+            # apart. No cursor: pass the same `key` to keys_missing_meta to
+            # enumerate them, which is the collection this only counts.
+            gap = store.missing_meta_stats(
+                key,
+                meta_name=meta_name,
+                depth=depth,
+                after=after,
+                before=found.next_cursor,
+                sample=WITHOUT_META_SAMPLE,
             )
-            if missing.total:
-                result["without_meta"] = {
-                    "total": missing.total,
-                    "sample": missing.items,
-                    "next_cursor": missing.next_cursor,
-                }
+            result["without_meta"] = {
+                "total": gap.total,
+                "total_chars": gap.total_chars,
+                "sample": gap.sample,
+            }
         return result
 
     @server.tool(
@@ -403,8 +422,8 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             "List the document keys at and below a key that carry none of the "
             "named metadata: exactly what a `get_documents` survey by that "
             "metadata cannot show, since a survey can only report documents "
-            "that have it. This is where a survey's `without_meta.next_cursor` "
-            "is passed back as `after`. A document counts as covered when it "
+            "that have it, and which `without_meta` only counts. A document "
+            "counts as covered when it "
             "has any one of the names given, so ask for one name at a time "
             "unless you mean 'none of these'."
         ),

@@ -1311,3 +1311,49 @@ def test_containers_sort_as_numbers_like_everything_else(store):
     # either. Ordering them as text is the failure the whole migration exists
     # to remove, reintroduced on the one half that cannot use the column.
     assert listed == ["level/1", "level/2"]
+
+
+def test_missing_meta_stats_counts_without_listing(populated):
+    stats = populated.missing_meta_stats()
+
+    assert stats.total == 1
+    assert stats.sample == []
+    assert stats.total_chars > 0
+
+
+def test_missing_meta_stats_samples_when_asked(populated):
+    assert populated.missing_meta_stats(sample=10).sample == ["project/reference/implementation"]
+
+
+def test_missing_meta_stats_bounds_by_the_surveys_own_cursors(store):
+    for key in ["n/1", "n/2", "n/3", "n/4"]:
+        store.store_document(key, "body")
+    store.store_document("n/2:title", "T")
+
+    whole = store.missing_meta_stats("n", sample=10)
+    below = store.missing_meta_stats("n", before="n/2:title", sample=10)
+    above = store.missing_meta_stats("n", after="n/2:title", sample=10)
+
+    # Exclusive below, inclusive above, so the two halves partition the whole.
+    assert whole.sample == ["n/1", "n/3", "n/4"]
+    assert below.sample == ["n/1"]
+    assert above.sample == ["n/3", "n/4"]
+    assert below.total + above.total == whole.total
+
+
+def test_missing_meta_stats_places_a_document_where_its_metadata_would_sort(store):
+    for key in ["a", "a/x", "a/y"]:
+        store.store_document(key, "body")
+    store.store_document("a/y:title", "T")
+
+    # `a/x` sorts *after* `a` as a document and *before* it as `:title`, because
+    # `/` precedes `:`. The survey walks the metadata order, so that is the
+    # order a window has to be measured in -- comparing document keys puts
+    # `a/x` in the wrong window, and nothing downstream can tell.
+    assert store.missing_meta_stats(before="a/y:title", sample=10).sample == ["a/x"]
+    assert store.missing_meta_stats(after="a/y:title", sample=10).sample == ["a"]
+
+
+def test_missing_meta_stats_rejects_an_empty_name_list(store):
+    with pytest.raises(ValueError):
+        store.missing_meta_stats(meta_name=[])

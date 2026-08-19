@@ -236,13 +236,27 @@ def test_get_documents_survey_names_the_untitled(server):
     assert result["count"] == 2
     assert result["without_meta"] == {
         "total": 1,
+        "total_chars": len("No title here."),
         "sample": ["context/e5f6/note"],
-        "next_cursor": None,
     }
 
 
-def test_get_documents_survey_is_quiet_when_everything_is_titled(server):
-    assert "without_meta" not in call(server, "get_documents", key="context", meta_name=["title"])
+def test_the_survey_carries_no_cursor_it_cannot_honour(server):
+    call(server, "store_document", key="context/e5f6/note", content="No title here.")
+    result = call(server, "get_documents", key="context", meta_name=["title"])
+
+    # `after` resumes the documents, so a cursor here named a position in a
+    # collection no argument accepts -- and being a key like any other, feeding
+    # it back returned a plausible page of the wrong thing.
+    assert "next_cursor" not in result["without_meta"]
+
+
+def test_the_survey_says_none_missing_rather_than_going_quiet(server):
+    result = call(server, "get_documents", key="context", meta_name=["title"])
+
+    # Absent and zero are different answers, and a caller reading an absent
+    # block as "none" is right only by luck.
+    assert result["without_meta"] == {"total": 0, "total_chars": 0, "sample": []}
 
 
 def test_get_documents_without_meta_says_nothing_about_untitled_documents(server):
@@ -391,7 +405,7 @@ def test_store_accesses_are_grouped_under_the_call_that_caused_them(tmp_path):
     # One tool call, more than one access: the survey, and the check for what
     # the survey could not see. That check used to re-read the whole subtree
     # for itself, which is the third access this no longer makes.
-    assert beneath == ["get_documents", "keys_missing_meta"]
+    assert beneath == ["get_documents", "missing_meta_stats"]
 
 
 def test_the_setup_writes_are_not_attributed_to_any_call(tmp_path):
@@ -487,7 +501,6 @@ def test_the_untitled_are_counted_rather_than_listed(tmp_path):
     # where it matters: there, the list is the corpus.
     assert result["without_meta"]["total"] == 30
     assert len(result["without_meta"]["sample"]) == 10
-    assert result["without_meta"]["next_cursor"] == "notes/10"
 
 
 def test_the_caps_are_written_where_a_caller_can_read_them(server):
@@ -508,7 +521,7 @@ def test_the_instructions_say_a_listing_is_a_page(server):
     assert "total" in INSTRUCTIONS
 
 
-def test_the_untitled_can_be_paged_where_the_survey_only_sampled(tmp_path):
+def test_the_untitled_are_enumerated_by_the_tool_that_pages_them(tmp_path):
     store = Store(tmp_path)
     for number in range(1, 31):
         store.store_document(f"notes/{number}", "body")
@@ -516,18 +529,14 @@ def test_the_untitled_can_be_paged_where_the_survey_only_sampled(tmp_path):
     with store:
         server = build_server(store)
         survey = call(server, "get_documents", key="notes", meta_name=["title"])
-        rest = call(
-            server,
-            "keys_missing_meta",
-            key="notes",
-            after=survey["without_meta"]["next_cursor"],
-        )
+        rest = call(server, "keys_missing_meta", key="notes")
 
-    # The sample is a warning, not an answer. A cursor that no tool accepts
-    # would make it a dead end instead of a first page.
-    assert rest["returned"] == 20
-    assert rest["total"] == 30
-    assert rest["keys"][0] == "notes/11"
+    # The sample is a warning, not an answer, and the survey no longer pretends
+    # to be a first page of one. The same `key` asked of the tool that owns
+    # that collection is what enumerates it.
+    assert survey["without_meta"]["total"] == rest["total"] == 30
+    assert rest["returned"] == 30
+    assert rest["keys"][0] == "notes/1"
     assert rest["next_cursor"] is None
 
 
@@ -552,3 +561,58 @@ def test_missing_metadata_defaults_to_titles(tmp_path):
 
     with store:
         assert call(build_server(store), "keys_missing_meta")["keys"] == ["notes/1"]
+
+
+def test_the_untitled_are_counted_over_this_page_not_the_whole_subtree(tmp_path):
+    store = Store(tmp_path)
+    for number in range(1, 9):
+        store.store_document(f"notes/{number}", "body")
+    for number in (2, 5, 7):
+        store.store_document(f"notes/{number}:title", "T")
+
+    with store:
+        server = build_server(store)
+        first = call(server, "get_documents", key="notes", meta_name=["title"], limit=1)
+        second = call(
+            server,
+            "get_documents",
+            key="notes",
+            meta_name=["title"],
+            limit=1,
+            after=first["next_cursor"],
+        )
+
+    # The block describes the same stretch of the store as the page it arrives
+    # with. Reporting all four untitled documents on every page says nothing
+    # about where they are, and says it repeatedly.
+    assert first["without_meta"]["sample"] == ["notes/1"]
+    assert second["without_meta"]["sample"] == ["notes/3", "notes/4"]
+
+
+def test_paging_a_survey_tiles_its_windows(tmp_path):
+    store = Store(tmp_path)
+    # `a` and `a/x` are both documents: a key holding content and having keys
+    # beneath it is ordinary here, and it is what makes the windows subtle.
+    for key in ["a", "a/x", "a/y", "b", "b/p", "c"]:
+        store.store_document(key, f"content of {key}")
+    for key in ["a", "a/y", "c"]:
+        store.store_document(f"{key}:title", "T")
+
+    seen: list[str] = []
+    after = None
+    with store:
+        server = build_server(store)
+        while True:
+            page = call(server, "get_documents", meta_name=["title"], limit=1, after=after)
+            seen += page["without_meta"]["sample"]
+            if not page["next_cursor"]:
+                break
+            after = page["next_cursor"]
+        every = call(server, "keys_missing_meta")["keys"]
+
+    # Every untitled document falls in exactly one window: no gap, no overlap.
+    # Document keys cannot bound these windows -- `a` sorts before `a/x` while
+    # `a:title` sorts after `a/x:title` -- and bounding them as though they
+    # could double counts `a/x` and loses nothing visibly.
+    assert sorted(seen) == sorted(every) == ["a/x", "b", "b/p"]
+    assert len(seen) == len(set(seen))

@@ -111,6 +111,24 @@ class Excerpt:
 
 
 @dataclass(frozen=True, slots=True)
+class MissingMeta:
+    """Documents one page of a metadata survey could not show, over its window.
+
+    Stats about a window rather than a page of one, so there is no cursor:
+    the window is already bounded at both ends by the page it describes, and a
+    cursor here would name a position in a collection no argument resumes.
+    """
+
+    total: int
+    """Documents in the window carrying none of the names asked for."""
+    total_chars: int
+    """Characters stored across those documents, which is the other half of
+    what a caller needs to decide whether to go and look."""
+    sample: list[str]
+    """Up to a requested number of their keys. The count is exact; this is not."""
+
+
+@dataclass(frozen=True, slots=True)
 class Page[T]:
     """Some or all of a collection, and the size of the whole it came from.
 
@@ -855,6 +873,89 @@ class Store:
             next_cursor=items[-1].key if more and items else None,
         )
 
+    def _missing_selection(
+        self,
+        key: str | None,
+        *,
+        meta_name: str | Sequence[str],
+        depth: int | None,
+    ) -> tuple[str, list[object], list[str]]:
+        """The WHERE clause naming documents carrying none of ``meta_name``.
+
+        One NOT EXISTS over the same range predicate the survey itself uses, so
+        the two agree about what was in range. Shared by the paged listing and
+        the per-window stats, which must not be able to disagree either.
+        """
+        names = [meta_name] if isinstance(meta_name, str) else list(meta_name)
+        if not names:
+            raise ValueError("meta_name must not be an empty sequence")
+
+        where, params = self._selection(key, meta_name=None, depth=depth)
+        where += (
+            f" AND NOT EXISTS (SELECT 1 FROM documents AS meta "
+            f"WHERE meta.doc_key = documents.doc_key "
+            f"AND meta.meta_name IN ({', '.join('?' * len(names))}))"
+        )
+        return where, params + list(names), names
+
+    @_logged("missing_meta_stats")
+    def missing_meta_stats(
+        self,
+        key: str | None = None,
+        *,
+        meta_name: str | Sequence[str] = "title",
+        depth: int | None = None,
+        after: str | None = None,
+        before: str | None = None,
+        sample: int = 0,
+    ) -> MissingMeta:
+        """What a metadata survey could not see, over exactly one page's window.
+
+        ``after`` and ``before`` are that survey's own cursors -- metadata keys,
+        not document keys -- and they bound this the way they bound the page:
+        exclusive below, inclusive above, each ``None`` meaning the page ran to
+        that end of the collection.
+
+        A document carrying none of the names has no row in the ordering the
+        survey walks, so it has no position in it either. One is synthesised:
+        where its row *would* have sorted had it carried the name. That is not
+        the same as comparing document keys, and the difference is not
+        academic -- ``a`` sorts before ``a/x`` while ``a:title`` sorts *after*
+        ``a/x:title``, because ``/`` precedes ``:``. So a survey's window is not
+        an interval of document keys, and bounding it as though it were leaves
+        a window overlapping its neighbour at one end and holed at the other,
+        with every count still landing somewhere plausible.
+
+        The synthesised position is not sargable, so this scans the selection
+        rather than seeking into the sort index. The window is one page wide,
+        which is what keeps that affordable.
+        """
+        where, params, names = self._missing_selection(key, meta_name=meta_name, depth=depth)
+
+        # A metadata name is a single segment, so its sort form is the padding
+        # the suffix would have carried. Asked for several, a document would
+        # first have appeared at the earliest of them.
+        suffix = keys.META + min(keys.sort_form(name) for name in names)
+
+        if after is not None:
+            where += " AND (sort_key || ?) > ?"
+            params += [suffix, _cursor_bound(after)]
+        if before is not None:
+            where += " AND (sort_key || ?) <= ?"
+            params += [suffix, _cursor_bound(before)]
+
+        total, total_chars = self._selection_totals(where, params)
+
+        found: list[str] = []
+        if sample > 0 and total:
+            rows = self._conn.execute(
+                f"SELECT key FROM documents WHERE {where} ORDER BY sort_key LIMIT ?",
+                [*params, sample],
+            )
+            found = [row["key"] for row in rows]
+
+        return MissingMeta(total=total, total_chars=total_chars, sample=found)
+
     @_logged("keys_missing_meta")
     def keys_missing_meta(
         self,
@@ -875,17 +976,7 @@ class Store:
         every document in the subtree through ``get_documents`` and throw the
         content away.
         """
-        names = [meta_name] if isinstance(meta_name, str) else list(meta_name)
-        if not names:
-            raise ValueError("meta_name must not be an empty sequence")
-
-        where, params = self._selection(key, meta_name=None, depth=depth)
-        where += (
-            f" AND NOT EXISTS (SELECT 1 FROM documents AS meta "
-            f"WHERE meta.doc_key = documents.doc_key "
-            f"AND meta.meta_name IN ({', '.join('?' * len(names))}))"
-        )
-        params = params + list(names)
+        where, params, _ = self._missing_selection(key, meta_name=meta_name, depth=depth)
 
         total, total_chars = self._selection_totals(where, params)
 

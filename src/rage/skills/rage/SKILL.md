@@ -28,11 +28,15 @@ thousand is a sample, and treating it as the store is how a session concludes
 confidently from a fraction of it. To continue, pass `next_cursor` back as
 `after`. To look at one part instead of everything, pass `key`.
 
-Check `without_meta` too. It reports how many documents in range carry no
-title, with a few of their keys — the ones the survey cannot show at all, since
-it can only report documents that have one. A survey that omits them silently
-is a survey you cannot trust. `keys_missing_meta` lists them properly when the
-sample is not enough, and `rage-backfill` fills them in.
+Check `without_meta` too. It reports how many documents carry no title, with a
+few of their keys — the ones the survey cannot show at all, since it can only
+report documents that have one. A survey that omits them silently is a survey
+you cannot trust. It is always present, and it covers exactly the stretch of
+the store this page covers, so paging the survey walks the gaps alongside the
+titles instead of repeating a subtree-wide total on every page.
+
+It is a count, not a listing, and carries no cursor: `keys_missing_meta` is
+what enumerates them, and `rage-backfill` fills them in.
 
 ## Key conventions
 

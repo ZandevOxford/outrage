@@ -72,12 +72,22 @@ do, ignore the entries for documents already decided.
 
 **2. Treat missing metadata as unclear, never as absent.**
 
-The result carries **`without_meta`**, reporting how many documents in range
-have no value for this metadata at all, with a few of their keys as a sample.
-It is omitted from the response when nothing is missing, and it is only
-trustworthy if the call asked for one name — see step 1. When the count is
-larger than the sample, `keys_missing_meta(key=..., meta_name=[...])` lists
-them, with the same `after` cursor as everything else.
+The result carries **`without_meta`**, reporting how many documents have no
+value for this metadata at all, with a few of their keys as a sample and the
+characters they hold. It is always present — a zero count is an answer, and
+distinct from a block that is not there — and it is only trustworthy if the
+call asked for one name, see step 1.
+
+It describes **the same stretch of the subtree as the page it arrives with**,
+not the whole of it. So when you page a survey, each page tells you what it
+personally could not show, the windows do not overlap, and the counts add up
+across the pages you read. A page you did not read is a gap you were never told
+about, which is the same reason to read `total`.
+
+`without_meta` carries no cursor and is not a first page of anything. To
+enumerate rather than count, call
+`keys_missing_meta(key=..., meta_name=["<name>"])`, which pages with `after`
+like every other listing.
 
 Those documents have not failed the screen — nothing was screened. They are
 unclear and they cascade. Dropping them is the one failure of this agent that
