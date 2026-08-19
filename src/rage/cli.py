@@ -306,9 +306,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description=(
             "Read a subtree. With --meta the result holds that metadata "
             "instead of the documents, which is how the titles of everything "
-            "under a key are surveyed in one pass. Documents are capped "
-            "individually and a capped one is marked, since a survey that "
-            "silently shows half a document is one judged on half a document."
+            "under a key are surveyed in one pass. Every document is printed "
+            "whole by default, as `rage get` does and for the same reason: "
+            "`rage dump > file` is an export, and an export that quietly holds "
+            "back part of a document is one nothing downstream can tell from a "
+            "complete one. Pass --max-chars to cap each document for a skim; a "
+            "capped one is then marked with what it held."
         ),
     )
     _store_option(dump)
@@ -326,8 +329,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--max-chars",
         dest="max_chars",
         type=int,
-        default=store.DEFAULT_BULK_MAX_CHARS,
-        help=f"Cap per document (default {store.DEFAULT_BULK_MAX_CHARS}).",
+        default=None,
+        help=(
+            "Cap each document at this many characters, which turns off "
+            "printing them whole. Matches the tool's own bulk cap at "
+            f"{store.DEFAULT_BULK_MAX_CHARS}."
+        ),
     )
     dump.set_defaults(handler=dump_command)
 
@@ -590,8 +597,18 @@ def dump_command(args: argparse.Namespace, out: TextIO) -> int:
             args.key,
             meta_name=args.meta_name,
             depth=args.depth,
-            max_chars=args.max_chars,
+            max_chars=args.max_chars or store.DEFAULT_BULK_MAX_CHARS,
         )
+        if args.max_chars is None:
+            # Only the ones that came back short are read again, so the common
+            # document costs one query. Deliberately not pushed down into
+            # get_documents: reading a whole subtree to the end is the call the
+            # scale requirement exists to keep out of the library, and the
+            # command line is the one caller that legitimately wants it.
+            excerpts = [
+                store.read_all(opened, found.key) if found.truncated else found
+                for found in excerpts
+            ]
 
     for excerpt in excerpts:
         header = f"=== {excerpt.key}"

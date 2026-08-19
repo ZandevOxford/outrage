@@ -365,3 +365,69 @@ def test_a_filter_matching_nothing_says_so(tmp_path):
 
     assert status == 0
     assert "no matching events" in output
+
+
+# -- dump ----------------------------------------------------------------
+
+
+def a_long_store(directory: Path, size: int = 5000) -> str:
+    """A store holding one document longer than the bulk cap, and its content."""
+    from rage.store import Store
+
+    content = "start\n" + "filler line\n" * size + "end of the document\n"
+    with Store(directory) as store:
+        store.store_document("notes/long", content, title="A long document")
+    return content
+
+
+def test_dump_prints_a_long_document_whole(tmp_path):
+    content = a_long_store(tmp_path / ".rage")
+
+    status, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes/long")
+
+    assert status == 0
+    # The end matters more than the length: a cut export reads correctly right
+    # up to where it stops, which is why nothing downstream notices.
+    assert "end of the document" in output
+    assert "characters]" not in output
+    assert content in output
+
+
+def test_dump_caps_each_document_when_asked(tmp_path):
+    a_long_store(tmp_path / ".rage")
+
+    status, output = run(
+        "dump", "--dir", str(tmp_path / ".rage"), "notes/long", "--max-chars", "100"
+    )
+
+    assert status == 0
+    assert "end of the document" not in output
+    assert "[100 of " in output
+
+
+def test_dump_reads_long_metadata_to_the_end_too(tmp_path):
+    from rage.store import Store
+
+    value = "a very long summary. " * 400
+    with Store(tmp_path / ".rage") as store:
+        store.store_document("notes/long", "body", title="Short")
+        store.store_document("notes/long:summary", value)
+
+    status, output = run("dump", "--dir", str(tmp_path / ".rage"), "--meta", "summary")
+
+    assert status == 0
+    assert value in output
+    assert "characters]" not in output
+
+
+def test_dump_exports_a_subtree_at_full_length(tmp_path):
+    from rage.store import Store
+
+    with Store(tmp_path / ".rage") as store:
+        for name in ("one", "two"):
+            store.store_document(f"notes/{name}", "x" * 4000, title=name)
+
+    status, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes")
+
+    assert status == 0
+    assert output.count("x" * 4000) == 2
