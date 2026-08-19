@@ -737,3 +737,144 @@ def test_check_repairs_the_write_ahead_log(tmp_path):
         assert log.stat().st_size < database.stat().st_size
     finally:
         held_open.close()
+
+
+# -- paging, which the command line does internally ----------------------
+
+
+def a_wide_store(directory: Path, count: int, content: str = "body") -> None:
+    from rage.store import Store
+
+    with Store(directory) as store:
+        for number in range(1, count + 1):
+            store.store_document(f"notes/{number}", content, title=f"Note {number}")
+
+
+def test_ls_lists_a_level_larger_than_one_page(tmp_path):
+    a_wide_store(tmp_path / ".rage", 250)
+
+    status, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+
+    # A listing that stops at an internal page size is the silent partial
+    # answer, delivered by the layer that was supposed to prevent it.
+    assert status == 0
+    # A title is a child of its own document, not of the level, so this is 250
+    # keys rather than 500.
+    assert len(output.splitlines()) == 250
+    assert "notes/250" in output
+
+
+def test_ls_pages_rather_than_asking_for_everything(tmp_path, monkeypatch):
+    import rage.cli
+
+    a_wide_store(tmp_path / ".rage", 20)
+    monkeypatch.setattr(rage.cli, "PAGE", 3)
+
+    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+
+    assert len(output.splitlines()) == 20
+
+
+def test_ls_recursive_pages_at_every_level(tmp_path, monkeypatch):
+    import rage.cli
+    from rage.store import Store
+
+    with Store(tmp_path / ".rage") as store:
+        for number in range(1, 8):
+            store.store_document(f"deep/{number}/leaf", "content")
+    monkeypatch.setattr(rage.cli, "PAGE", 2)
+
+    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive", "deep")
+
+    assert [line.split()[-1] for line in output.splitlines()] == [
+        key for number in range(1, 8) for key in (f"deep/{number}", f"deep/{number}/leaf")
+    ]
+
+
+def test_ls_limit_shows_less_and_says_so(tmp_path, capsys):
+    a_wide_store(tmp_path / ".rage", 20)
+
+    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes", "--limit", "3")
+
+    assert len(output.splitlines()) == 3
+    # On stderr: the listing itself stays clean for whatever it is piped into.
+    assert "stopped at --limit 3" in capsys.readouterr().err
+
+
+def test_dump_exports_more_than_one_page_whole(tmp_path, monkeypatch):
+    import rage.cli
+
+    a_wide_store(tmp_path / ".rage", 10, content="x" * 3000)
+    monkeypatch.setattr(rage.cli, "PAGE", 2)
+
+    _, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes")
+
+    # Complete by default, across pages and past the per-document cap: an
+    # export that quietly holds back is the failure this command exists to
+    # avoid, and paging is a new way to commit it.
+    assert output.count("x" * 3000) == 10
+    assert "characters]" not in output
+
+
+def test_dump_limit_shows_less_and_says_so(tmp_path, capsys):
+    a_wide_store(tmp_path / ".rage", 10)
+
+    _, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes", "--limit", "2")
+
+    assert output.count("=== ") == 2
+    assert "stopped at --limit 2" in capsys.readouterr().err
+
+
+def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
+    import argparse
+
+    import rage.cli
+    from rage.store import Store
+
+    a_wide_store(tmp_path / ".rage", 10)
+    monkeypatch.setattr(rage.cli, "PAGE", 2)
+
+    calls = 0
+    original = Store.get_documents
+
+    def counted(self, *args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(Store, "get_documents", counted)
+
+    with Store(tmp_path / ".rage") as opened:
+        arguments = argparse.Namespace(key="notes", meta_name=None, depth=None, max_chars=None)
+        first = next(rage.cli._documents(opened, arguments))
+
+    # Lazy, not merely paged: an export that reads the whole subtree before
+    # writing its first line is the shape that fails at the size it matters.
+    assert first.key == "notes/1"
+    assert calls == 1
+
+
+def test_rm_dry_run_previews_the_whole_subtree_not_one_level(tmp_path):
+    from rage.store import Store
+
+    with Store(tmp_path / ".rage") as store:
+        store.store_document("tree/one", "content")
+        store.store_document("tree/one/two/three", "content")
+
+    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "tree", "--recursive", "--dry-run")
+
+    # Previewing one level of a deletion that reaches three is not a preview.
+    assert "and below: tree/one/two/three" in output
+
+
+def test_rm_dry_run_preview_can_be_shortened(tmp_path):
+    a_wide_store(tmp_path / ".rage", 10)
+
+    _, output = run(
+        "rm", "--dir", str(tmp_path / ".rage"), "notes", "--recursive", "--dry-run", "--limit", "3"
+    )
+
+    assert output.count("and below:") == 3
+    # The count comes from the store, so a shortened preview still says how
+    # much it is shortening.
+    assert "and 17 more" in output

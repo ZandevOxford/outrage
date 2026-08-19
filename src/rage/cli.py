@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TextIO
 
@@ -298,6 +299,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Descend the whole subtree rather than one level.",
     )
+    _limit_option(ls, "keys")
     ls.set_defaults(handler=ls_command)
 
     dump = subcommands.add_parser(
@@ -336,6 +338,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             f"{store.DEFAULT_BULK_MAX_CHARS}."
         ),
     )
+    _limit_option(dump, "documents")
     dump.set_defaults(handler=dump_command)
 
     rm = subcommands.add_parser(
@@ -355,6 +358,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     rm.add_argument(
         "--dry-run", action="store_true", help="Report what would go without deleting it."
     )
+    _limit_option(rm, "keys previewed by --dry-run")
     rm.set_defaults(handler=rm_command)
 
     check = subcommands.add_parser(
@@ -380,6 +384,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     check.set_defaults(handler=check_command)
 
     return parser.parse_args(argv)
+
+
+def _limit_option(parser: argparse.ArgumentParser, what: str) -> None:
+    """Add ``--limit``, which shows less rather than fetching less.
+
+    The command line pages the store internally and always reads to the end,
+    so this is a display bound and nothing else: the user asks to see less and
+    is told when they got it. Nobody ever gets less by accident, which is the
+    opposite default to the tools and for the opposite reason — a redirect into
+    a file is an export.
+    """
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        metavar="N",
+        help=f"Show at most N {what}, and say so on stderr. Everything by default.",
+    )
 
 
 def _store_option(parser: argparse.ArgumentParser) -> None:
@@ -561,20 +583,54 @@ class ConflictingSource(RageError):
     """Raised when the content to store cannot be determined from the arguments."""
 
 
-def ls_command(args: argparse.Namespace, out: TextIO) -> int:
-    """List one level, or the whole subtree."""
-    with _open_existing(args) as opened:
-        entries = _walk(opened, args.key) if args.recursive else opened.list_keys(args.key).items
+#: How much of a collection one internal query asks for. The command line reads
+#: to the end regardless, so this only decides how many round trips that takes
+#: and how much is held at once: large enough to be one query for an ordinary
+#: level, small enough that a huge one is never held whole.
+PAGE = 200
 
-    for entry in entries:
-        size = "-" if entry.size is None else str(entry.size)
-        print(f"{entry.kind:<9} {size:>8}  {entry.updated_at or '-':<20}  {entry.key}", file=out)
-    if not entries:
+
+def ls_command(args: argparse.Namespace, out: TextIO) -> int:
+    """List one level, or the whole subtree, printing as it goes."""
+    shown = 0
+    with _open_existing(args) as opened:
+        entries = _walk(opened, args.key) if args.recursive else _level(opened, args.key)
+        for entry in entries:
+            if args.limit is not None and shown >= args.limit:
+                # On stderr, so a listing piped into something else is not
+                # corrupted by a note about itself.
+                print(f"rage: stopped at --limit {args.limit}", file=sys.stderr)
+                break
+            size = "-" if entry.size is None else str(entry.size)
+            print(
+                f"{entry.kind:<9} {size:>8}  {entry.updated_at or '-':<20}  {entry.key}", file=out
+            )
+            shown += 1
+
+    if not shown:
         print(f"nothing below {args.key or 'the top level'}", file=out)
     return 0
 
 
-def _walk(opened: store.Store, key: str | None) -> list[store.Entry]:
+def _level(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
+    """One level, a page at a time, to the end.
+
+    The store pages and the command line does not: a person listing a key wants
+    the level, and a listing that stops at an internal page size is the silent
+    partial answer this project keeps finding. Streaming is what makes it both
+    complete and bounded in memory — and it fails better, since a long listing
+    interrupted has already shown its first thousand lines rather than nothing.
+    """
+    cursor = None
+    while True:
+        page = opened.list_keys(key, limit=PAGE, after=cursor)
+        yield from page.items
+        if page.next_cursor is None:
+            return
+        cursor = page.next_cursor
+
+
+def _walk(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
     """Every key below ``key``, depth first.
 
     Built from repeated ``list_keys`` rather than from ``get_documents``,
@@ -582,45 +638,65 @@ def _walk(opened: store.Store, key: str | None) -> list[store.Entry]:
     itself but with documents beneath it does not appear in a subtree read at
     all, and leaving it out of a listing is how its children look parentless.
     """
-    found: list[store.Entry] = []
-    for entry in opened.list_keys(key).items:
-        found.append(entry)
+    for entry in _level(opened, key):
+        yield entry
         if entry.kind != "metadata":
-            found.extend(_walk(opened, entry.key))
-    return found
+            yield from _walk(opened, entry.key)
 
 
 def dump_command(args: argparse.Namespace, out: TextIO) -> int:
-    """Print a subtree, one document at a time."""
+    """Print a subtree, one document at a time, as each one arrives."""
+    shown = 0
     with _open_existing(args) as opened:
-        excerpts = opened.get_documents(
+        for excerpt in _documents(opened, args):
+            if args.limit is not None and shown >= args.limit:
+                print(f"rage: stopped at --limit {args.limit}", file=sys.stderr)
+                break
+            header = f"=== {excerpt.key}"
+            if excerpt.truncated:
+                # Named on the line above the content, so that a reader sees it
+                # before reading rather than after acting on half a document.
+                header += f"  [{excerpt.returned} of {excerpt.total} characters]"
+            print(header, file=out)
+            print(excerpt.content, file=out)
+            shown += 1
+
+    if not shown:
+        print(f"nothing at or below {args.key or 'the top level'}", file=out)
+    return 0
+
+
+def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.Excerpt]:
+    """The subtree, a page at a time, each document whole unless capped.
+
+    Yielded as they arrive rather than collected first. An export that holds
+    every document in memory before writing any stops working at exactly the
+    size an export matters at, and it fails worse when it does: an interrupted
+    stream has already written what it reached.
+    """
+    cursor = None
+    while True:
+        page = opened.get_documents(
             args.key,
             meta_name=args.meta_name,
             depth=args.depth,
             max_chars=args.max_chars or store.DEFAULT_BULK_MAX_CHARS,
-        ).items
-        if args.max_chars is None:
+            limit=PAGE,
+            after=cursor,
+        )
+        for found in page.items:
             # Only the ones that came back short are read again, so the common
             # document costs one query. Deliberately not pushed down into
             # get_documents: reading a whole subtree to the end is the call the
             # scale requirement exists to keep out of the library, and the
             # command line is the one caller that legitimately wants it.
-            excerpts = [
-                store.read_all(opened, found.key) if found.truncated else found
-                for found in excerpts
-            ]
-
-    for excerpt in excerpts:
-        header = f"=== {excerpt.key}"
-        if excerpt.truncated:
-            # Named on the line above the content, so that a reader sees it
-            # before reading rather than after acting on half a document.
-            header += f"  [{excerpt.returned} of {excerpt.total} characters]"
-        print(header, file=out)
-        print(excerpt.content, file=out)
-    if not excerpts:
-        print(f"nothing at or below {args.key or 'the top level'}", file=out)
-    return 0
+            if args.max_chars is None and found.truncated:
+                yield store.read_all(opened, found.key)
+            else:
+                yield found
+        if page.next_cursor is None:
+            return
+        cursor = page.next_cursor
 
 
 def rm_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -630,10 +706,18 @@ def rm_command(args: argparse.Namespace, out: TextIO) -> int:
         if args.dry_run:
             # Asking the store rather than predicting: a dry run that computes
             # its own answer is one that can disagree with what it previews.
-            doomed = opened.list_keys(args.key).items if args.recursive else []
             print(f"would delete {args.key}", file=out)
-            for entry in doomed:
-                print(f"  and below: {entry.key}", file=out)
+            if args.recursive:
+                # The whole subtree, not one level of it: a preview that shows
+                # the first level of a deletion reaching five is not a preview
+                # of what --recursive takes.
+                previewed = 0
+                for entry in _walk(opened, args.key):
+                    if args.limit is not None and previewed >= args.limit:
+                        print(f"  and {beneath - previewed} more", file=out)
+                        break
+                    print(f"  and below: {entry.key}", file=out)
+                    previewed += 1
             _report_remainder(args, beneath, out, dry_run=True)
             return 0
 
