@@ -254,6 +254,12 @@ def repair(store: Store) -> list[Repaired]:
     # for anything it thinks is a write. Committing first is what lets it run.
     store.connection.commit()
     store.connection.execute("VACUUM")
+    # VACUUM rewrites the whole database, and in WAL mode it writes through the
+    # log like anything else. Without this second checkpoint the repair ends
+    # holding a log the size of the file it just compacted, and the check that
+    # runs afterwards reports the same warning it was called to clear -- a
+    # repair that worked, reporting itself as a failure.
+    store.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     done.append(Repaired("compact the database", after[0], _sizes(store)[0]))
     return done
 

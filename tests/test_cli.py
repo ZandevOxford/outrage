@@ -431,3 +431,309 @@ def test_dump_exports_a_subtree_at_full_length(tmp_path):
 
     assert status == 0
     assert output.count("x" * 4000) == 2
+
+
+# -- get and set ---------------------------------------------------------
+
+
+def test_get_prints_a_long_document_whole(tmp_path):
+    content = a_long_store(tmp_path / ".rage")
+
+    status, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/long")
+
+    assert status == 0
+    assert output == content
+
+
+def test_get_writes_no_newline_of_its_own(tmp_path, capsys):
+    from rage.store import Store
+
+    with Store(tmp_path / ".rage") as store:
+        store.store_document("notes/one", "no trailing newline here")
+
+    _, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/one")
+
+    assert output == "no trailing newline here"
+
+
+def test_get_and_set_round_trip_at_the_same_length(tmp_path):
+    content = a_long_store(tmp_path / ".rage")
+    exported = tmp_path / "exported.md"
+
+    _, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/long")
+    exported.write_text(output)
+    run("set", "--dir", str(tmp_path / ".rage"), "notes/copy", "--file", str(exported))
+    _, back = run("get", "--dir", str(tmp_path / ".rage"), "notes/copy")
+
+    # The whole point of writing no trailing newline: a document that grows a
+    # character every time it is exported and re-imported is a corrupted one.
+    assert back == content
+
+
+def test_get_caps_when_asked_and_says_where_to_resume(tmp_path, capsys):
+    a_long_store(tmp_path / ".rage")
+
+    status, output = run(
+        "get", "--dir", str(tmp_path / ".rage"), "notes/long", "--max-chars", "100"
+    )
+
+    assert status == 0
+    assert len(output) == 100
+    # On stderr, so that a redirect to a file gets the content and the person
+    # watching still learns the file is a fragment.
+    assert "more from --offset 100" in capsys.readouterr().err
+
+
+def test_get_starts_at_a_pattern_and_still_reads_to_the_end(tmp_path):
+    content = a_long_store(tmp_path / ".rage")
+
+    _, output = run(
+        "get", "--dir", str(tmp_path / ".rage"), "notes/long", "--pattern", "end of the document"
+    )
+
+    assert output == content[content.index("end of the document") :]
+
+
+def test_get_length_caps_the_whole_read_not_just_the_first_slice(tmp_path):
+    a_long_store(tmp_path / ".rage")
+
+    _, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/long", "--length", "20000")
+
+    # Longer than one slice, so it is delivered by the continuation loop. A
+    # --length that stops binding once it exceeds max_chars is a bound that
+    # silently is not one.
+    assert len(output) == 20000
+
+
+def test_set_reports_where_it_wrote(tmp_path):
+    status, output = run("set", "--dir", str(tmp_path / ".rage"), "notes/one", "--content", "hello")
+
+    assert status == 0
+    assert "notes/one" in output
+    assert "5 characters" in output
+    assert str(tmp_path / ".rage" / "store.sqlite") in output
+
+
+def test_set_allocates_a_number_and_names_the_key_it_wrote(tmp_path):
+    run("set", "--dir", str(tmp_path / ".rage"), "notes/?", "--content", "first")
+
+    _, output = run("set", "--dir", str(tmp_path / ".rage"), "notes/?", "--content", "second")
+
+    assert output.startswith("notes/2 ")
+
+
+def test_set_refuses_two_sources(tmp_path, capsys):
+    status = main(
+        ["set", "--dir", str(tmp_path / ".rage"), "notes/one", "--content", "x", "--file", "f"],
+        io.StringIO(),
+    )
+
+    assert status == 1
+    assert "not both" in capsys.readouterr().err
+
+
+def test_reading_a_store_that_is_not_there_is_refused(tmp_path, capsys):
+    status = main(["get", "--dir", str(tmp_path / "absent"), "notes/one"], io.StringIO())
+
+    # Store() would create one, and an empty store answers every question with
+    # a confident nothing.
+    assert status == 1
+    assert "no store in" in capsys.readouterr().err
+    assert not (tmp_path / "absent").exists()
+
+
+# -- ls ------------------------------------------------------------------
+
+
+def a_tree(directory: Path) -> None:
+    """A store with a container, documents beneath it, and metadata."""
+    from rage.store import Store
+
+    with Store(directory) as store:
+        for number in (1, 2, 10):
+            store.store_document(f"notes/{number}", f"body {number}", title=f"Note {number}")
+        store.store_document("notes/1/detail", "deeper")
+
+
+def test_ls_lists_one_level_with_kinds(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    status, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+
+    assert status == 0
+    listed = [line.split()[-1] for line in output.splitlines()]
+    assert listed == ["notes/1", "notes/2", "notes/10"]
+    assert "document" in output
+
+
+def test_ls_sorts_numeric_segments_as_numbers(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+
+    assert output.index("notes/2") < output.index("notes/10")
+
+
+def test_ls_shows_metadata_and_subkeys_under_a_document(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1")
+
+    assert "notes/1:title" in output
+    assert "metadata" in output
+    assert "notes/1/detail" in output
+
+
+def test_ls_recursive_reaches_the_bottom(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive", "notes")
+
+    assert "notes/1/detail" in output
+    assert "notes/10:title" in output
+
+
+def test_ls_recursive_from_the_top_reports_the_container(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive")
+
+    # Only list_keys reports a key that holds nothing itself; leaving it out is
+    # how everything beneath it looks parentless.
+    assert "implicit" in output
+    assert output.index("  notes\n") < output.index("  notes/1\n")
+
+
+def test_ls_says_so_when_there_is_nothing(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1/detail")
+
+    assert "nothing below notes/1/detail" in output
+
+
+# -- rm ------------------------------------------------------------------
+
+
+def test_rm_takes_the_metadata_with_the_document(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    status, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/2")
+
+    assert status == 0
+    assert "deleted notes/2" in output
+    assert "deleted notes/2:title" in output
+
+
+def test_rm_leaves_the_subtree_and_says_it_did(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/1")
+
+    assert "1 keys below notes/1 remain" in output
+    _, listing = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1")
+    assert "notes/1/detail" in listing
+
+
+def test_rm_dry_run_deletes_nothing(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/1", "--dry-run")
+
+    assert "would delete notes/1" in output
+    assert "would remain" in output
+    _, listing = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+    assert "notes/1" in listing
+
+
+def test_rm_dry_run_previews_the_subtree_it_would_take(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/1", "--recursive", "--dry-run")
+
+    assert "and below: notes/1/detail" in output
+    _, listing = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1")
+    assert "notes/1/detail" in listing
+
+
+def test_rm_recursive_takes_the_subtree(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/1", "--recursive")
+
+    assert "deleted notes/1/detail" in output
+    assert "remain" not in output
+
+
+def test_rm_says_when_there_was_nothing_there(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/absent")
+
+    assert "nothing stored at notes/absent" in output
+
+
+# -- check ---------------------------------------------------------------
+
+
+def test_check_reports_a_sound_store(tmp_path):
+    a_tree(tmp_path / ".rage")
+
+    status, output = run("check", "--dir", str(tmp_path / ".rage"))
+
+    assert status == 0
+    assert "integrity ok" in output
+    assert "nothing wrong" in output
+
+
+def test_check_refuses_a_directory_with_no_store(tmp_path, capsys):
+    status = main(["check", "--dir", str(tmp_path / "absent")], io.StringIO())
+
+    assert status == 1
+    assert "no store in" in capsys.readouterr().err
+
+
+def test_check_reports_a_row_stored_under_the_wrong_parent(tmp_path):
+    import sqlite3
+
+    a_tree(tmp_path / ".rage")
+    connection = sqlite3.connect(tmp_path / ".rage" / "store.sqlite")
+    connection.execute("UPDATE documents SET parent = 'elsewhere' WHERE key = 'notes/2'")
+    connection.commit()
+    connection.close()
+
+    status, output = run("check", "--dir", str(tmp_path / ".rage"))
+
+    # Readable by key and invisible to every listing, which is the failure this
+    # check exists for: nothing in normal reading would notice.
+    assert status == 1
+    assert "disagree with the key they are stored under" in output
+    assert "notes/2" in output
+
+
+def test_check_repairs_the_write_ahead_log(tmp_path):
+    from rage.store import Store
+
+    directory = tmp_path / ".rage"
+    with Store(directory) as store:
+        store.store_document("notes/one", "x" * 200000)
+
+    database = directory / "store.sqlite"
+    log = directory / "store.sqlite-wal"
+    # Reproduce an unfolded log: writes land in the sidecar, and closing the
+    # store is what would normally checkpoint them back.
+    held_open = Store(directory)
+    held_open.store_document("notes/two", "y" * 400000)
+    assert log.stat().st_size > database.stat().st_size
+
+    try:
+        status, output = run("check", "--repair", "--dir", str(directory))
+
+        assert status == 0
+        assert "checkpoint the write-ahead log" in output
+        # The second report is the one that matters: a repair whose own writes
+        # leave the log full again would print this warning after fixing it.
+        assert output.count("most of the store is in the write-ahead log") == 1
+        assert log.stat().st_size < database.stat().st_size
+    finally:
+        held_open.close()

@@ -832,28 +832,34 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
     obvious answer: a person redirecting a document to a file wants the
     document, and a slice is available by asking for one.
 
-    The returned excerpt reports the whole content with ``next_offset`` of
+    Asked for the whole document, the result reports it with ``next_offset`` of
     ``None``, so a caller cannot tell it apart from a document that fitted.
-    That is the point.
+    That is the point. Asked for a ``length``, the result stops there and
+    carries a continuation offset, exactly as a single capped read does.
     """
     first = store.retrieve_document(key, **kwargs)
     if first.next_offset is None:
         return first
 
+    max_chars = kwargs.get("max_chars", DEFAULT_MAX_CHARS)
+    wanted = kwargs.get("length")
     parts = [first.content]
+    taken = first.returned
     offset = first.next_offset
-    while offset is not None:
-        # Only the offset changes: a pattern would re-seek from the new start
-        # and a length would re-cap each slice, so both are spent by the first
-        # read and must not be carried into the continuations.
-        following = store.retrieve_document(
-            key, offset=offset, max_chars=kwargs.get("max_chars", DEFAULT_MAX_CHARS)
-        )
+    while offset is not None and (wanted is None or taken < wanted):
+        # A pattern is spent by the first read: it seeks, and seeking again
+        # from the new start would find the next occurrence instead of
+        # continuing. A length is not spent, because it bounds the whole read
+        # rather than each slice -- re-applying it per slice returns more than
+        # was asked for, and dropping it returns the entire document.
+        cap = max_chars if wanted is None else min(max_chars, wanted - taken)
+        following = store.retrieve_document(key, offset=offset, max_chars=cap)
         parts.append(following.content)
+        taken += following.returned
         offset = following.next_offset
 
     content = "".join(parts)
-    return replace(first, content=content, returned=len(content), next_offset=None)
+    return replace(first, content=content, returned=len(content), next_offset=offset)
 
 
 def _now() -> str:
