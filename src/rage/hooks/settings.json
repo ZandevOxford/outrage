@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"This project has a rage document store, holding notes, decisions and task state from earlier sessions. Before starting work, survey it with get_documents(meta_name=[\\\"title\\\"]) and read in full only what looks relevant. The rage skill has the conventions.\"}}'"
+          }
+        ]
+      }
+    ]
+  }
+}

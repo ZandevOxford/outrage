@@ -188,8 +188,12 @@ rules, which the tool descriptions carry and enforce.
 
 The hooks exist because a skill has to be reached for, and the two moments that
 matter most — the start of a session, and just before context is lost — are not
-moments anything prompts an agent to reach. Both hooks emit static text and
-depend on nothing, so neither can fail in a way that costs a session.
+moments anything prompts an agent to reach. The hook emits static text and
+depends on nothing, so it cannot fail in a way that costs a session.
+
+Only the `SessionStart` half survives. The `PreCompact` hook was removed on
+2026-08-19 once it was clear it delivers nothing; the second moment is still
+worth reaching, and how to reach it is `planned/checkpoint-hook`.
 
 #### Delivery
 
@@ -197,11 +201,19 @@ Both hooks were pipe tested when written, so what was confirmed then was the
 output and not the delivery — neither hook can fire inside the session that
 wrote it, and `.claude/settings.json` did not exist when that session started.
 
-A later session has since confirmed two of the three: a symlinked skill
-directory *is* discovered, through the link rather than its target, and the
-`SessionStart` text *does* arrive in context ahead of the first turn. Whether
-`PreCompact` reaches somewhere the model can still act on is still open, since
-compaction is not a turn.
+All three are now settled. A symlinked skill directory *is* discovered, through
+the link rather than its target. The `SessionStart` text *does* arrive in
+context ahead of the first turn — 14 sessions out of 14, across the `startup`
+and `compact` sources, and a live run in which the model echoed back a token
+minted by the hook. And `PreCompact` delivers nothing at all: it produces no
+attachment of any kind in the transcript, not even the `hook_success` every
+other hook gets, so it is invisible rather than rejected.
+
+The evidence is `tools/harness_delivery.py`, which reads the client's own
+transcripts, and the standing answer is `project/reference/harness-delivery` in
+the store. It is worth re-running after a client upgrade: a pipe test cannot
+see past the process boundary, and this project has now been wrong about that
+boundary three times.
 
 ### 8. Event log — `src/rage/eventlog.py` — done
 
