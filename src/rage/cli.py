@@ -564,7 +564,7 @@ class ConflictingSource(RageError):
 def ls_command(args: argparse.Namespace, out: TextIO) -> int:
     """List one level, or the whole subtree."""
     with _open_existing(args) as opened:
-        entries = _walk(opened, args.key) if args.recursive else opened.list_keys(args.key)
+        entries = _walk(opened, args.key) if args.recursive else opened.list_keys(args.key).items
 
     for entry in entries:
         size = "-" if entry.size is None else str(entry.size)
@@ -583,7 +583,7 @@ def _walk(opened: store.Store, key: str | None) -> list[store.Entry]:
     all, and leaving it out of a listing is how its children look parentless.
     """
     found: list[store.Entry] = []
-    for entry in opened.list_keys(key):
+    for entry in opened.list_keys(key).items:
         found.append(entry)
         if entry.kind != "metadata":
             found.extend(_walk(opened, entry.key))
@@ -598,7 +598,7 @@ def dump_command(args: argparse.Namespace, out: TextIO) -> int:
             meta_name=args.meta_name,
             depth=args.depth,
             max_chars=args.max_chars or store.DEFAULT_BULK_MAX_CHARS,
-        )
+        ).items
         if args.max_chars is None:
             # Only the ones that came back short are read again, so the common
             # document costs one query. Deliberately not pushed down into
@@ -630,7 +630,7 @@ def rm_command(args: argparse.Namespace, out: TextIO) -> int:
         if args.dry_run:
             # Asking the store rather than predicting: a dry run that computes
             # its own answer is one that can disagree with what it previews.
-            doomed = opened.list_keys(args.key) if args.recursive else []
+            doomed = opened.list_keys(args.key).items if args.recursive else []
             print(f"would delete {args.key}", file=out)
             for entry in doomed:
                 print(f"  and below: {entry.key}", file=out)

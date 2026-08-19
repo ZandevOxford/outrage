@@ -384,8 +384,9 @@ def test_store_accesses_are_grouped_under_the_call_that_caused_them(tmp_path):
         e["op"] for e in recorded if e["event"] == "store" and e.get("call") == called["call"]
     ]
     # One tool call, more than one access: the survey, and the check for what
-    # the survey could not see.
-    assert beneath == ["get_documents", "get_documents", "keys_missing_meta"]
+    # the survey could not see. That check used to re-read the whole subtree
+    # for itself, which is the third access this no longer makes.
+    assert beneath == ["get_documents", "keys_missing_meta"]
 
 
 def test_the_setup_writes_are_not_attributed_to_any_call(tmp_path):

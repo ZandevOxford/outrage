@@ -276,7 +276,10 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             str | None, Field(description="Key to list below; omit for the top level")
         ] = None,
     ) -> dict[str, Any]:
-        return {"key": key, "entries": [dataclasses.asdict(e) for e in store.list_keys(key)]}
+        # No limit passed: the tools' own defaults are the next piece of work,
+        # and until they are chosen this keeps the answer the shape it was.
+        listing = store.list_keys(key)
+        return {"key": key, "entries": [dataclasses.asdict(e) for e in listing.items]}
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -307,15 +310,15 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
         found = store.get_documents(key, meta_name=meta_name, depth=depth, max_chars=max_chars)
         result: dict[str, Any] = {
             "key": key,
-            "count": len(found),
-            "documents": [_excerpt_result(e) for e in found],
+            "count": found.returned,
+            "documents": [_excerpt_result(e) for e in found.items],
         }
         if meta_name is not None:
             # A survey by metadata cannot see documents that lack it, so left
             # alone it quietly under-reports the store.
             missing = store.keys_missing_meta(key, meta_name=meta_name, depth=depth)
-            if missing:
-                result["without_meta"] = missing
+            if missing.items:
+                result["without_meta"] = missing.items
         return result
 
     @server.tool(

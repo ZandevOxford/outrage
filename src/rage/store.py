@@ -111,6 +111,35 @@ class Excerpt:
 
 
 @dataclass(frozen=True, slots=True)
+class Page[T]:
+    """Some or all of a collection, and the size of the whole it came from.
+
+    The collection axis member of the same family as ``Excerpt``, named to
+    match it rather than inventing a second vocabulary. A partial answer that
+    does not state the size of the whole is not actionable: 20 keys of 22 is a
+    listing, 20 keys of 40000 is a sample, and a caller that cannot tell them
+    apart treats them the same.
+    """
+
+    items: list[T]
+    returned: int
+    """Items in this page."""
+    total: int
+    """Items in the whole collection, which is what this page is part of."""
+    total_chars: int
+    """Characters stored across that whole collection. Named apart from
+    ``total`` deliberately: 12000 documents beneath a key is a different
+    prospect from 40 MB beneath it, and no caller should be able to read one
+    number as the other."""
+    next_cursor: str | None
+    """Key to resume after, or None when the page reached the end."""
+
+    @property
+    def truncated(self) -> bool:
+        return self.next_cursor is not None
+
+
+@dataclass(frozen=True, slots=True)
 class Backup:
     """A copy of the database, and the evidence that it is a real one."""
 
@@ -217,6 +246,11 @@ class Store:
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA synchronous=NORMAL")
+        # Ordering stays defined in one place. The stored `sort_key` covers
+        # every real row, but the implicit children of a level are derived from
+        # the `parent` column and have no row of their own, so a query that has
+        # to order or bound them needs the same padding SQLite cannot express.
+        self._conn.create_function("sort_form", 1, keys.sort_form, deterministic=True)
         self._migrate()
 
     def _migrate(self) -> None:
@@ -467,7 +501,10 @@ class Store:
                 (parent,),
             )
         }
-        names.update(child[prefix_len:] for child in self._implicit_children(parent))
+        names.update(
+            entry.key[prefix_len:]
+            for entry in self._implicit_children(parent, bound=None, limit=None)
+        )
         return names
 
     @_logged("delete")
@@ -572,78 +609,148 @@ class Store:
         return _excerpt(row, start, length, max_chars)
 
     @_logged("list_keys")
-    def list_keys(self, key: str | None = None) -> list[Entry]:
+    def list_keys(
+        self,
+        key: str | None = None,
+        *,
+        limit: int | None = None,
+        after: str | None = None,
+    ) -> Page[Entry]:
         """List the keys immediately below ``key``, or below the root.
 
         Includes subkeys and metadata, and keys that exist only implicitly
         because something beneath them has content.
+
+        ``limit`` and ``after`` page the level. Neither has a default: this
+        layer offers pagination and holds no opinion about how much a caller
+        can take, which is the tools' and the command line's question and they
+        answer it differently.
         """
         parent = keys.parse(key).doc_key if key is not None else keys.ROOT
+        bound = _cursor_bound(after)
 
-        entries: dict[str, Entry] = {}
-        for row in self._conn.execute(
-            "SELECT * FROM documents WHERE parent = ? ORDER BY sort_key", (parent,)
-        ):
-            entries[row["key"]] = Entry(
+        # Both halves are taken past the same cursor and merged before either
+        # is cut. Cutting them separately is what makes the two disagree about
+        # where the page ends: whichever half is denser near the cursor pushes
+        # the other's keys over the edge, and a cursor never looks back.
+        candidates = self._real_children(parent, bound, limit) + self._implicit_children(
+            parent, bound, limit
+        )
+        candidates.sort(key=lambda entry: keys.sort_form(entry.key))
+
+        items = candidates if limit is None else candidates[:limit]
+        more = limit is not None and len(candidates) > limit
+        total, total_chars = self._level_totals(parent)
+        return Page(
+            items=items,
+            returned=len(items),
+            total=total,
+            total_chars=total_chars,
+            next_cursor=items[-1].key if more and items else None,
+        )
+
+    def _real_children(self, parent: str, bound: str | None, limit: int | None) -> list[Entry]:
+        """The rows stored directly under ``parent``, in order, after ``bound``."""
+        sql = "SELECT * FROM documents WHERE parent = ?"
+        params: list[object] = [parent]
+        if bound is not None:
+            sql += " AND sort_key > ?"
+            params.append(bound)
+        sql += " ORDER BY sort_key"
+        if limit is not None:
+            # One more than the page: enough to know another page exists,
+            # without counting the level a second time to find out.
+            sql += " LIMIT ?"
+            params.append(limit + 1)
+
+        return [
+            Entry(
                 key=row["key"],
                 kind="metadata" if row["meta_name"] is not None else "document",
                 size=len(row["content"]),
                 format=row["format"],
                 updated_at=row["updated_at"],
             )
+            for row in self._conn.execute(sql, params)
+        ]
 
-        for implicit in self._implicit_children(parent):
-            entries.setdefault(
-                implicit,
-                Entry(key=implicit, kind="implicit", size=None, format=None, updated_at=None),
-            )
-
-        return [entries[k] for k in sorted(entries, key=keys.sort_form)]
-
-    def _implicit_children(self, parent: str) -> Iterator[str]:
-        """Children of ``parent`` that hold no content themselves.
+    def _implicit_child_query(self, parent: str) -> tuple[str, dict[str, object]]:
+        """A SELECT over the children of ``parent`` that hold no content.
 
         Every stored row names its own parent, so the distinct parents lying
         within the subtree, truncated back to one level down, are exactly the
-        keys that exist implicitly.
+        keys that exist implicitly. Keys that are stored in their own right are
+        excluded here rather than after the fact, so this half and the real one
+        are disjoint and a merge of the two cannot lose a key to a duplicate.
         """
+        params: dict[str, object] = {"parent": parent}
         if parent == keys.ROOT:
-            rows = self._conn.execute("SELECT DISTINCT parent FROM documents")
-            prefix_len = 0
+            within = "parent <> ''"
+            params["plen"] = 0
         else:
-            lo, hi = keys.subtree_range(parent)
-            rows = self._conn.execute(
-                "SELECT DISTINCT parent FROM documents WHERE parent >= ? AND parent < ?",
-                (lo, hi),
-            )
-            prefix_len = len(parent) + 1
+            within = "parent >= :lo AND parent < :hi"
+            params["lo"], params["hi"] = keys.subtree_range(parent)
+            params["plen"] = len(parent) + 1
 
-        seen: set[str] = set()
-        for row in rows:
-            value = row["parent"]
-            if not value:
-                continue
-            head, _, _ = value[prefix_len:].partition(keys.DELIMITER)
-            child = value[:prefix_len] + head
-            if child not in seen:
-                seen.add(child)
-                yield child
+        return (
+            f"""
+            SELECT DISTINCT CASE
+                     WHEN instr(substr(parent, :plen + 1), '/') > 0
+                     THEN substr(parent, 1, :plen + instr(substr(parent, :plen + 1), '/') - 1)
+                     ELSE parent
+                   END AS child
+              FROM documents
+             WHERE {within}
+               AND child NOT IN (SELECT key FROM documents WHERE parent = :parent)
+            """,
+            params,
+        )
 
-    @_logged("get_documents")
-    def get_documents(
+    def _implicit_children(self, parent: str, bound: str | None, limit: int | None) -> list[Entry]:
+        inner, params = self._implicit_child_query(parent)
+        sql = f"SELECT child FROM ({inner})"
+        if bound is not None:
+            sql += " WHERE sort_form(child) > :bound"
+            params["bound"] = bound
+        sql += " ORDER BY sort_form(child)"
+        if limit is not None:
+            sql += " LIMIT :limit"
+            params["limit"] = limit + 1
+
+        return [
+            Entry(key=row["child"], kind="implicit", size=None, format=None, updated_at=None)
+            for row in self._conn.execute(sql, params)
+        ]
+
+    def _level_totals(self, parent: str) -> tuple[int, int]:
+        """How many keys the whole level holds, and how many characters.
+
+        Asked of the level rather than of the page, and so unaffected by the
+        cursor: what a caller cannot work out from a page is how much of the
+        whole they are holding.
+        """
+        row = self._conn.execute(
+            "SELECT count(*) AS n, coalesce(sum(length(content)), 0) AS chars "
+            "FROM documents WHERE parent = ?",
+            (parent,),
+        ).fetchone()
+        inner, params = self._implicit_child_query(parent)
+        implicit = self._conn.execute(f"SELECT count(*) AS n FROM ({inner})", params).fetchone()
+        # Implicit keys hold no content of their own, so they add to the count
+        # and nothing to the characters.
+        return row["n"] + implicit["n"], row["chars"]
+
+    def _selection(
         self,
-        key: str | None = None,
+        key: str | None,
         *,
-        meta_name: str | Sequence[str] | None = None,
-        depth: int | None = None,
-        max_chars: int = DEFAULT_BULK_MAX_CHARS,
-    ) -> list[Excerpt]:
-        """Read everything at and below ``key``, newest key order.
+        meta_name: str | Sequence[str] | None,
+        depth: int | None,
+    ) -> tuple[str, list[object]]:
+        """The WHERE clause naming a subtree read, shared by every caller of one.
 
-        With ``meta_name`` the result holds those metadata entries instead of
-        documents, which is how the titles of every document under a key are
-        listed in one call. ``depth`` limits how far below ``key`` to descend,
-        counted in segments; the default is unlimited.
+        One predicate, so that a survey, its count, and the list of what the
+        survey could not see all agree about what was in range.
         """
         where = []
         params: list[object] = []
@@ -663,20 +770,90 @@ class Store:
             where.append(f"meta_name IN ({', '.join('?' * len(names))})")
             params += names
 
-        sql = "SELECT * FROM documents"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY sort_key"
-
-        rows = self._conn.execute(sql, params).fetchall()
-
         if depth is not None:
             if depth < 0:
                 raise ValueError("depth must not be negative")
             base = keys.depth(key) if key is not None else 0
-            rows = [row for row in rows if keys.depth(row["doc_key"]) - base <= depth]
+            # A segment count SQLite can compute per row: the delimiters plus
+            # one. In SQL rather than over the results, because a depth filter
+            # applied afterwards has already paid to fetch what it discards.
+            where.append("(length(doc_key) - length(replace(doc_key, '/', '')) + 1) - ? <= ?")
+            params += [base, depth]
 
-        return [_excerpt(row, 0, None, max_chars) for row in rows]
+        return " AND ".join(where) if where else "1", params
+
+    def _selection_totals(self, where: str, params: list[object]) -> tuple[int, int]:
+        row = self._conn.execute(
+            f"SELECT count(*) AS n, coalesce(sum(length(content)), 0) AS chars "
+            f"FROM documents WHERE {where}",
+            params,
+        ).fetchone()
+        return row["n"], row["chars"]
+
+    @_logged("get_documents")
+    def get_documents(
+        self,
+        key: str | None = None,
+        *,
+        meta_name: str | Sequence[str] | None = None,
+        depth: int | None = None,
+        max_chars: int = DEFAULT_BULK_MAX_CHARS,
+        limit: int | None = None,
+        after: str | None = None,
+        max_total_chars: int | None = None,
+    ) -> Page[Excerpt]:
+        """Read everything at and below ``key``, in key order.
+
+        With ``meta_name`` the result holds those metadata entries instead of
+        documents, which is how the titles of every document under a key are
+        listed in one call. ``depth`` limits how far below ``key`` to descend,
+        counted in segments; the default is unlimited.
+
+        Two axes bound the answer and both are needed. ``max_chars`` caps each
+        document, ``limit`` and ``after`` page the collection, and
+        ``max_total_chars`` caps the page as a whole -- without that last one
+        the two axes multiply, and a hundred documents at two thousand
+        characters each honours both stated bounds while returning two hundred
+        thousand characters.
+        """
+        where, params = self._selection(key, meta_name=meta_name, depth=depth)
+        total, total_chars = self._selection_totals(where, params)
+
+        sql = f"SELECT * FROM documents WHERE {where}"
+        page_params = list(params)
+        if after is not None:
+            sql += " AND sort_key > ?"
+            page_params.append(_cursor_bound(after))
+        sql += " ORDER BY sort_key"
+
+        items: list[Excerpt] = []
+        spent = 0
+        more = False
+        # Streamed, not fetched: the caps are what make this answer bounded, and
+        # a query that materialises the subtree before applying them has already
+        # done the work the caps exist to avoid.
+        for row in self._conn.execute(sql, page_params):
+            if limit is not None and len(items) >= limit:
+                more = True
+                break
+            expected = min(len(row["content"]), max_chars)
+            if items and max_total_chars is not None and spent + expected > max_total_chars:
+                # Never on the first document, or a budget smaller than one
+                # document returns an empty page with a cursor that does not
+                # move, and the caller loops forever making no progress.
+                more = True
+                break
+            excerpt = _excerpt(row, 0, None, max_chars)
+            items.append(excerpt)
+            spent += excerpt.returned
+
+        return Page(
+            items=items,
+            returned=len(items),
+            total=total,
+            total_chars=total_chars,
+            next_cursor=items[-1].key if more and items else None,
+        )
 
     @_logged("keys_missing_meta")
     def keys_missing_meta(
@@ -685,28 +862,53 @@ class Store:
         *,
         meta_name: str | Sequence[str] = "title",
         depth: int | None = None,
-    ) -> list[str]:
+        limit: int | None = None,
+        after: str | None = None,
+    ) -> Page[str]:
         """Document keys at and below ``key`` carrying none of ``meta_name``.
 
         A survey by ``:title`` only sees documents that have one, so on its own
         it silently under-reports the store. This names what the survey missed.
+
+        One query with a NOT EXISTS, over the same range predicate the survey
+        itself uses, so the two agree about what was in range. It used to read
+        every document in the subtree through ``get_documents`` and throw the
+        content away.
         """
         names = [meta_name] if isinstance(meta_name, str) else list(meta_name)
         if not names:
             raise ValueError("meta_name must not be an empty sequence")
 
-        # Deliberately the same call the survey makes, so the two lists agree on
-        # what was in range; only the content is thrown away.
-        documents = self.get_documents(key, depth=depth, max_chars=1)
-        having = {
-            row["doc_key"]
-            for row in self._conn.execute(
-                f"SELECT DISTINCT doc_key FROM documents "
-                f"WHERE meta_name IN ({', '.join('?' * len(names))})",
-                names,
-            )
-        }
-        return [excerpt.key for excerpt in documents if excerpt.key not in having]
+        where, params = self._selection(key, meta_name=None, depth=depth)
+        where += (
+            f" AND NOT EXISTS (SELECT 1 FROM documents AS meta "
+            f"WHERE meta.doc_key = documents.doc_key "
+            f"AND meta.meta_name IN ({', '.join('?' * len(names))}))"
+        )
+        params = params + list(names)
+
+        total, total_chars = self._selection_totals(where, params)
+
+        sql = f"SELECT key FROM documents WHERE {where}"
+        page_params = list(params)
+        if after is not None:
+            sql += " AND sort_key > ?"
+            page_params.append(_cursor_bound(after))
+        sql += " ORDER BY sort_key"
+        if limit is not None:
+            sql += " LIMIT ?"
+            page_params.append(limit + 1)
+
+        found = [row["key"] for row in self._conn.execute(sql, page_params)]
+        items = found if limit is None else found[:limit]
+        more = limit is not None and len(found) > limit
+        return Page(
+            items=items,
+            returned=len(items),
+            total=total,
+            total_chars=total_chars,
+            next_cursor=items[-1] if more and items else None,
+        )
 
     # -- maintenance -----------------------------------------------------
 
@@ -862,6 +1064,16 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
     return replace(first, content=content, returned=len(content), next_offset=offset)
 
 
+def _cursor_bound(after: str | None) -> str | None:
+    """What a cursor compares against: the padded sort form of the key.
+
+    A cursor names a key, never a position. The store is written to while it is
+    being read, so under a positional cursor anything landing before it shifts
+    every later page and a page silently repeats or skips. A key does not move.
+    """
+    return keys.sort_form(keys.parse(after).key) if after is not None else None
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -906,6 +1118,25 @@ def _summarise(log: EventLog, result: object) -> dict[str, object]:
             return {"key": result}
         case int():
             return {"count": result}
+        case Page():
+            # The size of the whole, not just of the page: a log of pages that
+            # never says what they were part of cannot answer whether a caller
+            # who stopped had finished or given up.
+            summary: dict[str, object] = {
+                "count": result.returned,
+                "total": result.total,
+                "total_chars": result.total_chars,
+                "next_cursor": result.next_cursor,
+            }
+            if result.items and isinstance(result.items[0], Excerpt):
+                summary["truncated"] = sum(1 for item in result.items if item.truncated)
+            elif (
+                result.items
+                and isinstance(result.items[0], str)
+                and result.returned <= _MAX_LOGGED_KEYS
+            ):
+                summary["keys"] = result.items
+            return summary
         case []:
             return {"count": 0}
         case [Excerpt(), *_]:
@@ -916,10 +1147,10 @@ def _summarise(log: EventLog, result: object) -> dict[str, object]:
         case [Entry(), *_]:
             return {"count": len(result)}
         case [str(), *_]:
-            summary: dict[str, object] = {"count": len(result)}
+            listed: dict[str, object] = {"count": len(result)}
             if len(result) <= _MAX_LOGGED_KEYS:
-                summary["keys"] = result
-            return summary
+                listed["keys"] = result
+            return listed
         case _:
             return {"type": type(result).__name__}
 
@@ -1010,6 +1241,7 @@ __all__ = [
     "Excerpt",
     "Key",
     "KeyNotFoundError",
+    "Page",
     "PatternNotFoundError",
     "Store",
     "open_store",

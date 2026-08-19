@@ -136,8 +136,8 @@ def test_migrates_period_delimited_keys_to_slashes(tmp_path):
     with Store(directory) as s:
         assert s._conn.execute("PRAGMA user_version").fetchone()[0] == store_module.SCHEMA_VERSION
         assert s.retrieve_document("context/a1b2/design").content == "Body."
-        assert [e.key for e in s.list_keys("context/a1b2")] == ["context/a1b2/design"]
-        assert [e.key for e in s.get_documents("context", meta_name="title")] == [
+        assert [e.key for e in s.list_keys("context/a1b2").items] == ["context/a1b2/design"]
+        assert [e.key for e in s.get_documents("context", meta_name="title").items] == [
             "context/a1b2/design:title"
         ]
 
@@ -284,7 +284,7 @@ def test_a_failed_title_write_leaves_no_document_behind(store):
 def test_a_key_may_mirror_a_file_path(store):
     store.store_document("notes/src/myfile.py", "Notes about myfile.")
     assert store.retrieve_document("notes/src/myfile.py").content == "Notes about myfile."
-    assert [e.key for e in store.list_keys("notes/src")] == ["notes/src/myfile.py"]
+    assert [e.key for e in store.list_keys("notes/src").items] == ["notes/src/myfile.py"]
 
 
 # -- autonumbering -------------------------------------------------------
@@ -305,7 +305,10 @@ def test_wildcard_may_be_any_segment(store):
     assert store.store_document("context/?/design", "d") == "context/2/design"
     # The allocated context is now addressable directly.
     store.store_document("context/2/task", "t")
-    assert [e.key for e in store.list_keys("context/2")] == ["context/2/design", "context/2/task"]
+    assert [e.key for e in store.list_keys("context/2").items] == [
+        "context/2/design",
+        "context/2/task",
+    ]
 
 
 def test_wildcard_counts_from_the_highest_number_in_use(store):
@@ -487,23 +490,23 @@ def test_retrieve_rejects_bad_arguments(store, kwargs, match):
 
 
 def test_list_root(populated):
-    assert [e.key for e in populated.list_keys()] == ["context", "project"]
-    assert [e.kind for e in populated.list_keys()] == ["implicit", "implicit"]
+    assert [e.key for e in populated.list_keys().items] == ["context", "project"]
+    assert [e.kind for e in populated.list_keys().items] == ["implicit", "implicit"]
 
 
 def test_list_includes_subkeys_and_metadata(populated):
-    entries = populated.list_keys("context/a1b2")
+    entries = populated.list_keys("context/a1b2").items
     assert [(e.key, e.kind) for e in entries] == [
         ("context/a1b2/design", "document"),
         ("context/a1b2/task", "document"),
     ]
 
-    entries = populated.list_keys("context/a1b2/design")
+    entries = populated.list_keys("context/a1b2/design").items
     assert [(e.key, e.kind) for e in entries] == [("context/a1b2/design:title", "metadata")]
 
 
 def test_list_reports_sizes_and_timestamps(populated):
-    (entry,) = populated.list_keys("context/a1b2/task")
+    (entry,) = populated.list_keys("context/a1b2/task").items
     assert entry.key == "context/a1b2/task:title"
     assert entry.size == len("Delete tool")
     assert entry.format == "markdown"
@@ -511,7 +514,7 @@ def test_list_reports_sizes_and_timestamps(populated):
 
 
 def test_implicit_keys_have_no_content(populated):
-    (entry,) = [e for e in populated.list_keys() if e.key == "context"]
+    (entry,) = [e for e in populated.list_keys().items if e.key == "context"]
     assert entry.kind == "implicit"
     assert entry.size is None
     assert entry.updated_at is None
@@ -520,27 +523,27 @@ def test_implicit_keys_have_no_content(populated):
 def test_a_key_with_content_and_children_lists_as_a_document(store):
     store.store_document("a", "body")
     store.store_document("a/b", "child")
-    (entry,) = store.list_keys()
+    (entry,) = store.list_keys().items
     assert (entry.key, entry.kind) == ("a", "document")
 
 
 def test_list_does_not_confuse_sibling_prefixes(store):
     store.store_document("a/b/c", "x")
     store.store_document("a/beta/d", "y")
-    assert [e.key for e in store.list_keys("a")] == ["a/b", "a/beta"]
-    assert [e.key for e in store.list_keys("a/b")] == ["a/b/c"]
+    assert [e.key for e in store.list_keys("a").items] == ["a/b", "a/beta"]
+    assert [e.key for e in store.list_keys("a/b").items] == ["a/b/c"]
 
 
 def test_list_empty(store):
-    assert store.list_keys() == []
-    assert store.list_keys("nothing/here") == []
+    assert store.list_keys().items == []
+    assert store.list_keys("nothing/here").items == []
 
 
 # -- bulk reads ----------------------------------------------------------
 
 
 def test_get_documents_returns_the_subtree(populated):
-    keys_found = [e.key for e in populated.get_documents("context")]
+    keys_found = [e.key for e in populated.get_documents("context").items]
     assert keys_found == [
         "context/a1b2/design",
         "context/a1b2/task",
@@ -551,11 +554,11 @@ def test_get_documents_returns_the_subtree(populated):
 def test_get_documents_includes_the_key_itself(store):
     store.store_document("a", "body")
     store.store_document("a/b", "child")
-    assert [e.key for e in store.get_documents("a")] == ["a", "a/b"]
+    assert [e.key for e in store.get_documents("a").items] == ["a", "a/b"]
 
 
 def test_get_documents_lists_titles_across_a_subtree(populated):
-    found = {e.key: e.content for e in populated.get_documents("context", meta_name="title")}
+    found = {e.key: e.content for e in populated.get_documents("context", meta_name="title").items}
     assert found == {
         "context/a1b2/design:title": "Store schema",
         "context/a1b2/task:title": "Delete tool",
@@ -567,7 +570,7 @@ def test_get_documents_accepts_several_metadata_names(store):
     store.store_document("a:title", "T")
     store.store_document("a:summary", "S")
     store.store_document("a:other", "O")
-    found = [e.key for e in store.get_documents("a", meta_name=["title", "summary"])]
+    found = [e.key for e in store.get_documents("a", meta_name=["title", "summary"]).items]
     assert found == ["a:summary", "a:title"]
 
 
@@ -577,31 +580,33 @@ def test_get_documents_rejects_an_empty_metadata_list(store):
 
 
 def test_get_documents_everything(populated):
-    assert len(populated.get_documents()) == 4
+    assert len(populated.get_documents().items) == 4
 
 
 def test_get_documents_depth(populated):
-    assert [e.key for e in populated.get_documents("context", depth=0)] == []
-    assert [e.key for e in populated.get_documents("context", depth=1)] == []
-    assert len(populated.get_documents("context", depth=2)) == 3
-    assert [e.key for e in populated.get_documents(depth=1)] == []
+    assert [e.key for e in populated.get_documents("context", depth=0).items] == []
+    assert [e.key for e in populated.get_documents("context", depth=1).items] == []
+    assert len(populated.get_documents("context", depth=2).items) == 3
+    assert [e.key for e in populated.get_documents(depth=1).items] == []
 
 
 def test_keys_missing_meta_names_what_a_title_survey_cannot_see(populated):
     # Only project/reference/implementation was stored without a title.
-    assert populated.keys_missing_meta() == ["project/reference/implementation"]
-    assert populated.keys_missing_meta("context") == []
+    assert populated.keys_missing_meta().items == ["project/reference/implementation"]
+    assert populated.keys_missing_meta("context").items == []
 
 
 def test_keys_missing_meta_follows_the_key_and_depth_filters(populated):
-    assert populated.keys_missing_meta("project") == ["project/reference/implementation"]
-    assert populated.keys_missing_meta("project", depth=1) == []
+    assert populated.keys_missing_meta("project").items == ["project/reference/implementation"]
+    assert populated.keys_missing_meta("project", depth=1).items == []
 
 
 def test_keys_missing_meta_takes_several_names(populated):
     populated.store_document("project/reference/implementation:summary", "Notes.")
-    assert populated.keys_missing_meta(meta_name=["title", "summary"]) == []
-    assert populated.keys_missing_meta(meta_name="title") == ["project/reference/implementation"]
+    assert populated.keys_missing_meta(meta_name=["title", "summary"]).items == []
+    assert populated.keys_missing_meta(meta_name="title").items == [
+        "project/reference/implementation"
+    ]
 
 
 def test_keys_missing_meta_rejects_an_empty_name_list(store):
@@ -611,7 +616,7 @@ def test_keys_missing_meta_rejects_an_empty_name_list(store):
 
 def test_get_documents_truncates_each_document(store):
     store.store_document("a/b", "x" * 5_000)
-    (excerpt,) = store.get_documents("a")
+    (excerpt,) = store.get_documents("a").items
     assert excerpt.returned == store_module.DEFAULT_BULK_MAX_CHARS
     assert excerpt.total == 5_000
     assert excerpt.next_offset == store_module.DEFAULT_BULK_MAX_CHARS
@@ -620,7 +625,7 @@ def test_get_documents_truncates_each_document(store):
 def test_get_documents_does_not_confuse_sibling_prefixes(store):
     store.store_document("a/b/c", "x")
     store.store_document("a/beta/d", "y")
-    assert [e.key for e in store.get_documents("a/b")] == ["a/b/c"]
+    assert [e.key for e in store.get_documents("a/b").items] == ["a/b/c"]
 
 
 # -- deleting ------------------------------------------------------------
@@ -651,7 +656,7 @@ def test_delete_recursive_removes_the_subtree(populated):
         "context/a1b2/task",
         "context/a1b2/task:title",
     ]
-    assert [e.key for e in populated.list_keys("context")] == ["context/c3d4"]
+    assert [e.key for e in populated.list_keys("context").items] == ["context/c3d4"]
 
 
 def test_delete_recursive_does_not_touch_sibling_prefixes(store):
@@ -691,7 +696,7 @@ def test_storing_an_empty_document_is_not_a_deletion(store):
     excerpt = store.retrieve_document("a/b")
     assert excerpt.content == ""
     assert excerpt.total == 0
-    assert [e.key for e in store.list_keys("a")] == ["a/b"]
+    assert [e.key for e in store.list_keys("a").items] == ["a/b"]
 
 
 # -- the event log ---------------------------------------------------------
@@ -712,9 +717,9 @@ def test_a_store_without_a_log_writes_nothing(tmp_path):
     [
         (lambda s: s.store_document("a/b", "body"), "store_document"),
         (lambda s: s.retrieve_document("a/b"), "retrieve_document"),
-        (lambda s: s.list_keys("a"), "list_keys"),
-        (lambda s: s.get_documents("a"), "get_documents"),
-        (lambda s: s.keys_missing_meta("a"), "keys_missing_meta"),
+        (lambda s: s.list_keys("a").items, "list_keys"),
+        (lambda s: s.get_documents("a").items, "get_documents"),
+        (lambda s: s.keys_missing_meta("a").items, "keys_missing_meta"),
         (lambda s: s.descendant_count("a"), "descendant_count"),
         (lambda s: s.delete("a/b"), "delete"),
     ],
@@ -774,11 +779,23 @@ def test_a_delete_records_the_keys_it_removed(logged, tmp_path):
 
 def test_work_done_on_a_caller_s_behalf_is_recorded_too(logged, tmp_path):
     logged.store_document("a/b", "body")
+    with pytest.raises(KeyNotFoundError):
+        logged.retrieve_document("a")
+
+    # Reading a container counts what lies beneath it, so that the failure can
+    # say so rather than dead-ending. One call being more than one access is
+    # exactly what the log is for.
+    assert [e["op"] for e in events(tmp_path)][-2:] == ["descendant_count", "retrieve_document"]
+
+
+def test_keys_missing_meta_is_one_access_now(logged, tmp_path):
+    logged.store_document("a/b", "body")
     logged.keys_missing_meta("a")
 
-    # keys_missing_meta reads the subtree to decide what is missing. One call
-    # being more than one access is exactly what the log is for.
-    assert [e["op"] for e in events(tmp_path)][-2:] == ["get_documents", "keys_missing_meta"]
+    # It used to read every document in the subtree through get_documents and
+    # throw the content away, which the log is what showed.
+    assert [e["op"] for e in events(tmp_path)][-1:] == ["keys_missing_meta"]
+    assert "get_documents" not in [e["op"] for e in events(tmp_path)]
 
 
 # -- backup --------------------------------------------------------------
@@ -916,9 +933,9 @@ def test_numbered_keys_come_back_in_numeric_order(tmp_path):
         for _ in range(12):
             s.store_document("findings/?", "a finding")
 
-        numbered = [e.key.rsplit("/", 1)[1] for e in s.get_documents("findings")]
+        numbered = [e.key.rsplit("/", 1)[1] for e in s.get_documents("findings").items]
         assert numbered == [str(n) for n in range(1, 13)]
-        listed = [e.key.rsplit("/", 1)[1] for e in s.list_keys("findings")]
+        listed = [e.key.rsplit("/", 1)[1] for e in s.list_keys("findings").items]
         assert listed == [str(n) for n in range(1, 13)]
 
 
@@ -931,7 +948,7 @@ def test_a_cursor_parked_on_a_key_does_not_miss_a_later_one(tmp_path):
     with Store(tmp_path) as s:
         for _ in range(9):
             s.store_document("findings/?", "before")
-        ninth = s.list_keys("findings")[-1].key
+        ninth = s.list_keys("findings").items[-1].key
         tenth = s.store_document("findings/?", "after")
 
         assert (ninth, tenth) == ("findings/9", "findings/10")
@@ -948,7 +965,7 @@ def test_a_padded_key_names_the_same_document_as_the_unpadded_one(tmp_path):
 
         s.store_document("context/7/task", "replaced")
         assert s.retrieve_document("context/007/task").content == "replaced"
-        assert len(s.get_documents("context")) == 1
+        assert len(s.get_documents("context").items) == 1
 
 
 def test_allocation_counts_past_a_key_that_was_written_padded(tmp_path):
@@ -972,7 +989,7 @@ def test_migrates_a_store_that_predates_the_sort_key(tmp_path):
     with Store(directory) as s:
         assert s._conn.execute("PRAGMA user_version").fetchone()[0] == store_module.SCHEMA_VERSION
         # notes/03 was rewritten, not just indexed: the key it names has changed.
-        assert [e.key for e in s.get_documents("notes")] == ["notes/2", "notes/3", "notes/10"]
+        assert [e.key for e in s.get_documents("notes").items] == ["notes/2", "notes/3", "notes/10"]
         assert s.retrieve_document("notes/3").content == "third, written padded"
 
 
@@ -1039,3 +1056,258 @@ def test_the_migration_fills_in_a_sort_key_for_every_row(tmp_path):
     with Store(directory) as s:
         empty = s._conn.execute("SELECT count(*) FROM documents WHERE sort_key = ''").fetchone()[0]
         assert empty == 0
+
+
+# -- pagination ----------------------------------------------------------
+
+
+def paged(call, **kwargs) -> list:
+    """Everything ``call`` returns, taken one page at a time through the cursor.
+
+    Guards the two ways a cursor fails to terminate rather than looping on
+    them: a page that returns nothing but asks to be resumed, and a cursor that
+    does not move. Both hang a real caller, and a test that hangs reports
+    nothing at all.
+    """
+    collected: list = []
+    cursor = None
+    for _ in range(1000):
+        page = call(after=cursor, **kwargs)
+        collected += page.items
+        if page.next_cursor is None:
+            return collected
+        assert page.items, "a page with a cursor and nothing in it never terminates"
+        assert page.next_cursor != cursor, f"the cursor did not move past {cursor}"
+        cursor = page.next_cursor
+    raise AssertionError("the cursor never reached the end")
+
+
+def a_level(store: Store, count: int) -> None:
+    for number in range(1, count + 1):
+        store.store_document(f"findings/{number}", f"finding {number}")
+
+
+def test_a_page_states_the_size_of_the_whole(store):
+    a_level(store, 12)
+
+    page = store.list_keys("findings", limit=5)
+
+    assert page.returned == 5
+    # Without this a caller cannot tell 5 of 6 from 5 of 40000, and treats them
+    # the same.
+    assert page.total == 12
+    assert page.total_chars == sum(len(f"finding {n}") for n in range(1, 13))
+    assert page.next_cursor == "findings/5"
+
+
+def test_the_last_page_carries_no_cursor(store):
+    a_level(store, 3)
+
+    page = store.list_keys("findings", limit=5)
+
+    assert page.returned == 3
+    assert page.next_cursor is None
+    assert not page.truncated
+
+
+def test_paging_a_level_sees_every_key_exactly_once(store):
+    a_level(store, 12)
+
+    whole = [entry.key for entry in store.list_keys("findings").items]
+    by_page = [entry.key for entry in paged(store.list_keys, key="findings", limit=5)]
+
+    assert by_page == whole
+    assert len(whole) == 12
+
+
+def test_a_cursor_pages_in_numeric_order(store):
+    a_level(store, 12)
+
+    page = store.list_keys("findings", limit=3)
+
+    # The ordering the migration exists for: under text ordering this page is
+    # 1, 10, 11 and the cursor parks after 11, never to see 2 through 9.
+    assert [entry.key for entry in page.items] == ["findings/1", "findings/2", "findings/3"]
+
+
+def test_a_parked_cursor_returns_what_was_written_after_it(store):
+    a_level(store, 9)
+    cursor = store.list_keys("findings", limit=9).items[-1].key
+
+    # What another agent appends while the first is away. The next page and
+    # what is new since I last looked are the same operation.
+    store.store_document("findings/?", "written by someone else")
+
+    page = store.list_keys("findings", after=cursor)
+
+    assert [entry.key for entry in page.items] == ["findings/10"]
+
+
+def test_a_cursor_may_be_written_padded(store):
+    a_level(store, 4)
+
+    page = store.list_keys("findings", after="findings/02")
+
+    assert [entry.key for entry in page.items] == ["findings/3", "findings/4"]
+
+
+def test_implicit_children_page_alongside_real_ones(store):
+    # Alternating, so a page boundary falls between the two halves and either
+    # half limited on its own would drop keys the other pushed past the edge.
+    for number in range(1, 9):
+        if number % 2:
+            store.store_document(f"level/{number}", "content")
+        else:
+            store.store_document(f"level/{number}/beneath", "content")
+
+    whole = [entry.key for entry in store.list_keys("level").items]
+    by_page = [entry.key for entry in paged(store.list_keys, key="level", limit=3)]
+
+    assert by_page == whole
+    assert [entry.kind for entry in store.list_keys("level").items[:2]] == [
+        "document",
+        "implicit",
+    ]
+
+
+def test_a_key_that_is_both_real_and_a_container_is_counted_once(store):
+    store.store_document("a/b", "content")
+    store.store_document("a/b/c", "content")
+
+    page = store.list_keys("a")
+
+    assert [entry.key for entry in page.items] == ["a/b"]
+    assert page.total == 1
+
+
+def test_the_total_counts_implicit_keys_too(store):
+    store.store_document("a/b/c", "content")
+    store.store_document("a/d/e", "content")
+
+    page = store.list_keys("a", limit=1)
+
+    assert page.total == 2
+    assert page.total_chars == 0
+
+
+def test_get_documents_pages_the_collection(populated):
+    whole = [excerpt.key for excerpt in populated.get_documents().items]
+
+    by_page = [excerpt.key for excerpt in paged(populated.get_documents, limit=2)]
+
+    assert by_page == whole
+    assert len(whole) == 4
+
+
+def test_get_documents_states_the_size_of_the_whole(populated):
+    page = populated.get_documents("context", limit=1)
+
+    assert page.returned == 1
+    assert page.total == 3
+    assert page.total_chars == sum(
+        len(excerpt.content) for excerpt in populated.get_documents("context").items
+    )
+    assert page.next_cursor == "context/a1b2/design"
+
+
+def test_a_page_is_capped_in_characters_as_well_as_in_documents(store):
+    for number in range(1, 11):
+        store.store_document(f"notes/{number}", "x" * 500)
+
+    page = store.get_documents("notes", limit=10, max_chars=500, max_total_chars=1200)
+
+    # Both stated bounds are honoured by ten documents of five hundred
+    # characters, which is five thousand characters. The second cap is what
+    # makes the answer bounded rather than only bounded-sounding.
+    assert page.returned == 2
+    assert sum(excerpt.returned for excerpt in page.items) <= 1200
+    assert page.next_cursor == "notes/2"
+    assert page.total == 10
+
+
+def test_a_document_larger_than_the_budget_still_comes_back(store):
+    store.store_document("notes/1", "x" * 5000)
+    store.store_document("notes/2", "y" * 5000)
+
+    page = store.get_documents("notes", max_chars=5000, max_total_chars=100)
+
+    # Otherwise the page is empty, the cursor does not move, and a caller
+    # following it makes no progress for ever.
+    assert page.returned == 1
+    assert page.next_cursor == "notes/1"
+
+
+def test_the_character_budget_pages_to_the_end(store):
+    for number in range(1, 11):
+        store.store_document(f"notes/{number}", "x" * 500)
+
+    seen = [
+        excerpt.key for excerpt in paged(store.get_documents, key="notes", max_total_chars=1200)
+    ]
+
+    assert len(seen) == 10
+    assert seen == [excerpt.key for excerpt in store.get_documents("notes").items]
+
+
+def test_get_documents_depth_still_bounds_a_paged_read(populated):
+    page = populated.get_documents("context", depth=2, limit=1)
+
+    assert page.total == 3
+    assert page.returned == 1
+    assert [excerpt.key for excerpt in paged(populated.get_documents, key="context", depth=2)] == [
+        "context/a1b2/design",
+        "context/a1b2/task",
+        "context/c3d4/design",
+    ]
+
+
+def test_keys_missing_meta_pages_and_states_the_whole(store):
+    for number in range(1, 6):
+        store.store_document(f"notes/{number}", "body")
+    store.store_document("notes/3:title", "Titled")
+
+    page = store.keys_missing_meta("notes", limit=2)
+
+    assert page.items == ["notes/1", "notes/2"]
+    assert page.total == 4
+    assert page.next_cursor == "notes/2"
+    assert paged(store.keys_missing_meta, key="notes", limit=2) == [
+        "notes/1",
+        "notes/2",
+        "notes/4",
+        "notes/5",
+    ]
+
+
+def test_keys_missing_meta_wants_all_of_the_names_missing(store):
+    store.store_document("a/b", "body")
+    store.store_document("a/b:title", "Titled")
+
+    assert store.keys_missing_meta("a", meta_name=["title", "summary"]).items == []
+    assert store.keys_missing_meta("a", meta_name="summary").items == ["a/b"]
+
+
+def test_a_level_of_nothing_but_containers_pages_to_the_end(store):
+    for number in range(1, 13):
+        store.store_document(f"level/{number}/beneath", "content")
+
+    by_page = [entry.key for entry in paged(store.list_keys, key="level", limit=3)]
+
+    # Every key on this level is implicit, so nothing from the real half is
+    # over-fetched to cover a half that stopped one short of saying there is
+    # more. The half has to carry that signal itself.
+    assert by_page == [f"level/{number}" for number in range(1, 13)]
+
+
+def test_containers_sort_as_numbers_like_everything_else(store):
+    for number in range(1, 13):
+        store.store_document(f"level/{number}/beneath", "content")
+
+    # Under a limit, which is what makes the ordering decide *which* keys the
+    # page holds rather than only what order they are printed in.
+    listed = [entry.key for entry in store.list_keys("level", limit=2).items]
+
+    # These keys have no row of their own, so they have no stored sort_key
+    # either. Ordering them as text is the failure the whole migration exists
+    # to remove, reintroduced on the one half that cannot use the column.
+    assert listed == ["level/1", "level/2"]
