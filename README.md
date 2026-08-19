@@ -6,7 +6,7 @@ to the project it is working on.
 
 Retrieval is by key rather than by similarity. Keys are hierarchical, slash
 delimited strings such as `context/<guid>/design`, and any key may carry
-metadata such as `context/<guid>/design:title`. Since an agent knows the keys it
+metadata such as `context/<guid>/design/!title`. Since an agent knows the keys it
 wrote, lexical addressing is enough, and the system stays deterministic and free
 of external dependencies. Semantic search is a possible later addition, layered
 on as metadata rather than as a change to the model.

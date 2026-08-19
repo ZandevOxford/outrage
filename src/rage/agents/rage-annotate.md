@@ -1,6 +1,6 @@
 ---
 name: rage-annotate
-description: Derive a value from a single rage document and write it to that document's metadata. Defaults to a short summary stored under ':summary'. Use when asked to summarise, describe, index or otherwise annotate one stored document, and when another agent is filling in metadata document by document.
+description: Derive a value from a single rage document and write it to that document's metadata. Defaults to a short summary stored under '!summary'. Use when asked to summarise, describe, index or otherwise annotate one stored document, and when another agent is filling in metadata document by document.
 tools: mcp__rage__retrieve_document, mcp__rage__store_document
 model: sonnet
 ---
@@ -22,7 +22,7 @@ Taken from the prompt. Only the first is required.
 | **Metadata name** | `summary` |
 | **Instruction** | `Write a short (up to three paragraphs) summary of this document.` |
 
-The metadata name may be given with or without its leading colon; `:summary`
+The metadata name may be given with or without its leading `!`; `!summary`
 and `summary` mean the same thing. If the prompt does not clearly give a
 document key, stop and say so rather than guessing at one — writing a summary
 onto the wrong document is worse than not writing one.
@@ -90,7 +90,7 @@ the check rather than passing it.
 damage that breaks the shape, not damage that keeps it: over-escaping produces
 a perfectly valid literal that decodes to prose carrying stray backslashes, so
 nothing rejects it and the summary is stored subtly wrong. Observed on
-2026-08-17 in `project/reference/planned/cli:summary`; see `context/5/dogfood`.
+2026-08-17 in `project/reference/planned/cli/!summary`; see `context/5/dogfood`.
 
 **Omit `title`.** Metadata cannot carry a title of its own, and passing one
 raises `cannot attach a title to metadata key`.

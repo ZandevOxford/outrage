@@ -62,7 +62,7 @@ place as they change.
 Pass `title` on every document. It is what the survey above can see, and a
 document without one is findable only by someone who already knows its key.
 
-Store a `:summary` as well for any document whose subject its title cannot
+Store a `!summary` as well for any document whose subject its title cannot
 carry. `rage-search` screens on title *then* summary, so a document with a
 title and no summary is judged on the title alone — and "Notes from the Tuesday
 run" is an honest title that tells a reader nothing. Aim for about a fifth of

@@ -1,13 +1,18 @@
 """Parsing and validation for the Rage key namespace.
 
-A key is one or more segments joined by ``/``, where a segment matches
-``[A-Za-z0-9_.-]+``. A key may carry at most one metadata suffix, introduced by
-``:`` at the end of the key, whose name is a single segment. A key being
-written may use ``?`` as a whole segment to ask the store to allocate a number
-for it. A segment that is purely numeric is normalised by stripping its
-leading zeros, so ``context/01`` and ``context/1`` are the same key, and is
-sorted as though zero padded, so ``context/2`` comes before ``context/10``.
-See design.md.
+A key is one or more segments joined by ``/``, and ``/`` is the only
+separator there is. A document segment matches ``[A-Za-z0-9_.-]+``. A segment
+beginning with ``!`` names metadata about the document its segment sits under,
+so ``context/5/state/!title`` is the title of ``context/5/state``; it is legal
+only as the last segment, so metadata is always a leaf. ``!`` sorts below every
+character a document segment may begin with, which is what keeps a document's
+metadata ordered alongside the document rather than after its whole subtree.
+
+A key being written may use ``?`` as a whole segment to ask the store to
+allocate a number for it. A segment that is purely numeric is normalised by
+stripping its leading zeros, so ``context/01`` and ``context/1`` are the same
+key, and is sorted as though zero padded, so ``context/2`` comes before
+``context/10``. See design.md.
 """
 
 from __future__ import annotations
@@ -15,11 +20,21 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-#: Separates the segments of a key.
+#: Separates the segments of a key, and the only separator in the namespace.
 DELIMITER = "/"
 
-#: Introduces the metadata suffix.
-META = ":"
+#: Begins a segment naming metadata about the document above it. Chosen to sort
+#: below ``/`` and below every character a document segment may start with, so
+#: that ``a/!title`` sorts before ``a/b`` and therefore before ``a/b/!title``.
+#: That is what makes the order of a metadata survey the order of the documents
+#: it describes; with the old ``:`` suffix, which sorts *above* ``/``, the two
+#: orderings disagreed for every document that had a subtree.
+META_PREFIX = "!"
+
+#: The metadata suffix this namespace used until schema 4. Rejected on sight
+#: rather than accepted quietly, because a key that still parses under the old
+#: spelling would name a second document beside the one it was meant to name.
+LEGACY_META = ":"
 
 #: Stands in for a segment the store should allocate. Legal only when writing,
 #: and only as a whole segment: it is not a pattern.
@@ -38,7 +53,9 @@ ROOT = ""
 #: to LIKE, whose ``_`` wildcard would otherwise match the underscores that
 #: segments are allowed to contain. ``/`` and ``0`` are adjacent code points,
 #: so nothing can sort between ``k + "/"`` and ``k + _AFTER_DELIMITER`` except
-#: the keys beneath ``k``, whatever segments are made of.
+#: the keys beneath ``k``, whatever segments are made of -- metadata included,
+#: since ``!`` sorts above ``/`` as a character even though it sorts below
+#: every segment start.
 _AFTER_DELIMITER = "0"
 
 #: A segment that names nothing but a number. Deliberately not str.isdigit,
@@ -74,18 +91,28 @@ def sort_form(key: str) -> str:
     sees ``a/10``, because the new key sorts *behind* the one it was written
     after. Padding restores the ordering the numbers imply.
 
+    Since metadata is an ordinary segment, this is one rule applied uniformly
+    rather than a document part and a suffix handled separately.
+
     Never stored in place of a key and never returned to a caller -- the key
     itself stays in the normalised, unpadded form.
 
     >>> sorted(["a/10", "a/2"]), sorted(["a/10", "a/2"], key=sort_form)
     (['a/10', 'a/2'], ['a/2', 'a/10'])
+    >>> sort_form("a/!title") < sort_form("a/b/!title")
+    True
     """
-    doc_key, colon, meta_name = key.partition(META)
-    padded = DELIMITER.join(_pad(part) for part in doc_key.split(DELIMITER))
-    return f"{padded}{META}{_pad(meta_name)}" if colon else padded
+    return DELIMITER.join(_pad(part) for part in key.split(DELIMITER))
 
 
 def _pad(segment: str) -> str:
+    """Zero pad a numeric segment, seeing past a metadata prefix.
+
+    A numeric metadata name pads like any other number, so ``!2`` still sorts
+    before ``!10``.
+    """
+    if segment.startswith(META_PREFIX):
+        return META_PREFIX + _pad(segment[len(META_PREFIX) :])
     return segment.zfill(_SORT_WIDTH) if NUMERIC_RE.match(segment) else segment
 
 
@@ -98,15 +125,16 @@ class Key:
     """A parsed key, with the columns derived from it."""
 
     key: str
-    """The full key, normalised, including any metadata suffix. Numeric
+    """The full key, normalised, including any metadata segment. Numeric
     segments have lost their leading zeros, so this may differ from the string
     that was parsed."""
 
     doc_key: str
-    """The key with any metadata suffix removed."""
+    """The key with any metadata segment removed."""
 
     meta_name: str | None
-    """The metadata name, or None if the key names a document."""
+    """The metadata name without its ``!``, or None if the key names a
+    document."""
 
     parent: str
     """The enclosing key. A document's metadata has that document as its
@@ -126,6 +154,18 @@ class Key:
         return self.wildcard_parent is not None
 
 
+def migrate_legacy(key: str) -> str:
+    """The schema 4 spelling of a key written with the old ``:`` suffix.
+
+    >>> migrate_legacy("context/5/state:title")
+    'context/5/state/!title'
+    """
+    doc_key, colon, meta_name = key.partition(LEGACY_META)
+    if not colon:
+        return key
+    return f"{doc_key}{DELIMITER}{META_PREFIX}{meta_name}"
+
+
 def parse(key: str, *, allow_wildcard: bool = False) -> Key:
     """Parse and validate ``key``.
 
@@ -140,23 +180,38 @@ def parse(key: str, *, allow_wildcard: bool = False) -> Key:
     if not key:
         raise InvalidKeyError("key must not be empty")
 
-    doc_key, colon, meta_name = key.partition(META)
+    # Named rather than merely rejected: every stored key and every piece of
+    # prose used this spelling until schema 4, so the useful error is the one
+    # that says what to write instead.
+    if LEGACY_META in key:
+        raise InvalidKeyError(
+            f"key {key!r} uses the old {LEGACY_META!r} metadata suffix; metadata is now "
+            f"a segment of its own, so write {migrate_legacy(key)!r}"
+        )
 
-    if not colon:
-        meta_name = None
-    else:
-        if META in meta_name:
-            raise InvalidKeyError(f"key {key!r} has more than one metadata suffix")
-        if DELIMITER in meta_name:
-            raise InvalidKeyError(
-                f"metadata name {meta_name!r} in key {key!r} must be a single segment"
-            )
+    segments = key.split(DELIMITER)
+
+    meta_name = None
+    if segments[-1].startswith(META_PREFIX):
+        meta_name = segments[-1][len(META_PREFIX) :]
+        if not meta_name:
+            raise InvalidKeyError(f"key {key!r} has no metadata name after {META_PREFIX!r}")
         _check_segment(meta_name, key, what="metadata name")
+        segments = segments[:-1]
+        if not segments:
+            raise InvalidKeyError(
+                f"key {key!r} has no document key before its metadata segment"
+            )
 
-    if not doc_key:
-        raise InvalidKeyError(f"key {key!r} has no document key before its metadata suffix")
+    # Only the last segment may be metadata, so metadata stays a leaf and
+    # nothing can be stored beneath it.
+    for segment in segments:
+        if segment.startswith(META_PREFIX):
+            raise InvalidKeyError(
+                f"segment {segment!r} in key {key!r} is not valid: "
+                f"a {META_PREFIX!r} segment names metadata and may only come last"
+            )
 
-    segments = doc_key.split(DELIMITER)
     wildcard_parent = None
     for index, segment in enumerate(segments):
         if segment == WILDCARD:
@@ -177,7 +232,7 @@ def parse(key: str, *, allow_wildcard: bool = False) -> Key:
     if meta_name is not None:
         meta_name = normalise_segment(meta_name)
         parent = doc_key
-        key = f"{doc_key}{META}{meta_name}"
+        key = f"{doc_key}{DELIMITER}{META_PREFIX}{meta_name}"
     else:
         parent, _, _ = doc_key.rpartition(DELIMITER)
         key = doc_key
@@ -227,7 +282,9 @@ def substitute_wildcard(key: str, segment: str) -> str:
     doc_key = DELIMITER.join(
         segment if part == WILDCARD else part for part in parsed.doc_key.split(DELIMITER)
     )
-    return doc_key if parsed.meta_name is None else f"{doc_key}{META}{parsed.meta_name}"
+    if parsed.meta_name is None:
+        return doc_key
+    return f"{doc_key}{DELIMITER}{META_PREFIX}{parsed.meta_name}"
 
 
 def ancestors(key: str) -> list[str]:
@@ -236,7 +293,7 @@ def ancestors(key: str) -> list[str]:
     These are the keys that exist implicitly. A metadata key's ancestors
     include the document it is attached to.
 
-    >>> ancestors("context/a1b2/design:title")
+    >>> ancestors("context/a1b2/design/!title")
     ['context', 'context/a1b2', 'context/a1b2/design']
     """
     parsed = parse(key)
@@ -249,8 +306,8 @@ def ancestors(key: str) -> list[str]:
 def depth(key: str) -> int:
     """The number of segments in the document part of ``key``.
 
-    A metadata suffix does not add depth; ``a/b`` and ``a/b:title`` are both at
-    depth 2.
+    A metadata segment does not add depth; ``a/b`` and ``a/b/!title`` are both
+    at depth 2.
     """
     return parse(key).doc_key.count(DELIMITER) + 1
 

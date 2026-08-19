@@ -181,7 +181,7 @@ def _check_parents(connection: sqlite3.Connection, report: Report) -> None:
 def _check_orphan_metadata(connection: sqlite3.Connection, report: Report) -> None:
     """Metadata whose document does not exist.
 
-    Legal, and reachable by writing ``a/b:title`` without ever writing ``a/b``.
+    Legal, and reachable by writing ``a/b/!title`` without ever writing ``a/b``.
     Reported as a note rather than a fault because it is a real state a caller
     can want — but it is also how a survey comes to list a title for something
     that cannot be read, so it is worth naming.

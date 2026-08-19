@@ -10,15 +10,15 @@ from rage.keys import InvalidKeyError
         ("context", "context", None, ""),
         ("context/a1b2", "context/a1b2", None, "context"),
         ("context/a1b2/design", "context/a1b2/design", None, "context/a1b2"),
-        ("context/a1b2/design:title", "context/a1b2/design", "title", "context/a1b2/design"),
-        ("context:title", "context", "title", "context"),
+        ("context/a1b2/design/!title", "context/a1b2/design", "title", "context/a1b2/design"),
+        ("context/!title", "context", "title", "context"),
         (
             "project/reference/implementation",
             "project/reference/implementation",
             None,
             "project/reference",
         ),
-        ("a_b-c/d9:x_1", "a_b-c/d9", "x_1", "a_b-c/d9"),
+        ("a_b-c/d9/!x_1", "a_b-c/d9", "x_1", "a_b-c/d9"),
     ],
 )
 def test_parse_derives_columns(key, doc_key, meta_name, parent):
@@ -58,8 +58,12 @@ def test_a_filename_like_key_nests_under_its_directory():
         "context/",
         "context//a1b2",
         "context:",
-        "context:title:extra",
-        "context:sub/title",
+        "context/!title:extra",
+        "context/!sub/title",   # a ! segment may only come last
+        "context/!a/!b",        # nor may there be two of them
+        "context/!",            # nor one with no name
+        "!title",               # nor metadata with no document above it
+        "context/a1b2:title",   # the pre schema 4 spelling
         "context/a1b2:",
         "con text",
         "context/a1b2!",
@@ -87,13 +91,13 @@ def test_parse_rejects_non_strings():
 
 
 def test_is_valid():
-    assert keys.is_valid("a/b:c")
+    assert keys.is_valid("a/b/!c")
     assert not keys.is_valid("a//b")
 
 
 def test_metadata_may_attach_to_an_implicit_key():
-    # `context` need not have content of its own for `context:title` to be legal.
-    assert keys.parse("context:title").parent == "context"
+    # `context` need not have content of its own for `context/!title` to be legal.
+    assert keys.parse("context/!title").parent == "context"
 
 
 # -- wildcards -----------------------------------------------------------
@@ -101,7 +105,7 @@ def test_metadata_may_attach_to_an_implicit_key():
 
 @pytest.mark.parametrize(
     ("key", "wildcard_parent"),
-    [("?", ""), ("tmp/?", "tmp"), ("context/?/design", "context"), ("tmp/?:title", "tmp")],
+    [("?", ""), ("tmp/?", "tmp"), ("context/?/design", "context"), ("tmp/?/!title", "tmp")],
 )
 def test_wildcard_parent_is_the_key_enclosing_the_wildcard(key, wildcard_parent):
     parsed = keys.parse(key, allow_wildcard=True)
@@ -126,7 +130,7 @@ def test_invalid_wildcards(key):
     [
         ("tmp/?", "tmp/7"),
         ("context/?/design", "context/7/design"),
-        ("tmp/?:title", "tmp/7:title"),
+        ("tmp/?/!title", "tmp/7/!title"),
         ("?", "7"),
     ],
 )
@@ -145,7 +149,7 @@ def test_substitute_wildcard_needs_a_wildcard():
 def test_ancestors():
     assert keys.ancestors("context") == []
     assert keys.ancestors("context/a1b2/design") == ["context", "context/a1b2"]
-    assert keys.ancestors("context/a1b2/design:title") == [
+    assert keys.ancestors("context/a1b2/design/!title") == [
         "context",
         "context/a1b2",
         "context/a1b2/design",
@@ -155,7 +159,7 @@ def test_ancestors():
 def test_depth_ignores_the_metadata_suffix():
     assert keys.depth("context") == 1
     assert keys.depth("context/a1b2") == 2
-    assert keys.depth("context/a1b2:title") == 2
+    assert keys.depth("context/a1b2/!title") == 2
     assert keys.depth("notes/src/myfile.py") == 3
 
 
@@ -181,7 +185,7 @@ def test_subtree_bounds_are_adjacent_code_points():
 
 
 def test_subtree_range_of_metadata_key_uses_the_document_key():
-    assert keys.subtree_range("a/b:title") == keys.subtree_range("a/b")
+    assert keys.subtree_range("a/b/!title") == keys.subtree_range("a/b")
 
 
 # -- numeric segments ----------------------------------------------------
@@ -205,10 +209,10 @@ def test_only_wholly_numeric_segments_are_touched():
 
 def test_a_numeric_metadata_name_normalises_too():
     # Metadata names are segments and are ordered like them, so treating them
-    # differently would make ':01' and ':1' two names where '/01' and '/1' are
+    # differently would make '!01' and '!1' two names where '/01' and '/1' are
     # one key.
-    assert keys.parse("a:007").key == "a:7"
-    assert keys.parse("a:007").meta_name == "7"
+    assert keys.parse("a/!007").key == "a/!7"
+    assert keys.parse("a/!007").meta_name == "7"
 
 
 def test_sort_form_orders_numbers_as_numbers():
@@ -224,3 +228,49 @@ def test_sort_form_is_not_a_key_the_caller_ever_sees():
     # It exists only for ORDER BY. Anything handed back is the normalised key.
     assert keys.sort_form("a/1") != "a/1"
     assert keys.parse(keys.sort_form("a/1")).key == "a/1"
+
+
+def test_the_old_metadata_suffix_is_refused_by_name():
+    # Every stored key and every line of prose used `:` until schema 4, so the
+    # useful refusal is the one that says what to write instead. Accepting it
+    # quietly would be worse: `a:title` would name a document beside `a`.
+    with pytest.raises(InvalidKeyError) as raised:
+        keys.parse("context/5/state:title")
+    assert "context/5/state/!title" in str(raised.value)
+    assert keys.migrate_legacy("context/5/state:title") == "context/5/state/!title"
+    assert keys.migrate_legacy("context/5/state") == "context/5/state"
+
+
+def test_metadata_sorts_with_its_document_rather_than_after_its_subtree():
+    # The reason `!` was chosen. `:` sorted above `/`, so a document's metadata
+    # sorted after its whole subtree while the document sorted before it. That
+    # split is closed: for a key and its descendants the two orders agree.
+    docs = ["a", "a/b", "a/b/c", "ab", "b"]
+    by_doc = sorted(docs, key=keys.sort_form)
+    by_meta = sorted(docs, key=lambda d: keys.sort_form(f"{d}/!title"))
+    assert by_doc == by_meta
+
+
+def test_the_two_orders_still_part_over_a_segment_char_below_the_delimiter():
+    # What `!` does *not* fix, recorded so it is not rediscovered as a bug.
+    # `-` and `.` are legal segment characters and sort below `/`, so appending
+    # a metadata segment does not preserve order in general: `a` sorts before
+    # `a-x`, but `a/!title` sorts after `a-x/!title`.
+    assert keys.sort_form("a") < keys.sort_form("a-x")
+    assert keys.sort_form("a-x/!title") < keys.sort_form("a/!title")
+
+    # This is why a survey window is still not an interval of document keys,
+    # and why Store.missing_meta_stats still measures at a synthesised
+    # position. Closing it fully would need the delimiter itself to sort below
+    # every segment character, which would reorder documents, not just
+    # metadata -- `a/b` would come before `a-x`.
+    assert keys.sort_form("a-x") < keys.sort_form("a/b")
+
+
+def test_a_metadata_segment_sorts_before_any_sibling_document():
+    # `!` is below every character a segment may begin with, which is what puts
+    # a document's metadata immediately after the document itself.
+    assert keys.sort_form("a/!title") < keys.sort_form("a/-b")
+    assert keys.sort_form("a/!title") < keys.sort_form("a/.b")
+    assert keys.sort_form("a/!title") < keys.sort_form("a/0")
+    assert keys.sort_form("a/!2") < keys.sort_form("a/!10")

@@ -411,7 +411,7 @@ def test_dump_reads_long_metadata_to_the_end_too(tmp_path):
     value = "a very long summary. " * 400
     with Store(tmp_path / ".rage") as store:
         store.store_document("notes/long", "body", title="Short")
-        store.store_document("notes/long:summary", value)
+        store.store_document("notes/long/!summary", value)
 
     status, output = run("dump", "--dir", str(tmp_path / ".rage"), "--meta", "summary")
 
@@ -579,7 +579,7 @@ def test_ls_shows_metadata_and_subkeys_under_a_document(tmp_path):
 
     _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1")
 
-    assert "notes/1:title" in output
+    assert "notes/1/!title" in output
     assert "metadata" in output
     assert "notes/1/detail" in output
 
@@ -590,7 +590,7 @@ def test_ls_recursive_reaches_the_bottom(tmp_path):
     _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive", "notes")
 
     assert "notes/1/detail" in output
-    assert "notes/10:title" in output
+    assert "notes/10/!title" in output
 
 
 def test_ls_recursive_from_the_top_reports_the_container(tmp_path):
@@ -622,7 +622,7 @@ def test_rm_takes_the_metadata_with_the_document(tmp_path):
 
     assert status == 0
     assert "deleted notes/2" in output
-    assert "deleted notes/2:title" in output
+    assert "deleted notes/2/!title" in output
 
 
 def test_rm_leaves_the_subtree_and_says_it_did(tmp_path):

@@ -1,6 +1,6 @@
 ---
 name: rage-backfill
-description: Find rage documents under a key that are missing a given piece of metadata and generate it for each, one rage-annotate agent per document. Defaults to filling in missing ':summary' values. Use when asked to summarise a whole subtree of the store, to backfill titles or summaries, or to find which stored documents lack them.
+description: Find rage documents under a key that are missing a given piece of metadata and generate it for each, one rage-annotate agent per document. Defaults to filling in missing '!summary' values. Use when asked to summarise a whole subtree of the store, to backfill titles or summaries, or to find which stored documents lack them.
 tools: mcp__rage__keys_missing_meta, mcp__rage__get_documents, Agent
 model: sonnet
 ---

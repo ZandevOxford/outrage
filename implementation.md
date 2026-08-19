@@ -14,7 +14,7 @@ dependencies.
 
 ### 1. Key handling — `src/rage/keys.py` — done
 
-Parses and validates keys against the grammar, splits the metadata suffix, and
+Parses and validates keys against the grammar, splits off the metadata segment, and
 derives `doc_key`, `meta_name` and `parent`. Also `ancestors`, `depth`,
 `subtree_range`, and the `?` wildcard: `parse` accepts one only when asked, so
 reads and deletes reject it rather than treating it as a pattern.
@@ -38,7 +38,7 @@ both.
 `store_document` returns the key it wrote, which is how a caller learns the
 number allocated for a `?` segment. Allocation reads before it writes, so that
 path runs in an immediate transaction; concurrent writers block rather than
-picking the same number. Its optional `title` writes the `:title` metadata in
+picking the same number. Its optional `title` writes the `!title` metadata in
 the same transaction, after any wildcard has been resolved.
 
 `descendant_count` and `keys_missing_meta` exist to let a caller report what a
@@ -81,7 +81,7 @@ rather than returning a result with an error flag.
 * `.mcp.json` written, registering the server for this project. Its `command` is
   an absolute path into the conda environment and so is machine specific.
 * The server has been exercised end to end over stdio by an MCP client: tool
-  listing, store, survey by `:title`, read and recursive delete.
+  listing, store, survey by `!title`, read and recursive delete.
 * Used from a real Claude Code session, which is what turned up the six points
   below. Everything worked; what went wrong was that five results were
   misleading and one convention was too easy to skip.
@@ -120,7 +120,7 @@ iterating on — the slow loop is the one that step is stuck with.
    `list_keys`. Deliberately not applied to a metadata key, whose `doc_key`
    descendants say nothing about whether the metadata exists.
 
-3. *A survey by `:title` silently omitted untitled documents.* Storing four
+3. *A survey by `!title` silently omitted untitled documents.* Storing four
    documents and surveying titles returned three, with nothing to say the
    fourth existed. The survey now reports `without_meta`. New
    `Store.keys_missing_meta`.

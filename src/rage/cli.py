@@ -219,7 +219,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="print the document stored at a key",
         description=(
             "Read a key and print its content. Metadata is a key like any "
-            "other, so `rage get notes/x:title` prints the title. The whole "
+            "other, so `rage get notes/x/!title` prints the title. The whole "
             "document is printed by default: the tool's own read truncates at "
             "a cap and hands back a continuation offset, which is right for an "
             "agent's context window and wrong for a person redirecting a "
@@ -227,7 +227,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(get)
-    get.add_argument("key", help="Key to read, e.g. context/1/task or context/1/task:title.")
+    get.add_argument(
+        "key", help="Key to read, e.g. context/1/task or context/1/task/!title."
+    )
     get.add_argument("--offset", type=int, default=0, help="Character offset to start at.")
     get.add_argument("--length", type=int, default=None, help="Characters to return.")
     get.add_argument("--pattern", default=None, help="Literal substring to start the read from.")
@@ -268,7 +270,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--title",
         default=None,
         help=(
-            "Title to store alongside, as the key's :title metadata. What "
+            "Title to store alongside, as the key's !title metadata. What "
             "later surveys find the document by. Not allowed on a metadata key."
         ),
     )

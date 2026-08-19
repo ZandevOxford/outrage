@@ -33,11 +33,11 @@ def events(tmp_path) -> list[dict]:
 @pytest.fixture
 def populated(store):
     store.store_document("context/a1b2/design", "# Store schema\n\nBody.")
-    store.store_document("context/a1b2/design:title", "Store schema")
+    store.store_document("context/a1b2/design/!title", "Store schema")
     store.store_document("context/a1b2/task", "Add a delete tool.")
-    store.store_document("context/a1b2/task:title", "Delete tool")
+    store.store_document("context/a1b2/task/!title", "Delete tool")
     store.store_document("context/c3d4/design", "# Skill wording")
-    store.store_document("context/c3d4/design:title", "Skill wording")
+    store.store_document("context/c3d4/design/!title", "Skill wording")
     store.store_document("project/reference/implementation", "Notes.")
     return store
 
@@ -138,7 +138,7 @@ def test_migrates_period_delimited_keys_to_slashes(tmp_path):
         assert s.retrieve_document("context/a1b2/design").content == "Body."
         assert [e.key for e in s.list_keys("context/a1b2").items] == ["context/a1b2/design"]
         assert [e.key for e in s.get_documents("context", meta_name="title").items] == [
-            "context/a1b2/design:title"
+            "context/a1b2/design/!title"
         ]
 
 
@@ -190,7 +190,7 @@ def test_json_string_encoding_applies_to_title_too(store):
     store.store_document("a", '"Body."', title='"A \\"quoted\\" title"', encoding="json-string")
 
     assert store.retrieve_document("a").content == "Body."
-    assert store.retrieve_document("a:title").content == 'A "quoted" title'
+    assert store.retrieve_document("a/!title").content == 'A "quoted" title'
 
 
 def test_encoding_must_be_known(store):
@@ -241,37 +241,37 @@ def test_json_string_encoding_survives_a_document_full_of_scaffolding(store):
 
 def test_metadata_and_document_are_independent(store):
     store.store_document("a/b", "body")
-    store.store_document("a/b:title", "Title")
+    store.store_document("a/b/!title", "Title")
     assert store.retrieve_document("a/b").content == "body"
-    assert store.retrieve_document("a/b:title").content == "Title"
+    assert store.retrieve_document("a/b/!title").content == "Title"
 
 
 def test_metadata_may_attach_to_an_implicit_key(store):
-    store.store_document("context:title", "All contexts")
-    assert store.retrieve_document("context:title").content == "All contexts"
+    store.store_document("context/!title", "All contexts")
+    assert store.retrieve_document("context/!title").content == "All contexts"
 
 
 def test_title_argument_writes_the_metadata_alongside(store):
     store.store_document("a/b", "body", title="A title")
-    assert store.retrieve_document("a/b:title").content == "A title"
-    assert store.retrieve_document("a/b:title").format == "markdown"
+    assert store.retrieve_document("a/b/!title").content == "A title"
+    assert store.retrieve_document("a/b/!title").format == "markdown"
 
 
 def test_title_argument_follows_an_allocated_number(store):
     written = store.store_document("context/?/design", "body", title="Design")
     assert written == "context/1/design"
-    assert store.retrieve_document("context/1/design:title").content == "Design"
+    assert store.retrieve_document("context/1/design/!title").content == "Design"
 
 
 def test_title_argument_overwrites_a_previous_title(store):
     store.store_document("a/b", "body", title="First")
     store.store_document("a/b", "body", title="Second")
-    assert store.retrieve_document("a/b:title").content == "Second"
+    assert store.retrieve_document("a/b/!title").content == "Second"
 
 
 def test_title_argument_is_rejected_on_a_metadata_key(store):
     with pytest.raises(ValueError, match="cannot attach a title"):
-        store.store_document("a/b:summary", "text", title="Nope")
+        store.store_document("a/b/!summary", "text", title="Nope")
 
 
 def test_a_failed_title_write_leaves_no_document_behind(store):
@@ -338,7 +338,7 @@ def test_wildcard_avoids_keys_that_only_exist_implicitly(store):
 
 
 def test_wildcard_avoids_a_number_carrying_only_metadata(store):
-    store.store_document("tmp/4:title", "x")
+    store.store_document("tmp/4/!title", "x")
     assert store.store_document("tmp/?", "x") == "tmp/5"
 
 
@@ -350,12 +350,12 @@ def test_wildcard_numbering_is_per_parent(store):
 
 
 def test_wildcard_ignores_the_metadata_of_its_own_parent(store):
-    store.store_document("tmp:title", "Scratch")
+    store.store_document("tmp/!title", "Scratch")
     assert store.store_document("tmp/?", "x") == "tmp/1"
 
 
 def test_wildcard_on_a_metadata_key(store):
-    assert store.store_document("tmp/?:title", "Title") == "tmp/1:title"
+    assert store.store_document("tmp/?/!title", "Title") == "tmp/1/!title"
 
 
 def test_wildcard_is_rejected_when_reading_or_deleting(store):
@@ -391,7 +391,7 @@ def test_retrieve_says_when_a_key_is_a_container(populated):
 
 def test_retrieve_missing_metadata_does_not_count_the_documents_descendants(populated):
     with pytest.raises(KeyNotFoundError, match="nothing is stored at or below"):
-        populated.retrieve_document("context/a1b2:summary")
+        populated.retrieve_document("context/a1b2/!summary")
 
 
 def test_retrieve_returns_whole_short_document(store):
@@ -502,12 +502,12 @@ def test_list_includes_subkeys_and_metadata(populated):
     ]
 
     entries = populated.list_keys("context/a1b2/design").items
-    assert [(e.key, e.kind) for e in entries] == [("context/a1b2/design:title", "metadata")]
+    assert [(e.key, e.kind) for e in entries] == [("context/a1b2/design/!title", "metadata")]
 
 
 def test_list_reports_sizes_and_timestamps(populated):
     (entry,) = populated.list_keys("context/a1b2/task").items
-    assert entry.key == "context/a1b2/task:title"
+    assert entry.key == "context/a1b2/task/!title"
     assert entry.size == len("Delete tool")
     assert entry.format == "markdown"
     assert entry.updated_at
@@ -560,18 +560,18 @@ def test_get_documents_includes_the_key_itself(store):
 def test_get_documents_lists_titles_across_a_subtree(populated):
     found = {e.key: e.content for e in populated.get_documents("context", meta_name="title").items}
     assert found == {
-        "context/a1b2/design:title": "Store schema",
-        "context/a1b2/task:title": "Delete tool",
-        "context/c3d4/design:title": "Skill wording",
+        "context/a1b2/design/!title": "Store schema",
+        "context/a1b2/task/!title": "Delete tool",
+        "context/c3d4/design/!title": "Skill wording",
     }
 
 
 def test_get_documents_accepts_several_metadata_names(store):
-    store.store_document("a:title", "T")
-    store.store_document("a:summary", "S")
-    store.store_document("a:other", "O")
+    store.store_document("a/!title", "T")
+    store.store_document("a/!summary", "S")
+    store.store_document("a/!other", "O")
     found = [e.key for e in store.get_documents("a", meta_name=["title", "summary"]).items]
-    assert found == ["a:summary", "a:title"]
+    assert found == ["a/!summary", "a/!title"]
 
 
 def test_get_documents_rejects_an_empty_metadata_list(store):
@@ -602,7 +602,7 @@ def test_keys_missing_meta_follows_the_key_and_depth_filters(populated):
 
 
 def test_keys_missing_meta_takes_several_names(populated):
-    populated.store_document("project/reference/implementation:summary", "Notes.")
+    populated.store_document("project/reference/implementation/!summary", "Notes.")
     assert populated.keys_missing_meta(meta_name=["title", "summary"]).items == []
     assert populated.keys_missing_meta(meta_name="title").items == [
         "project/reference/implementation"
@@ -633,13 +633,13 @@ def test_get_documents_does_not_confuse_sibling_prefixes(store):
 
 def test_delete_takes_metadata_with_the_document(populated):
     removed = populated.delete("context/a1b2/design")
-    assert removed == ["context/a1b2/design", "context/a1b2/design:title"]
+    assert removed == ["context/a1b2/design", "context/a1b2/design/!title"]
     with pytest.raises(KeyNotFoundError):
-        populated.retrieve_document("context/a1b2/design:title")
+        populated.retrieve_document("context/a1b2/design/!title")
 
 
 def test_delete_one_metadata_entry(populated):
-    assert populated.delete("context/a1b2/design:title") == ["context/a1b2/design:title"]
+    assert populated.delete("context/a1b2/design/!title") == ["context/a1b2/design/!title"]
     assert populated.retrieve_document("context/a1b2/design").content
 
 
@@ -652,9 +652,9 @@ def test_delete_recursive_removes_the_subtree(populated):
     removed = populated.delete("context/a1b2", recursive=True)
     assert removed == [
         "context/a1b2/design",
-        "context/a1b2/design:title",
+        "context/a1b2/design/!title",
         "context/a1b2/task",
-        "context/a1b2/task:title",
+        "context/a1b2/task/!title",
     ]
     assert [e.key for e in populated.list_keys("context").items] == ["context/c3d4"]
 
@@ -774,7 +774,7 @@ def test_a_delete_records_the_keys_it_removed(logged, tmp_path):
     logged.delete("a/b")
 
     (event,) = [e for e in events(tmp_path) if e["op"] == "delete"]
-    assert event["result"]["keys"] == ["a/b", "a/b:title"]
+    assert event["result"]["keys"] == ["a/b", "a/b/!title"]
 
 
 def test_work_done_on_a_caller_s_behalf_is_recorded_too(logged, tmp_path):
@@ -1049,7 +1049,7 @@ def test_the_migration_fills_in_a_sort_key_for_every_row(tmp_path):
         version=2,
         rows=[
             ("notes/1", "notes/1", None, "notes", "body"),
-            ("notes/1:title", "notes/1", "title", "notes/1", "A title"),
+            ("notes/1/!title", "notes/1", "title", "notes/1", "A title"),
         ],
     )
 
@@ -1264,7 +1264,7 @@ def test_get_documents_depth_still_bounds_a_paged_read(populated):
 def test_keys_missing_meta_pages_and_states_the_whole(store):
     for number in range(1, 6):
         store.store_document(f"notes/{number}", "body")
-    store.store_document("notes/3:title", "Titled")
+    store.store_document("notes/3/!title", "Titled")
 
     page = store.keys_missing_meta("notes", limit=2)
 
@@ -1281,7 +1281,7 @@ def test_keys_missing_meta_pages_and_states_the_whole(store):
 
 def test_keys_missing_meta_wants_all_of_the_names_missing(store):
     store.store_document("a/b", "body")
-    store.store_document("a/b:title", "Titled")
+    store.store_document("a/b/!title", "Titled")
 
     assert store.keys_missing_meta("a", meta_name=["title", "summary"]).items == []
     assert store.keys_missing_meta("a", meta_name="summary").items == ["a/b"]
@@ -1328,11 +1328,11 @@ def test_missing_meta_stats_samples_when_asked(populated):
 def test_missing_meta_stats_bounds_by_the_surveys_own_cursors(store):
     for key in ["n/1", "n/2", "n/3", "n/4"]:
         store.store_document(key, "body")
-    store.store_document("n/2:title", "T")
+    store.store_document("n/2/!title", "T")
 
     whole = store.missing_meta_stats("n", sample=10)
-    below = store.missing_meta_stats("n", before="n/2:title", sample=10)
-    above = store.missing_meta_stats("n", after="n/2:title", sample=10)
+    below = store.missing_meta_stats("n", before="n/2/!title", sample=10)
+    above = store.missing_meta_stats("n", after="n/2/!title", sample=10)
 
     # Exclusive below, inclusive above, so the two halves partition the whole.
     assert whole.sample == ["n/1", "n/3", "n/4"]
@@ -1344,16 +1344,101 @@ def test_missing_meta_stats_bounds_by_the_surveys_own_cursors(store):
 def test_missing_meta_stats_places_a_document_where_its_metadata_would_sort(store):
     for key in ["a", "a/x", "a/y"]:
         store.store_document(key, "body")
-    store.store_document("a/y:title", "T")
+    store.store_document("a/y/!title", "T")
 
-    # `a/x` sorts *after* `a` as a document and *before* it as `:title`, because
-    # `/` precedes `:`. The survey walks the metadata order, so that is the
-    # order a window has to be measured in -- comparing document keys puts
-    # `a/x` in the wrong window, and nothing downstream can tell.
-    assert store.missing_meta_stats(before="a/y:title", sample=10).sample == ["a/x"]
-    assert store.missing_meta_stats(after="a/y:title", sample=10).sample == ["a"]
+    # The survey walks metadata order, and since `!` sorts below every
+    # character a segment may begin with, that order *is* document order:
+    # a/!title < a/x/!title < a/y/!title, exactly as a < a/x < a/y. So a
+    # window is a plain interval of document keys, and everything above sits
+    # on the same side of the cursor in both orderings.
+    assert store.missing_meta_stats(before="a/y/!title", sample=10).sample == ["a", "a/x"]
+    assert store.missing_meta_stats(after="a/y/!title", sample=10).sample == []
+
+    # Until schema 4 the separator was `:`, which sorts *above* `/`, so `a`
+    # landed after `a/x` in metadata order and before it as a document. That
+    # split is what this now pins closed.
+    assert keys.sort_form("a/!title") < keys.sort_form("a/x/!title")
+    assert keys.sort_form("a") < keys.sort_form("a/x")
 
 
 def test_missing_meta_stats_rejects_an_empty_name_list(store):
     with pytest.raises(ValueError):
         store.missing_meta_stats(meta_name=[])
+
+
+def test_schema_3_metadata_keys_migrate_to_a_segment(tmp_path):
+    # A schema 3 store, written before metadata became a segment.
+    path = tmp_path / "store.sqlite"
+    con = sqlite3.connect(path)
+    con.executescript(store_module._TABLE.format(name="documents") + store_module._INDEXES)
+    con.executemany(
+        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, "
+        "updated_at, sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            ("a", "a", None, "", "body", "markdown", "2026-01-01T00:00:00+00:00", "a"),
+            ("a/b", "a/b", None, "a", "body", "markdown", "2026-01-01T00:00:00+00:00", "a/b"),
+            ("a:title", "a", "title", "a", "A", "markdown", "2026-01-01T00:00:00+00:00", "a:title"),
+            ("a/b:title", "a/b", "title", "a/b", "B", "markdown",
+             "2026-01-01T00:00:00+00:00", "a/b:title"),
+        ],
+    )
+    con.execute("PRAGMA user_version=3")
+    con.commit()
+    con.close()
+
+    opened = Store(tmp_path)
+
+    # The key moved; what was derived from it did not, because none of those
+    # columns ever held the suffix.
+    rows = {r["key"]: r for r in opened.connection.execute("SELECT * FROM documents")}
+    assert set(rows) == {"a", "a/b", "a/!title", "a/b/!title"}
+    assert rows["a/!title"]["doc_key"] == "a"
+    assert rows["a/!title"]["meta_name"] == "title"
+    assert rows["a/!title"]["parent"] == "a"
+    assert rows["a/b/!title"]["content"] == "B"
+
+    # And the sort keys now put a document's metadata ahead of its subtree.
+    assert rows["a/!title"]["sort_key"] < rows["a/b"]["sort_key"]
+    assert rows["a/!title"]["sort_key"] < rows["a/b/!title"]["sort_key"]
+
+    assert opened.retrieve_document("a/!title").content == "A"
+    assert opened.connection.execute("PRAGMA user_version").fetchone()[0] == 4
+
+
+def test_survey_windows_tile_over_adversarial_keys(tmp_path):
+    """Windows must tile whatever the keys look like, not just tidy ones.
+
+    Built from the characters that sort around ``/``: ``-`` (0x2D) and ``.``
+    (0x2E) both sort below it and are legal in a segment, so a document can
+    sort before a sibling while its metadata sorts after that sibling's. A
+    window bounded by document keys double counts exactly there -- but only for
+    some sets of which documents carry the metadata, so this sweeps every one
+    of them rather than a few tidy prefixes.
+    """
+    keyset = ["a", "a-x", "a.y", "a/b", "a/b/c", "ab", "b"]
+
+    for mask in range(1, 2 ** len(keyset)):
+        titled = [k for i, k in enumerate(keyset) if mask >> i & 1]
+        store = Store(tmp_path / f"s{mask}")
+        for key in keyset:
+            store.store_document(key, "body")
+        for key in titled:
+            store.store_document(f"{key}/!title", "T")
+
+        after, seen, counted = None, [], 0
+        while True:
+            page = store.get_documents(meta_name=["title"], limit=1, after=after)
+            window = store.missing_meta_stats(
+                meta_name=["title"], after=after, before=page.next_cursor, sample=100
+            )
+            seen += window.sample
+            counted += window.total
+            if page.next_cursor is None:
+                break
+            after = page.next_cursor
+
+        whole = store.keys_missing_meta(meta_name=["title"], limit=1000)
+        assert sorted(seen) == sorted(whole.items), f"titled={titled}"
+        assert len(seen) == len(set(seen)), f"double counted, titled={titled}"
+        assert counted == whole.total, f"titled={titled}"
+        store.connection.close()

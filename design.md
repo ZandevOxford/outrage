@@ -153,14 +153,14 @@ that someone remembers it then.
 
 ## Key namespace
 
-The key namespace is an arbitrary string, with slash delimiters. A colon instead
-of a slash indicates metadata.
+The key namespace is an arbitrary string, and `/` is the only delimiter there
+is. A segment beginning with `!` is metadata about the document above it.
 
 For example:
 
 * context/<guid>/task  could contain a summary of the task for a particular context
 * context/<guid>/design  could contain a design document
-* context/<guid>/design:title  could contain the title of the design document
+* context/<guid>/design/!title  could contain the title of the design document
 * project/reference/implementation  could contain the implementation notes for the project
 * notes/src/myfile.py  could contain notes about a particular source file
 
@@ -181,9 +181,22 @@ suggest a navigation that does not exist here.
   `0` normalises to itself, and a segment that merely contains digits — `v01`,
   `1.2` — is left alone. This applies to metadata names too, since they are
   segments and are ordered like them.
-* A key may carry at most one metadata suffix, introduced by `:` and appearing
-  only at the end of the key. The metadata name is a single segment and may not
-  contain `/`, so the metadata namespace is flat.
+* A segment beginning with `!` names metadata about the document its segment
+  sits under, and is legal only as the *last* segment, so metadata is always a
+  leaf and the metadata namespace is flat. `!` is not legal anywhere else.
+* `!` was chosen because it sorts below every character a document segment may
+  begin with, so `a/!title` sorts before `a/b` and therefore before
+  `a/b/!title`: a document's metadata sorts with the document rather than after
+  its whole subtree. Until schema 4 the separator was `:`, which sorts *above*
+  `/`, so a metadata survey walked its documents in a different order from a
+  plain read for every document that had a subtree.
+* This narrows the gap between the two orderings but does not close it. `-` and
+  `.` are legal segment characters that sort below `/`, so `a-x/!title` still
+  sorts before `a/!title` while `a` sorts before `a-x`. Closing it entirely
+  would need the delimiter itself to sort below every segment character, which
+  reorders documents and not just metadata — `a/b` would come before `a-x`.
+  Not done; see `Store.missing_meta_stats`, which measures a survey's window at
+  a synthesised position for exactly this reason.
 * Metadata may be attached to any key, including implicit keys with no content.
 * A key *being written* may use `?` in place of one whole segment, asking the
   store to allocate a number for it. See Autonumbering below. `?` is otherwise
@@ -281,7 +294,7 @@ implemented later as a separate archive table rather than by complicating reads.
 The result reports the key written, which is the only way a caller learns a
 number allocated for a `?` segment.
 
-An optional `title` writes the `:title` metadata in the same transaction. The
+An optional `title` writes the `!title` metadata in the same transaction. The
 saved call matters less than the fact that a separate call is one that can be
 forgotten: the title is what makes a document findable later, so the convention
 has to be reachable without remembering it. It follows an allocated number, so
@@ -321,7 +334,7 @@ This can be stored in a single table, with an index on the key.
 ```sql
 CREATE TABLE documents (
   key        TEXT PRIMARY KEY,  -- full key, including any ':meta' suffix
-  doc_key    TEXT NOT NULL,     -- key with the metadata suffix removed
+  doc_key    TEXT NOT NULL,     -- key with the metadata segment removed
   meta_name  TEXT,              -- metadata name, or NULL for a document
   parent     TEXT NOT NULL,     -- derived: enclosing key
   content    TEXT NOT NULL,
@@ -338,7 +351,7 @@ are stored rather than computed at query time so that the two main access
 patterns are plain indexed lookups:
 
 * *List keys immediately under X* is an equality match on `parent`. The parent
-  of `A/B:title` is `A/B`, so a document's metadata lists alongside its
+  of `A/B/!title` is `A/B`, so a document's metadata lists alongside its
   subkeys, as required. Implicit intermediate keys need never be materialised —
   they fall out of a `DISTINCT parent` query.
 * *Get one metadata name across a subtree* is a range scan on

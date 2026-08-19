@@ -19,9 +19,9 @@ from rage.store import Store
 def server(tmp_path):
     with Store(tmp_path) as store:
         store.store_document("context/a1b2/design", "# Store schema\n\n" + "body " * 1000)
-        store.store_document("context/a1b2/design:title", "Store schema")
+        store.store_document("context/a1b2/design/!title", "Store schema")
         store.store_document("context/c3d4/task", "Add a delete tool.")
-        store.store_document("context/c3d4/task:title", "Delete tool")
+        store.store_document("context/c3d4/task/!title", "Delete tool")
         yield build_server(store)
 
 
@@ -156,18 +156,18 @@ def test_store_document_reports_an_allocated_key(server):
 
 def test_store_document_writes_a_title_in_one_call(server):
     stored = call(server, "store_document", key="project/notes", content="# Notes", title="Notes")
-    assert stored["title_key"] == "project/notes:title"
-    assert call(server, "retrieve_document", key="project/notes:title")["content"] == "Notes"
+    assert stored["title_key"] == "project/notes/!title"
+    assert call(server, "retrieve_document", key="project/notes/!title")["content"] == "Notes"
 
 
 def test_store_document_titles_the_key_it_allocated(server):
     stored = call(server, "store_document", key="tmp/?", content="scratch", title="Scratch")
-    assert (stored["key"], stored["title_key"]) == ("tmp/1", "tmp/1:title")
+    assert (stored["key"], stored["title_key"]) == ("tmp/1", "tmp/1/!title")
 
 
 def test_store_document_rejects_a_title_on_a_metadata_key(server):
     message = call_expecting_error(
-        server, "store_document", key="a/b:summary", content="text", title="Nope"
+        server, "store_document", key="a/b/!summary", content="text", title="Nope"
     )
     assert "cannot attach a title" in message
 
@@ -181,14 +181,14 @@ def test_store_document_decodes_a_json_string_encoding(server):
     stored = call(
         server,
         "store_document",
-        key="a/b:summary",
+        key="a/b/!summary",
         content='"A summary saying \\"hi\\".\\nSecond line."',
         encoding="json-string",
     )
     # `stored` counts what was stored, not the longer encoded form that arrived.
     assert stored["stored"] == len('A summary saying "hi".\nSecond line.')
     assert (
-        call(server, "retrieve_document", key="a/b:summary")["content"]
+        call(server, "retrieve_document", key="a/b/!summary")["content"]
         == 'A summary saying "hi".\nSecond line.'
     )
 
@@ -197,14 +197,14 @@ def test_store_document_rejects_scaffolding_under_a_json_string_encoding(server)
     message = call_expecting_error(
         server,
         "store_document",
-        key="a/b:summary",
+        key="a/b/!summary",
         content='"A summary."</content>\n</invoke>\n',
         encoding="json-string",
     )
     assert "not a valid JSON string literal" in message
     # Nothing was written, so the caller can simply send it again.
     assert "nothing is stored" in call_expecting_error(
-        server, "retrieve_document", key="a/b:summary"
+        server, "retrieve_document", key="a/b/!summary"
     )
 
 
@@ -218,15 +218,15 @@ def test_list_keys_shows_subkeys_and_metadata(server):
     assert [(e["key"], e["kind"]) for e in entries] == [("context/c3d4/task", "document")]
 
     entries = call(server, "list_keys", key="context/c3d4/task")["entries"]
-    assert [(e["key"], e["kind"]) for e in entries] == [("context/c3d4/task:title", "metadata")]
+    assert [(e["key"], e["kind"]) for e in entries] == [("context/c3d4/task/!title", "metadata")]
 
 
 def test_get_documents_surveys_titles(server):
     result = call(server, "get_documents", key="context", meta_name=["title"])
     assert result["count"] == 2
     assert {d["key"]: d["content"] for d in result["documents"]} == {
-        "context/a1b2/design:title": "Store schema",
-        "context/c3d4/task:title": "Delete tool",
+        "context/a1b2/design/!title": "Store schema",
+        "context/c3d4/task/!title": "Delete tool",
     }
 
 
@@ -277,7 +277,7 @@ def test_get_documents_respects_depth(server):
 
 def test_delete_keys_takes_metadata_with_the_document(server):
     result = call(server, "delete_keys", key="context/c3d4/task")
-    assert result["deleted"] == ["context/c3d4/task", "context/c3d4/task:title"]
+    assert result["deleted"] == ["context/c3d4/task", "context/c3d4/task/!title"]
     assert result["count"] == 2
 
 
@@ -465,7 +465,7 @@ def test_a_survey_is_capped_in_documents(tmp_path):
 
     assert result["returned"] == 100
     assert result["total"] == 140
-    assert result["next_cursor"] == "notes/100:title"
+    assert result["next_cursor"] == "notes/100/!title"
 
 
 def test_a_survey_of_a_small_store_still_arrives_whole(tmp_path):
@@ -568,7 +568,7 @@ def test_the_untitled_are_counted_over_this_page_not_the_whole_subtree(tmp_path)
     for number in range(1, 9):
         store.store_document(f"notes/{number}", "body")
     for number in (2, 5, 7):
-        store.store_document(f"notes/{number}:title", "T")
+        store.store_document(f"notes/{number}/!title", "T")
 
     with store:
         server = build_server(store)
@@ -596,7 +596,7 @@ def test_paging_a_survey_tiles_its_windows(tmp_path):
     for key in ["a", "a/x", "a/y", "b", "b/p", "c"]:
         store.store_document(key, f"content of {key}")
     for key in ["a", "a/y", "c"]:
-        store.store_document(f"{key}:title", "T")
+        store.store_document(f"{key}/!title", "T")
 
     seen: list[str] = []
     after = None
@@ -612,7 +612,7 @@ def test_paging_a_survey_tiles_its_windows(tmp_path):
 
     # Every untitled document falls in exactly one window: no gap, no overlap.
     # Document keys cannot bound these windows -- `a` sorts before `a/x` while
-    # `a:title` sorts after `a/x:title` -- and bounding them as though they
+    # `a/!title` sorts after `a/x/!title` -- and bounding them as though they
     # could double counts `a/x` and loses nothing visibly.
     assert sorted(seen) == sorted(every) == ["a/x", "b", "b/p"]
     assert len(seen) == len(set(seen))

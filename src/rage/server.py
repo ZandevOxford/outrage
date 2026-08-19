@@ -73,9 +73,10 @@ INSTRUCTIONS = """\
 A store for notes, designs and task context that outlives a single session.
 
 Keys are hierarchical, slash delimited strings such as `context/<id>/design`.
-A colon introduces metadata attached to a key, such as
-`context/<id>/design:title`. Intermediate keys exist implicitly; nothing needs
-to be created before writing to a key beneath it.
+A segment beginning with `!` is metadata about the document above it, such as
+`context/<id>/design/!title`; `/` is the only separator there is, and metadata
+is always a leaf. Intermediate keys exist implicitly; nothing needs to be
+created before writing to a key beneath it.
 
 Keys are not file paths, but they read like them, so a key may mirror one:
 notes about a file can live at `notes/src/myfile.py`.
@@ -247,7 +248,7 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             Field(
                 description=(
                     "Key to write, e.g. context/a1b2/design, "
-                    "context/a1b2/design:title, or context/?/design to allocate"
+                    "context/a1b2/design/!title, or context/?/design to allocate"
                 )
             ),
         ],
@@ -260,7 +261,7 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             str | None,
             Field(
                 description=(
-                    "Short title, stored as the key's ':title' metadata in the "
+                    "Short title, stored as the key's '!title' metadata in the "
                     "same write. Omit only when key is itself metadata."
                 )
             ),
@@ -290,7 +291,7 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             "generated": written != key,
         }
         if title is not None:
-            result["title_key"] = f"{written}:title"
+            result["title_key"] = f"{written}/!title"
         return result
 
     @server.tool(
