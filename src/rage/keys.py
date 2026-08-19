@@ -20,6 +20,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .errors import RageError
+
 #: Separates the segments of a key, and the only separator in the namespace.
 DELIMITER = "/"
 
@@ -116,8 +118,15 @@ def _pad(segment: str) -> str:
     return segment.zfill(_SORT_WIDTH) if NUMERIC_RE.match(segment) else segment
 
 
-class InvalidKeyError(ValueError):
-    """Raised when a key does not match the grammar."""
+class InvalidKeyError(RageError, ValueError):
+    """Raised when a key does not match the grammar.
+
+    A ``RageError`` because a malformed key is *about the request*, so a front
+    end should render it as one line. It matters more since schema 4: every key
+    written in the old ``:`` spelling arrives here, and the message says what to
+    write instead, which is no use buried in a traceback. Still a ``ValueError``
+    as well, so existing callers catching that go on working.
+    """
 
 
 @dataclass(frozen=True, slots=True)
