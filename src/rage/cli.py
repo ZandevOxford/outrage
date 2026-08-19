@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__, bulk, eventlog, logread, maintenance, store
+from . import __version__, bulk, eventlog, install, logread, maintenance, store
 from . import config as config_module
 from .errors import RageError
 
@@ -26,6 +26,44 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--version", action="version", version=f"rage {__version__}")
     subcommands = parser.add_subparsers(dest="command", required=True)
+
+    init = subcommands.add_parser(
+        "init",
+        help="set a project up: MCP server, session hook, skill and agents",
+        description=(
+            "Arrange everything a project needs to use rage: the MCP server "
+            "entry in .mcp.json, the SessionStart hook in .claude/settings.json, "
+            "and the packaged skill and agents in .claude/. Only the entries "
+            "rage owns are written; anything else in those files is left as it "
+            "was, and a file already holding the current content is not "
+            "rewritten. Safe to re-run, which is how a project is repaired "
+            "after rage is upgraded or the environment moves."
+        ),
+    )
+    init.add_argument(
+        "--project-dir",
+        metavar="PATH",
+        default=None,
+        help="Project directory to set up, and the default store location. Defaults to cwd.",
+    )
+    init.add_argument(
+        "--dir",
+        dest="directory",
+        metavar="PATH",
+        default=None,
+        help=(
+            "Store directory to record. Defaults to .rage in the project "
+            "directory. Written absolute, since the server cannot be relied on "
+            "to start in the project directory."
+        ),
+    )
+    _log_options(init)
+    init.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would change without writing anything.",
+    )
+    init.set_defaults(handler=init_command)
 
     config = subcommands.add_parser(
         "config",
@@ -76,25 +114,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=config_module.SERVER_NAME,
         help=f"Name to register the server under (default: {config_module.SERVER_NAME}).",
     )
-    config.add_argument(
-        "--log",
-        nargs="?",
-        const=eventlog.DEFAULT,
-        default=None,
-        metavar="PATH",
-        help=(
-            "Record the server's requests and store accesses as JSON lines. "
-            f"Without a path, writes {eventlog.DEFAULT_LOG_NAME} in the store "
-            "directory. Omitted, and so off, unless asked for."
-        ),
-    )
-    config.add_argument(
-        "--log-content",
-        dest="log_content",
-        choices=eventlog.CONTENT_POLICIES,
-        default=None,
-        help="How much document text the log keeps. Only used alongside --log.",
-    )
+    _log_options(config)
     config.add_argument(
         "--dry-run",
         action="store_true",
@@ -492,6 +512,29 @@ def _conflict_option(parser: argparse.ArgumentParser, what: str) -> None:
     )
 
 
+def _log_options(parser: argparse.ArgumentParser) -> None:
+    """Whether the server logs, spelled the same way wherever an entry is written."""
+    parser.add_argument(
+        "--log",
+        nargs="?",
+        const=eventlog.DEFAULT,
+        default=None,
+        metavar="PATH",
+        help=(
+            "Record the server's requests and store accesses as JSON lines. "
+            f"Without a path, writes {eventlog.DEFAULT_LOG_NAME} in the store "
+            "directory. Omitted, and so off, unless asked for."
+        ),
+    )
+    parser.add_argument(
+        "--log-content",
+        dest="log_content",
+        choices=eventlog.CONTENT_POLICIES,
+        default=None,
+        help="How much document text the log keeps. Only used alongside --log.",
+    )
+
+
 def _store_option(parser: argparse.ArgumentParser) -> None:
     """The store directory, spelled the same way on every subcommand."""
     parser.add_argument(
@@ -504,6 +547,28 @@ def _store_option(parser: argparse.ArgumentParser) -> None:
             f"{store.DEFAULT_DIR_NAME} in the working directory."
         ),
     )
+
+
+def init_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Set a project up, or say what setting it up would change."""
+    project = Path(args.project_dir).expanduser() if args.project_dir else Path.cwd()
+    done = install.init(
+        project,
+        args.directory,
+        log=args.log,
+        log_content=args.log_content,
+        dry_run=args.dry_run,
+    )
+
+    _report(done.server, out, dry_run=args.dry_run)
+    _report_hook(done.hook, out, dry_run=args.dry_run)
+    _report_assets(done.assets, out, dry_run=args.dry_run, root=done.project_dir)
+
+    if args.dry_run and done.writes:
+        # Where the report is long enough to scroll, one line on stderr is what
+        # says the run did nothing after the reader has stopped reading.
+        print("rage: dry run, nothing changed", file=sys.stderr)
+    return 0
 
 
 def config_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -941,6 +1006,21 @@ def _open_existing(args: argparse.Namespace):
     return store.open_store(directory)
 
 
+#: What each action reads as, before it has happened and after. One vocabulary
+#: for the server entry, the hook and the copied files, so a report over all
+#: three does not describe the same outcome three ways.
+_ACTIONS = {
+    "created": ("would add", "added"),
+    "updated": ("would update", "updated"),
+    "unchanged": ("already current", "already current"),
+    "linked": ("left linked", "left linked"),
+}
+
+
+def _said(action: str, dry_run: bool) -> str:
+    return _ACTIONS[action][0 if dry_run else 1]
+
+
 def _report(change: config_module.Change, out: TextIO, *, dry_run: bool) -> None:
     """Say what is about to change, in enough detail to notice a wrong answer.
 
@@ -949,17 +1029,47 @@ def _report(change: config_module.Change, out: TextIO, *, dry_run: bool) -> None
     beside the wrong project both produce a server that starts cleanly and
     talks to nothing anyone meant.
     """
-    verb = {
-        "created": "would add" if dry_run else "added",
-        "updated": "would update" if dry_run else "updated",
-        "unchanged": "already current",
-    }[change.action]
+    verb = _said(change.action, dry_run)
 
     print(f"{change.scope} configuration: {change.path}", file=out)
     print(f"  {change.name}: {verb}", file=out)
     if change.previous is not None and change.action == "updated":
         _print_command("  was:", change.previous, out)
     _print_command("  now:" if change.action == "updated" else "  ", change.entry, out)
+
+
+def _report_hook(change: install.HookChange, out: TextIO, *, dry_run: bool) -> None:
+    """Say what the hook entry did, and name any duplicates cleared out.
+
+    The duplicates line matters more than it looks: an entry rage could not
+    recognise is a hook that fired twice, and the only moment anybody finds out
+    is the run that finally removes it.
+    """
+    print(f"session hook: {change.path}", file=out)
+    print(f"  {install.HOOK_EVENT}: {_said(change.action, dry_run)}", file=out)
+    if change.duplicates:
+        removed = "would remove" if dry_run else "removed"
+        entries = "entry" if change.duplicates == 1 else "entries"
+        print(f"  {removed} {change.duplicates} duplicate {entries}", file=out)
+
+
+def _report_assets(
+    changes: tuple[install.FileChange, ...], out: TextIO, *, dry_run: bool, root: Path
+) -> None:
+    """Say what happened to each packaged file, by its path within the project."""
+    claude = root / install.CLAUDE_DIR
+    print(f"skill and agents: {claude}", file=out)
+    for change in changes:
+        try:
+            where = change.path.relative_to(claude)
+        except ValueError:  # pragma: no cover - only if CLAUDE_DIR stops being a prefix
+            where = change.path
+        line = f"  {_said(change.action, dry_run):<15} {where}"
+        if change.action == "linked":
+            # Not a failure, and not silence either: a linked file is one this
+            # run deliberately did not update, so the reader can see it is old.
+            line += "  (a symlink, left as it is)"
+        print(line, file=out)
 
 
 def _print_command(label: str, entry: dict[str, object], out: TextIO) -> None:
@@ -987,6 +1097,7 @@ __all__ = [
     "export_command",
     "get_command",
     "import_command",
+    "init_command",
     "log_command",
     "ls_command",
     "main",

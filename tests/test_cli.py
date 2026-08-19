@@ -1012,3 +1012,61 @@ def test_import_under_a_key_grafts_the_tree(tmp_path):
 
     _, content = run("get", "--dir", str(tmp_path / ".rage"), "archive/2026/project")
     assert content == "# Project"
+
+
+# -- init ----------------------------------------------------------------
+
+
+def test_init_arranges_the_whole_project(tmp_path):
+    status, output = run("init", "--project-dir", str(tmp_path))
+
+    assert status == 0
+    assert servers(tmp_path / ".mcp.json")["rage"]
+    assert (tmp_path / ".claude" / "settings.json").is_file()
+    assert (tmp_path / ".claude" / "skills" / "rage" / "SKILL.md").is_file()
+    assert "added" in output
+
+
+def test_init_dry_run_writes_nothing(tmp_path):
+    status, output = run("init", "--project-dir", str(tmp_path), "--dry-run")
+
+    assert status == 0
+    assert list(tmp_path.iterdir()) == []
+    assert "would add" in output
+
+
+def test_init_names_every_path_it_touches(tmp_path):
+    """The command is a guess at several paths, and a wrong one still succeeds."""
+    _, output = run("init", "--project-dir", str(tmp_path))
+
+    assert str(tmp_path / ".mcp.json") in output
+    assert str(tmp_path / ".claude" / "settings.json") in output
+    assert "skills/rage/SKILL.md" in output
+
+
+def test_init_records_the_store_directory_and_the_log(tmp_path):
+    run("init", "--project-dir", str(tmp_path), "--dir", str(tmp_path / "store"), "--log")
+
+    args = servers(tmp_path / ".mcp.json")["rage"]["args"]
+    assert str(tmp_path / "store") in args
+    assert "--log" in args
+
+
+def test_init_says_when_there_is_nothing_to_do(tmp_path):
+    run("init", "--project-dir", str(tmp_path))
+
+    _, output = run("init", "--project-dir", str(tmp_path))
+
+    assert "already current" in output
+    assert "added" not in output
+
+
+def test_init_refuses_settings_it_cannot_parse(tmp_path):
+    settings = tmp_path / ".claude" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text("{not json", encoding="utf-8")
+
+    status, output = run("init", "--project-dir", str(tmp_path))
+
+    assert status == 1
+    assert output == "", "the refusal goes to stderr, and nothing was reported as done"

@@ -18,12 +18,20 @@ the store reports the key it chose.
 
 ## Status
 
-The store, the MCP server, the key handling and the skill are implemented. The
-command line tool is under way: it covers the store operations (`rage get`,
-`set`, `ls`, `dump`, `rm`), bulk export and import to a directory of files
-(`rage export`, `rage import`), the MCP configuration (`rage config`), a
-verified backup (`rage backup`), and the event log (`rage log`). See
-[implementation.md](implementation.md) for what is done and what is next.
+The store, the MCP server, the key handling, the skill and the command line
+tool are implemented. The tool covers the store operations (`rage get`, `set`,
+`ls`, `dump`, `rm`), bulk export and import to a directory of files (`rage
+export`, `rage import`), the MCP configuration (`rage config`), a verified
+backup (`rage backup`), the event log (`rage log`), and setting a project up
+(`rage init`). See [implementation.md](implementation.md) for what is done and
+what is next.
+
+`rage init` is the way in: run it in a project and it registers the MCP server,
+installs the `SessionStart` hook, and copies the skill and the agents into
+`.claude/`. It writes only the entries rage owns, leaves the rest of those files
+alone, and is safe to re-run — which is how a project is repaired after an
+upgrade or after the environment moves. `--dry-run` reports what it would
+change without writing.
 
 ## Documentation
 
@@ -40,9 +48,10 @@ verified backup (`rage backup`), and the event log (`rage log`). See
   can be tested and reused on its own.
 * **Skill** — `src/rage/skills/rage/SKILL.md`, initially for Claude Code,
   covering when to store and retrieve and what key conventions to follow. It
-  ships inside the package so that an install carries it. `SessionStart` and
-  `PreCompact` hooks in `.claude/settings.json` cover the two moments a skill
-  would not be reached for on its own.
+  ships inside the package so that an install carries it, and `rage init`
+  copies it into a project. A `SessionStart` hook in `.claude/settings.json`,
+  installed by the same command, covers the moment a skill would not be reached
+  for on its own.
 * **Event log** — an optional JSON lines record of the requests made and the
   store accesses beneath them, for answering afterwards what a session actually
   did. Off unless `rage config --log` or `rage-server --log` asks for it.
