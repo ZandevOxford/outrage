@@ -167,45 +167,112 @@ For example:
 If A/B/C exists then A and A/B implicitly exist with no content.
 
 Keys are *not* paths, and are never resolved against a filesystem, but the
-delimiter is `/` so that a key may usefully mirror one. That is why `.` is an
-ordinary segment character: a key naming a file has to be able to carry its
-extension. `.` and `..` are rejected as whole segments, since they can only
-suggest a navigation that does not exist here.
+delimiter is `/` so that a key may usefully mirror one. That is the reason the
+character set is as wide as it is: a key naming a file has to carry that file's
+name without transforming it. So `.` is an ordinary segment character, and so
+are `..`, `:`, spaces and `?` — they can only *suggest* a navigation or a
+meaning that does not exist here, and refusing them would mean a key that
+cannot mirror a real name.
 
 ### Grammar
 
-* A key is one or more segments joined by `/`.
-* A segment matches `[A-Za-z0-9_.-]+`, and is not `.` or `..`.
-* A segment that is *wholly* numeric is normalised by stripping its leading
-  zeros, so `context/01` and `context/1` are the same key rather than two.
-  `0` normalises to itself, and a segment that merely contains digits — `v01`,
-  `1.2` — is left alone. This applies to metadata names too, since they are
-  segments and are ordered like them.
-* A segment beginning with `!` names metadata about the document its segment
-  sits under, and is legal only as the *last* segment, so metadata is always a
-  leaf and the metadata namespace is flat. `!` is not legal anywhere else.
-* `!` was chosen because it sorts below every character a document segment may
-  begin with, so `a/!title` sorts before `a/b` and therefore before
-  `a/b/!title`: a document's metadata sorts with the document rather than after
-  its whole subtree. Until schema 4 the separator was `:`, which sorts *above*
-  `/`, so a metadata survey walked its documents in a different order from a
-  plain read for every document that had a subtree.
-* This narrows the gap between the two orderings but does not close it. `-` and
-  `.` are legal segment characters that sort below `/`, so `a-x/!title` still
-  sorts before `a/!title` while `a` sorts before `a-x`. Closing it entirely
-  would need the delimiter itself to sort below every segment character, which
-  reorders documents and not just metadata — `a/b` would come before `a-x`.
-  Not done; see `Store.missing_meta_stats`, which measures a survey's window at
-  a synthesised position for exactly this reason.
-* Metadata may be attached to any key, including implicit keys with no content.
-* A key *being written* may use `?` in place of one whole segment, asking the
-  store to allocate a number for it. See Autonumbering below. `?` is otherwise
-  not a legal character, so it is unambiguous, and it is rejected outright by
-  every other operation.
+A key is a Unicode string naming a position in a hierarchy.
 
-Multiple metadata entries may be attached to one document, which is the intended
-mechanism for alternative summaries and, in future, embedding vectors to support
-different kinds of search.
+* A key is **one or more segments** joined by `/`, and `/` is the only
+  separator there is. **There is no root key**: the empty string is not
+  addressable, and is the parent of a top level key rather than a key itself.
+* A segment is **1 to 1024 characters**; a key is **at most 128 segments**.
+  Both are bounds on the absurd, not targets. A segment is typically well under
+  20 characters and a key a handful of segments, unless it is mirroring a
+  structure that says otherwise.
+* A segment may hold **any character except `/` and anything below `\t`**
+  (U+0009).
+  * The excluded control range is a deliberate exception to "only `/` is
+    reserved". Nothing worth mirroring addresses it, and reserving it is what
+    lets the sort form mark segments without escaping. U+0000 would in any case
+    truncate a key inside any C string that handled it.
+  * Keys should *typically* be lower case ASCII with little punctuation. That
+    is a convention for legibility; natural language and non-English keys are
+    expected to break it, which is the point of the wide character set.
+* Segments should typically be in **NFC**, but the system performs no Unicode
+  normalisation and no validation of form. Two spellings of the same text are
+  therefore two keys. Deliberate: normalising would mean a key that cannot
+  round-trip the name it mirrors.
+* Keys **are** normalised in two other ways, both before validation:
+  * Leading and trailing `/` are stripped and runs of `/` are coalesced. Since
+    this runs first, `"/"` reduces to the empty string and is then refused like
+    any other empty key — it is not a spelling of the root.
+  * A *wholly* numeric segment loses its leading zeros, so `context/01` and
+    `context/1` are one key rather than two. `0` normalises to itself, and a
+    segment that merely contains digits — `v01`, `1.2` — is left alone. This
+    applies to metadata names too.
+* A segment beginning with `!` names **metadata** about the document its
+  segment sits under. A key splits at its **first** `!` segment: everything
+  before it is the document key, everything from it onward is the metadata
+  name. A path may continue below a metadata segment, so `a/!title/b` is an
+  entry on `a` named `title/b`. **Everything below a `!` is metadata** — there
+  is no document under a metadata path, which is what keeps `meta_name IS NULL`
+  an honest test for "is a document".
+* Sort order is **lexicographic by Unicode code point**, over a derived sort
+  form rather than over the key. See Sorting.
+* A key *being written* may use `?` in place of one whole segment, asking the
+  store to allocate a number for it. See Autonumbering. **Only a whole segment
+  is a wildcard**: `?` inside a segment is ordinary text, so `notes/where?.md`
+  is a good key. A `?` segment is rejected by every operation but a write, so
+  it can never read as a pattern.
+
+Metadata may be attached to any key, including implicit keys with no content,
+and one document may carry several entries. That is the intended mechanism for
+alternative summaries and, in future, embedding vectors — for which the
+metadata subtree is the natural shape, as `a/!embedding/<model>`.
+
+### Sorting
+
+Keys are never ordered as written. Every key has a **sort form**, stored
+alongside it in `sort_key`, indexed, and used by every `ORDER BY`. It is never
+returned: keys reaching a caller are always the normalised, unpadded key.
+
+The sort form does three things to each segment, and each removes a defect:
+
+* **Numeric segments are zero padded** to a fixed width, so `a/2` comes before
+  `a/10`. Plain text ordering gives the reverse, which is untidy in a listing
+  and unsafe under a cursor — a reader resuming after `a/9` would never see
+  `a/10`, because a key written *later* sorts *earlier*. Since autonumbering is
+  what parallel agents use to append findings for each other, that would
+  silently lose exactly the documents the mechanism exists to deliver. The
+  width is 16, which covers epoch milliseconds and microseconds; a longer
+  number still sorts, just not numerically against other over-width numbers.
+* **Every segment is marked** — `\x01` for metadata, `\x02` for a document —
+  so a document's metadata sorts ahead of its subkeys.
+* **Segments are joined with `\x03`** rather than `/`, so a subtree sorts
+  immediately after its parent.
+
+All three markers sort below the lowest character a segment may hold, so none
+can occur inside a segment: the encoding needs no escaping, and **two distinct
+keys cannot share a sort form**. That last property is load bearing rather than
+tidy — pagination resumes with `sort_key > ?` over a non-unique index, so a
+collision would mean resuming past one row silently skipped another.
+
+Together the marking and the delimiter make a metadata survey walk its
+documents in the same order as a plain read. Two separate defects used to
+prevent that, with two different causes:
+
+* Until schema 4 the metadata separator was `:`, which sorts *above* `/`, so a
+  document's metadata sorted after its whole subtree.
+* Until schema 5 the sort form joined with `/`, and `-` (0x2D) and `.` (0x2E)
+  are legal segment characters below it, so `a-x/!title` sorted before
+  `a/!title` while `a` sorted before `a-x`.
+
+Schema 4 fixed the first by choosing `!`, which then sorted below every
+character a segment could begin with. Widening the character set removed that
+guarantee, and the explicit marker replaces it. Schema 5 fixed the second by
+changing the delimiter, at a price taken knowingly: **a subtree now sorts
+immediately after its parent rather than after prefix-sharing siblings**, so
+`a/b` comes before `a-x` in every listing.
+
+Note that this does *not* license bounding a survey's window by document key.
+`Store.missing_meta_stats` still measures at a synthesised position, because
+that is correct under any ordering; see the note there.
 
 ### Autonumbering
 
@@ -333,7 +400,7 @@ This can be stored in a single table, with an index on the key.
 
 ```sql
 CREATE TABLE documents (
-  key        TEXT PRIMARY KEY,  -- full key, including any ':meta' suffix
+  key        TEXT PRIMARY KEY,  -- full key, including any '!meta' segments
   doc_key    TEXT NOT NULL,     -- key with the metadata segment removed
   meta_name  TEXT,              -- metadata name, or NULL for a document
   parent     TEXT NOT NULL,     -- derived: enclosing key
@@ -365,10 +432,20 @@ and `0` are adjacent code points, so the only strings in that range are `A/B/`
 itself and the keys beneath it — a property of the delimiter alone, holding
 whatever segments are allowed to contain.
 
-The schema carries a version in `PRAGMA user_version`. Version 2 is the current
-one; version 1 was the same schema with period delimited keys, and is migrated
-by rewriting `.` to `/` in the three key columns. That rewrite is exact because
-no version 1 segment could contain either character.
+The schema carries a version in `PRAGMA user_version`. **Version 5 is current.**
+
+* **1 → 2.** Keys were period delimited; migrated by rewriting `.` to `/` in
+  the three key columns. Exact, because no version 1 segment could contain
+  either character.
+* **2 → 3.** Numeric segments gained a normal form and `sort_key` was added.
+  The table is rebuilt rather than altered, so a migrated store has exactly the
+  schema a fresh one has. A store holding both `a/01` and `a/1` is refused
+  rather than half merged.
+* **3 → 4.** Metadata became a segment: `a/b:title` became `a/b/!title`, so `/`
+  is the only separator. Rewritten in place, since `!` was not a legal
+  character before.
+* **4 → 5.** The sort form gained segment markers and its own delimiter. Only
+  the derived `sort_key` changes, so this is a single `UPDATE`.
 
 SQLite runs in WAL mode to tolerate concurrent readers.
 
@@ -382,21 +459,10 @@ SQLite runs in WAL mode to tolerate concurrent readers.
 
 * **The command line tool** described under Components.
 
-* **Unicode keys.** Segments are currently restricted to `[A-Za-z0-9_.-]`. The
-  intent is to widen this to most of Unicode, so that keys can carry natural
-  language. Two things need care when it happens:
-
-  * *Normalisation.* The same key typed two ways must not become two rows, so
-    keys should be normalised, presumably NFC, on the way in.
-  * *The delimiters.* `/`, `:` and `?` must stay reserved, along with anything
-    that could be confused with them — the fullwidth and division-slash
-    lookalikes especially, since a key that displays as `a/b` but stores as one
-    segment is a silent trap.
-
-  Subtree bounds used to be the third concern here: under the period delimiter
-  they depended on no segment character sorting between `.` and `/`. Bounding
-  on the adjacent code points `/` and `0` removed that dependency, so widening
-  the character set no longer threatens the range scans.
+* **Key move and rename.** Not possible today: a key is the identity of a
+  document, so relocating a subtree means rewriting every key beneath it and
+  every reference to them. Recorded under `scale` in the rage store rather than
+  designed here.
 
 * **Bootstrapping the skill configuration from the MCP server.** The server
   would help a session install or update the skills and configuration that make

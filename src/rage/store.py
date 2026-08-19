@@ -52,7 +52,7 @@ FORMATS = ("markdown", "json")
 #: decoded back to plain text before it is written. See ``_decode``.
 ENCODINGS = ("json-string",)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _TABLE = """
 CREATE TABLE IF NOT EXISTS {name} (
@@ -288,6 +288,8 @@ class Store:
                     self._migrate_add_sort_key()
                 if version < 4:
                     self._migrate_meta_segment()
+                if version < 5:
+                    self._migrate_sort_form()
             if version != SCHEMA_VERSION:
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -394,6 +396,33 @@ class Store:
             f"WHERE meta_name IS NOT NULL"
         )
 
+    def _migrate_sort_form(self) -> None:
+        """Schema 4 to 5: the sort form gained segment markers and its own delimiter.
+
+        No key changes -- only how keys order against each other -- so this
+        rewrites the derived ``sort_key`` column and nothing else. ``sort_form``
+        is registered on the connection, so SQLite can do it in one statement
+        without the rows travelling through Python.
+
+        Two orderings were wrong before, with two different causes. Metadata
+        sorted among its document's subkeys rather than ahead of them, because
+        that rested on ``!`` sorting below every character a segment could
+        begin with, which stopped being true once segments could hold almost
+        anything. And ``a-x/!title`` sorted before ``a/!title`` while ``a``
+        sorted before ``a-x``, because ``-`` and ``.`` sort below the ``/``
+        that joined the segments. Marking every segment fixes the first;
+        joining with a delimiter below every legal segment character fixes the
+        second. A metadata survey and a plain read now walk in one order rather
+        than two that nearly agree.
+
+        The markers cannot collide with content: all three sort below
+        ``keys.MIN_SEGMENT_CHAR``, so no segment can contain one, and two keys
+        therefore cannot share a sort form. That is load bearing -- pagination
+        resumes with ``sort_key > ?`` over a non-unique index, so a collision
+        would mean resuming past one row silently skipped the other.
+        """
+        self._conn.execute("UPDATE documents SET sort_key = sort_form(key)")
+
     @property
     def connection(self) -> sqlite3.Connection:
         """The open database, for asking questions about the file itself.
@@ -436,7 +465,7 @@ class Store:
         ``format`` defaults to 'json' when the content parses as a JSON object
         or array, and 'markdown' otherwise.
 
-        ``title`` writes the ``:title`` metadata alongside the document in the
+        ``title`` writes the ``!title`` metadata alongside the document in the
         same transaction. It saves a second call, but it exists mainly because
         the title is what makes a document discoverable later, and a separate
         call is one that can simply be forgotten. It may not be combined with a
@@ -950,17 +979,22 @@ class Store:
         where its row *would* have sorted had it carried the name, which is
         exactly ``sort_form(doc/!name)``.
 
-        **A survey's window is still not an interval of document keys**, and
-        bounding it as though it were double counts. Schema 4 narrowed the
-        problem without removing it. ``!`` sorts below every character a segment
-        may *begin* with, so a document now sorts before its own subtree in both
-        orderings -- ``a`` before ``a/b``, ``a/!title`` before ``a/b/!title``.
-        But ``-`` and ``.`` are legal segment characters that sort below ``/``,
-        so ``a-x/!title`` still sorts before ``a/!title`` while ``a`` sorts
-        before ``a-x``. Two cursors can therefore map to document bounds that
-        run backwards, and the window between them is measured inside out.
+        Since schema 5 the two orderings genuinely agree: the sort form marks
+        every segment and joins with a delimiter below every legal segment
+        character, so ``sort_form(d + "/!name")`` is ``sort_form(d)`` plus a
+        fixed suffix and the map from document to metadata order preserves it.
+        A survey's window therefore *is* an interval of document keys now,
+        which schema 4 could not say -- ``a-x/!title`` used to sort before
+        ``a/!title`` while ``a`` sorted before ``a-x``.
+
+        **That does not make it safe to bound this by document key**, and this
+        still measures at the synthesised position deliberately. Exactly that
+        simplification was made once before, on exactly this reasoning, and
+        reintroduced a double count that review did not catch; see
+        ``context/8`` and ``context/9`` in the rage store.
         ``tests/test_store.py::test_survey_windows_tile_over_adversarial_keys``
-        pins it with the shapes that break it.
+        is the guard, and the synthesised position is correct under any
+        ordering, which a document-key bound is not.
 
         The synthesised position is not sargable, so this scans the selection
         rather than seeking into the sort index. Measured at 20k documents it
@@ -973,7 +1007,7 @@ class Store:
         # Where the row would have sorted had the document carried the name.
         # Asked for several, a document would first have appeared at the
         # earliest of them.
-        suffix = keys.DELIMITER + min(keys.sort_form(keys.META_PREFIX + n) for n in names)
+        suffix = min(keys.meta_sort_suffix(n) for n in names)
 
         if after is not None:
             where += " AND (sort_key || ?) > ?"
@@ -1006,7 +1040,7 @@ class Store:
     ) -> Page[str]:
         """Document keys at and below ``key`` carrying none of ``meta_name``.
 
-        A survey by ``:title`` only sees documents that have one, so on its own
+        A survey by ``!title`` only sees documents that have one, so on its own
         it silently under-reports the store. This names what the survey missed.
 
         One query with a NOT EXISTS, over the same range predicate the survey

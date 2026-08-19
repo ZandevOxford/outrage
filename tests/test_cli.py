@@ -880,16 +880,17 @@ def test_rm_dry_run_preview_can_be_shortened(tmp_path):
     assert "and 17 more" in output
 
 
-def test_the_old_key_spelling_is_one_line_and_not_a_traceback(tmp_path, capsys):
-    # The message names the schema 4 spelling, which is only useful if a person
-    # sees it. An invalid key is about the request, so it renders as one line
-    # rather than reaching the top of main as a bug would.
+def test_a_malformed_key_is_one_line_and_not_a_traceback(tmp_path, capsys):
+    # An invalid key is about the request, so it renders as one line rather
+    # than reaching the top of main as a bug would. The example used to be the
+    # pre-schema-4 `:` spelling; `:` is an ordinary segment character since
+    # schema 5, so the malformation has to be a real one.
     a_long_store(tmp_path / ".rage")
 
-    status, _ = run("get", "--dir", str(tmp_path / ".rage"), "notes/long:title")
+    status, _ = run("get", "--dir", str(tmp_path / ".rage"), "!title")
 
     assert status != 0
     err = capsys.readouterr().err
-    assert "notes/long/!title" in err
+    assert "metadata segment" in err
     assert "Traceback" not in err
     assert err.count("\n") == 1

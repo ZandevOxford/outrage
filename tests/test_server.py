@@ -128,7 +128,7 @@ def test_retrieve_missing_key_is_a_tool_error(server):
 
 
 def test_invalid_key_is_a_tool_error(server):
-    assert "segment" in call_expecting_error(server, "retrieve_document", key="a//b")
+    assert "segment" in call_expecting_error(server, "retrieve_document", key="!title")
 
 
 def test_a_wildcard_is_a_tool_error_when_reading(server):

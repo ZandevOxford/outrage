@@ -74,12 +74,15 @@ A store for notes, designs and task context that outlives a single session.
 
 Keys are hierarchical, slash delimited strings such as `context/<id>/design`.
 A segment beginning with `!` is metadata about the document above it, such as
-`context/<id>/design/!title`; `/` is the only separator there is, and metadata
-is always a leaf. Intermediate keys exist implicitly; nothing needs to be
+`context/<id>/design/!title`, and `/` is the only separator there is. A path
+may continue below a metadata segment, and everything under one is metadata
+rather than a document. Intermediate keys exist implicitly; nothing needs to be
 created before writing to a key beneath it.
 
-Keys are not file paths, but they read like them, so a key may mirror one:
-notes about a file can live at `notes/src/myfile.py`.
+A segment may hold almost any text — `/` and the control characters below tab
+are the only exclusions — so a key can mirror a real name without transforming
+it. Keys are not file paths, but they read like them: notes about a file can
+live at `notes/src/myfile.py`.
 
 When storing, a `?` in place of a whole segment asks the store to allocate a
 number for it, at any depth: `context/?/design` writes to `context/1/design` in

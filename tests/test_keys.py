@@ -47,32 +47,93 @@ def test_a_filename_like_key_nests_under_its_directory():
     assert keys.ancestors("notes/src/myfile.py") == ["notes", "notes/src"]
 
 
+# -- what a segment may hold ---------------------------------------------
+
+
 @pytest.mark.parametrize(
     "key",
     [
-        "",
-        "/",
-        ":",
-        ":title",
-        "/context",
-        "context/",
-        "context//a1b2",
-        "context:",
-        "context/!title:extra",
-        "context/!sub/title",   # a ! segment may only come last
-        "context/!a/!b",        # nor may there be two of them
-        "context/!",            # nor one with no name
-        "!title",               # nor metadata with no document above it
-        "context/a1b2:title",   # the pre schema 4 spelling
-        "context/a1b2:",
+        "café",                  # the namespace is unicode
+        "notes/mon café.md",     # spaces and all
         "con text",
-        "context/a1b2!",
-        "café",
-        "context\n",
-        "a/./b",
-        "a/../b",
+        "notes/where?.md",       # `?` is only special as a whole segment
+        "context/a1b2!",         # `!` is only special at the start of one
+        "a/./b",                 # keys are never resolved, so these navigate
+        "a/../b",                # nothing and are ordinary text
+        "a/b:title",             # `:` is an ordinary character since schema 5
         "a:.",
-        "a/?",
+        "notes/c++/main.cpp",
+        "notes/50%.txt",
+        "context\n",             # only characters *below* tab are excluded
+    ],
+)
+def test_a_segment_may_hold_almost_anything(key):
+    # The rule is that a key can mirror a filesystem path without transforming
+    # the names it carries, so the exclusions are `/` and the control
+    # characters below tab -- nothing else.
+    assert keys.is_valid(key)
+
+
+@pytest.mark.parametrize("bad", ["\x00", "\x01", "\x08"])
+def test_control_characters_below_tab_are_refused(bad):
+    # Excluded so the sort form can mark segments without escaping, and so a
+    # NUL cannot truncate a key inside some C string along the way.
+    with pytest.raises(InvalidKeyError, match="below"):
+        keys.parse(f"a/x{bad}y")
+
+
+def test_refusing_a_control_character_names_it():
+    with pytest.raises(InvalidKeyError, match=r"\\x00"):
+        keys.parse("a/\x00")
+
+
+def test_tab_is_the_lowest_character_a_segment_may_hold():
+    assert keys.is_valid("a/\t")
+    assert not keys.is_valid("a/\x08")
+    assert ord(keys.MIN_SEGMENT_CHAR) == 9
+
+
+# -- normalisation --------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("written", "stored"),
+    [
+        ("/context", "context"),
+        ("context/", "context"),
+        ("/context/", "context"),
+        ("context//a1b2", "context/a1b2"),
+        ("context///a1b2//design", "context/a1b2/design"),
+    ],
+)
+def test_delimiters_are_tidied_before_the_key_is_judged(written, stored):
+    assert keys.parse(written).key == stored
+
+
+@pytest.mark.parametrize("key", ["", "/", "//", "///"])
+def test_there_is_no_root_key(key):
+    # Slash normalisation runs first, so these all reduce to the empty string
+    # and are then refused like any other empty key. The root is the parent of
+    # a top level key, not a key you can address.
+    with pytest.raises(InvalidKeyError, match="must not be empty"):
+        keys.parse(key)
+
+
+def test_root_is_not_a_valid_key():
+    assert not keys.is_valid(keys.ROOT)
+
+
+# -- what is still refused ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "!title",       # metadata with no document above it
+        "!title/x",
+        "context/!",    # a metadata segment with no name
+        "context/!/x",
+        "a/?",          # a wildcard outside a write
     ],
 )
 def test_parse_rejects_invalid_keys(key):
@@ -80,24 +141,74 @@ def test_parse_rejects_invalid_keys(key):
         keys.parse(key)
 
 
-def test_rejecting_a_segment_says_what_a_segment_may_contain():
-    with pytest.raises(InvalidKeyError, match=r"A-Z a-z 0-9 _ \. -"):
-        keys.parse("context/1/notes on the build")
-
-
 def test_parse_rejects_non_strings():
     with pytest.raises(InvalidKeyError):
         keys.parse(None)
 
 
+def test_a_segment_is_bounded():
+    assert keys.is_valid("a/" + "x" * keys.MAX_SEGMENT_CHARS)
+    with pytest.raises(InvalidKeyError, match="at most"):
+        keys.parse("a/" + "x" * (keys.MAX_SEGMENT_CHARS + 1))
+
+
+def test_a_key_is_bounded():
+    assert keys.is_valid("/".join("x" * keys.MAX_SEGMENTS))
+    with pytest.raises(InvalidKeyError, match="at most"):
+        keys.parse("/".join("x" * (keys.MAX_SEGMENTS + 1)))
+
+
 def test_is_valid():
     assert keys.is_valid("a/b/!c")
-    assert not keys.is_valid("a//b")
+    assert keys.is_valid("a//b")  # normalised, not refused
+    assert not keys.is_valid("")
 
 
 def test_metadata_may_attach_to_an_implicit_key():
     # `context` need not have content of its own for `context/!title` to be legal.
     assert keys.parse("context/!title").parent == "context"
+
+
+# -- metadata is not a leaf ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("key", "doc_key", "meta_name", "parent"),
+    [
+        ("a/!title", "a", "title", "a"),
+        ("a/!title/b", "a", "title/b", "a/!title"),
+        ("a/!title/b/c", "a", "title/b/c", "a/!title/b"),
+        ("a/!a/!b", "a", "a/!b", "a/!a"),
+        ("a/b/!embedding/openai", "a/b", "embedding/openai", "a/b/!embedding"),
+    ],
+)
+def test_a_path_may_continue_below_a_metadata_segment(key, doc_key, meta_name, parent):
+    parsed = keys.parse(key)
+    assert parsed.doc_key == doc_key
+    assert parsed.meta_name == meta_name
+    assert parsed.parent == parent
+
+
+def test_everything_below_a_metadata_segment_is_metadata():
+    # There is no document under a metadata path: the key splits at its *first*
+    # `!`, so `meta_name` is non-null for the whole subtree. That is what keeps
+    # `meta_name IS NULL` an honest test for "is a document".
+    assert keys.parse("a/!title/b").is_metadata
+    assert keys.parse("a/!title/b/c/d").is_metadata
+
+
+def test_a_metadata_subtree_does_not_answer_to_its_parents_name():
+    # A survey asking for `title` must match the entry itself and not the
+    # documents hanging below it, or every sub-path would count as a title.
+    assert keys.parse("a/!title").meta_name == "title"
+    assert keys.parse("a/!title/b").meta_name != "title"
+
+
+def test_parent_is_the_key_without_its_last_segment():
+    # One rule, documents and metadata alike -- which is what lets metadata
+    # list alongside a document's subkeys.
+    for key in ("a/b", "a/!title", "a/!title/b", "notes/src/myfile.py"):
+        assert keys.parse(key).parent == key.rsplit("/", 1)[0]
 
 
 # -- wildcards -----------------------------------------------------------
@@ -119,10 +230,24 @@ def test_wildcard_is_rejected_unless_allowed():
         keys.parse("tmp/?")
 
 
-@pytest.mark.parametrize("key", ["tmp/?/?", "tmp/a?b", "tmp/?x", "tmp/x:?"])
-def test_invalid_wildcards(key):
-    with pytest.raises(InvalidKeyError):
-        keys.parse(key, allow_wildcard=True)
+def test_only_a_whole_segment_is_a_wildcard():
+    # `?` inside a segment is ordinary text, so a key can mirror a filename
+    # that contains one.
+    for key in ("tmp/a?b", "tmp/?x", "tmp/x:?"):
+        assert keys.parse(key, allow_wildcard=True).has_wildcard is False
+        assert keys.is_valid(key)
+
+
+def test_two_wildcards_are_refused():
+    with pytest.raises(InvalidKeyError, match="more than one"):
+        keys.parse("tmp/?/?", allow_wildcard=True)
+
+
+def test_a_metadata_segment_cannot_be_allocated():
+    # Allocation numbers a document's children; a metadata name is chosen, not
+    # counted, so `?` there is a mistake worth naming.
+    with pytest.raises(InvalidKeyError, match="document part"):
+        keys.parse("a/!title/?", allow_wildcard=True)
 
 
 @pytest.mark.parametrize(
@@ -156,10 +281,15 @@ def test_ancestors():
     ]
 
 
-def test_depth_ignores_the_metadata_suffix():
+def test_ancestors_of_a_metadata_subtree_include_the_metadata_above_it():
+    assert keys.ancestors("a/!title/b") == ["a", "a/!title"]
+
+
+def test_depth_ignores_metadata_segments():
     assert keys.depth("context") == 1
     assert keys.depth("context/a1b2") == 2
     assert keys.depth("context/a1b2/!title") == 2
+    assert keys.depth("context/a1b2/!title/deep") == 2
     assert keys.depth("notes/src/myfile.py") == 3
 
 
@@ -180,7 +310,8 @@ def test_subtree_range_excludes_prefix_collisions(other):
 
 def test_subtree_bounds_are_adjacent_code_points():
     # Nothing can sort between them but the subtree itself, whatever a segment
-    # is allowed to contain.
+    # is allowed to contain. These bound stored keys, not sort forms, so the
+    # sort markers never reach them.
     assert ord(keys._AFTER_DELIMITER) == ord(keys.DELIMITER) + 1
 
 
@@ -220,57 +351,94 @@ def test_sort_form_orders_numbers_as_numbers():
     assert sorted(unordered, key=keys.sort_form) == ["a/1", "a/2", "a/3", "a/10", "a/20"]
 
 
-def test_sort_form_leaves_words_alone_and_keeps_depth_apart():
-    assert sorted(["a/b/1", "a/2", "a/beta"], key=keys.sort_form) == ["a/2", "a/b/1", "a/beta"]
+def test_numbers_wider_than_the_pad_stop_sorting_numerically():
+    # Recorded rather than fixed. 16 digits covers epoch milliseconds and
+    # microseconds, so this needs numbers no key will hold. Note where the
+    # limit actually bites: an over-width number still sorts correctly against
+    # a padded shorter one, because padding leaves those starting with `0`.
+    # It is two over-width numbers of *different* lengths that part.
+    wider = "1" * (keys._SORT_WIDTH + 2)
+    narrower = "2" * (keys._SORT_WIDTH + 1)
+    assert int(wider) > int(narrower)
+    assert keys.is_valid(f"a/{wider}")
+    assert keys.sort_form(f"a/{wider}") < keys.sort_form(f"a/{narrower}")
+
+    # Up to the pad width, ordering is numeric as promised.
+    assert keys.sort_form("a/2") < keys.sort_form("a/" + "9" * keys._SORT_WIDTH)
+
+
+# -- the sort form -------------------------------------------------------
 
 
 def test_sort_form_is_not_a_key_the_caller_ever_sees():
-    # It exists only for ORDER BY. Anything handed back is the normalised key.
+    # It exists only for ORDER BY, and is now not merely different from the key
+    # but not a legal key at all: its markers sit below what a segment may hold.
     assert keys.sort_form("a/1") != "a/1"
-    assert keys.parse(keys.sort_form("a/1")).key == "a/1"
+    assert not keys.is_valid(keys.sort_form("a/1"))
 
 
-def test_the_old_metadata_suffix_is_refused_by_name():
-    # Every stored key and every line of prose used `:` until schema 4, so the
-    # useful refusal is the one that says what to write instead. Accepting it
-    # quietly would be worse: `a:title` would name a document beside `a`.
-    with pytest.raises(InvalidKeyError) as raised:
-        keys.parse("context/5/state:title")
-    assert "context/5/state/!title" in str(raised.value)
-    assert keys.migrate_legacy("context/5/state:title") == "context/5/state/!title"
-    assert keys.migrate_legacy("context/5/state") == "context/5/state"
+def test_sort_form_markers_cannot_occur_in_a_segment():
+    # This is what makes the encoding injective without escaping.
+    for marker in (keys._SORT_META, keys._SORT_DOC, keys._SORT_DELIMITER):
+        assert marker < keys.MIN_SEGMENT_CHAR
+
+
+def test_distinct_keys_never_share_a_sort_form():
+    # Load bearing: pagination resumes with `sort_key > ?` over a non-unique
+    # index, so two rows sharing a sort key would mean resuming past one
+    # silently skipped the other.
+    written = [
+        "a", "a/b", "a-x", "a.y", "ab", "a/!title", "a/!title/b", "a/b/!title",
+        "a/\x01x", "a/\x02x", "a/\x03x", "a/!1", "a/1", "a/01",
+    ]
+    stored = {keys.parse(k).key for k in written if keys.is_valid(k)}
+    assert len({keys.sort_form(k) for k in stored}) == len(stored)
 
 
 def test_metadata_sorts_with_its_document_rather_than_after_its_subtree():
-    # The reason `!` was chosen. `:` sorted above `/`, so a document's metadata
-    # sorted after its whole subtree while the document sorted before it. That
-    # split is closed: for a key and its descendants the two orders agree.
     docs = ["a", "a/b", "a/b/c", "ab", "b"]
     by_doc = sorted(docs, key=keys.sort_form)
     by_meta = sorted(docs, key=lambda d: keys.sort_form(f"{d}/!title"))
     assert by_doc == by_meta
 
 
-def test_the_two_orders_still_part_over_a_segment_char_below_the_delimiter():
-    # What `!` does *not* fix, recorded so it is not rediscovered as a bug.
-    # `-` and `.` are legal segment characters and sort below `/`, so appending
-    # a metadata segment does not preserve order in general: `a` sorts before
-    # `a-x`, but `a/!title` sorts after `a-x/!title`.
+def test_the_two_orders_now_agree_over_segment_chars_below_the_delimiter():
+    # Schema 4 could not do this. `-` and `.` are legal segment characters that
+    # sort below `/`, so with `/` as the sort delimiter `a` sorted before `a-x`
+    # while `a/!title` sorted *after* `a-x/!title`. Joining the sort form with a
+    # delimiter below every legal segment character closes it.
     assert keys.sort_form("a") < keys.sort_form("a-x")
-    assert keys.sort_form("a-x/!title") < keys.sort_form("a/!title")
+    assert keys.sort_form("a/!title") < keys.sort_form("a-x/!title")
 
-    # This is why a survey window is still not an interval of document keys,
-    # and why Store.missing_meta_stats still measures at a synthesised
-    # position. Closing it fully would need the delimiter itself to sort below
-    # every segment character, which would reorder documents, not just
-    # metadata -- `a/b` would come before `a-x`.
-    assert keys.sort_form("a-x") < keys.sort_form("a/b")
+    # The price, taken knowingly: a subtree now sorts immediately after its
+    # parent rather than after prefix-sharing siblings.
+    assert keys.sort_form("a/b") < keys.sort_form("a-x")
+
+
+def test_document_order_and_metadata_order_agree_over_an_adversarial_set():
+    # The set that found the double count in schema 4, swept as one property
+    # rather than checked case by case.
+    docs = ["a", "a-x", "a.y", "a/b", "a/b/c", "ab", "b"]
+    by_doc = sorted(docs, key=keys.sort_form)
+    by_meta = sorted(docs, key=lambda d: keys.sort_form(f"{d}/!title"))
+    assert by_doc == by_meta
 
 
 def test_a_metadata_segment_sorts_before_any_sibling_document():
-    # `!` is below every character a segment may begin with, which is what puts
-    # a document's metadata immediately after the document itself.
+    # No longer resting on where `!` happens to sort -- the sort form marks
+    # metadata explicitly, so this holds whatever a segment begins with.
     assert keys.sort_form("a/!title") < keys.sort_form("a/-b")
     assert keys.sort_form("a/!title") < keys.sort_form("a/.b")
     assert keys.sort_form("a/!title") < keys.sort_form("a/0")
+    assert keys.sort_form("a/!title") < keys.sort_form("a/\t")
     assert keys.sort_form("a/!2") < keys.sort_form("a/!10")
+
+
+def test_the_old_metadata_suffix_is_now_ordinary_text():
+    # `:` was refused until schema 5 to catch the pre-schema-4 spelling. The
+    # namespace is unreleased and a filename may contain `:`, so it is an
+    # ordinary character now; `migrate_legacy` survives only for the schema 2
+    # to 3 migration, which reads keys written before `!` existed.
+    assert keys.parse("context/5/state:title").doc_key == "context/5/state:title"
+    assert keys.migrate_legacy("context/5/state:title") == "context/5/state/!title"
+    assert keys.migrate_legacy("context/5/state") == "context/5/state"

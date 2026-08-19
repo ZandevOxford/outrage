@@ -159,7 +159,14 @@ def test_store_returns_the_key_written(store):
 
 def test_store_validates_the_key(store):
     with pytest.raises(InvalidKeyError):
-        store.store_document("a//b", "x")
+        store.store_document("!title", "x")
+
+
+def test_store_normalises_the_key_it_is_given(store):
+    # Repeated and trailing delimiters are tidied rather than refused, so the
+    # same document cannot be created twice by spelling its key two ways.
+    store.store_document("a//b/", "x")
+    assert store.retrieve_document("a/b").content == "x"
 
 
 def test_format_is_detected_but_can_be_overridden(store):
@@ -1346,17 +1353,16 @@ def test_missing_meta_stats_places_a_document_where_its_metadata_would_sort(stor
         store.store_document(key, "body")
     store.store_document("a/y/!title", "T")
 
-    # The survey walks metadata order, and since `!` sorts below every
-    # character a segment may begin with, that order *is* document order:
-    # a/!title < a/x/!title < a/y/!title, exactly as a < a/x < a/y. So a
-    # window is a plain interval of document keys, and everything above sits
-    # on the same side of the cursor in both orderings.
+    # The survey walks metadata order, and since schema 5 that order *is*
+    # document order: a/!title < a/x/!title < a/y/!title, exactly as
+    # a < a/x < a/y. Everything above therefore sits on the same side of the
+    # cursor in both orderings.
     assert store.missing_meta_stats(before="a/y/!title", sample=10).sample == ["a", "a/x"]
     assert store.missing_meta_stats(after="a/y/!title", sample=10).sample == []
 
-    # Until schema 4 the separator was `:`, which sorts *above* `/`, so `a`
-    # landed after `a/x` in metadata order and before it as a document. That
-    # split is what this now pins closed.
+    # Two separate defects put `a` on the wrong side of this before: the `:`
+    # separator until schema 4, and then `/` as the sort delimiter until
+    # schema 5. Both are closed, and this pins them.
     assert keys.sort_form("a/!title") < keys.sort_form("a/x/!title")
     assert keys.sort_form("a") < keys.sort_form("a/x")
 
@@ -1402,20 +1408,30 @@ def test_schema_3_metadata_keys_migrate_to_a_segment(tmp_path):
     assert rows["a/!title"]["sort_key"] < rows["a/b/!title"]["sort_key"]
 
     assert opened.retrieve_document("a/!title").content == "A"
-    assert opened.connection.execute("PRAGMA user_version").fetchone()[0] == 4
+    version = opened.connection.execute("PRAGMA user_version").fetchone()[0]
+    assert version == store_module.SCHEMA_VERSION
 
 
 def test_survey_windows_tile_over_adversarial_keys(tmp_path):
     """Windows must tile whatever the keys look like, not just tidy ones.
 
     Built from the characters that sort around ``/``: ``-`` (0x2D) and ``.``
-    (0x2E) both sort below it and are legal in a segment, so a document can
-    sort before a sibling while its metadata sorts after that sibling's. A
-    window bounded by document keys double counts exactly there -- but only for
-    some sets of which documents carry the metadata, so this sweeps every one
-    of them rather than a few tidy prefixes.
+    (0x2E) both sort below it and are legal in a segment, so under schema 4 a
+    document could sort before a sibling while its metadata sorted after that
+    sibling's. A window bounded by document keys double counts exactly there --
+    but only for some sets of which documents carry the metadata, so this
+    sweeps every one of them rather than a few tidy prefixes.
+
+    ``a/ c`` is here for schema 5 specifically. Its segment *begins* with a
+    space (0x20), which sorts below ``!`` (0x21) -- so under schema 4 it would
+    have sorted ahead of ``a/!title`` and put metadata after a sibling
+    document. Segments could not begin that way then; they can now, and the
+    sort form marks segments rather than trusting where ``!`` falls.
+
+    The sweep doubles with every key added, so this stays deliberately small
+    and adversarial rather than large.
     """
-    keyset = ["a", "a-x", "a.y", "a/b", "a/b/c", "ab", "b"]
+    keyset = ["a", "a-x", "a.y", "a/ c", "a/b", "a/b/c", "ab", "b"]
 
     for mask in range(1, 2 ** len(keyset)):
         titled = [k for i, k in enumerate(keyset) if mask >> i & 1]
@@ -1442,3 +1458,94 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
         assert len(seen) == len(set(seen)), f"double counted, titled={titled}"
         assert counted == whole.total, f"titled={titled}"
         store.connection.close()
+
+
+def test_schema_4_sort_keys_are_rebuilt_for_the_marked_sort_form(tmp_path):
+    # Schema 4 joined the sort form with `/` and leaned on `!` sorting below
+    # every character a segment could begin with. Schema 5 marks every segment
+    # and joins below every legal segment character instead. Only `sort_key`
+    # changes: the keys themselves are already right.
+    def schema_4_sort_form(key):
+        def pad(segment):
+            if segment.startswith("!"):
+                return "!" + pad(segment[1:])
+            return segment.zfill(16) if segment.isdigit() else segment
+
+        return "/".join(pad(part) for part in key.split("/"))
+
+    written = ["a", "a-x", "a/b", "a/2", "a/10", "a/!title", "a-x/!title"]
+    con = sqlite3.connect(tmp_path / "store.sqlite")
+    con.executescript(store_module._TABLE.format(name="documents") + store_module._INDEXES)
+    con.executemany(
+        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, "
+        "updated_at, sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                keys.parse(k).key,
+                keys.parse(k).doc_key,
+                keys.parse(k).meta_name,
+                keys.parse(k).parent,
+                "body",
+                "markdown",
+                "2026-01-01T00:00:00+00:00",
+                schema_4_sort_form(k),
+            )
+            for k in written
+        ],
+    )
+    con.execute("PRAGMA user_version=4")
+    con.commit()
+    con.close()
+
+    opened = Store(tmp_path)
+
+    assert opened.connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    rows = dict(opened.connection.execute("SELECT key, sort_key FROM documents"))
+    assert set(rows) == set(written)
+    for key, sort_key in rows.items():
+        assert sort_key == keys.sort_form(key), key
+
+    # The inversion schema 4 recorded as unfixed, gone: `a` sorts before `a-x`
+    # as documents, and now so does their metadata.
+    assert rows["a"] < rows["a-x"]
+    assert rows["a/!title"] < rows["a-x/!title"]
+    opened.connection.close()
+
+
+def test_a_document_and_its_metadata_survive_the_rebuild_in_order(store):
+    # The property the whole sort form exists for, read back through the store
+    # rather than asserted on the encoding.
+    for key in ["a", "a-x", "a/b"]:
+        store.store_document(key, "body", title="T")
+
+    listed = [
+        r["key"]
+        for r in store.connection.execute("SELECT key FROM documents ORDER BY sort_key")
+    ]
+    assert listed == [
+        "a",
+        "a/!title",
+        "a/b",
+        "a/b/!title",
+        "a-x",
+        "a-x/!title",
+    ]
+
+
+def test_metadata_may_have_a_subtree(store):
+    # Schema 5 dropped the leaf rule: a path may continue below a `!` segment,
+    # and everything under it is metadata rather than a document.
+    store.store_document("a", "body", title="T")
+    store.store_document("a/!embedding/openai", "[0.1]")
+
+    assert store.retrieve_document("a/!embedding/openai").content == "[0.1]"
+
+    # The intermediate exists implicitly, exactly as a document subtree's does.
+    listed = {e.key: e.kind for e in store.list_keys("a").items}
+    assert listed["a/!embedding"] == "implicit"
+    assert listed["a/!title"] == "metadata"
+
+    # A survey for `title` must not match the sub-path, or every entry beneath
+    # a metadata key would count as one.
+    page = store.get_documents(meta_name=["title"])
+    assert [d.key for d in page.items] == ["a/!title"]
