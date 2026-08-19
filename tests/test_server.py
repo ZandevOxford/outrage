@@ -50,6 +50,7 @@ def test_tools_are_registered(server):
         "store_document",
         "list_keys",
         "get_documents",
+        "keys_missing_meta",
         "delete_keys",
     }
     assert tools["retrieve_document"].annotations.read_only_hint is True
@@ -233,7 +234,11 @@ def test_get_documents_survey_names_the_untitled(server):
     call(server, "store_document", key="context/e5f6/note", content="No title here.")
     result = call(server, "get_documents", key="context", meta_name=["title"])
     assert result["count"] == 2
-    assert result["without_meta"] == ["context/e5f6/note"]
+    assert result["without_meta"] == {
+        "total": 1,
+        "sample": ["context/e5f6/note"],
+        "next_cursor": None,
+    }
 
 
 def test_get_documents_survey_is_quiet_when_everything_is_titled(server):
@@ -409,3 +414,141 @@ def test_the_content_policy_reaches_the_request_layer(tmp_path):
     written = called["params"]["arguments"]["content"]
     assert written["len"] == len("secret body")
     assert "text" not in written and "head" not in written
+
+
+# -- pagination ------------------------------------------------------------
+
+
+def a_wide_store(tmp_path, count: int, content: str = "body"):
+    store = Store(tmp_path)
+    for number in range(1, count + 1):
+        store.store_document(f"notes/{number}", content, title=f"Note {number}")
+    return store
+
+
+def test_a_listing_says_what_it_is_part_of(tmp_path):
+    with a_wide_store(tmp_path, 150) as store:
+        result = call(build_server(store), "list_keys", key="notes")
+
+    assert result["returned"] == 100
+    assert result["total"] == 150
+    assert result["next_cursor"] == "notes/100"
+
+
+def test_a_listing_resumes_exactly_where_it_stopped(tmp_path):
+    with a_wide_store(tmp_path, 150) as store:
+        server = build_server(store)
+        first = call(server, "list_keys", key="notes")
+        second = call(server, "list_keys", key="notes", after=first["next_cursor"])
+
+    assert [e["key"] for e in second["entries"]] == [f"notes/{n}" for n in range(101, 151)]
+    assert second["next_cursor"] is None
+
+
+def test_a_survey_is_capped_in_documents(tmp_path):
+    with a_wide_store(tmp_path, 140) as store:
+        result = call(build_server(store), "get_documents", key="notes", meta_name=["title"])
+
+    assert result["returned"] == 100
+    assert result["total"] == 140
+    assert result["next_cursor"] == "notes/100:title"
+
+
+def test_a_survey_of_a_small_store_still_arrives_whole(tmp_path):
+    with a_wide_store(tmp_path, 60) as store:
+        result = call(build_server(store), "get_documents", key="notes", meta_name=["title"])
+
+    # The case these defaults mostly serve. Titles are short, so the character
+    # budget is nowhere near spent, and a session that surveys a small store
+    # should see it rather than a first page of it.
+    assert result["returned"] == 60
+    assert result["next_cursor"] is None
+
+
+def test_a_read_is_capped_in_characters_before_it_reaches_the_limit(tmp_path):
+    with a_wide_store(tmp_path, 40, content="x" * 2000) as store:
+        result = call(build_server(store), "get_documents", key="notes")
+
+    # Twenty documents of two thousand characters is forty thousand, which
+    # honours both stated bounds and is twice what the page allows.
+    assert result["returned"] == 10
+    assert sum(d["returned"] for d in result["documents"]) <= 20000
+    assert result["total"] == 40
+
+
+def test_the_untitled_are_counted_rather_than_listed(tmp_path):
+    store = Store(tmp_path)
+    for number in range(1, 31):
+        store.store_document(f"notes/{number}", "body")
+    with store:
+        result = call(build_server(store), "get_documents", key="notes", meta_name=["title"])
+
+    # The warning is the count. Listing them is the wrong answer at the scale
+    # where it matters: there, the list is the corpus.
+    assert result["without_meta"]["total"] == 30
+    assert len(result["without_meta"]["sample"]) == 10
+    assert result["without_meta"]["next_cursor"] == "notes/10"
+
+
+def test_the_caps_are_written_where_a_caller_can_read_them(server):
+    tools = list_tools(server)
+
+    # A default the model cannot see is a default it cannot reason about.
+    assert "100" in tools["list_keys"].description
+    assert "next_cursor" in tools["list_keys"].description
+    assert "100 documents" in tools["get_documents"].description
+    assert "20000 characters" in tools["get_documents"].description
+
+
+def test_the_instructions_say_a_listing_is_a_page(server):
+    from rage.server import INSTRUCTIONS
+
+    assert "next_cursor" in INSTRUCTIONS
+    assert "`after`" in INSTRUCTIONS
+    assert "total" in INSTRUCTIONS
+
+
+def test_the_untitled_can_be_paged_where_the_survey_only_sampled(tmp_path):
+    store = Store(tmp_path)
+    for number in range(1, 31):
+        store.store_document(f"notes/{number}", "body")
+
+    with store:
+        server = build_server(store)
+        survey = call(server, "get_documents", key="notes", meta_name=["title"])
+        rest = call(
+            server,
+            "keys_missing_meta",
+            key="notes",
+            after=survey["without_meta"]["next_cursor"],
+        )
+
+    # The sample is a warning, not an answer. A cursor that no tool accepts
+    # would make it a dead end instead of a first page.
+    assert rest["returned"] == 20
+    assert rest["total"] == 30
+    assert rest["keys"][0] == "notes/11"
+    assert rest["next_cursor"] is None
+
+
+def test_missing_metadata_is_asked_for_one_name_at_a_time(tmp_path):
+    store = Store(tmp_path)
+    store.store_document("notes/1", "body", title="Titled")
+
+    with store:
+        server = build_server(store)
+        neither = call(server, "keys_missing_meta", key="notes", meta_name=["title", "summary"])
+        summary = call(server, "keys_missing_meta", key="notes", meta_name=["summary"])
+
+    # A document counts as covered when it has any one of the names, so asking
+    # for both hides the document that has one and not the other.
+    assert neither["keys"] == []
+    assert summary["keys"] == ["notes/1"]
+
+
+def test_missing_metadata_defaults_to_titles(tmp_path):
+    store = Store(tmp_path)
+    store.store_document("notes/1", "body")
+
+    with store:
+        assert call(build_server(store), "keys_missing_meta")["keys"] == ["notes/1"]

@@ -50,6 +50,25 @@ def _forbid_unknown_arguments() -> None:
 
 _forbid_unknown_arguments()
 
+#: What one tool call may return. The store offers pagination and takes no view;
+#: this is the view. A tool answers into a context window, so an unwitting call
+#: must not be able to fill one, and every capped result says what it was part
+#: of.
+#:
+#: Two caps rather than one tuned number, because the two failures are
+#: different sizes. Characters are what fill a context window, so that is the
+#: cap that binds a read of real documents: twenty thousand is ten documents at
+#: the bulk cap. The item count is what keeps a page comprehensible when the
+#: items are tiny -- a hundred titles is a survey a model can hold, and it is
+#: the whole store for the session-scale case these defaults are mostly serving.
+DEFAULT_ITEM_LIMIT = 100
+DEFAULT_PAGE_CHARS = 20000
+
+#: Keys named in `without_meta` before it stops listing and only counts. Its
+#: job is to warn that a survey under-reports the store, and a count does that
+#: at any size; at reference scale the list would *be* the corpus.
+WITHOUT_META_SAMPLE = 10
+
 INSTRUCTIONS = """\
 A store for notes, designs and task context that outlives a single session.
 
@@ -69,8 +88,14 @@ for anything else belonging with it, such as `context/1/task`.
 
 Prefer storing a document under a descriptive key and passing a `title`, so
 that later sessions can survey what is stored with
-`get_documents(meta_name=["title"])` before reading anything in full. That
-survey reports untitled documents separately, under `without_meta`.
+`get_documents(meta_name=["title"])` before reading anything in full.
+
+Every listing is a page, not the whole store. Each one reports `returned`
+beside `total`, and a `next_cursor` when more remains: pass it back as `after`
+to continue from exactly where the page stopped. Read `total` before treating a
+result as everything there is — the difference between 20 of 22 and 20 of
+40000 is the difference between a listing and a sample. The survey also reports
+untitled documents under `without_meta`, as a count with a few examples.
 
 Prefer several small documents to one large one. A document should answer one
 question and be readable in a single call, and a key can hold content *and*
@@ -268,18 +293,33 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
         description=(
             "List the keys immediately below a key, including subkeys and "
             "metadata. Omit the key to list the top level. Keys of kind "
-            "'implicit' hold no content themselves but have something beneath them."
+            "'implicit' hold no content themselves but have something beneath "
+            f"them. Returns at most {DEFAULT_ITEM_LIMIT} keys: compare `returned` with "
+            "`total` to see whether that was the whole level, and pass "
+            "`next_cursor` back as `after` to continue."
         ),
     )
     def list_keys(
         key: Annotated[
             str | None, Field(description="Key to list below; omit for the top level")
         ] = None,
+        limit: Annotated[
+            int, Field(description="Maximum keys to return", gt=0)
+        ] = DEFAULT_ITEM_LIMIT,
+        after: Annotated[
+            str | None,
+            Field(description="Resume after this key, from a previous result's next_cursor"),
+        ] = None,
     ) -> dict[str, Any]:
-        # No limit passed: the tools' own defaults are the next piece of work,
-        # and until they are chosen this keeps the answer the shape it was.
-        listing = store.list_keys(key)
-        return {"key": key, "entries": [dataclasses.asdict(e) for e in listing.items]}
+        listing = store.list_keys(key, limit=limit, after=after)
+        return {
+            "key": key,
+            "entries": [dataclasses.asdict(e) for e in listing.items],
+            "returned": listing.returned,
+            "total": listing.total,
+            "total_chars": listing.total_chars,
+            "next_cursor": listing.next_cursor,
+        }
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -287,8 +327,14 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             "Read every document at and below a key. Pass `meta_name` to get that "
             "metadata across the subtree instead, which is the cheap way to survey "
             "what is stored: `get_documents(key='context', meta_name=['title'])` "
-            "lists the titles of everything under `context`. Each result is "
-            "truncated; use retrieve_document to read one in full."
+            "lists the titles of everything under `context`. Each document is "
+            f"truncated to `max_chars`; use retrieve_document to read one in full. "
+            f"The page holds at most {DEFAULT_ITEM_LIMIT} documents and "
+            f"{DEFAULT_PAGE_CHARS} characters in total, whichever comes first, "
+            "so a survey of short metadata usually arrives whole while a read "
+            "of real documents does not: "
+            "compare `returned` with `total`, and pass `next_cursor` back as "
+            "`after` to continue from where it stopped."
         ),
     )
     def get_documents(
@@ -306,20 +352,98 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
         max_chars: Annotated[
             int, Field(description="Maximum characters per document", gt=0)
         ] = DEFAULT_BULK_MAX_CHARS,
+        limit: Annotated[
+            int, Field(description="Maximum documents to return", gt=0)
+        ] = DEFAULT_ITEM_LIMIT,
+        after: Annotated[
+            str | None,
+            Field(description="Resume after this key, from a previous result's next_cursor"),
+        ] = None,
+        max_total_chars: Annotated[
+            int,
+            Field(description="Maximum characters across the whole page", gt=0),
+        ] = DEFAULT_PAGE_CHARS,
     ) -> dict[str, Any]:
-        found = store.get_documents(key, meta_name=meta_name, depth=depth, max_chars=max_chars)
+        found = store.get_documents(
+            key,
+            meta_name=meta_name,
+            depth=depth,
+            max_chars=max_chars,
+            limit=limit,
+            after=after,
+            max_total_chars=max_total_chars,
+        )
         result: dict[str, Any] = {
             "key": key,
             "count": found.returned,
+            "returned": found.returned,
+            "total": found.total,
+            "total_chars": found.total_chars,
+            "next_cursor": found.next_cursor,
             "documents": [_excerpt_result(e) for e in found.items],
         }
         if meta_name is not None:
             # A survey by metadata cannot see documents that lack it, so left
-            # alone it quietly under-reports the store.
-            missing = store.keys_missing_meta(key, meta_name=meta_name, depth=depth)
-            if missing.items:
-                result["without_meta"] = missing.items
+            # alone it quietly under-reports the store. A count says that at any
+            # size; at reference scale the list of them would be the corpus.
+            missing = store.keys_missing_meta(
+                key, meta_name=meta_name, depth=depth, limit=WITHOUT_META_SAMPLE
+            )
+            if missing.total:
+                result["without_meta"] = {
+                    "total": missing.total,
+                    "sample": missing.items,
+                    "next_cursor": missing.next_cursor,
+                }
         return result
+
+    @server.tool(
+        annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
+        description=(
+            "List the document keys at and below a key that carry none of the "
+            "named metadata: exactly what a `get_documents` survey by that "
+            "metadata cannot show, since a survey can only report documents "
+            "that have it. This is where a survey's `without_meta.next_cursor` "
+            "is passed back as `after`. A document counts as covered when it "
+            "has any one of the names given, so ask for one name at a time "
+            "unless you mean 'none of these'."
+        ),
+    )
+    def keys_missing_meta(
+        key: Annotated[
+            str | None, Field(description="Key whose subtree to check; omit for everything")
+        ] = None,
+        meta_name: Annotated[
+            list[str] | None,
+            Field(description="Metadata names to look for; defaults to ['title']"),
+        ] = None,
+        depth: Annotated[
+            int | None,
+            Field(description="How many levels below key to descend; unlimited when omitted", ge=0),
+        ] = None,
+        limit: Annotated[
+            int, Field(description="Maximum keys to return", gt=0)
+        ] = DEFAULT_ITEM_LIMIT,
+        after: Annotated[
+            str | None,
+            Field(description="Resume after this key, from a previous result's next_cursor"),
+        ] = None,
+    ) -> dict[str, Any]:
+        missing = store.keys_missing_meta(
+            key,
+            meta_name=meta_name if meta_name is not None else "title",
+            depth=depth,
+            limit=limit,
+            after=after,
+        )
+        return {
+            "key": key,
+            "keys": missing.items,
+            "returned": missing.returned,
+            "total": missing.total,
+            "total_chars": missing.total_chars,
+            "next_cursor": missing.next_cursor,
+        }
 
     @server.tool(
         annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=True),

@@ -11,7 +11,7 @@ use them and what to name things.
 
 ## Survey before reading
 
-One call shows everything the store holds:
+One call shows what the store holds:
 
 ```
 get_documents(meta_name=["title"])
@@ -21,9 +21,18 @@ That returns a title per document, not the documents, so it is cheap enough to
 run at the start of any piece of work. Then read only what looks relevant, with
 `retrieve_document`.
 
-Check `without_meta` in the result. It names documents in range carrying no
-title, which the survey could not otherwise show — a survey that omits them
-silently is a survey you cannot trust.
+**Read `total`, not just what came back.** The result is a page: `returned`
+titles out of `total` documents, with `next_cursor` set when there are more.
+Twenty of twenty-two is a listing and you have seen the store; twenty of four
+thousand is a sample, and treating it as the store is how a session concludes
+confidently from a fraction of it. To continue, pass `next_cursor` back as
+`after`. To look at one part instead of everything, pass `key`.
+
+Check `without_meta` too. It reports how many documents in range carry no
+title, with a few of their keys — the ones the survey cannot show at all, since
+it can only report documents that have one. A survey that omits them silently
+is a survey you cannot trust. `keys_missing_meta` lists them properly when the
+sample is not enough, and `rage-backfill` fills them in.
 
 ## Key conventions
 

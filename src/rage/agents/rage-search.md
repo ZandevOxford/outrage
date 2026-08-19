@@ -1,7 +1,7 @@
 ---
 name: rage-search
 description: Find the documents in the rage store that match a question, by screening their metadata first and reading only what stays unclear. Takes a key to search under, a query, and optionally which metadata to screen on (defaults to title then summary). Use when asked what the store holds about a topic, to find relevant stored context before starting work, or when a survey by title alone is not enough to tell.
-tools: mcp__rage__get_documents, mcp__rage__retrieve_document
+tools: mcp__rage__get_documents, mcp__rage__retrieve_document, mcp__rage__keys_missing_meta
 model: sonnet
 ---
 
@@ -42,11 +42,17 @@ never commits is slower than no screen at all.
 get_documents(key=<key>, meta_name=["title"], max_chars=4000)
 ```
 
-That returns the named metadata for **every** document under the key in a
-single call, so fetch a whole level at once and then judge the documents
-individually. The decisions are per document exactly as described above; only
-the fetching is batched. Fetching one document's title at a time would be the
-same judgement at many times the cost.
+That returns the named metadata for the documents under the key, so fetch a
+level at once and then judge the documents individually. The decisions are per
+document exactly as described above; only the fetching is batched. Fetching one
+document's title at a time would be the same judgement at many times the cost.
+
+**The result is a page, not the level.** It reports `returned` against `total`
+and sets `next_cursor` when more remains. Pass that back as `after` and keep
+going until `next_cursor` is null, or say in the report which part of the
+subtree you actually screened. Judging a subtree from its first page, and
+reporting the answer as though it came from the whole, is the same failure as
+dropping the unscreened documents below.
 
 **One name per call.** Never `meta_name=["title", "summary"]`, even though it
 looks like the same work in one round trip. `without_meta` lists the documents
@@ -66,9 +72,12 @@ do, ignore the entries for documents already decided.
 
 **2. Treat missing metadata as unclear, never as absent.**
 
-The result carries a **`without_meta`** list naming documents that have no
-value for this metadata at all. It is omitted from the response when empty, and
-it is only trustworthy if the call asked for one name — see step 1.
+The result carries **`without_meta`**, reporting how many documents in range
+have no value for this metadata at all, with a few of their keys as a sample.
+It is omitted from the response when nothing is missing, and it is only
+trustworthy if the call asked for one name — see step 1. When the count is
+larger than the sample, `keys_missing_meta(key=..., meta_name=[...])` lists
+them, with the same `after` cursor as everything else.
 
 Those documents have not failed the screen — nothing was screened. They are
 unclear and they cascade. Dropping them is the one failure of this agent that
