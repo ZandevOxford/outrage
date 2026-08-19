@@ -4,7 +4,10 @@ A key is one or more segments joined by ``/``, where a segment matches
 ``[A-Za-z0-9_.-]+``. A key may carry at most one metadata suffix, introduced by
 ``:`` at the end of the key, whose name is a single segment. A key being
 written may use ``?`` as a whole segment to ask the store to allocate a number
-for it. See design.md.
+for it. A segment that is purely numeric is normalised by stripping its
+leading zeros, so ``context/01`` and ``context/1`` are the same key, and is
+sorted as though zero padded, so ``context/2`` comes before ``context/10``.
+See design.md.
 """
 
 from __future__ import annotations
@@ -38,6 +41,53 @@ ROOT = ""
 #: the keys beneath ``k``, whatever segments are made of.
 _AFTER_DELIMITER = "0"
 
+#: A segment that names nothing but a number. Deliberately not str.isdigit,
+#: which accepts superscripts and other digits that int() then rejects.
+NUMERIC_RE = re.compile(r"\A[0-9]+\Z")
+
+#: Width a numeric segment is padded to in sort form. No parent will hold
+#: 10**16 children, and a longer number still sorts -- just not numerically
+#: against shorter ones, which is the same failure this padding removes.
+_SORT_WIDTH = 16
+
+
+def normalise_segment(segment: str) -> str:
+    """A numeric segment without its leading zeros; anything else unchanged.
+
+    This makes ``01`` and ``1`` the same segment rather than two, which is what
+    keeps a padded key from naming a second document alongside the one it was
+    meant to name.
+
+    >>> normalise_segment("007"), normalise_segment("000"), normalise_segment("x0")
+    ('7', '0', 'x0')
+    """
+    if NUMERIC_RE.match(segment):
+        return segment.lstrip("0") or "0"
+    return segment
+
+
+def sort_form(key: str) -> str:
+    """``key`` with its numeric segments zero padded, for ordering only.
+
+    Sorting keys as plain text puts ``a/10`` before ``a/2``, which is wrong on
+    its own and dangerous under a cursor: a reader resuming after ``a/9`` never
+    sees ``a/10``, because the new key sorts *behind* the one it was written
+    after. Padding restores the ordering the numbers imply.
+
+    Never stored in place of a key and never returned to a caller -- the key
+    itself stays in the normalised, unpadded form.
+
+    >>> sorted(["a/10", "a/2"]), sorted(["a/10", "a/2"], key=sort_form)
+    (['a/10', 'a/2'], ['a/2', 'a/10'])
+    """
+    doc_key, colon, meta_name = key.partition(META)
+    padded = DELIMITER.join(_pad(part) for part in doc_key.split(DELIMITER))
+    return f"{padded}{META}{_pad(meta_name)}" if colon else padded
+
+
+def _pad(segment: str) -> str:
+    return segment.zfill(_SORT_WIDTH) if NUMERIC_RE.match(segment) else segment
+
 
 class InvalidKeyError(ValueError):
     """Raised when a key does not match the grammar."""
@@ -48,7 +98,9 @@ class Key:
     """A parsed key, with the columns derived from it."""
 
     key: str
-    """The full key as given, including any metadata suffix."""
+    """The full key, normalised, including any metadata suffix. Numeric
+    segments have lost their leading zeros, so this may differ from the string
+    that was parsed."""
 
     doc_key: str
     """The key with any metadata suffix removed."""
@@ -114,14 +166,21 @@ def parse(key: str, *, allow_wildcard: bool = False) -> Key:
                 )
             if wildcard_parent is not None:
                 raise InvalidKeyError(f"key {key!r} has more than one {WILDCARD!r} segment")
-            wildcard_parent = DELIMITER.join(segments[:index])
+            wildcard_parent = DELIMITER.join(normalise_segment(part) for part in segments[:index])
         else:
             _check_segment(segment, key)
 
+    # Normalised only after validation, so a complaint names the segment as it
+    # was written rather than a tidied one the caller never typed.
+    doc_key = DELIMITER.join(normalise_segment(segment) for segment in segments)
+
     if meta_name is not None:
+        meta_name = normalise_segment(meta_name)
         parent = doc_key
+        key = f"{doc_key}{META}{meta_name}"
     else:
         parent, _, _ = doc_key.rpartition(DELIMITER)
+        key = doc_key
 
     return Key(
         key=key,

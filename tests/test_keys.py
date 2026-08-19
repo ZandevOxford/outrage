@@ -182,3 +182,45 @@ def test_subtree_bounds_are_adjacent_code_points():
 
 def test_subtree_range_of_metadata_key_uses_the_document_key():
     assert keys.subtree_range("a/b:title") == keys.subtree_range("a/b")
+
+
+# -- numeric segments ----------------------------------------------------
+
+
+def test_a_numeric_segment_loses_its_leading_zeros():
+    assert keys.parse("context/007/task").key == "context/7/task"
+    assert keys.parse("context/007/task").doc_key == "context/7/task"
+    assert keys.parse("context/007/task").parent == "context/7"
+
+
+def test_zero_survives_being_normalised():
+    assert keys.parse("a/000").key == "a/0"
+    assert keys.normalise_segment("0") == "0"
+
+
+def test_only_wholly_numeric_segments_are_touched():
+    for segment in ("0x", "x0", "v01", "1.2", "01-a"):
+        assert keys.normalise_segment(segment) == segment
+
+
+def test_a_numeric_metadata_name_normalises_too():
+    # Metadata names are segments and are ordered like them, so treating them
+    # differently would make ':01' and ':1' two names where '/01' and '/1' are
+    # one key.
+    assert keys.parse("a:007").key == "a:7"
+    assert keys.parse("a:007").meta_name == "7"
+
+
+def test_sort_form_orders_numbers_as_numbers():
+    unordered = ["a/10", "a/2", "a/1", "a/20", "a/3"]
+    assert sorted(unordered, key=keys.sort_form) == ["a/1", "a/2", "a/3", "a/10", "a/20"]
+
+
+def test_sort_form_leaves_words_alone_and_keeps_depth_apart():
+    assert sorted(["a/b/1", "a/2", "a/beta"], key=keys.sort_form) == ["a/2", "a/b/1", "a/beta"]
+
+
+def test_sort_form_is_not_a_key_the_caller_ever_sees():
+    # It exists only for ORDER BY. Anything handed back is the normalised key.
+    assert keys.sort_form("a/1") != "a/1"
+    assert keys.parse(keys.sort_form("a/1")).key == "a/1"

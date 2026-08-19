@@ -176,6 +176,11 @@ suggest a navigation that does not exist here.
 
 * A key is one or more segments joined by `/`.
 * A segment matches `[A-Za-z0-9_.-]+`, and is not `.` or `..`.
+* A segment that is *wholly* numeric is normalised by stripping its leading
+  zeros, so `context/01` and `context/1` are the same key rather than two.
+  `0` normalises to itself, and a segment that merely contains digits — `v01`,
+  `1.2` — is left alone. This applies to metadata names too, since they are
+  segments and are ordered like them.
 * A key may carry at most one metadata suffix, introduced by `:` and appearing
   only at the end of the key. The metadata name is a single segment and may not
   contain `/`, so the metadata namespace is flat.
@@ -210,6 +215,25 @@ identity should use a name, not a number.
 Because allocating reads the store before writing to it, the whole operation
 runs in one immediate transaction, so two concurrent writers cannot pick the
 same number.
+
+#### Sorting numbered keys
+
+Keys are ordered as though every numeric segment were zero padded, so `a/2`
+comes before `a/10`. Plain text ordering gives the reverse, which is untidy in
+a listing and unsafe under a cursor: a reader resuming after `a/9` would never
+see `a/10`, because a key written *later* sorts *earlier*. Since autonumbering
+is what agents working in parallel use to append findings for each other, that
+would silently lose exactly the documents the mechanism exists to deliver.
+
+The padding is a stored `sort_key` column, written alongside the key, indexed,
+and used by every `ORDER BY`. It is never returned: keys reaching a caller are
+always the normalised, unpadded form. Padding is to a fixed width, wide enough
+that no parent will reach it; a longer number still sorts, just not numerically
+against shorter ones.
+
+Normalisation is what keeps the two forms from diverging. Without it `a/01` and
+`a/1` would be distinct keys with identical sort keys, which is worse than
+either problem alone.
 
 ## Values
 

@@ -10,7 +10,6 @@ import functools
 import inspect
 import json
 import os
-import re
 import sqlite3
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -53,26 +52,28 @@ FORMATS = ("markdown", "json")
 #: decoded back to plain text before it is written. See ``_decode``.
 ENCODINGS = ("json-string",)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
-#: A key segment that names a number, for the benefit of wildcard allocation.
-#: Deliberately not str.isdigit, which accepts superscripts and other digits
-#: that int() then rejects.
-_NUMBER_RE = re.compile(r"\A[0-9]+\Z")
-
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS documents (
+_TABLE = """
+CREATE TABLE IF NOT EXISTS {name} (
   key        TEXT PRIMARY KEY,
   doc_key    TEXT NOT NULL,
   meta_name  TEXT,
   parent     TEXT NOT NULL,
   content    TEXT NOT NULL,
   format     TEXT,
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  sort_key   TEXT NOT NULL
 );
+"""
+
+_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_documents_parent ON documents(parent);
 CREATE INDEX IF NOT EXISTS idx_documents_meta   ON documents(meta_name, doc_key);
+CREATE INDEX IF NOT EXISTS idx_documents_sort   ON documents(sort_key);
 """
+
+_SCHEMA = _TABLE.format(name="documents") + _INDEXES
 
 
 class KeyNotFoundError(RageError, LookupError):
@@ -228,8 +229,11 @@ class Store:
                 )
             if version == 0:
                 self._conn.executescript(_SCHEMA)
-            elif version < 2:
-                self._migrate_delimiter_to_slash()
+            else:
+                if version < 2:
+                    self._migrate_delimiter_to_slash()
+                if version < 3:
+                    self._migrate_add_sort_key()
             if version != SCHEMA_VERSION:
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -248,6 +252,67 @@ class Store:
                 parent  = replace(parent, '.', '/')
             """
         )
+
+    def _migrate_add_sort_key(self) -> None:
+        """Schema 2 to 3: numeric segments gained a normal form and an order.
+
+        Keys are rewritten, not just indexed, because stripping leading zeros
+        changed what a key *is*: ``a/01`` and ``a/1`` used to name two
+        documents and now name one. A store holding both is refused rather
+        than half merged — there is no way to tell which content was meant to
+        survive, and quietly keeping one is exactly the kind of success this
+        project keeps failing to distinguish from a real one.
+
+        The table is rebuilt rather than altered. ``ALTER TABLE ADD COLUMN``
+        cannot add a ``NOT NULL`` column without a default, and that default
+        then survives the migration: an older build, still running against the
+        migrated file, would insert rows with an empty sort key and no error,
+        which sort ahead of everything. Rebuilding leaves a migrated store with
+        exactly the schema a fresh one has, so a write that forgets the sort
+        key fails in both.
+        """
+        rows = self._conn.execute(
+            "SELECT key, meta_name, content, format, updated_at FROM documents"
+        ).fetchall()
+
+        normalised: dict[str, str] = {}
+        rebuilt = []
+        for row in rows:
+            was = row["key"]
+            parsed = keys.parse(was)
+            clash = normalised.get(parsed.key)
+            if clash is not None:
+                raise RuntimeError(
+                    f"{self.path} holds both {clash!r} and {was!r}, which are one key once "
+                    f"leading zeros are stripped; remove or rename one, then reopen"
+                )
+            normalised[parsed.key] = was
+            rebuilt.append(
+                (
+                    parsed.key,
+                    parsed.doc_key,
+                    parsed.meta_name,
+                    parsed.parent,
+                    row["content"],
+                    row["format"],
+                    row["updated_at"],
+                    keys.sort_form(parsed.key),
+                )
+            )
+
+        # Statement by statement rather than executescript, which commits any
+        # pending transaction before it runs. The rebuild drops the live table,
+        # so it has to roll back as one thing if anything goes wrong.
+        self._conn.execute(_TABLE.format(name="documents_rebuilt"))
+        self._conn.executemany(
+            "INSERT INTO documents_rebuilt (key, doc_key, meta_name, parent, content, "
+            "format, updated_at, sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            rebuilt,
+        )
+        self._conn.execute("DROP TABLE documents")
+        self._conn.execute("ALTER TABLE documents_rebuilt RENAME TO documents")
+        for statement in filter(str.strip, _INDEXES.split(";")):
+            self._conn.execute(statement)
 
     @property
     def connection(self) -> sqlite3.Connection:
@@ -341,8 +406,8 @@ class Store:
         self._conn.execute(
             """
             INSERT INTO documents (key, doc_key, meta_name, parent, content, format,
-                                   updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                   updated_at, sort_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET
                 content = excluded.content,
                 format = excluded.format,
@@ -356,6 +421,7 @@ class Store:
                 content,
                 format,
                 _now(),
+                keys.sort_form(parsed.key),
             ),
         )
 
@@ -384,7 +450,7 @@ class Store:
         something unrelated. Numbers are only unique, not permanently reserved:
         deleting the highest does free it again.
         """
-        used = [int(name) for name in self._child_names(parent) if _NUMBER_RE.match(name)]
+        used = [int(name) for name in self._child_names(parent) if keys.NUMERIC_RE.match(name)]
         return str(max(used) + 1) if used else "1"
 
     def _child_names(self, parent: str) -> set[str]:
@@ -434,7 +500,7 @@ class Store:
 
         with self._conn:
             self._conn.executemany("DELETE FROM documents WHERE key = ?", [(k,) for k in targets])
-        return sorted(targets)
+        return sorted(targets, key=keys.sort_form)
 
     @_logged("descendant_count")
     def descendant_count(self, key: str) -> int:
@@ -516,7 +582,7 @@ class Store:
 
         entries: dict[str, Entry] = {}
         for row in self._conn.execute(
-            "SELECT * FROM documents WHERE parent = ? ORDER BY key", (parent,)
+            "SELECT * FROM documents WHERE parent = ? ORDER BY sort_key", (parent,)
         ):
             entries[row["key"]] = Entry(
                 key=row["key"],
@@ -532,7 +598,7 @@ class Store:
                 Entry(key=implicit, kind="implicit", size=None, format=None, updated_at=None),
             )
 
-        return [entries[k] for k in sorted(entries)]
+        return [entries[k] for k in sorted(entries, key=keys.sort_form)]
 
     def _implicit_children(self, parent: str) -> Iterator[str]:
         """Children of ``parent`` that hold no content themselves.
@@ -600,7 +666,7 @@ class Store:
         sql = "SELECT * FROM documents"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY key"
+        sql += " ORDER BY sort_key"
 
         rows = self._conn.execute(sql, params).fetchall()
 

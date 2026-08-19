@@ -1,8 +1,10 @@
 import json
 import sqlite3
+from pathlib import Path
 
 import pytest
 
+from rage import keys
 from rage import store as store_module
 from rage.eventlog import EventLog
 from rage.keys import InvalidKeyError
@@ -75,12 +77,44 @@ def test_rejects_a_newer_schema(tmp_path):
         Store(tmp_path)
 
 
+#: The table as it stood before ``sort_key`` was added. Spelled out rather than
+#: taken from ``store._SCHEMA``, which is the *current* schema: building an old
+#: store out of the new definition tests the migration against a database that
+#: never existed.
+_SCHEMA_BEFORE_SORT_KEY = """
+CREATE TABLE documents (
+  key        TEXT PRIMARY KEY,
+  doc_key    TEXT NOT NULL,
+  meta_name  TEXT,
+  parent     TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  format     TEXT,
+  updated_at TEXT NOT NULL
+);
+"""
+
+
+def an_old_store(directory: Path, version: int, rows: list[tuple]) -> None:
+    """A store at ``version``, written the way that version wrote them."""
+    directory.mkdir(exist_ok=True)
+    conn = sqlite3.connect(directory / "store.sqlite")
+    conn.executescript(_SCHEMA_BEFORE_SORT_KEY)
+    conn.executemany(
+        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, updated_at)"
+        " VALUES (?, ?, ?, ?, ?, 'markdown', 'then')",
+        rows,
+    )
+    conn.execute(f"PRAGMA user_version={version}")
+    conn.commit()
+    conn.close()
+
+
 def test_migrates_period_delimited_keys_to_slashes(tmp_path):
     """A schema 1 store was written before the delimiter changed."""
     directory = tmp_path / ".rage"
     directory.mkdir()
     conn = sqlite3.connect(directory / "store.sqlite")
-    conn.executescript(store_module._SCHEMA)
+    conn.executescript(_SCHEMA_BEFORE_SORT_KEY)
     conn.executemany(
         "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, updated_at)"
         " VALUES (?, ?, ?, ?, ?, 'markdown', 'then')",
@@ -872,3 +906,136 @@ def test_a_backup_is_logged_with_what_it_wrote(logged, tmp_path):
     (event,) = [e for e in events(tmp_path) if e["op"] == "backup"]
     assert event["result"]["documents"] == 1
     assert event["result"]["path"] == str(result.path)
+
+
+# -- numeric segments ----------------------------------------------------
+
+
+def test_numbered_keys_come_back_in_numeric_order(tmp_path):
+    with Store(tmp_path) as s:
+        for _ in range(12):
+            s.store_document("findings/?", "a finding")
+
+        numbered = [e.key.rsplit("/", 1)[1] for e in s.get_documents("findings")]
+        assert numbered == [str(n) for n in range(1, 13)]
+        listed = [e.key.rsplit("/", 1)[1] for e in s.list_keys("findings")]
+        assert listed == [str(n) for n in range(1, 13)]
+
+
+def test_a_cursor_parked_on_a_key_does_not_miss_a_later_one(tmp_path):
+    """The property pagination will rest on, checked at the store.
+
+    Sorting keys as text puts 'findings/10' behind 'findings/9', so a reader
+    resuming after the ninth would never see the tenth.
+    """
+    with Store(tmp_path) as s:
+        for _ in range(9):
+            s.store_document("findings/?", "before")
+        ninth = s.list_keys("findings")[-1].key
+        tenth = s.store_document("findings/?", "after")
+
+        assert (ninth, tenth) == ("findings/9", "findings/10")
+        assert keys.sort_form(tenth) > keys.sort_form(ninth)
+
+
+def test_a_padded_key_names_the_same_document_as_the_unpadded_one(tmp_path):
+    with Store(tmp_path) as s:
+        written = s.store_document("context/007/task", "the body")
+
+        assert written == "context/7/task"
+        assert s.retrieve_document("context/7/task").content == "the body"
+        assert s.retrieve_document("context/00007/task").content == "the body"
+
+        s.store_document("context/7/task", "replaced")
+        assert s.retrieve_document("context/007/task").content == "replaced"
+        assert len(s.get_documents("context")) == 1
+
+
+def test_allocation_counts_past_a_key_that_was_written_padded(tmp_path):
+    with Store(tmp_path) as s:
+        s.store_document("context/007", "seventh")
+        assert s.store_document("context/?", "next") == "context/8"
+
+
+def test_migrates_a_store_that_predates_the_sort_key(tmp_path):
+    directory = tmp_path / ".rage"
+    an_old_store(
+        directory,
+        version=2,
+        rows=[
+            ("notes/10", "notes/10", None, "notes", "tenth"),
+            ("notes/2", "notes/2", None, "notes", "second"),
+            ("notes/03", "notes/03", None, "notes", "third, written padded"),
+        ],
+    )
+
+    with Store(directory) as s:
+        assert s._conn.execute("PRAGMA user_version").fetchone()[0] == store_module.SCHEMA_VERSION
+        # notes/03 was rewritten, not just indexed: the key it names has changed.
+        assert [e.key for e in s.get_documents("notes")] == ["notes/2", "notes/3", "notes/10"]
+        assert s.retrieve_document("notes/3").content == "third, written padded"
+
+
+def test_a_store_holding_both_spellings_is_refused_rather_than_merged(tmp_path):
+    directory = tmp_path / ".rage"
+    an_old_store(
+        directory,
+        version=2,
+        rows=[
+            ("notes/1", "notes/1", None, "notes", "one spelling"),
+            ("notes/01", "notes/01", None, "notes", "the other"),
+        ],
+    )
+
+    # Nothing can tell which of the two was meant, so neither is thrown away.
+    with pytest.raises(RuntimeError, match="one key once leading zeros"):
+        Store(directory)
+
+
+def test_a_migrated_store_has_exactly_the_schema_a_fresh_one_has(tmp_path):
+    """Otherwise an older build writes rows a newer one cannot order.
+
+    `ALTER TABLE ADD COLUMN` needs a default for a NOT NULL column, and that
+    default outlives the migration: a server still running the previous build
+    would insert an empty sort key without complaint, and those rows sort ahead
+    of everything. Observed, not hypothetical.
+    """
+    migrated = tmp_path / "migrated"
+    an_old_store(migrated, version=2, rows=[("notes/1", "notes/1", None, "notes", "body")])
+    with Store(migrated):
+        pass
+
+    with Store(tmp_path / "fresh") as s:
+        s.store_document("notes/1", "body")
+
+    def shape(directory):
+        conn = sqlite3.connect(directory / "store.sqlite")
+        # name, type, notnull and default per column, plus the indexes. Not the
+        # DDL text: ALTER TABLE RENAME quotes the table name, which differs
+        # without meaning anything, while the column default -- the thing that
+        # was actually wrong -- does not show up in a casual reading of it.
+        columns = [tuple(row[1:5]) for row in conn.execute("PRAGMA table_info(documents)")]
+        indexes = sorted(row[1] for row in conn.execute("PRAGMA index_list(documents)"))
+        return columns, indexes
+
+    assert shape(migrated) == shape(tmp_path / "fresh")
+
+    columns, _ = shape(migrated)
+    sort_key = [column for column in columns if column[0] == "sort_key"]
+    assert sort_key == [("sort_key", "TEXT", 1, None)], "sort_key must be NOT NULL with no default"
+
+
+def test_the_migration_fills_in_a_sort_key_for_every_row(tmp_path):
+    directory = tmp_path / ".rage"
+    an_old_store(
+        directory,
+        version=2,
+        rows=[
+            ("notes/1", "notes/1", None, "notes", "body"),
+            ("notes/1:title", "notes/1", "title", "notes/1", "A title"),
+        ],
+    )
+
+    with Store(directory) as s:
+        empty = s._conn.execute("SELECT count(*) FROM documents WHERE sort_key = ''").fetchone()[0]
+        assert empty == 0
