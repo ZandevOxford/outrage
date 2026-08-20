@@ -98,6 +98,7 @@ def server_entry(
     log: Any = None,
     log_content: str | None = None,
     mounts: Sequence[str] = (),
+    read_only_mounts: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Build the configuration entry for a store at ``directory``.
 
@@ -118,12 +119,19 @@ def server_entry(
     absolute for exactly the reason ``--dir`` is: a mount resolved against an
     unpredictable working directory would create a second, empty store rather
     than fail.
+
+    ``read_only_mounts`` are the same specs recorded as ``--mount-ro``. The
+    absolute path matters more here, not less: the server refuses to *create* a
+    read-only mount, so a relative path resolved somewhere unexpected turns
+    into a server that will not start rather than a quiet second store -- a
+    better failure, but still one worth not having.
     """
     argv = list(command) if command is not None else launch_command()
     args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
-    for spec in mounts:
-        prefix, path = parse_spec(spec)
-        args += ["--mount", f"{prefix}{SPEC_DELIMITER}{path.expanduser().resolve()}"]
+    for flag, specs in (("--mount", mounts), ("--mount-ro", read_only_mounts)):
+        for spec in specs:
+            prefix, path = parse_spec(spec)
+            args += [flag, f"{prefix}{SPEC_DELIMITER}{path.expanduser().resolve()}"]
     if log is not None:
         args.append("--log")
         # Absolute for the same reason the store directory is.

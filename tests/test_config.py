@@ -350,5 +350,32 @@ def test_a_misspelled_mount_point_is_refused_while_writing_the_config(tmp_path):
         config_module.server_entry(tmp_path, command=["rage-server"], mounts=["=/srv/x"])
 
 
+def test_a_read_only_mount_is_recorded_as_mount_ro(tmp_path):
+    entry = config_module.server_entry(
+        tmp_path / "root",
+        command=["rage-server"],
+        mounts=[f"lib={tmp_path / 'lib'}"],
+        read_only_mounts=[f"ref={tmp_path / 'ref'}", "shared/base=./relative"],
+    )
+    args = entry["args"]
+    assert args.count("--mount") == 1
+    assert args.count("--mount-ro") == 2
+    assert f"ref={tmp_path / 'ref'}" in args
+    # Absolute matters more here: the server refuses to create a read-only mount.
+    base = next(a for a in args if a.startswith("shared/base="))
+    assert Path(base.split("=", 1)[1]).is_absolute()
+
+
+def test_a_misspelled_read_only_mount_point_is_refused_too(tmp_path):
+    from rage.mounts import MountError
+
+    with pytest.raises(MountError):
+        config_module.server_entry(
+            tmp_path, command=["rage-server"], read_only_mounts=["no-delimiter"]
+        )
+
+
 def test_an_entry_without_mounts_is_unchanged(tmp_path):
-    assert "--mount" not in config_module.server_entry(tmp_path, command=["rage-server"])["args"]
+    args = config_module.server_entry(tmp_path, command=["rage-server"])["args"]
+    assert "--mount" not in args
+    assert "--mount-ro" not in args
