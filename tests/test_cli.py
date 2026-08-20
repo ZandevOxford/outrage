@@ -141,6 +141,48 @@ def test_config_can_turn_logging_on(tmp_path):
     assert "--log" in output
 
 
+def test_config_records_mounts_as_files_inside_the_store_directory(tmp_path):
+    status, _ = run(
+        "config",
+        "--project-dir",
+        str(tmp_path),
+        "--root-mount",
+        "main.sqlite",
+        "--mount",
+        "lib=lib.sqlite",
+        "--mount-ro",
+        "ref=reference.sqlite",
+    )
+
+    assert status == 0
+    args = servers(tmp_path / ".mcp.json")["rage"]["args"]
+    assert args[args.index("--root-mount") + 1] == "main.sqlite"
+    assert args[args.index("--mount") + 1] == "lib=lib.sqlite"
+    assert args[args.index("--mount-ro") + 1] == "ref=reference.sqlite"
+    # Only --dir is absolute; everything else names a store inside it, which is
+    # what lets the project move with one line to fix.
+    assert [a for a in args if a.startswith("/")] == [
+        servers(tmp_path / ".mcp.json")["rage"]["args"][args.index("--dir") + 1]
+    ]
+
+
+def test_a_command_reaches_a_second_store_in_the_same_directory(tmp_path):
+    from rage.store import Store
+
+    with Store(tmp_path / ".rage", filename="ref.sqlite") as other:
+        other.store_document("only/here", "in the second store")
+
+    status, output = run(
+        "get", "--dir", str(tmp_path / ".rage"), "--store", "ref.sqlite", "only/here"
+    )
+    assert status == 0
+    assert "in the second store" in output
+
+    # And the default store in the same directory does not hold it: two stores
+    # in one directory, told apart by the file and nothing else.
+    assert main(["get", "--dir", str(tmp_path / ".rage"), "only/here"], io.StringIO()) == 1
+
+
 def test_scope_defaults_to_project():
     assert parse_args(["config"]).scope == "project"
 
@@ -195,7 +237,7 @@ def test_backing_up_a_store_that_is_not_there_is_refused(tmp_path, capsys):
     status = main(["backup", "--dir", str(tmp_path / "absent")], io.StringIO())
 
     assert status == 1
-    assert "no store in" in capsys.readouterr().err
+    assert "no store at" in capsys.readouterr().err
     # Refused rather than created, or the backup would be of a store the
     # caller never had.
     assert not (tmp_path / "absent").exists()
@@ -538,7 +580,7 @@ def test_reading_a_store_that_is_not_there_is_refused(tmp_path, capsys):
     # Store() would create one, and an empty store answers every question with
     # a confident nothing.
     assert status == 1
-    assert "no store in" in capsys.readouterr().err
+    assert "no store at" in capsys.readouterr().err
     assert not (tmp_path / "absent").exists()
 
 
@@ -690,7 +732,7 @@ def test_check_refuses_a_directory_with_no_store(tmp_path, capsys):
     status = main(["check", "--dir", str(tmp_path / "absent")], io.StringIO())
 
     assert status == 1
-    assert "no store in" in capsys.readouterr().err
+    assert "no store at" in capsys.readouterr().err
 
 
 def test_check_reports_a_row_stored_under_the_wrong_parent(tmp_path):

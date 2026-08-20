@@ -103,11 +103,24 @@ rather than returning a result with an error flag.
 ### 3a. Mounted stores — `src/rage/mounts.py` — done
 
 More than one database behind the one key namespace, configured at startup with
-a repeatable `--mount KEY=PATH`. `Mounts` is a prefix to `Store` table; the
-longest prefix matching a key owns it, and the store `--dir` names sits at the
-root, so every key resolves. `build_server` wraps a lone `Store` in
+a repeatable `--mount KEY=FILE`. `Mounts` is a prefix to `Store` table; the
+longest prefix matching a key owns it, and the store `--root-mount` names sits
+at the root, so every key resolves. `build_server` wraps a lone `Store` in
 `Mounts.single`, so there is no second code path that only runs when nothing is
 mounted.
+
+**One directory, several files.** A store is addressed as a file *inside* the
+directory `--dir` names — `--root-mount FILE` for the root, `KEY=FILE` for each
+mount, both defaulting to and named like `store.sqlite`. `store.store_file` is
+the single rule and it refuses an absolute path and a `..`, raising
+`StoreFileError`; `Store(directory, filename=...)` is the only way a database
+path is built. The directory stays what it always was — the log, the backups
+and any later index live in it — and the file is which store within it. That
+split is what a backend other than SQLite would slot into, and it is why only
+`--dir` is absolute in a configuration: `config.server_entry` records every
+mount exactly as written, so moving a project is one line to fix rather than
+one per store. `rage`'s own subcommands take the same pair, `--dir` and
+`--store`.
 
 The two translations are `keys.with_prefix` and `keys.strip_prefix`, in
 `keys.py` rather than a module of their own because they are key grammar and
@@ -180,7 +193,7 @@ mount below the key there is a single unbounded window, which is the query it
 always was. Results grow a field only when there is something to say, so a
 single store answer is the shape it was before mounts existed.
 
-**Read-only mounts** — `--mount-ro KEY=PATH`, and `rage config --mount-ro` to
+**Read-only mounts** — `--mount-ro KEY=FILE`, and `rage config --mount-ro` to
 record one. `Mount.read_only` carries it, `Resolved.writable(action)` raises
 `ReadOnlyMountError`, and the two write tools resolve through
 `_resolve_for_write` rather than `_resolve` so a write path names itself and
@@ -194,10 +207,12 @@ and exits 1 rather than tracebacking, which is the rule `cli.main` already
 followed.
 
 Deliberately not done, and recorded in `project/reference/planned/mounts`:
-aggregation across a boundary, and mounts in the CLI — `rage check` and
-`rage backup` are still per-directory. The range bounds are the primitive that
-first half now needs: reading a subtree as ordered windows is what a merge
-across two stores would interleave.
+aggregation across a boundary. The range bounds are the primitive it now needs:
+reading a subtree as ordered windows is what a merge across two stores would
+interleave. The CLI half is narrower than it was — `rage check`, `rage backup`
+and the rest take `--store`, so each store in a directory can be reached by
+name — but each command still acts on one store at a time rather than on a
+mount table.
 
 ### 4. Integration with Claude Code — done
 

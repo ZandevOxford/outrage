@@ -27,7 +27,7 @@ from typing import Any
 from .errors import RageError
 from .eventlog import DEFAULT as LOG_BESIDE_STORE
 from .mounts import SPEC_DELIMITER, parse_spec
-from .store import DEFAULT_DIR_NAME
+from .store import DB_FILENAME, DEFAULT_DIR_NAME
 
 #: The name this server is registered under. Also the key that a re-run
 #: replaces, which is what keeps unrelated servers in the file untouched.
@@ -97,41 +97,46 @@ def server_entry(
     *,
     log: Any = None,
     log_content: str | None = None,
+    root_mount: str | None = None,
     mounts: Sequence[str] = (),
     read_only_mounts: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Build the configuration entry for a store at ``directory``.
+    """Build the configuration entry for the stores in ``directory``.
 
-    The directory is made absolute deliberately. A client cannot be relied on
-    to launch the server in the project working directory, so a relative
-    ``--dir`` would resolve against somewhere unpredictable and quietly produce
-    a second, empty store rather than an error.
+    **One absolute path in the whole entry**, and it is the directory. A client
+    cannot be relied on to launch the server in the project working directory,
+    so a relative ``--dir`` would resolve against somewhere unpredictable and
+    quietly produce a second, empty store rather than an error. Everything else
+    is named relative to it, which is what lets a project be moved or checked
+    out elsewhere with only that one line to fix.
 
     ``log`` adds ``--log``: a path, or the ``eventlog.DEFAULT`` sentinel for the
     file beside the store. Logging is off unless it is asked for here, and it is
     asked for here rather than by hand because an entry edited by hand is the
     failure this module exists to prevent.
 
-    ``mounts`` are ``KEY=PATH`` specs, each recorded as a ``--mount``. They go
+    ``root_mount`` names the store answering for every key no mount claims, as
+    a file inside the directory. Recorded only when it is not the default, so
+    that an entry which never asked for one is not rewritten to say what it
+    already meant.
+
+    ``mounts`` are ``KEY=FILE`` specs, each recorded as a ``--mount``, and
+    ``read_only_mounts`` the same specs recorded as ``--mount-ro``. They go
     through the same parse the server will do, so a misspelled mount point is
     refused while somebody is looking at the command that wrote it rather than
-    at a client that silently failed to start a server. Each path is made
-    absolute for exactly the reason ``--dir`` is: a mount resolved against an
-    unpredictable working directory would create a second, empty store rather
-    than fail.
-
-    ``read_only_mounts`` are the same specs recorded as ``--mount-ro``. The
-    absolute path matters more here, not less: the server refuses to *create* a
-    read-only mount, so a relative path resolved somewhere unexpected turns
-    into a server that will not start rather than a quiet second store -- a
-    better failure, but still one worth not having.
+    at a client that silently failed to start a server. The file is written as
+    given: it names a store inside ``--dir``, and resolving it here would put
+    back the absolute path this shape exists to remove. A file that is not
+    relative is refused by ``store_file`` when the server opens it.
     """
     argv = list(command) if command is not None else launch_command()
     args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
+    if root_mount is not None and root_mount != DB_FILENAME:
+        args += ["--root-mount", root_mount]
     for flag, specs in (("--mount", mounts), ("--mount-ro", read_only_mounts)):
         for spec in specs:
             prefix, path = parse_spec(spec)
-            args += [flag, f"{prefix}{SPEC_DELIMITER}{path.expanduser().resolve()}"]
+            args += [flag, f"{prefix}{SPEC_DELIMITER}{path}"]
     if log is not None:
         args.append("--log")
         # Absolute for the same reason the store directory is.

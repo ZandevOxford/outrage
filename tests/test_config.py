@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from rage import config as config_module
-from rage import eventlog
+from rage import eventlog, store
 from rage.config import (
     Change,
     ConfigError,
@@ -326,18 +326,41 @@ def test_server_name_is_the_key_that_gets_replaced():
     assert config_module.SERVERS_FIELD == "mcpServers"
 
 
-def test_a_mount_is_recorded_absolute(tmp_path):
-    """The same argument as --dir: a relative mount would resolve unpredictably."""
+def test_a_mount_is_recorded_as_written(tmp_path):
+    """A mount names a file inside --dir, and only --dir is absolute.
+
+    The opposite of what this used to assert. A mount was a directory of its
+    own and had to be absolute for the reason --dir is; now it is a file
+    beside the root mount, and resolving it would put back the absolute path
+    that stops being true the moment the project moves.
+    """
     entry = config_module.server_entry(
-        tmp_path / "root",
+        tmp_path / "base",
         command=["rage-server"],
-        mounts=[f"ref={tmp_path / 'ref'}", "lib/deep=./relative"],
+        mounts=["ref=reference.sqlite", "lib/deep=stores/deep.sqlite"],
     )
     args = entry["args"]
     assert args.count("--mount") == 2
-    assert f"ref={tmp_path / 'ref'}" in args
-    deep = next(a for a in args if a.startswith("lib/deep="))
-    assert Path(deep.split("=", 1)[1]).is_absolute()
+    assert "ref=reference.sqlite" in args
+    assert "lib/deep=stores/deep.sqlite" in args
+    assert [a for a in args if Path(a).is_absolute()] == [str(tmp_path / "base")]
+
+
+def test_the_root_mount_is_recorded_only_when_it_is_not_the_default(tmp_path):
+    # An entry that never asked for one is not rewritten to say what it already
+    # meant -- which is what keeps a re-run reporting "already current".
+    plain = config_module.server_entry(tmp_path / "base", command=["rage-server"])
+    assert "--root-mount" not in plain["args"]
+
+    same = config_module.server_entry(
+        tmp_path / "base", command=["rage-server"], root_mount=store.DB_FILENAME
+    )
+    assert same["args"] == plain["args"]
+
+    named = config_module.server_entry(
+        tmp_path / "base", command=["rage-server"], root_mount="main.sqlite"
+    )
+    assert named["args"][named["args"].index("--root-mount") + 1] == "main.sqlite"
 
 
 def test_a_misspelled_mount_point_is_refused_while_writing_the_config(tmp_path):
@@ -352,18 +375,16 @@ def test_a_misspelled_mount_point_is_refused_while_writing_the_config(tmp_path):
 
 def test_a_read_only_mount_is_recorded_as_mount_ro(tmp_path):
     entry = config_module.server_entry(
-        tmp_path / "root",
+        tmp_path / "base",
         command=["rage-server"],
-        mounts=[f"lib={tmp_path / 'lib'}"],
-        read_only_mounts=[f"ref={tmp_path / 'ref'}", "shared/base=./relative"],
+        mounts=["lib=lib.sqlite"],
+        read_only_mounts=["ref=reference.sqlite", "shared/base=shared.sqlite"],
     )
     args = entry["args"]
     assert args.count("--mount") == 1
     assert args.count("--mount-ro") == 2
-    assert f"ref={tmp_path / 'ref'}" in args
-    # Absolute matters more here: the server refuses to create a read-only mount.
-    base = next(a for a in args if a.startswith("shared/base="))
-    assert Path(base.split("=", 1)[1]).is_absolute()
+    assert "ref=reference.sqlite" in args
+    assert "shared/base=shared.sqlite" in args
 
 
 def test_a_misspelled_read_only_mount_point_is_refused_too(tmp_path):

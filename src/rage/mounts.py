@@ -41,11 +41,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import keys
+from . import store as store_module
 from .errors import RageError
 from .eventlog import EventLog
-from .store import DB_FILENAME, Entry, KeyNotFoundError, Store
+from .store import DB_FILENAME, Entry, KeyNotFoundError, Store, store_file
 
-#: Separates a mount point from its store directory in a ``--mount`` argument.
+#: Separates a mount point from its store file in a ``--mount`` argument.
 #: ``=`` rather than ``:`` because a Windows path holds a colon and no key can
 #: hold an ``=`` any less than it can hold anything else -- but a key with one
 #: in it is vanishingly rare, and a drive letter is not.
@@ -435,12 +436,18 @@ def _implicit(key: str) -> Entry:
 
 
 def parse_spec(spec: str) -> tuple[str, Path]:
-    """Split a ``KEY=PATH`` mount argument, or say why it is not one.
+    """Split a ``KEY=FILE`` mount argument, or say why it is not one.
+
+    ``FILE`` is a store file **relative to the store directory**, not a
+    directory of its own: every mount a server holds lives in the one directory
+    ``--dir`` names, as a file beside the root mount. ``store_file`` is the
+    rule, and it is applied when the store is opened rather than here, so that
+    this stays a parse of the argument and touches nothing.
 
     The key is validated here rather than when the store is opened, so a
     misspelled mount point is refused before a database is created for it --
-    ``Store`` makes its directory on the way in, and a typo would otherwise
-    leave an empty store behind as evidence of a server that never started.
+    ``Store`` makes its file on the way in, and a typo would otherwise leave an
+    empty store behind as evidence of a server that never started.
     """
     # The key is parsed with the default bound, ``keys.MAX_SEGMENTS``, which is
     # half what the joined namespace allows. Load bearing here rather than
@@ -449,39 +456,50 @@ def parse_spec(spec: str) -> tuple[str, Path]:
     prefix, delimiter, path = spec.partition(SPEC_DELIMITER)
     if not delimiter:
         raise MountError(
-            f"mount {spec!r} is not in KEY{SPEC_DELIMITER}PATH form, "
-            f"as in ref{SPEC_DELIMITER}/srv/reference/.rage"
+            f"mount {spec!r} is not in KEY{SPEC_DELIMITER}FILE form, "
+            f"as in ref{SPEC_DELIMITER}reference.sqlite"
         )
     if not path:
-        raise MountError(f"mount {spec!r} names no directory")
+        raise MountError(f"mount {spec!r} names no store file")
     parsed = keys.parse(prefix)
     if parsed.key == keys.ROOT:
         raise MountError(
-            f"mount {spec!r} has no mount point; the store at the root is the one --dir names"
+            f"mount {spec!r} has no mount point; the store at the root is the "
+            f"one --root-mount names"
         )
-    return parsed.key, Path(path).expanduser()
+    return parsed.key, Path(path)
 
 
 def open_mounts(
-    root: str | os.PathLike[str] | None,
+    directory: str | os.PathLike[str] | None,
     specs: Sequence[str] = (),
     read_only_specs: Sequence[str] = (),
     *,
+    root_mount: str | os.PathLike[str] = DB_FILENAME,
     log: EventLog | None = None,
 ) -> Mounts:
-    """Open the root store and every ``KEY=PATH`` mount, as one table.
+    """Open every store in ``directory``, as one table.
+
+    **One directory, several files.** ``directory`` holds them all: the root
+    mount, named by ``root_mount``, and one file per ``KEY=FILE`` spec. That is
+    what makes a mount configuration relocatable -- only the directory is an
+    absolute path, and the stores in it are named relative to it -- and it is
+    the shape a backend other than SQLite would slot into, since what varies
+    between backends is the file, not the directory around it.
 
     ``specs`` are mounted read-write and ``read_only_specs`` read-only; the two
     share one namespace, so mounting the same key in both is the same collision
-    as mounting it twice in either.
+    as mounting it twice in either. Two mounts naming the same *file* is not a
+    collision this checks: they would be two stores over one database, which
+    SQLite handles and which no configuration has a reason to ask for.
 
     Every spec is parsed before any store is opened, so a table that cannot be
     described is refused without half of it existing. A failure part way
     through the opening closes what was already open, since a process that
     exits without doing so leaves a WAL behind.
 
-    A read-only mount must already exist. ``Store`` creates its directory and
-    migrates a database on the way in, so without this check a mistyped path
+    A read-only mount must already exist. ``Store`` creates its file and
+    migrates a database on the way in, so without this check a mistyped name
     would be *created*, mount as an empty store, and read as though the
     reference base were simply empty -- while the flag that was supposed to
     protect it made it impossible to notice by writing. That is the same
@@ -490,23 +508,27 @@ def open_mounts(
     """
     writable = [parse_spec(spec) for spec in specs]
     refusing = [parse_spec(spec) for spec in read_only_specs]
+    # Resolved once, here, because the read-only check below and the stores
+    # themselves have to agree about where a mount's file is; asking twice is
+    # how they would come to disagree.
+    base = store_module.resolve_directory(directory)
     for prefix, path in refusing:
-        database = Path(path).expanduser() / DB_FILENAME
+        database = store_file(base, path)
         if not database.exists():
             raise MountError(
                 f"the read-only mount at {keys.displayed(prefix)!r} has no store at "
-                f"{str(path)!r}: {DB_FILENAME} is not there. A read-only mount is not "
-                f"created, since a mistyped path would mount as an empty store that no "
-                f"write could ever contradict."
+                f"{str(database)!r}. A read-only mount is not created, since a "
+                f"mistyped name would mount as an empty store that no write could "
+                f"ever contradict."
             )
 
     opened: dict[str, Store] = {}
     try:
-        opened[keys.ROOT] = Store(root, log=log)
+        opened[keys.ROOT] = Store(base, filename=root_mount, log=log)
         for prefix, path in [*writable, *refusing]:
             if prefix in opened:
                 raise MountError(f"more than one store is mounted at {prefix!r}")
-            opened[prefix] = Store(path, log=log)
+            opened[prefix] = Store(base, filename=path, log=log)
         return Mounts(opened, read_only=[prefix for prefix, _ in refusing])
     except Exception:
         for store in opened.values():

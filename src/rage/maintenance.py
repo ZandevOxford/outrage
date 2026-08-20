@@ -28,7 +28,7 @@ from pathlib import Path
 
 from . import keys
 from .errors import RageError
-from .store import DB_FILENAME, SCHEMA_VERSION, Store
+from .store import DB_FILENAME, SCHEMA_VERSION, Store, store_file
 
 
 class CheckError(RageError, RuntimeError):
@@ -314,16 +314,20 @@ def _sizes(store: Store) -> tuple[int, int]:
     )
 
 
-def require_store(directory: Path) -> Path:
-    """Refuse a directory holding no store, rather than creating one.
+def require_store(directory: Path, filename: str = DB_FILENAME) -> Path:
+    """Refuse a store file that is not there, rather than creating one.
 
     ``Store.__init__`` creates what is missing, so every command that means to
     act on an existing store has to ask first — otherwise checking a mistyped
     path reports a perfectly healthy empty store, which is the wrong answer
     delivered as a clean bill of health.
+
+    Names the file, not just the directory: since a directory holds several
+    stores, "no store in .rage" would be the wrong sentence as often as it was
+    the right one.
     """
-    if not (directory / DB_FILENAME).exists():
-        raise CheckError(f"no store in {directory}")
+    if not store_file(directory, filename).exists():
+        raise CheckError(f"no store at {store_file(directory, filename)}")
     return directory
 
 

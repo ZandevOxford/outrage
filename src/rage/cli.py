@@ -57,6 +57,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "to start in the project directory."
         ),
     )
+    # The same options config takes, because init calls config to write the
+    # entry: without them a re-run of init would quietly drop the mounts
+    # somebody had configured, exactly as it once would have dropped logging.
+    _mount_options(init, "Set a")
     _log_options(init)
     init.add_argument(
         "--dry-run",
@@ -114,29 +118,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=config_module.SERVER_NAME,
         help=f"Name to register the server under (default: {config_module.SERVER_NAME}).",
     )
-    config.add_argument(
-        "--mount",
-        dest="mounts",
-        action="append",
-        default=[],
-        metavar="KEY=PATH",
-        help=(
-            "Record a --mount for the server: another store's directory under "
-            "KEY, as in ref=/srv/reference/.rage. Repeatable, written absolute, "
-            "and refused here if the mount point is not a valid key."
-        ),
-    )
-    config.add_argument(
-        "--mount-ro",
-        dest="read_only_mounts",
-        action="append",
-        default=[],
-        metavar="KEY=PATH",
-        help=(
-            "Record a --mount-ro for the server: as --mount, but the server "
-            "refuses every write routed there. Repeatable."
-        ),
-    )
+    _mount_options(config, "Record a")
     _log_options(config)
     config.add_argument(
         "--dry-run",
@@ -156,16 +138,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "and the copy left behind still opens cleanly."
         ),
     )
-    backup.add_argument(
-        "--dir",
-        dest="directory",
-        metavar="PATH",
-        default=None,
-        help=(
-            f"Store directory to back up. Defaults to {store.ENV_DIR}, then "
-            f"{store.DEFAULT_DIR_NAME} in the working directory."
-        ),
-    )
+    # The shared spelling, so that backing up the store a command just wrote to
+    # is the same two arguments that named it. A directory holds several
+    # stores, and a backup of the wrong one is the kind of success nobody reads
+    # twice.
+    _store_option(backup)
     backup.add_argument(
         "--to",
         dest="destination",
@@ -558,8 +535,57 @@ def _log_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
+    """The stores a server entry records, spelled the same way on init and config.
+
+    Every one of them is a file inside the store directory, so this is the one
+    place that has to say so.
+    """
+    parser.add_argument(
+        "--root-mount",
+        dest="root_mount",
+        metavar="FILE",
+        default=None,
+        help=(
+            f"{verb} --root-mount for the server: the store answering for every "
+            f"key no mount claims, as a file inside --dir (default: "
+            f"{store.DB_FILENAME}). Written only when it is not the default."
+        ),
+    )
+    parser.add_argument(
+        "--mount",
+        dest="mounts",
+        action="append",
+        default=[],
+        metavar="KEY=FILE",
+        help=(
+            f"{verb} --mount for the server: another store under KEY, as in "
+            "ref=reference.sqlite. FILE is relative to --dir, like "
+            "--root-mount. Repeatable, and refused here if the mount point is "
+            "not a valid key."
+        ),
+    )
+    parser.add_argument(
+        "--mount-ro",
+        dest="read_only_mounts",
+        action="append",
+        default=[],
+        metavar="KEY=FILE",
+        help=(
+            f"{verb} --mount-ro for the server: as --mount, but the server "
+            "refuses every write routed there. Repeatable."
+        ),
+    )
+
+
 def _store_option(parser: argparse.ArgumentParser) -> None:
-    """The store directory, spelled the same way on every subcommand."""
+    """Which store to act on, spelled the same way on every subcommand.
+
+    Two arguments, because a store is a *file inside* a directory: the
+    directory is shared -- the log and the backups sit in it — and the file
+    says which of the stores in it this command means. The server spells the
+    same pair ``--dir`` and ``--root-mount``.
+    """
     parser.add_argument(
         "--dir",
         dest="directory",
@@ -568,6 +594,17 @@ def _store_option(parser: argparse.ArgumentParser) -> None:
         help=(
             f"Store directory. Defaults to {store.ENV_DIR}, then "
             f"{store.DEFAULT_DIR_NAME} in the working directory."
+        ),
+    )
+    parser.add_argument(
+        "--store",
+        dest="filename",
+        metavar="FILE",
+        default=store.DB_FILENAME,
+        help=(
+            f"Which store in that directory, as a file relative to it "
+            f"(default: {store.DB_FILENAME}). The server's --mount and "
+            f"--root-mount name stores the same way."
         ),
     )
 
@@ -580,6 +617,9 @@ def init_command(args: argparse.Namespace, out: TextIO) -> int:
         args.directory,
         log=args.log,
         log_content=args.log_content,
+        root_mount=args.root_mount,
+        mounts=args.mounts,
+        read_only_mounts=args.read_only_mounts,
         dry_run=args.dry_run,
     )
 
@@ -607,6 +647,7 @@ def config_command(args: argparse.Namespace, out: TextIO) -> int:
         directory,
         log=args.log,
         log_content=args.log_content,
+        root_mount=args.root_mount,
         mounts=args.mounts,
         read_only_mounts=args.read_only_mounts,
     )
@@ -622,12 +663,13 @@ def config_command(args: argparse.Namespace, out: TextIO) -> int:
 def backup_command(args: argparse.Namespace, out: TextIO) -> int:
     """Snapshot the store, or say where the snapshot would go."""
     directory = store.resolve_directory(args.directory)
-    if not (directory / store.DB_FILENAME).exists():
+    database = store.store_file(directory, args.filename)
+    if not database.exists():
         # Opening one would create it, and backing up a store the caller never
         # had is a success that answers the wrong question.
-        raise store.BackupError(f"no store in {directory}")
+        raise store.BackupError(f"no store at {database}")
 
-    with store.open_store(directory) as opened:
+    with store.open_store(directory, filename=args.filename) as opened:
         if args.dry_run:
             target = opened.backup_path(args.destination, overwrite=args.overwrite)
             print(f"would back up {opened.path} to {target}", file=out)
@@ -635,7 +677,7 @@ def backup_command(args: argparse.Namespace, out: TextIO) -> int:
 
         result = opened.backup(args.destination, overwrite=args.overwrite)
 
-    print(f"backed up {directory / store.DB_FILENAME} to {result.path}", file=out)
+    print(f"backed up {database} to {result.path}", file=out)
     print(
         f"  {result.documents} documents, {result.bytes} bytes, integrity {result.integrity}",
         file=out,
@@ -733,13 +775,14 @@ def set_command(args: argparse.Namespace, out: TextIO) -> int:
     """Write a document from an argument, a file, or standard input."""
     content = _content(args)
     directory = store.resolve_directory(args.directory)
-    with store.open_store(directory) as opened:
+    with store.open_store(directory, filename=args.filename) as opened:
         written = opened.store_document(args.key, content, args.format, title=args.title)
 
     # The resolved directory, not the one asked for: a mistyped --dir creates a
     # store rather than failing, so the only defence is saying where it went.
     print(
-        f"{keys.displayed(written)}  {len(content)} characters in {directory / store.DB_FILENAME}",
+        f"{keys.displayed(written)}  {len(content)} characters in "
+        f"{store.store_file(directory, args.filename)}",
         file=out,
     )
     return 0
@@ -865,7 +908,7 @@ def import_command(args: argparse.Namespace, out: TextIO) -> int:
     # the same reason too — it is the only thing that makes a mistyped --dir
     # visible rather than silently successful.
     directory = store.resolve_directory(args.directory)
-    with store.open_store(directory) as opened:
+    with store.open_store(directory, filename=args.filename) as opened:
         transfers = bulk.import_tree(
             opened,
             args.source,
@@ -875,7 +918,7 @@ def import_command(args: argparse.Namespace, out: TextIO) -> int:
             hidden=args.hidden,
         )
         status = _report_transfers(transfers, args, out, source_first=True)
-    print(f"rage: into {directory / store.DB_FILENAME}", file=sys.stderr)
+    print(f"rage: into {store.store_file(directory, args.filename)}", file=sys.stderr)
     return status
 
 
@@ -1040,8 +1083,8 @@ def _open_existing(args: argparse.Namespace):
     perfectly healthy empty store, which is a wrong answer delivered as a clean
     bill of health.
     """
-    directory = maintenance.require_store(store.resolve_directory(args.directory))
-    return store.open_store(directory)
+    directory = maintenance.require_store(store.resolve_directory(args.directory), args.filename)
+    return store.open_store(directory, filename=args.filename)
 
 
 #: What each action reads as, before it has happened and after. One vocabulary

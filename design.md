@@ -41,21 +41,33 @@ package later.
 
 #### Store location
 
-The server is given a *directory*, not a file, so that additional files can be
-added alongside the database later (indexes, exports, vector data).
+**A directory and a file within it**, and the two answer different questions.
+The directory is the working area — it holds the stores, the event log, the
+backups, and whatever an index or a vector store needs later. The file is
+*which store*, and it is the half a backend other than SQLite would vary.
 
-Resolution order:
+The directory is resolved in this order:
 
 1. `--dir PATH` command line argument
 2. `RAGE_DIR` environment variable
 3. `./.rage/` relative to the server's working directory
 
-The database is `store.sqlite` within that directory. The directory is created
-on demand.
+The file is `--root-mount FILE`, defaulting to `store.sqlite`, and it is
+**always relative to the directory**. An absolute path, or one climbing out
+with `..`, is refused rather than resolved: an absolute path makes `--dir` a
+lie, and it stops being true the moment a project is moved or checked out
+somewhere else. The directory is created on demand, and so is a subdirectory a
+store file names.
+
+That the file is separately nameable is what lets one directory hold several
+stores side by side — which is exactly what a mount table needs, and the reason
+this is not simply a fixed name inside the directory.
 
 The intended normal usage is a per-project MCP configuration passing `--dir`
 explicitly, since an MCP server cannot be relied on to inherit the project
 working directory. The working directory fallback exists for CLI and test use.
+**One absolute path in the whole configuration**, and it is `--dir`; every
+store in it is named relative to it.
 
 The event log, when it is on, is `log.jsonl` in the same directory. It is the
 first use of the room the directory was created to leave.
@@ -64,21 +76,31 @@ first use of the room the directory was created to leave.
 
 More than one database behind the one key namespace. A **mount table** maps a
 key prefix to a store, the longest prefix matching a key owns it, and the store
-`--dir` names is mounted at the root, so it owns everything no other mount
-claims. A server with no `--mount` argument is a table of one, which is the
-same code path rather than a second one.
+`--root-mount` names is mounted at the root, so it owns everything no other
+mount claims. A server with no `--mount` argument is a table of one, which is
+the same code path rather than a second one.
 
-Configuration, and only at startup: `--mount KEY=PATH`, repeatable. Nothing
+Configuration, and only at startup: `--mount KEY=FILE`, repeatable. Nothing
 adds or removes a mount on a running server.
 
-**A mount may be read-only**: `--mount-ro KEY=PATH`, and every write routed
+**Every mount is a file in the one directory**, named the same way the root
+mount is and by the same rule — relative to `--dir`, never absolute. So a
+server holds one directory and several stores in it, rather than a directory
+per store. Three things follow. A mount configuration survives the project
+moving, because only `--dir` is a path. The stores a server serves are visible
+together, in one place, rather than scattered across the filesystem. And what
+distinguishes one store from another is reduced to a filename, which is the
+seam a backend that is not SQLite fits into: the directory around it does not
+change.
+
+**A mount may be read-only**: `--mount-ro KEY=FILE`, and every write routed
 there is refused before the store is reached. That is the case the whole
 feature was pointed at — a shared reference base beside a local read-write
 store — and the refusal is deliberately early, because a refusal that arrives
 after the caller thought it had written is the failure class this project keeps
 finding. It is enforced in the routing, so the database file is opened no
 differently and nothing outside this server is prevented from writing to it. A
-read-only mount is never *created*: a mistyped path would otherwise mount as an
+read-only mount is never *created*: a mistyped name would otherwise mount as an
 empty store that no write could contradict.
 
 The point of it is `project/reference/scale`: session context is small,
