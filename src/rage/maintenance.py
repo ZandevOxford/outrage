@@ -130,6 +130,7 @@ def check(store: Store) -> Report:
         )
 
     _count(connection, report)
+    _check_depth(connection, report)
     _check_parents(connection, report)
     _check_orphan_metadata(connection, report)
     _check_wal(store, report)
@@ -147,6 +148,43 @@ def _count(connection: sqlite3.Connection, report: Report) -> None:
     report.documents = row["documents"] or 0
     report.metadata = row["metadata"] or 0
     report.characters = row["characters"] or 0
+
+
+def _check_depth(connection: sqlite3.Connection, report: Report) -> None:
+    """Keys with more segments than a store may now hold.
+
+    ``keys.MAX_SEGMENTS`` was halved to 64 on 2026-08-20, so that a mount point
+    and a key inside a store — each bounded by it — always join into a valid
+    key in the namespace a mount table presents. Nothing writes such a key any
+    more; a store written by an earlier rage can still hold one.
+
+    It is only a fault if the store is ever *mounted*, where the key would have
+    no name from outside — so this is a warning naming the keys, not an error.
+    Reported here because this is the only place that looks before something
+    tries: `Mount.outer` raises when it meets one, which is correct and late.
+
+    Counted in SQL rather than by parsing every key in Python, since
+    ``_check_parents`` already pays for one full parse of the table and a
+    second would double the cost of a check to ask a much narrower question.
+    """
+    over = [
+        row["key"]
+        for row in connection.execute(
+            "SELECT key FROM documents "
+            "WHERE key <> '' "
+            "AND length(key) - length(replace(key, ?, '')) + 1 > ?",
+            (keys.DELIMITER, keys.MAX_SEGMENTS),
+        )
+    ]
+    if over:
+        report.problems.append(
+            Problem(
+                "warning",
+                f"some keys have more than {keys.MAX_SEGMENTS} segments",
+                f"{_listed(over)}; they predate that bound, and this store cannot be "
+                f"mounted until they are moved",
+            )
+        )
 
 
 def _check_parents(connection: sqlite3.Connection, report: Report) -> None:

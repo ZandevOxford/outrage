@@ -100,6 +100,49 @@ Note the SDK in use is **mcp 2.0**, where `FastMCP` has become
 `structured_content`, `input_schema`), and a failing tool raises `ToolError`
 rather than returning a result with an error flag.
 
+### 3a. Mounted stores — `src/rage/mounts.py` — done
+
+More than one database behind the one key namespace, configured at startup with
+a repeatable `--mount KEY=PATH`. `Mounts` is a prefix to `Store` table; the
+longest prefix matching a key owns it, and the store `--dir` names sits at the
+root, so every key resolves. `build_server` wraps a lone `Store` in
+`Mounts.single`, so there is no second code path that only runs when nothing is
+mounted.
+
+The two translations are `keys.with_prefix` and `keys.strip_prefix`, in
+`keys.py` rather than a module of their own because they are key grammar and
+the bound they enforce (`MAX_SEGMENTS`, via `keys.fits`) is already there.
+`strip_prefix` matches by segment, not by character: `ref` does not contain
+`reference`, and getting that wrong would route a key to a store that has never
+heard of it.
+
+The storage layer is untouched. It needed nothing: `sort_key` is derived from
+the key alone, so rows from different mounts already sort against each other,
+and `Store` holds its own `threading.local`, so N stores in one thread is N
+connections rather than one shared between them — the concurrency fix spans
+mounts without an addition.
+
+`keys.MAX_SEGMENTS` is **64**, half `keys.MAX_JOINED_SEGMENTS`, and bounds both
+a key inside a store and a mount point. That is what makes the join total:
+`Mount.outer` returns a `str`, not a `str | None`, and no listing has a drop
+path. `keys.parse` defaults to the store bound and takes `max_segments`; the
+only callers passing the joined bound are `Mounts.resolve`/`below`/`children`
+and the `title_key` the server reports, which are the only places a key
+spanning a mount point is seen whole. `rage check` gained `_check_depth` for
+keys written before the bound was halved.
+
+The routing lives in the server, which is where the argument and result shaping
+already lives. Per tool: `retrieve_document`, `store_document` and
+`delete_keys` route to the owning mount and translate; `list_keys` also splices
+in the mount points at that level, merging before it cuts; `get_documents` and
+`keys_missing_meta` cover one store and report `mounts_not_searched`. Results
+grow a field only when there is something to say, so a single store answer is
+the shape it was before mounts existed.
+
+Deliberately not done, and recorded in `project/reference/planned/mounts`:
+read-only mounts, aggregation across a boundary, and mounts in the CLI —
+`rage check` and `rage backup` are still per-directory.
+
 ### 4. Integration with Claude Code — done
 
 * `.mcp.json` written, registering the server for this project. Its `command` is

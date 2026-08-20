@@ -60,7 +60,24 @@ MIN_SEGMENT_CHAR = "\t"
 #: against: a segment is usually well under 20 characters and a key well under
 #: half a dozen segments.
 MAX_SEGMENT_CHARS = 1024
-MAX_SEGMENTS = 128
+
+#: The most segments a key may have **within one store**, and the most a mount
+#: point may have. Two bounds in one number, deliberately: a key in the joined
+#: namespace is a mount prefix followed by a key inside the store mounted
+#: there, so bounding each half at half the total makes every joined key valid
+#: *by construction*. Nothing has to check the sum, and no key can exist in a
+#: mounted store that the namespace above it cannot name.
+#:
+#: This was 128 until 2026-08-20, when it was halved to buy that property.
+#: 128 was overkill — a key is typically a handful of segments — and the
+#: alternative was carrying a drop path through every listing for keys that
+#: had no name from outside. See ``project/reference/planned/mounts/cursors``.
+MAX_SEGMENTS = 64
+
+#: The most segments a key may have in the namespace a mount table presents,
+#: which is the only place the two halves are ever seen joined. Derived rather
+#: than chosen, so that halving one cannot be done without the other following.
+MAX_JOINED_SEGMENTS = 2 * MAX_SEGMENTS
 
 #: The root: the key with no segments, and the parent of every top level key.
 #: It is its own parent, the way POSIX makes ``/..`` be ``/``. That is what
@@ -290,12 +307,25 @@ def migrate_legacy(key: str) -> str:
     return f"{doc_key}{DELIMITER}{META_PREFIX}{meta_name}"
 
 
-def parse(key: str, *, allow_wildcard: bool = False) -> Key:
+def parse(
+    key: str,
+    *,
+    allow_wildcard: bool = False,
+    max_segments: int = MAX_SEGMENTS,
+) -> Key:
     """Parse and validate ``key``.
 
     With ``allow_wildcard`` a single segment of the document key may be ``?``,
     which the store replaces with a number it allocates. Reads and deletes
     parse without it, so a wildcard cannot be mistaken for a search.
+
+    ``max_segments`` defaults to the bound on a key **within one store**, which
+    is what almost every caller wants. Only a front end resolving a key across
+    a mount table passes ``MAX_JOINED_SEGMENTS``, and it has to ask: defaulting
+    to the wider bound would let a store quietly accept a key too deep to be
+    named from a namespace it was mounted into, and that key would then be
+    invisible rather than refused. The tighter default fails in the safe
+    direction.
 
     Raises InvalidKeyError if it does not match the grammar.
     """
@@ -309,9 +339,9 @@ def parse(key: str, *, allow_wildcard: bool = False) -> Key:
     # counted towards MAX_SEGMENTS and padded into a sort form as though it
     # were something a caller had typed.
     segments = key.split(DELIMITER) if key else []
-    if len(segments) > MAX_SEGMENTS:
+    if len(segments) > max_segments:
         raise InvalidKeyError(
-            f"key {original!r} has {len(segments)} segments; at most {MAX_SEGMENTS} are allowed"
+            f"key {original!r} has {len(segments)} segments; at most {max_segments} are allowed"
         )
 
     # Everything from the first metadata segment onward is metadata, so a path
@@ -392,10 +422,15 @@ def _check_segment(segment: str, key: str) -> None:
             )
 
 
-def is_valid(key: str, *, allow_wildcard: bool = False) -> bool:
+def is_valid(
+    key: str,
+    *,
+    allow_wildcard: bool = False,
+    max_segments: int = MAX_SEGMENTS,
+) -> bool:
     """Whether ``key`` matches the grammar."""
     try:
-        parse(key, allow_wildcard=allow_wildcard)
+        parse(key, allow_wildcard=allow_wildcard, max_segments=max_segments)
     except InvalidKeyError:
         return False
     return True
@@ -470,3 +505,65 @@ def subtree_range(key: str) -> tuple[str, str]:
             "select without a range predicate instead"
         )
     return doc_key + DELIMITER, doc_key + _AFTER_DELIMITER
+
+
+def with_prefix(prefix: str, key: str) -> str:
+    """``key``, as seen from a namespace that holds it under ``prefix``.
+
+    The inverse of :func:`strip_prefix`. Joining by hand is what this exists to
+    stop: the inner root is the empty string, so ``prefix + "/" + key`` spells
+    the mount point itself as ``ref/``, which normalises back to ``ref`` only
+    if somebody remembers to normalise it.
+
+    >>> with_prefix("ref", "a/b"), with_prefix("ref", ROOT), with_prefix(ROOT, "a")
+    ('ref/a/b', 'ref', 'a')
+    """
+    if not prefix:
+        return key
+    if not key:
+        return prefix
+    return f"{prefix}{DELIMITER}{key}"
+
+
+def strip_prefix(prefix: str, key: str) -> str | None:
+    """``key`` as named from inside ``prefix``, or None if it is not below it.
+
+    The mount point itself maps to the root, which is the whole reason the root
+    had to become a key: a store mounted at ``ref`` has to be able to answer
+    for the document *at* ``ref``, and that position is its own empty key.
+
+    Matching is by segment, not by character: ``ref`` does not contain
+    ``reference``, however much the two strings look alike. That is the same
+    trap :func:`subtree_range` exists to avoid, and getting it wrong here would
+    route a key to a store that has never heard of it.
+
+    >>> strip_prefix("ref", "ref/a"), strip_prefix("ref", "ref")
+    ('a', '')
+    >>> strip_prefix("ref", "reference/a"), strip_prefix(ROOT, "a")
+    (None, 'a')
+    """
+    if not prefix:
+        return key
+    if key == prefix:
+        return ROOT
+    if key.startswith(prefix + DELIMITER):
+        return key[len(prefix) + 1 :]
+    return None
+
+
+def fits(key: str) -> bool:
+    """Whether ``key`` is a valid key in the joined namespace a mount table shows.
+
+    ``MAX_SEGMENTS`` bounds each half and this bounds the pair, so a prefix and
+    an inner key that each parsed can always be joined: **this cannot return
+    False for a key built that way**. It is kept as the statement of that
+    property, to be asserted at the join rather than assumed, since the
+    alternative is a silently unnameable key -- which is what the bounds were
+    halved to abolish.
+
+    >>> fits("a/b"), fits("a/" * MAX_JOINED_SEGMENTS + "b")
+    (True, False)
+    >>> fits("a/" * MAX_SEGMENTS + "b")  # two full halves still join
+    True
+    """
+    return is_valid(key, max_segments=MAX_JOINED_SEGMENTS)
