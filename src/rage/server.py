@@ -1152,8 +1152,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help=(
-            "Store directory. Defaults to the RAGE_DIR environment variable, "
-            "then ./.rage in the working directory."
+            "Store directory: the one directory holding every store this "
+            "server serves, and the event log and backups beside them. "
+            "Defaults to the RAGE_DIR environment variable, then ./.rage in "
+            "the working directory."
+        ),
+    )
+    parser.add_argument(
+        "--root-mount",
+        dest="root_mount",
+        default=store_module.DB_FILENAME,
+        metavar="FILE",
+        help=(
+            "The store answering for every key no mount claims, as a file "
+            f"inside --dir (default: {store_module.DB_FILENAME}). A file rather "
+            "than a directory, so that one directory holds several stores and "
+            "so that a backend other than SQLite is named by the file it keeps."
         ),
     )
     parser.add_argument(
@@ -1161,15 +1175,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="mounts",
         action="append",
         default=[],
-        metavar=f"KEY{mounts_module.SPEC_DELIMITER}PATH",
+        metavar=f"KEY{mounts_module.SPEC_DELIMITER}FILE",
         help=(
-            "Mount another store's directory under KEY, as in "
-            f"ref{mounts_module.SPEC_DELIMITER}/srv/reference/.rage. Repeatable. "
-            "The store --dir names holds everything no mount claims, and a "
-            "mount takes precedence over it for the keys below its mount "
-            "point. Reads and writes cross a mount boundary; a query, a survey "
-            "and a recursive delete stop at one and say so. Mounts are fixed "
-            "when the server starts."
+            "Mount another store under KEY, as in "
+            f"ref{mounts_module.SPEC_DELIMITER}reference.sqlite. FILE is "
+            "relative to --dir, like --root-mount. Repeatable. The root mount "
+            "holds everything no mount claims, and a mount takes precedence "
+            "over it for the keys below its mount point. Reads and writes "
+            "cross a mount boundary; a query, a survey and a recursive delete "
+            "stop at one and say so. Mounts are fixed when the server starts."
         ),
     )
     parser.add_argument(
@@ -1177,12 +1191,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="read_only_mounts",
         action="append",
         default=[],
-        metavar=f"KEY{mounts_module.SPEC_DELIMITER}PATH",
+        metavar=f"KEY{mounts_module.SPEC_DELIMITER}FILE",
         help=(
             "Mount a store read-only: as --mount, but every write routed there "
             "is refused before it reaches the store. For a shared reference "
             "base beside a local read-write store. Repeatable. The store must "
-            "already exist, since a mistyped path would otherwise be created "
+            "already exist, since a mistyped name would otherwise be created "
             "and mount as an empty one. This refuses writes through this "
             "server; it does not make the file read-only to anything else."
         ),
@@ -1225,7 +1239,11 @@ def main(argv: list[str] | None = None) -> int:
     log.start(version=__version__, directory=str(directory), log=str(log.path))
     try:
         with mounts_module.open_mounts(
-            directory, args.mounts, args.read_only_mounts, log=log
+            directory,
+            args.mounts,
+            args.read_only_mounts,
+            root_mount=args.root_mount,
+            log=log,
         ) as table:
             for mount in table.shadowing():
                 # Stderr, not a refusal: the configuration is usable, and the

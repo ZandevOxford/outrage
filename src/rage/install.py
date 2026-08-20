@@ -53,6 +53,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -343,6 +344,9 @@ def init(
     *,
     log: Any = None,
     log_content: str | None = None,
+    root_mount: str | None = None,
+    mounts: Sequence[str] = (),
+    read_only_mounts: Sequence[str] = (),
     dry_run: bool = False,
 ) -> Installation:
     """Set a project up: the MCP server entry, the hook, and the skill and agents.
@@ -354,9 +358,10 @@ def init(
     write would disagree with.
 
     ``rage config`` writes the server entry alone and this calls it rather than
-    repeating it, which is also why ``log`` and ``log_content`` are passed
-    through: without them a re-run of ``init`` would quietly switch off logging
-    somebody had turned on.
+    repeating it, which is also why ``log``, ``log_content``, ``root_mount``
+    and the two mount lists are passed through: without them a re-run of
+    ``init`` would quietly switch off logging somebody had turned on, or drop
+    the mounts they had configured.
     """
     project = Path(project_dir).expanduser().resolve()
 
@@ -370,6 +375,9 @@ def init(
         directory if directory is not None else config.default_store_dir(project),
         log=log,
         log_content=log_content,
+        root_mount=root_mount,
+        mounts=mounts,
+        read_only_mounts=read_only_mounts,
     )
     server, servers, servers_text = config.plan(server_path, "project", entry)
 

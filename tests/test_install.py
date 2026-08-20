@@ -386,6 +386,21 @@ def test_init_passes_logging_through_to_the_entry(tmp_path):
     assert "excerpt" in done.server.entry["args"]
 
 
+def test_init_passes_the_mounts_through_to_the_entry(tmp_path):
+    """The same argument as logging: a re-run must not drop what config wrote."""
+    done = init(
+        tmp_path,
+        root_mount="main.sqlite",
+        mounts=["lib=lib.sqlite"],
+        read_only_mounts=["ref=reference.sqlite"],
+    )
+
+    args = done.server.entry["args"]
+    assert args[args.index("--root-mount") + 1] == "main.sqlite"
+    assert args[args.index("--mount") + 1] == "lib=lib.sqlite"
+    assert args[args.index("--mount-ro") + 1] == "ref=reference.sqlite"
+
+
 def test_a_second_init_changes_nothing_anywhere(tmp_path):
     init(tmp_path)
 

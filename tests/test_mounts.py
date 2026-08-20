@@ -23,7 +23,7 @@ from rage.mounts import (
     parse_spec,
 )
 from rage.server import build_server, parse_args
-from rage.store import Store
+from rage.store import Store, StoreFileError
 
 
 def call(server, name: str, **arguments: Any) -> Any:
@@ -607,15 +607,26 @@ def test_nothing_changes_for_a_key_with_no_mount_below_it(table):
 # -- configuration ---------------------------------------------------------
 
 
-def test_a_mount_spec_is_a_key_and_a_path():
-    assert parse_spec("ref=/srv/reference/.rage") == ("ref", Path("/srv/reference/.rage"))
+def test_a_mount_spec_is_a_key_and_a_store_file():
+    # The file is relative to the store directory and stays as written: the
+    # spec is parsed here and resolved against a directory only when opened.
+    assert parse_spec("ref=reference.sqlite") == ("ref", Path("reference.sqlite"))
     assert parse_spec("lib/ref=x")[0] == "lib/ref"
 
 
+def test_a_mount_file_is_relative_to_the_store_directory(tmp_path):
+    # An absolute path would make --dir a lie and a configuration unmovable;
+    # `..` would reach outside the directory an operator named.
+    with pytest.raises(StoreFileError, match="absolute path"):
+        open_mounts(tmp_path / "root", ["ref=/srv/reference.sqlite"])
+    with pytest.raises(StoreFileError, match=r"climbs out"):
+        open_mounts(tmp_path / "root", ["ref=../elsewhere.sqlite"])
+
+
 def test_a_malformed_mount_spec_is_refused_before_anything_is_opened(tmp_path):
-    with pytest.raises(MountError, match="KEY=PATH form"):
+    with pytest.raises(MountError, match="KEY=FILE form"):
         parse_spec("ref")
-    with pytest.raises(MountError, match="names no directory"):
+    with pytest.raises(MountError, match="names no store file"):
         parse_spec("ref=")
     with pytest.raises(MountError, match="no mount point"):
         parse_spec("=/srv/x")
@@ -626,15 +637,41 @@ def test_a_malformed_mount_spec_is_refused_before_anything_is_opened(tmp_path):
 
 
 def test_the_server_takes_repeated_mount_arguments():
-    args = parse_args(["--dir", "/tmp/root", "--mount", "ref=/tmp/ref", "--mount", "lib=/tmp/lib"])
-    assert args.mounts == ["ref=/tmp/ref", "lib=/tmp/lib"]
+    args = parse_args(
+        ["--dir", "/tmp/root", "--mount", "ref=ref.sqlite", "--mount", "lib=lib.sqlite"]
+    )
+    assert args.mounts == ["ref=ref.sqlite", "lib=lib.sqlite"]
     assert parse_args([]).mounts == []
 
 
+def test_the_root_mount_defaults_to_the_usual_store_file():
+    from rage.store import DB_FILENAME
+
+    assert parse_args([]).root_mount == DB_FILENAME
+    assert parse_args(["--root-mount", "main.sqlite"]).root_mount == "main.sqlite"
+
+
 def test_mounts_open_together_and_close_together(tmp_path):
-    with open_mounts(tmp_path / "root", [f"ref={tmp_path / 'ref'}"]) as table:
+    # One directory, several files: the root mount and every --mount live side
+    # by side in the directory --dir names.
+    with open_mounts(tmp_path / "base", ["ref=reference.sqlite"]) as table:
         assert [m.prefix for m in table] == ["", "ref"]
-        assert (tmp_path / "ref" / "store.sqlite").exists()
+        assert (tmp_path / "base" / "store.sqlite").exists()
+        assert (tmp_path / "base" / "reference.sqlite").exists()
+
+
+def test_the_root_mount_can_be_named(tmp_path):
+    with open_mounts(tmp_path / "base", root_mount="main.sqlite") as table:
+        assert table.root.store.path == tmp_path / "base" / "main.sqlite"
+        assert not (tmp_path / "base" / "store.sqlite").exists()
+
+
+def test_a_mount_file_may_sit_in_a_subdirectory(tmp_path):
+    # Relative, not flat: nothing else would create the subdirectory, so the
+    # store makes its own parent on the way in.
+    with open_mounts(tmp_path / "base", ["ref=stores/reference.sqlite"]) as table:
+        assert table.resolve("ref/x").mount.store.path.exists()
+        assert (tmp_path / "base" / "stores" / "reference.sqlite").exists()
 
 
 def test_the_instructions_carry_the_root_readme(tmp_path):
@@ -876,18 +913,18 @@ def test_the_root_cannot_be_mounted_read_only(tmp_path):
 
 def test_a_read_only_mount_is_not_created_when_it_does_not_exist(tmp_path):
     """`Store` would happily make one, and an empty reference base reads as fine."""
-    missing = tmp_path / "not-there"
+    missing = tmp_path / "base" / "not-there.sqlite"
     with pytest.raises(MountError) as raised:
-        open_mounts(tmp_path / "root", (), [f"ref={missing}"])
+        open_mounts(tmp_path / "base", (), ["ref=not-there.sqlite"])
     assert "read-only mount" in str(raised.value)
     assert not missing.exists()
 
 
 def test_open_mounts_marks_only_the_read_only_specs(tmp_path):
-    Store(tmp_path / "ref").close()
-    Store(tmp_path / "extra").close()
+    Store(tmp_path / "base", filename="ref.sqlite").close()
+    Store(tmp_path / "base", filename="extra.sqlite").close()
     with open_mounts(
-        tmp_path / "root", [f"lib={tmp_path / 'extra'}"], [f"ref={tmp_path / 'ref'}"]
+        tmp_path / "base", ["lib=extra.sqlite"], ["ref=ref.sqlite"]
     ) as built:
         assert [m.prefix for m in built.read_only] == ["ref"]
         assert built.resolve("ref/x").read_only
@@ -896,16 +933,16 @@ def test_open_mounts_marks_only_the_read_only_specs(tmp_path):
 
 
 def test_the_same_mount_point_cannot_be_both(tmp_path):
-    Store(tmp_path / "ref").close()
+    Store(tmp_path / "base", filename="ref.sqlite").close()
     with pytest.raises(MountError) as raised:
-        open_mounts(tmp_path / "root", [f"ref={tmp_path / 'ref'}"], [f"ref={tmp_path / 'ref'}"])
+        open_mounts(tmp_path / "base", ["ref=ref.sqlite"], ["ref=ref.sqlite"])
     assert "more than one store is mounted" in str(raised.value)
 
 
 def test_the_server_takes_mount_ro_from_the_command_line():
-    args = parse_args(["--mount", "lib=/tmp/lib", "--mount-ro", "ref=/tmp/ref"])
-    assert args.mounts == ["lib=/tmp/lib"]
-    assert args.read_only_mounts == ["ref=/tmp/ref"]
+    args = parse_args(["--mount", "lib=lib.sqlite", "--mount-ro", "ref=ref.sqlite"])
+    assert args.mounts == ["lib=lib.sqlite"]
+    assert args.read_only_mounts == ["ref=ref.sqlite"]
 
 
 def test_nothing_is_read_only_by_default(table):
@@ -920,13 +957,13 @@ def test_the_server_reports_a_bad_mount_table_as_one_line(tmp_path, capsys):
     assert main(["--dir", str(tmp_path / "root"), "--mount", "no-delimiter"]) == 1
     err = capsys.readouterr().err
     assert err.startswith("rage: ")
-    assert "KEY=PATH" in err
+    assert "KEY=FILE" in err
 
 
 def test_the_server_reports_a_missing_read_only_store_as_one_line(tmp_path, capsys):
     from rage.server import main
 
-    missing = tmp_path / "not-there"
-    assert main(["--dir", str(tmp_path / "root"), "--mount-ro", f"ref={missing}"]) == 1
+    missing = tmp_path / "base" / "not-there.sqlite"
+    assert main(["--dir", str(tmp_path / "base"), "--mount-ro", "ref=not-there.sqlite"]) == 1
     assert "read-only mount" in capsys.readouterr().err
     assert not missing.exists()

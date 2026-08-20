@@ -29,6 +29,11 @@ from .keys import Key
 #: --dir nor RAGE_DIR is given.
 DEFAULT_DIR_NAME = ".rage"
 
+#: Default database file inside the store directory: the root mount, when
+#: ``--root-mount`` names nothing else. A store is addressed as a *file* within
+#: a directory rather than as a directory of its own, so that one directory can
+#: hold several stores side by side and so that a backend which is not SQLite
+#: can be named by the file it keeps.
 DB_FILENAME = "store.sqlite"
 
 #: How long a writer waits for another writer to finish before giving up, in
@@ -82,6 +87,17 @@ CREATE INDEX IF NOT EXISTS idx_documents_sort   ON documents(sort_key);
 """
 
 _SCHEMA = _TABLE.format(name="documents") + _INDEXES
+
+
+class StoreFileError(RageError, ValueError):
+    """A store file that does not name a file inside its directory.
+
+    A store file is always relative to the directory holding it -- that is what
+    lets one directory hold several stores, and what keeps a configuration file
+    free of absolute paths that stop being true when a project moves. An
+    absolute path, or one climbing out with ``..``, is refused here rather than
+    quietly opening a database somewhere nobody was looking.
+    """
 
 
 class KeyNotFoundError(RageError, LookupError):
@@ -330,6 +346,43 @@ EVERYTHING = BoundedSubtree()
 UNBOUNDED = KeyRange()
 
 
+def store_file(
+    directory: str | os.PathLike[str],
+    filename: str | os.PathLike[str] = DB_FILENAME,
+) -> Path:
+    """The database a store keeps, from a name relative to its directory.
+
+    One rule, in one place, for every store this process opens: the root mount
+    and each ``--mount`` alike. The directory is shared infrastructure -- the
+    event log and the backups sit in it -- and the file is which store within
+    it, which is what lets several stores live in one directory and what a
+    backend other than SQLite would vary.
+
+    Relative, and only relative. An absolute path would make the directory a
+    lie and a configuration file unmovable; ``..`` would reach outside the
+    directory an operator named. Both are refused rather than resolved.
+
+    >>> store_file("/srv/project/.rage").name
+    'store.sqlite'
+    >>> store_file("/srv/project/.rage", "ref.sqlite").name
+    'ref.sqlite'
+    """
+    relative = Path(filename)
+    if not str(relative) or relative == Path("."):
+        raise StoreFileError("a store file needs a name")
+    if relative.is_absolute():
+        raise StoreFileError(
+            f"store file {str(relative)!r} is an absolute path; it names a file "
+            f"relative to the store directory, so pass the directory as --dir "
+            f"and the file alone here"
+        )
+    if ".." in relative.parts:
+        raise StoreFileError(
+            f"store file {str(relative)!r} climbs out of the store directory with '..'"
+        )
+    return Path(directory) / relative
+
+
 def resolve_directory(explicit: str | os.PathLike[str] | None = None) -> Path:
     """Locate the store directory: explicit path, then RAGE_DIR, then ./.rage.
 
@@ -400,14 +453,19 @@ class Store:
         self,
         directory: str | os.PathLike[str] | None = None,
         *,
+        filename: str | os.PathLike[str] = DB_FILENAME,
         log: EventLog | None = None,
     ) -> None:
         # A null log rather than None, so nothing below has to ask whether
         # logging is on before recording anything.
         self._log = log if log is not None else eventlog.NULL
         self.directory = resolve_directory(directory)
+        # Settled before the directory is made, so a store file that will be
+        # refused leaves nothing behind to explain.
+        self.path = store_file(self.directory, filename)
         self.directory.mkdir(parents=True, exist_ok=True)
-        self.path = self.directory / DB_FILENAME
+        # A store file may name a subdirectory, and nothing else creates it.
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         # One connection per thread, opened on first use. The server runs its
         # sync tool handlers in a worker pool, so a single shared connection
         # was being used from several threads at once -- which SQLite reported
@@ -1440,10 +1498,11 @@ class Store:
 def open_store(
     directory: str | os.PathLike[str] | None = None,
     *,
+    filename: str | os.PathLike[str] = DB_FILENAME,
     log: EventLog | None = None,
 ) -> Iterator[Store]:
     """Open a store, closing it on exit."""
-    store = Store(directory, log=log)
+    store = Store(directory, filename=filename, log=log)
     try:
         yield store
     finally:
@@ -1739,7 +1798,9 @@ __all__ = [
     "Page",
     "PatternNotFoundError",
     "Store",
+    "StoreFileError",
     "open_store",
     "read_all",
     "resolve_directory",
+    "store_file",
 ]
