@@ -118,6 +118,14 @@ the last thing under `k`" for a cursor to be given. The bounds narrow the
 selection rather than the page, which is what lets each window carry its own
 count and the counts be added up.
 
+That leaves a subtree read bounded by **three separate things, all of which
+must hold**: the part of the hierarchy to read, the stretch of the order to
+read, and where the last page stopped. They stay three because a caller needs
+to give any two of them at once — a range that excluded a mount would be
+inexpressible if the subtree were folded into it, and a page's totals have
+never depended on where the reader had got to, so the cursor cannot be a bound
+on the selection.
+
 **Reads and writes cross a boundary; queries do not.** A read, a write and a
 delete route to one store and translate, and a write or a delete routed to a
 read-only mount is refused there. A subtree read — `get_documents`,

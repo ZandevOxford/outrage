@@ -29,9 +29,11 @@ from .mounts import Mounts, Resolved
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
+    BoundedSubtree,
     Entry,
     Excerpt,
     KeyNotFoundError,
+    KeyRange,
     Page,
     Store,
 )
@@ -164,23 +166,22 @@ def _shadowed(table: Mounts, at: Resolved, key: str | None) -> list[str]:
     return kept
 
 
-def _windows(shadowed: list[str]) -> list[tuple[str | None, str | None]]:
+def _windows(shadowed: list[str]) -> list[KeyRange]:
     """The stretches left of a subtree once ``shadowed`` is taken out of it.
 
-    Each is an ``(after_subtree, before)`` pair for ``Store``, naming the same
-    mount point from both sides: ``before=m`` ends the stretch in front of it,
-    ``after_subtree=m`` starts the one behind. ``None`` at either end means the
-    subtree's own edge.
+    Each names the mount points at its ends from opposite sides: ``before=m``
+    ends the stretch in front of a mount point, ``after_subtree=m`` starts the
+    one behind it. An unset bound is the subtree's own edge.
 
-    With nothing shadowed this is one unbounded window, so a store with no
+    With nothing shadowed this is one unbounded range, so a store with no
     mounts below the key takes exactly the query it always took.
     """
-    windows: list[tuple[str | None, str | None]] = []
+    windows: list[KeyRange] = []
     lo: str | None = None
     for name in shadowed:
-        windows.append((lo, name))
+        windows.append(KeyRange(after_subtree=lo, before=name))
         lo = name
-    windows.append((lo, None))
+    windows.append(KeyRange(after_subtree=lo))
     return windows
 
 
@@ -195,13 +196,12 @@ class _Span:
     store.
     """
 
-    after_subtree: str | None
-    before: str | None
+    key_range: KeyRange
     reached: str | None
 
 
 def _across_windows[T](
-    windows: list[tuple[str | None, str | None]],
+    windows: list[KeyRange],
     read: Callable[..., Page[T]],
     *,
     limit: int,
@@ -238,10 +238,9 @@ def _across_windows[T](
     more = False
     stopped = False
 
-    for lo, hi in windows:
+    for window in windows:
         bounds: dict[str, Any] = {
-            "after_subtree": lo,
-            "before": hi,
+            "key_range": window,
             "limit": 0 if stopped else limit - len(items),
         }
         # Only when the caller has a character budget at all. A collection of
@@ -262,10 +261,10 @@ def _across_windows[T](
         items += page.items
         spent += sum(size_of(item) for item in page.items)
         if page.next_cursor is not None:
-            spans.append(_Span(lo, hi, page.next_cursor))
+            spans.append(_Span(window, page.next_cursor))
             cursor, more, stopped = page.next_cursor, True, True
         else:
-            spans.append(_Span(lo, hi, None))
+            spans.append(_Span(window, None))
             stopped = len(items) >= limit or (
                 max_total_chars is not None and spent >= max_total_chars
             )
@@ -779,7 +778,9 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         ] = None,
     ) -> dict[str, Any]:
         found = _resolve(table, key)
-        listing = found.store.list_keys(found.key, limit=limit, after=_inward_cursor(found, after))
+        listing = found.store.list_keys(
+            found.key, limit=limit, cursor=_inward_cursor(found, after)
+        )
         entries = _outward_items(found, listing.items)
 
         # A mount point is a key no store knows about: the store beneath it has
@@ -895,14 +896,14 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         # documents that reading them by key would refuse. So the subtree is
         # read as the windows a mount point leaves between them.
         windows = _windows(_shadowed(table, at, key))
+        subtree = BoundedSubtree(at.key, depth)
         items, total, total_chars, cursor, spans = _across_windows(
             windows,
             lambda **bounds: at.store.get_documents(
-                at.key,
+                subtree,
                 meta_name=meta_name,
-                depth=depth,
                 max_chars=max_chars,
-                after=inward,
+                cursor=inward,
                 **bounds,
             ),
             limit=limit,
@@ -937,13 +938,12 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             # at all: it is not part of this page's window.
             missing = [
                 at.store.missing_meta_stats(
-                    at.key,
+                    subtree,
+                    key_range=span.key_range,
+                    window=KeyRange(
+                        after=inward, before_inclusive=span.reached
+                    ),
                     meta_name=meta_name,
-                    depth=depth,
-                    after=inward,
-                    before_inclusive=span.reached,
-                    after_subtree=span.after_subtree,
-                    before=span.before,
                     sample=WITHOUT_META_SAMPLE,
                 )
                 for span in spans
@@ -1001,13 +1001,13 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         # Windowed for the reason the survey is: the store beneath a mount
         # still holds the rows the mount shadows, and naming a document that
         # cannot be read is the failure this whole tool exists to prevent.
+        subtree = BoundedSubtree(at.key, depth)
         items, total, total_chars, cursor, _ = _across_windows(
             _windows(_shadowed(table, at, key)),
             lambda **bounds: at.store.keys_missing_meta(
-                at.key,
+                subtree,
                 meta_name=meta_name if meta_name is not None else "title",
-                depth=depth,
-                after=inward,
+                cursor=inward,
                 **bounds,
             ),
             limit=limit,
