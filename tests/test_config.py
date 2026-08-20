@@ -324,3 +324,31 @@ def test_server_name_is_the_key_that_gets_replaced():
     # The whole "leave unrelated servers alone" property rests on this.
     assert config_module.SERVER_NAME == "rage"
     assert config_module.SERVERS_FIELD == "mcpServers"
+
+
+def test_a_mount_is_recorded_absolute(tmp_path):
+    """The same argument as --dir: a relative mount would resolve unpredictably."""
+    entry = config_module.server_entry(
+        tmp_path / "root",
+        command=["rage-server"],
+        mounts=[f"ref={tmp_path / 'ref'}", "lib/deep=./relative"],
+    )
+    args = entry["args"]
+    assert args.count("--mount") == 2
+    assert f"ref={tmp_path / 'ref'}" in args
+    deep = next(a for a in args if a.startswith("lib/deep="))
+    assert Path(deep.split("=", 1)[1]).is_absolute()
+
+
+def test_a_misspelled_mount_point_is_refused_while_writing_the_config(tmp_path):
+    """Refused here, where somebody is looking, rather than by a server nobody sees."""
+    from rage.mounts import MountError
+
+    with pytest.raises(MountError):
+        config_module.server_entry(tmp_path, command=["rage-server"], mounts=["no-delimiter"])
+    with pytest.raises(MountError, match="no mount point"):
+        config_module.server_entry(tmp_path, command=["rage-server"], mounts=["=/srv/x"])
+
+
+def test_an_entry_without_mounts_is_unchanged(tmp_path):
+    assert "--mount" not in config_module.server_entry(tmp_path, command=["rage-server"])["args"]

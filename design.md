@@ -60,6 +60,72 @@ working directory. The working directory fallback exists for CLI and test use.
 The event log, when it is on, is `log.jsonl` in the same directory. It is the
 first use of the room the directory was created to leave.
 
+### Mounted stores
+
+More than one database behind the one key namespace. A **mount table** maps a
+key prefix to a store, the longest prefix matching a key owns it, and the store
+`--dir` names is mounted at the root, so it owns everything no other mount
+claims. A server with no `--mount` argument is a table of one, which is the
+same code path rather than a second one.
+
+Configuration, and only at startup: `--mount KEY=PATH`, repeatable. Nothing
+adds or removes a mount on a running server.
+
+The point of it is `project/reference/scale`: session context is small,
+write-heavy and per-project, while a reference base of tens of thousands of
+documents is large, read-mostly, and *the same corpus for every project that
+mounts it*. One namespace, two very different stores behind it.
+
+**Two translations, and nothing else.** Inward, a key loses the prefix of the
+mount that owns it, so a mounted store is asked about keys in its own namespace
+and never learns where it was mounted — the same database answers the same way
+at `ref` as at `lib/ref`. Outward, every key it returns regains the prefix.
+That is what makes a store distributable: it is self-contained and relocatable
+because nothing inside it names its own mount point.
+
+**The mount point is the inner store's root**, which is why the root had to
+become a key first. Without it a store mounted at `ref` could not answer for
+the document or the `!title` *at* `ref`, so a survey could not say what the
+mount is.
+
+**A mount shadows.** The store beneath a mount point is never consulted for the
+keys the mount claims, so a document left at a key that later became a mount
+point is unreachable rather than merged. That is the mount table rule, and
+merging two stores that disagree about one key has no answer that is not
+arbitrary. The server says so once on stderr at startup rather than refusing to
+start, since the keys are still reachable in the store that holds them.
+
+**Reads and writes cross a boundary; queries do not.** A read, a write and a
+delete route to one store and translate. A subtree read — `get_documents`,
+`keys_missing_meta`, a recursive delete — covers the one store that owns its
+key, and *says which mounts it did not descend into*. A partial answer must not
+be indistinguishable from a whole one, which is the standing argument from
+`context/8/decisions`. Aggregating across mounts is deferred, not abandoned:
+`sort_key` is derived from the key alone and a cursor names a key rather than a
+position, so a merge of two ordered streams is already feasible.
+
+**A listing does cross**, and has to. A mount point is a key no store knows
+about — the store beneath it has no row there, and the store above it cannot
+see where it was mounted — so the table splices it into the level above as
+`kind: "mount"`, described by the inner root. Without that a mounted store is
+invisible to anyone who does not already know its prefix. Both halves are
+merged before either is cut, for the same reason the store merges its own two
+halves first.
+
+**Every key has a name from outside, by construction.** A mount point and a
+key inside a store are each bounded at 64 segments and the joined namespace
+allows 128, so the two always join. This was not true until 2026-08-20: a store
+mounted deep enough could hold keys that exceeded the limit once the prefix was
+added, and every listing carried a path for dropping them and a `dropped` field
+to say so. Halving the bound abolished the case instead of reporting it, which
+also removed the one place a cursor could be a valid resume token and an
+invalid key at the same time.
+
+The only way the join can still fail is a store written before the bound was
+halved. `Mount.outer` raises and names the store and the key rather than
+handing back a string that would fail to parse a call later, and `rage check`
+reports such keys before anything mounts the store.
+
 ### Event log
 
 An append-only record of what the server was asked for and what the store was
@@ -240,10 +306,24 @@ A key is a Unicode string naming a position in a hierarchy.
     rather than failing. By convention nothing significant lives there, and
     the roots that will matter — a mounted store's own — are behind a mount
     prefix that an error does not produce.
-* A segment is **1 to 1024 characters**; a key is **at most 128 segments**.
-  Both are bounds on the absurd, not targets. A segment is typically well under
-  20 characters and a key a handful of segments, unless it is mirroring a
-  structure that says otherwise.
+* A segment is **1 to 1024 characters**; a key is **at most 64 segments
+  within one store**, and at most **128 in the namespace a mount table
+  presents**. Both are bounds on the absurd, not targets. A segment is
+  typically well under 20 characters and a key a handful of segments, unless it
+  is mirroring a structure that says otherwise.
+  * The two numbers are one decision. A key in the joined namespace is a mount
+    prefix followed by a key inside the store mounted there, and **a mount
+    point is bounded as a store key is**, so bounding each half at half the
+    total makes every joined key valid *by construction*. Nothing checks the
+    sum, and no key can exist in a mounted store that the namespace above it
+    cannot name.
+  * The store bound was 128 until 2026-08-20. Halving it was cheaper than the
+    alternative, which was a drop path through every listing for keys with no
+    outer name — see the Mounted stores component.
+  * A key at exactly the store bound can hold a document but **no metadata**,
+    since a metadata segment is a segment. That is why the joined bound needs
+    no allowance for one: the store refuses the title, so the namespace above
+    never sees a key the store could not hold.
 * A segment may hold **any character except `/` and anything below `\t`**
   (U+0009).
   * The excluded control range is a deliberate exception to "only `/` is

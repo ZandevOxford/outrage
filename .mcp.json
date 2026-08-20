@@ -5,6 +5,8 @@
       "args": [
         "--dir",
         "/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/.rage",
+        "--mount",
+        "mount_test=/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/.rage-mount-test",
         "--log"
       ]
     }
