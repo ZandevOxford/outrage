@@ -398,3 +398,38 @@ def test_exists_asks_about_the_key_itself(store):
     # it -- which is why an import asks about the key rather than the subtree.
     assert not store.exists("a")
     assert not store.exists("a/c")
+
+
+# -- the root ------------------------------------------------------------
+
+
+def test_the_root_document_has_no_path_yet(store):
+    # Parked, not decided: the empty stem gives `.md`, which is hidden, which
+    # an import skips by default -- so a round trip would drop the root
+    # document rather than relocate it. Refused loudly until that is settled.
+    with pytest.raises(bulk.Unmappable, match="no file name"):
+        bulk.path_for_key("")
+
+
+def test_root_metadata_maps_like_any_other_key():
+    # Only the document at the root is stuck; its metadata has a segment and
+    # so has a name, and the mapping round trips.
+    assert bulk.path_for_key("!title") == PurePosixPath("!title.md")
+    assert bulk.key_for_path("!title.md") == ("!title", "markdown")
+
+
+def test_exporting_reports_the_root_document_rather_than_dropping_it(populated, tmp_path):
+    populated.store_document("", "the root body", title="This store")
+    transfers = list(bulk.export_tree(populated, None, tmp_path / "out"))
+
+    failed = [t for t in transfers if t.action == bulk.FAILED]
+    assert [t.key for t in failed] == [""]
+    assert "no file name" in failed[0].reason
+    # The title is exported even though the document it belongs to is not.
+    assert (tmp_path / "out" / "!title.md").read_text() == "This store"
+
+
+def test_an_omitted_key_exports_from_the_root(populated, tmp_path):
+    named = actions(bulk.export_tree(populated, "", tmp_path / "a", dry_run=True))
+    omitted = actions(bulk.export_tree(populated, None, tmp_path / "b", dry_run=True))
+    assert named == omitted

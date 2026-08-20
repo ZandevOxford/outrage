@@ -883,16 +883,17 @@ def test_rm_dry_run_preview_can_be_shortened(tmp_path):
 
 def test_a_malformed_key_is_one_line_and_not_a_traceback(tmp_path, capsys):
     # An invalid key is about the request, so it renders as one line rather
-    # than reaching the top of main as a bug would. The example used to be the
-    # pre-schema-4 `:` spelling; `:` is an ordinary segment character since
-    # schema 5, so the malformation has to be a real one.
+    # than reaching the top of main as a bug would. Two examples have been
+    # retired from this test by the grammar widening under them: the
+    # pre-schema-4 `:` spelling, and `!title`, which is the root's own title
+    # now. The malformation has to be a real one.
     a_long_store(tmp_path / ".rage")
 
-    status, _ = run("get", "--dir", str(tmp_path / ".rage"), "!title")
+    status, _ = run("get", "--dir", str(tmp_path / ".rage"), "context/!")
 
     assert status != 0
     err = capsys.readouterr().err
-    assert "metadata segment" in err
+    assert "metadata name" in err
     assert "Traceback" not in err
     assert err.count("\n") == 1
 
@@ -1070,3 +1071,56 @@ def test_init_refuses_settings_it_cannot_parse(tmp_path):
 
     assert status == 1
     assert output == "", "the refusal goes to stderr, and nothing was reported as done"
+
+
+# -- the root ------------------------------------------------------------
+
+
+def test_the_root_is_written_read_and_printed_as_a_slash(tmp_path):
+    d = str(tmp_path / ".rage")
+    status, output = run("set", "--dir", d, "", "--content", "# This store", "--title", "Store")
+    assert status == 0
+    # "" is invisible in a report, so it prints as `/` -- a legal spelling of
+    # the root that normalises straight back to it.
+    assert output.startswith("/  ")
+
+    assert run("get", "--dir", d, "")[1] == "# This store"
+    assert run("get", "--dir", d, "!title")[1] == "Store"
+
+
+def test_a_slash_is_a_spelling_of_the_root_on_the_command_line(tmp_path):
+    d = str(tmp_path / ".rage")
+    run("set", "--dir", d, "/", "--content", "body")
+    assert run("get", "--dir", d, "")[1] == "body"
+
+
+def test_dump_names_the_root_document(tmp_path):
+    d = str(tmp_path / ".rage")
+    run("set", "--dir", d, "", "--content", "root body")
+    run("set", "--dir", d, "a", "--content", "a body")
+
+    status, output = run("dump", "--dir", d)
+    assert status == 0
+    assert "=== /" in output
+    assert "=== a" in output
+
+
+def test_listing_the_top_level_does_not_show_the_root(tmp_path):
+    d = str(tmp_path / ".rage")
+    run("set", "--dir", d, "", "--content", "root body")
+    run("set", "--dir", d, "a", "--content", "a body")
+
+    output = run("ls", "--dir", d)[1]
+    assert " a\n" in output
+    assert output.count("\n") == 1  # `a` and nothing else
+
+
+def test_export_reports_the_root_document_as_a_key_not_as_absent(tmp_path):
+    d = str(tmp_path / ".rage")
+    run("set", "--dir", d, "", "--content", "root body")
+
+    status, output = run("export", "--dir", d, str(tmp_path / "out"))
+    # `-` in this column means "no key"; the root is a key, so it is spelled.
+    assert status != 0
+    assert "failed      /  ->" in output
+    assert "no file name" in output

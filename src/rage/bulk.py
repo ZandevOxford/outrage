@@ -143,7 +143,20 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
     >>> path_for_key("a/b/!title")
     PurePosixPath('a/b/!title.md')
     """
-    segments = keys.parse(key).key.split(keys.DELIMITER)
+    parsed = keys.parse(key).key
+    if parsed == keys.ROOT:
+        # A path is made of segments and the root has none, so its file would
+        # be named by the empty stem: `.md`, which is hidden, which an import
+        # skips by default. That does not relocate the root document, it drops
+        # it. Refused until the naming is settled -- see `planned/root-key` in
+        # the rage store, which has the two ways out. The root's *metadata*
+        # maps normally, as `!title.md`, so only the document itself is stuck.
+        raise Unmappable(
+            "the root has no file name: a path is made of segments and the "
+            "root has none. Its metadata exports as `!title.md`; the document "
+            "at the root itself has nowhere to go yet."
+        )
+    segments = parsed.split(keys.DELIMITER)
     for segment in segments:
         if segment in TRAVERSAL:
             raise Unmappable(
@@ -177,7 +190,10 @@ def key_for_path(
     name = stem if format is not None else relative.name
 
     parts = [*relative.parts[:-1], name]
-    if prefix is not None:
+    # An empty prefix is the root, which prefixes nothing. Tested rather than
+    # left to normalisation, which would tidy `/a` back to `a` and reach the
+    # same answer by accident.
+    if prefix:
         parts = [prefix, *parts]
     candidate = keys.DELIMITER.join(parts)
     # Parsed without the wildcard, which is the guard as much as the check: a
@@ -256,13 +272,16 @@ def _exported(opened: store.Store, key: str | None) -> Iterator[tuple[str, str |
     write, its directory arrives with the first document beneath it, and an
     empty directory says something about the store that is not true.
     """
-    if key is not None:
-        try:
-            root = opened.retrieve_document(key, max_chars=1)
-        except store.KeyNotFoundError:
-            pass
-        else:
-            yield root.key, root.format
+    # The root is included like any other key: `None` names it rather than
+    # meaning "no key at all", so a store that titles itself is exported with
+    # its title. Whether the root *document* can be written to a file is a
+    # separate question, and `path_for_key` is where it is answered.
+    try:
+        root = opened.retrieve_document(keys.ROOT if key is None else key, max_chars=1)
+    except store.KeyNotFoundError:
+        pass
+    else:
+        yield root.key, root.format
     for entry in walk(opened, key):
         if entry.kind != "implicit":
             yield entry.key, entry.format

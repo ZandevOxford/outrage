@@ -627,8 +627,9 @@ class Store:
         names = {
             row["doc_key"][prefix_len:]
             for row in self._conn.execute(
-                "SELECT DISTINCT doc_key FROM documents WHERE parent = ? AND meta_name IS NULL",
-                (parent,),
+                f"SELECT DISTINCT doc_key FROM documents "
+                f"WHERE {_children_clause()} AND meta_name IS NULL",
+                (parent, parent),
             )
         }
         names.update(
@@ -656,12 +657,11 @@ class Store:
                 )
             ]
             if recursive:
-                lo, hi = keys.subtree_range(parsed.doc_key)
+                below, bounds = _below("doc_key", parsed.doc_key)
                 targets += [
                     row["key"]
                     for row in self._conn.execute(
-                        "SELECT key FROM documents WHERE doc_key >= ? AND doc_key < ?",
-                        (lo, hi),
+                        f"SELECT key FROM documents WHERE {below}", bounds
                     )
                 ]
 
@@ -677,10 +677,9 @@ class Store:
         without it, deleting a key that holds nothing itself is indistinguishable
         from deleting a key that does not exist.
         """
-        lo, hi = keys.subtree_range(keys.parse(key).doc_key)
+        below, bounds = _below("doc_key", keys.parse(key).doc_key)
         row = self._conn.execute(
-            "SELECT count(*) AS n FROM documents WHERE doc_key >= ? AND doc_key < ?",
-            (lo, hi),
+            f"SELECT count(*) AS n FROM documents WHERE {below}", bounds
         ).fetchone()
         return row["n"]
 
@@ -771,7 +770,7 @@ class Store:
         can take, which is the tools' and the command line's question and they
         answer it differently.
         """
-        parent = keys.parse(key).doc_key if key is not None else keys.ROOT
+        parent = keys.parse(_scope(key)).doc_key
         bound = _cursor_bound(after)
 
         # Both halves are taken past the same cursor and merged before either
@@ -796,8 +795,8 @@ class Store:
 
     def _real_children(self, parent: str, bound: str | None, limit: int | None) -> list[Entry]:
         """The rows stored directly under ``parent``, in order, after ``bound``."""
-        sql = "SELECT * FROM documents WHERE parent = ?"
-        params: list[object] = [parent]
+        sql = f"SELECT * FROM documents WHERE {_children_clause()}"
+        params: list[object] = [parent, parent]
         if bound is not None:
             sql += " AND sort_key > ?"
             params.append(bound)
@@ -830,6 +829,10 @@ class Store:
         """
         params: dict[str, object] = {"parent": parent}
         if parent == keys.ROOT:
+            # Every row is within the root's subtree, so the only thing to
+            # exclude is the top level itself: a row whose parent is the root
+            # truncates to the root, which is not a child of anything. The
+            # root's own row is excluded by the same test, for the same reason.
             within = "parent <> ''"
             params["plen"] = 0
         else:
@@ -837,6 +840,7 @@ class Store:
             params["lo"], params["hi"] = keys.subtree_range(parent)
             params["plen"] = len(parent) + 1
 
+        children = _children_clause(":parent")
         return (
             f"""
             SELECT DISTINCT CASE
@@ -846,7 +850,7 @@ class Store:
                    END AS child
               FROM documents
              WHERE {within}
-               AND child NOT IN (SELECT key FROM documents WHERE parent = :parent)
+               AND child NOT IN (SELECT key FROM documents WHERE {children})
             """,
             params,
         )
@@ -875,9 +879,9 @@ class Store:
         whole they are holding.
         """
         row = self._conn.execute(
-            "SELECT count(*) AS n, coalesce(sum(length(content)), 0) AS chars "
-            "FROM documents WHERE parent = ?",
-            (parent,),
+            f"SELECT count(*) AS n, coalesce(sum(length(content)), 0) AS chars "
+            f"FROM documents WHERE {_children_clause()}",
+            (parent, parent),
         ).fetchone()
         inner, params = self._implicit_child_query(parent)
         implicit = self._conn.execute(f"SELECT count(*) AS n FROM ({inner})", params).fetchone()
@@ -900,11 +904,14 @@ class Store:
         where = []
         params: list[object] = []
 
-        if key is not None:
-            parsed = keys.parse(key)
-            lo, hi = keys.subtree_range(parsed.doc_key)
-            where.append("(doc_key = ? OR (doc_key >= ? AND doc_key < ?))")
-            params += [parsed.doc_key, lo, hi]
+        # The root needs no predicate at all: everything is at or below it.
+        # A clause that said so would still be evaluated per row, and against
+        # `doc_key`, which carries no index of its own.
+        parsed = keys.parse(_scope(key))
+        if parsed.doc_key != keys.ROOT:
+            below, bounds = _below("doc_key", parsed.doc_key)
+            where.append(f"(doc_key = ? OR {below})")
+            params += [parsed.doc_key, *bounds]
 
         if meta_name is None:
             where.append("meta_name IS NULL")
@@ -918,11 +925,17 @@ class Store:
         if depth is not None:
             if depth < 0:
                 raise ValueError("depth must not be negative")
-            base = keys.depth(key) if key is not None else 0
+            base = keys.depth(_scope(key))
             # A segment count SQLite can compute per row: the delimiters plus
             # one. In SQL rather than over the results, because a depth filter
             # applied afterwards has already paid to fetch what it discards.
-            where.append("(length(doc_key) - length(replace(doc_key, '/', '')) + 1) - ? <= ?")
+            # The root has no segments and so breaks the formula -- delimiters
+            # plus one makes it depth 1, and `depth=0` from the root would then
+            # exclude the very document it names.
+            where.append(
+                "(CASE WHEN doc_key = '' THEN 0 ELSE "
+                "length(doc_key) - length(replace(doc_key, '/', '')) + 1 END) - ? <= ?"
+            )
             params += [base, depth]
 
         return " AND ".join(where) if where else "1", params
@@ -1077,13 +1090,21 @@ class Store:
         # Asked for several, a document would first have appeared at the
         # earliest of them.
         suffix = min(keys.meta_sort_suffix(n) for n in names)
+        # The root is the one document whose metadata is not its sort form plus
+        # a suffix: it contributes no segment, so `!title` is a *first* segment
+        # rather than one joined onto a previous. Concatenating anyway would
+        # still tile -- the map stays monotone, so nothing is double counted --
+        # but it would file the root under a later window than the one its
+        # title would really have sorted in.
+        root = min(keys.sort_form(keys.META_PREFIX + n) for n in names)
+        position = "(CASE WHEN sort_key = '' THEN ? ELSE sort_key || ? END)"
 
         if after is not None:
-            where += " AND (sort_key || ?) > ?"
-            params += [suffix, _cursor_bound(after)]
+            where += f" AND {position} > ?"
+            params += [root, suffix, _cursor_bound(after)]
         if before is not None:
-            where += " AND (sort_key || ?) <= ?"
-            params += [suffix, _cursor_bound(before)]
+            where += f" AND {position} <= ?"
+            params += [root, suffix, _cursor_bound(before)]
 
         total, total_chars = self._selection_totals(where, params)
 
@@ -1294,6 +1315,53 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
 
     content = "".join(parts)
     return replace(first, content=content, returned=len(content), next_offset=offset)
+
+
+def _scope(key: str | None) -> str:
+    """The key a scope argument names, with ``None`` meaning the root.
+
+    Omitting the argument, passing None and passing "" all name the whole
+    store. Applied once on the way in, so nothing below here carries a second
+    spelling of "everywhere": that duality is what the root key exists to
+    remove, and left in place every new call taking a subtree would have to
+    re-decide which spelling it accepted.
+    """
+    return keys.ROOT if key is None else key
+
+
+def _children_clause(parent: str = "?") -> str:
+    """SQL selecting the rows immediately below the key bound to ``parent``.
+
+    ``key <> parent`` is what keeps the root out of its own listing. The root
+    is its own parent -- as POSIX makes ``/..`` be ``/`` -- so a plain
+    ``parent = ?`` would hand it back as a child of itself, and count it into
+    the level's totals besides. For every other key the second test excludes
+    nothing, since no other key is its own parent.
+
+    One function because four queries ask this question, and four hand written
+    clauses that must all remember the same exception is exactly the drift
+    ``_check_parents`` exists to catch after the fact.
+    """
+    return f"parent = {parent} AND key <> {parent}"
+
+
+def _below(column: str, doc_key: str) -> tuple[str, list[object]]:
+    """SQL selecting the rows strictly beneath ``doc_key``, by ``column``.
+
+    A range scan for an ordinary key, since everything under ``a`` starts with
+    ``a/``. For the root it is a test against the root itself: everything else
+    is beneath it, and no string bounds every key from above, so there is no
+    range to scan. ``keys.subtree_range`` refuses to invent one rather than
+    returning bounds that quietly match nothing.
+
+    No predicate at all would be cheaper still, and ``_selection`` does that
+    where it can. Here the clause has to exclude the root's own row, which a
+    range does for free and an unbounded selection does not.
+    """
+    if doc_key == keys.ROOT:
+        return f"{column} <> ?", [keys.ROOT]
+    lo, hi = keys.subtree_range(doc_key)
+    return f"({column} >= ? AND {column} < ?)", [lo, hi]
 
 
 def _cursor_bound(after: str | None) -> str | None:

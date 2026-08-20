@@ -1,9 +1,15 @@
 """Parsing and validation for the Rage key namespace.
 
-A key is one or more segments joined by ``/``, and ``/`` is the only separator
+A key is zero or more segments joined by ``/``, and ``/`` is the only separator
 there is. A segment may hold almost any text: the intent is that a key can
 mirror a filesystem path without transforming the names it carries, so the only
 exclusions are ``/`` itself and the control characters below ``\\t``.
+
+The key with no segments is the **root**, spelled by the empty string. It is a
+key like any other: it holds a document, carries metadata as ``!title``, and is
+the parent of every top level key. A ``None`` key arriving at a front end means
+the root, so that nothing below the boundary carries two spellings of
+"everywhere".
 
 A segment beginning with ``!`` names metadata about the document its segment
 sits under, so ``context/5/state/!title`` is the title of ``context/5/state``.
@@ -56,7 +62,11 @@ MIN_SEGMENT_CHAR = "\t"
 MAX_SEGMENT_CHARS = 1024
 MAX_SEGMENTS = 128
 
-#: The parent of a top level key. Not itself a valid key.
+#: The root: the key with no segments, and the parent of every top level key.
+#: It is its own parent, the way POSIX makes ``/..`` be ``/``. That is what
+#: lets an ancestor walk terminate without a second value meaning "nowhere",
+#: and it is why every query listing a level has to exclude the root from its
+#: own listing -- which ``store`` does in one place.
 ROOT = ""
 
 #: Sorts immediately after ``/``. Used to bound subtree scans over ``doc_key``
@@ -98,12 +108,12 @@ def normalise_key(key: str) -> str:
     """``key`` with its delimiters tidied: no leading, trailing or repeated ``/``.
 
     Runs before validation, so a key is judged in the form it will be stored
-    in. Note that this cannot produce the root: ``"/"`` normalises to the empty
-    string, which is then rejected like any other empty key rather than
-    becoming a spelling of the top level.
+    in. ``"/"`` and ``"///"`` reduce to the empty string, which is the root:
+    they are spellings of it rather than errors, which is what a key mirroring
+    a filesystem path ought to do.
 
-    >>> normalise_key("/a//b/"), normalise_key("a/b")
-    ('a/b', 'a/b')
+    >>> normalise_key("/a//b/"), normalise_key("a/b"), normalise_key("///")
+    ('a/b', 'a/b', '')
     """
     return DELIMITER.join(part for part in key.split(DELIMITER) if part)
 
@@ -136,6 +146,20 @@ def _normalise(segment: str) -> str:
     return normalise_segment(segment)
 
 
+def displayed(key: str) -> str:
+    """How a key is written for a person to read. The root is spelled ``/``.
+
+    The empty string is invisible in a report: it reads as a missing name, or
+    as stray indentation, and a reader cannot tell which. ``/`` is a legal
+    spelling of the root and normalises straight back to it, so what is printed
+    is also what can be typed in again.
+
+    >>> displayed("a/b"), displayed(ROOT)
+    ('a/b', '/')
+    """
+    return key or DELIMITER
+
+
 def sort_form(key: str) -> str:
     """``key`` encoded for ordering only, never stored in place of the key.
 
@@ -149,6 +173,12 @@ def sort_form(key: str) -> str:
       sorts ahead of its subkeys.
     * segments are joined by a delimiter below every character they may
       contain, so a subtree sorts immediately after its parent.
+    * the root sorts as the empty string rather than as one empty segment, so
+      it comes before its own metadata and before every top level key. Marked
+      as a segment it would sort *after* ``!title``, the metadata marker being
+      the lower of the two: the one place the marking would invert rather than
+      order. Nothing can collide with it, since every other sort form begins
+      with a marker.
 
     The marking is a prefix rather than a property of the segment text, so two
     different keys cannot share a sort form. That matters more than it looks:
@@ -162,7 +192,11 @@ def sort_form(key: str) -> str:
     True
     >>> sort_form("a/!title") < sort_form("a-x/!title")
     True
+    >>> sort_form("") < sort_form("!title") < sort_form("a")
+    True
     """
+    if not key:
+        return ROOT
     return _SORT_DELIMITER.join(_sort_segment(part) for part in key.split(DELIMITER))
 
 
@@ -223,7 +257,8 @@ class Key:
     parent: str
     """The enclosing key: this key without its last segment. A document's
     metadata therefore has that document as its parent, and lists alongside its
-    subkeys."""
+    subkeys. The root is its own parent, which is what makes an ancestor walk
+    terminate and what every listing of a level has to allow for."""
 
     wildcard_parent: str | None = None
     """The key enclosing the ``?`` segment, or None if there is no wildcard.
@@ -269,10 +304,11 @@ def parse(key: str, *, allow_wildcard: bool = False) -> Key:
 
     original = key
     key = normalise_key(key)
-    if not key:
-        raise InvalidKeyError(f"key {original!r} must not be empty")
-
-    segments = key.split(DELIMITER)
+    # The root is the key with *no* segments, not one empty segment: splitting
+    # "" would give a single empty name, which would then be length checked,
+    # counted towards MAX_SEGMENTS and padded into a sort form as though it
+    # were something a caller had typed.
+    segments = key.split(DELIMITER) if key else []
     if len(segments) > MAX_SEGMENTS:
         raise InvalidKeyError(
             f"key {original!r} has {len(segments)} segments; at most {MAX_SEGMENTS} are allowed"
@@ -284,11 +320,8 @@ def parse(key: str, *, allow_wildcard: bool = False) -> Key:
         (i for i, segment in enumerate(segments) if segment.startswith(META_PREFIX)),
         None,
     )
-    if meta_at == 0:
-        raise InvalidKeyError(
-            f"key {original!r} has no document key before its metadata segment"
-        )
-
+    # meta_at == 0 is metadata on the root, which is a document like any
+    # other: `!title` alone is the store's own title.
     doc_segments = segments if meta_at is None else segments[:meta_at]
     meta_segments = [] if meta_at is None else segments[meta_at:]
 
@@ -319,7 +352,11 @@ def parse(key: str, *, allow_wildcard: bool = False) -> Key:
     meta_parts = [_normalise(segment) for segment in meta_segments]
 
     if meta_parts:
-        key = DELIMITER.join([doc_key, *meta_parts])
+        # The document key is left out of the join when there is none, or
+        # metadata on the root would spell itself "/!title" and normalise back
+        # to something else on the next parse.
+        parts = [doc_key, *meta_parts] if doc_key else meta_parts
+        key = DELIMITER.join(parts)
         meta_name = DELIMITER.join(meta_parts)[len(META_PREFIX) :]
     else:
         key = doc_key
@@ -384,8 +421,15 @@ def ancestors(key: str) -> list[str]:
     These are the keys that exist implicitly. A metadata key's ancestors
     include the document it is attached to.
 
+    The root is not among them, though it encloses everything. It is not
+    brought into being by what sits below it the way the others are -- it is
+    always there -- so counting it as implicit would say something untrue about
+    every key in the store.
+
     >>> ancestors("context/a1b2/design/!title")
     ['context', 'context/a1b2', 'context/a1b2/design']
+    >>> ancestors("a"), ancestors("")
+    ([], [])
     """
     segments = parse(key).key.split(DELIMITER)
     return [DELIMITER.join(segments[: i + 1]) for i in range(len(segments) - 1)]
@@ -395,9 +439,14 @@ def depth(key: str) -> int:
     """The number of segments in the document part of ``key``.
 
     Metadata segments do not add depth; ``a/b`` and ``a/b/!title`` are both at
-    depth 2.
+    depth 2. The root is depth 0, and so is metadata on it: neither has a
+    segment to count.
+
+    >>> depth("a/b"), depth("a/b/!title"), depth(""), depth("!title")
+    (2, 2, 0, 0)
     """
-    return parse(key).doc_key.count(DELIMITER) + 1
+    doc_key = parse(key).doc_key
+    return 0 if doc_key == ROOT else doc_key.count(DELIMITER) + 1
 
 
 def subtree_range(key: str) -> tuple[str, str]:
@@ -406,6 +455,18 @@ def subtree_range(key: str) -> tuple[str, str]:
     Everything under ``a`` starts with ``a/``, so ``lo <= doc_key < hi``
     selects exactly the subtree, as an index range scan rather than a prefix
     match. This is what keeps ``a/b`` from picking up ``a/beta``.
+
+    **The root has no such bounds.** Everything is beneath it, and no string
+    bounds every key from above. This raises rather than returning something
+    that looks usable, because the bounds the formula gives for it -- ``"/"``
+    to ``"0"`` -- match nothing at all: a caller that forgot to check would get
+    a confident zero from a store full of documents. Select with no range
+    predicate instead, which is what ``store`` does.
     """
     doc_key = parse(key).doc_key
+    if doc_key == ROOT:
+        raise ValueError(
+            "the root has no subtree bounds, since everything is beneath it; "
+            "select without a range predicate instead"
+        )
     return doc_key + DELIMITER, doc_key + _AFTER_DELIMITER

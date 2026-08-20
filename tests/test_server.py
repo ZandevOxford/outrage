@@ -135,7 +135,10 @@ def test_retrieve_missing_key_is_a_tool_error(server):
 
 
 def test_invalid_key_is_a_tool_error(server):
-    assert "segment" in call_expecting_error(server, "retrieve_document", key="!title")
+    # `!title` used to be the example here and is the root's title since the
+    # root became addressable, so the malformation has to be a real one.
+    message = call_expecting_error(server, "retrieve_document", key="context/!")
+    assert "metadata name" in message
 
 
 def test_a_wildcard_is_a_tool_error_when_reading(server):
@@ -702,3 +705,39 @@ def test_the_server_is_built_with_the_readme_in_place(store):
     built = server_module.build_server(store)
 
     assert "the store's own introduction" in built.instructions
+
+
+# -- the root ------------------------------------------------------------
+
+
+def test_the_root_is_readable_and_writable_through_the_tools(server):
+    written = call(server, "store_document", key="", content="# This store", title="This store")
+    assert written["key"] == ""
+    # Not `/!title`: a caller told the wrong key cannot read it back.
+    assert written["title_key"] == "!title"
+    assert call(server, "retrieve_document", key="")["content"] == "# This store"
+    assert call(server, "retrieve_document", key="!title")["content"] == "This store"
+
+
+def test_an_omitted_key_resolves_to_the_root(server):
+    # A client that sends null for a key it did not fill in means the same as
+    # one that left it out, and the result echoes the scope actually used.
+    assert call(server, "list_keys")["key"] == ""
+    assert call(server, "list_keys", key=None)["key"] == ""
+    assert call(server, "get_documents")["key"] == ""
+    assert call(server, "keys_missing_meta")["key"] == ""
+
+
+def test_an_omitted_key_and_the_root_return_the_same_listing(server):
+    assert call(server, "list_keys")["entries"] == call(server, "list_keys", key="")["entries"]
+
+
+def test_the_root_document_does_not_list_below_itself(server):
+    call(server, "store_document", key="", content="body")
+    listing = call(server, "list_keys", key="")
+    assert "" not in [entry["key"] for entry in listing["entries"]]
+
+
+def test_a_slash_is_a_spelling_of_the_root(server):
+    call(server, "store_document", key="/", content="body")
+    assert call(server, "retrieve_document", key="")["content"] == "body"

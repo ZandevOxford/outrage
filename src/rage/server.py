@@ -18,10 +18,21 @@ from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from . import __version__, eventlog
+from . import __version__, eventlog, keys
 from . import store as store_module
 from .eventlog import EventLog
 from .store import DEFAULT_BULK_MAX_CHARS, DEFAULT_MAX_CHARS, Excerpt, KeyNotFoundError, Store
+
+
+def _scope(key: str | None) -> str:
+    """The key a scope argument names, with an omitted one meaning the root.
+
+    A client that sends `null` for a key it did not fill in means the same as
+    one that left it out, and both mean the whole store -- which is the root,
+    now that the root is a key. Resolved here so the result echoes the scope
+    that was actually used rather than the absence the caller sent.
+    """
+    return "" if key is None else key
 
 
 def _forbid_unknown_arguments() -> None:
@@ -132,6 +143,11 @@ one — `?` allocates the key, so this costs no naming decision.
 
 A key that holds nothing itself but has keys beneath it is a container: reading
 it fails, listing it does not.
+
+The empty key is the root, and omitting a key means the same thing. It holds a
+document like any other key and carries metadata as `!title`, so a store can
+title itself. Nothing else about it is special, and by convention nothing much
+is kept there.
 
 The document at `readme` is a store's entry point: what that particular store
 holds, and what to read before anything else. It is carried at the top of these
@@ -427,7 +443,11 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             "generated": written != key,
         }
         if title is not None:
-            result["title_key"] = f"{written}/!title"
+            # Parsed rather than joined: the root's title is `!title`, not
+            # `/!title`, and a caller told the wrong key cannot read it back.
+            result["title_key"] = keys.parse(
+                f"{written}{keys.DELIMITER}{keys.META_PREFIX}title"
+            ).key
         return result
 
     @server.tool(
@@ -453,6 +473,7 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
     ) -> dict[str, Any]:
+        key = _scope(key)
         listing = store.list_keys(key, limit=limit, after=after)
         return {
             "key": key,
@@ -511,6 +532,7 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             Field(description="Maximum characters across the whole page", gt=0),
         ] = DEFAULT_PAGE_CHARS,
     ) -> dict[str, Any]:
+        key = _scope(key)
         found = store.get_documents(
             key,
             meta_name=meta_name,
@@ -585,6 +607,7 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
     ) -> dict[str, Any]:
+        key = _scope(key)
         missing = store.keys_missing_meta(
             key,
             meta_name=meta_name if meta_name is not None else "title",
