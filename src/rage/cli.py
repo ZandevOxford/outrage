@@ -823,12 +823,11 @@ def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.
     cursor = None
     while True:
         page = opened.get_documents(
-            args.key,
+            store.BoundedSubtree(args.key, args.depth),
             meta_name=args.meta_name,
-            depth=args.depth,
             max_chars=args.max_chars or store.DEFAULT_BULK_MAX_CHARS,
             limit=bulk.PAGE,
-            after=cursor,
+            cursor=cursor,
         )
         for found in page.items:
             # Only the ones that came back short are read again, so the common

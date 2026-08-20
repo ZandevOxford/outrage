@@ -190,6 +190,146 @@ class Entry:
     updated_at: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class KeyRange:
+    """A stretch of the key order, named by keys rather than by positions.
+
+    Six one-sided bounds, all optional, all combined with AND, so any window
+    the order supports can be described by one of these and nothing outside it
+    describes a range at all. Three cut from below and three from above, and
+    the three of each are the three places a cut can fall relative to a key:
+    in front of its row, behind its row, and behind its whole subtree.
+
+    ==================== ==========================================
+    ``after_inclusive``  at that key or after it
+    ``after``            strictly after that key, its subtree included
+    ``after_subtree``    strictly after that key **and** everything below it
+    ``before``           strictly before that key, and so before its subtree
+    ``before_inclusive`` at that key or before it
+    ``final_subtree``    no later than the end of that key's subtree
+    ==================== ==========================================
+
+    The distinction between ``after`` and ``after_subtree`` is the one worth
+    holding on to. ``after`` is what a cursor means -- exclusive of the key it
+    names and *inclusive of that key's children*, because the row after the
+    last one emitted may well be its child. ``after_subtree`` is what stepping
+    over a subtree means, and nothing else can say it. Together with ``before``
+    it names a subtree from both sides, which is how a range excludes one:
+    ``before=k`` ends the stretch in front of ``k`` and ``after_subtree=k``
+    begins the stretch behind it, and neither has to name a key that exists.
+    There is no key spelling "just past the last thing under ``k``".
+
+    A range bounds the **selection**, so a count taken over one counts that
+    range. That is what makes the ranges either side of an excluded subtree add
+    up, and it is why a page cursor is a separate argument rather than an
+    ``after`` set here: a page's totals have never depended on where the reader
+    had got to.
+
+    Nothing set means no bound at all, so ``KeyRange()`` is every key.
+    """
+
+    after: str | None = None
+    after_inclusive: str | None = None
+    after_subtree: str | None = None
+    before: str | None = None
+    before_inclusive: str | None = None
+    final_subtree: str | None = None
+
+    def clauses(
+        self, column: str = "sort_key", column_params: Sequence[object] = ()
+    ) -> tuple[list[str], list[object]]:
+        """These bounds as SQL predicates on ``column``, with their parameters.
+
+        ``column`` is an expression, not only a column name, and
+        ``column_params`` are whatever it binds -- which is what lets a caller
+        measure a range against something other than a row's own position.
+        ``missing_meta_stats`` measures one against where a document's metadata
+        *would* have sorted, and that expression carries two parameters of its
+        own; they are repeated ahead of each bound, in clause order, so a
+        caller can concatenate both lists and keep them aligned.
+        """
+        clauses: list[str] = []
+        params: list[object] = []
+        for key, operator, position in (
+            (self.after_inclusive, ">=", _position),
+            (self.after, ">", _position),
+            (self.after_subtree, ">=", keys.sort_subtree_end),
+            (self.before, "<", _position),
+            (self.before_inclusive, "<=", _position),
+            (self.final_subtree, "<", keys.sort_subtree_end),
+        ):
+            if key is None:
+                continue
+            clauses.append(f"{column} {operator} ?")
+            params += [*column_params, position(key)]
+        return clauses, params
+
+
+@dataclass(frozen=True, slots=True)
+class BoundedSubtree:
+    """A key and how far below it to descend: what a subtree read is *about*.
+
+    Deliberately not a :class:`KeyRange`, though a subtree is one. A range says
+    where in the order to look and a subtree says which part of the hierarchy
+    to read, and a caller gives **both** -- a key must be at or below ``key``,
+    within ``depth`` of it, *and* inside whatever range was asked for. Folding
+    the two together would make the pair inexpressible, and it is the pair that
+    a traversal stepping over a mounted store needs.
+
+    ``key`` of None is the root, which is every key. ``depth`` is counted in
+    segments from ``key``, and None is unlimited.
+    """
+
+    key: str | None = None
+    depth: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.depth is not None and self.depth < 0:
+            raise ValueError("depth must not be negative")
+
+    def clauses(self) -> tuple[list[str], list[object]]:
+        """This subtree as SQL predicates on ``doc_key``, with their parameters.
+
+        On ``doc_key`` rather than on ``sort_key``, which is where a
+        :class:`KeyRange` is measured: metadata shares its document's
+        ``doc_key``, so one range predicate takes a document and its metadata
+        together, and the depth of a metadata key is the depth of the document
+        it belongs to.
+        """
+        clauses: list[str] = []
+        params: list[object] = []
+
+        # The root needs no predicate at all: everything is at or below it.
+        # A clause that said so would still be evaluated per row, and against
+        # `doc_key`, which carries no index of its own.
+        parsed = keys.parse(_scope(self.key))
+        if parsed.doc_key != keys.ROOT:
+            below, bounds = _below("doc_key", parsed.doc_key)
+            clauses.append(f"(doc_key = ? OR {below})")
+            params += [parsed.doc_key, *bounds]
+
+        if self.depth is not None:
+            # A segment count SQLite can compute per row: the delimiters plus
+            # one. In SQL rather than over the results, because a depth filter
+            # applied afterwards has already paid to fetch what it discards.
+            # The root has no segments and so breaks the formula -- delimiters
+            # plus one makes it depth 1, and `depth=0` from the root would then
+            # exclude the very document it names.
+            clauses.append(
+                "(CASE WHEN doc_key = '' THEN 0 ELSE "
+                "length(doc_key) - length(replace(doc_key, '/', '')) + 1 END) - ? <= ?"
+            )
+            params += [keys.depth(_scope(self.key)), self.depth]
+
+        return clauses, params
+
+
+#: Every key, and every key at and below the root: the defaults for a call that
+#: puts no bound of its own on what it reads.
+EVERYTHING = BoundedSubtree()
+UNBOUNDED = KeyRange()
+
+
 def resolve_directory(explicit: str | os.PathLike[str] | None = None) -> Path:
     """Locate the store directory: explicit path, then RAGE_DIR, then ./.rage.
 
@@ -792,20 +932,25 @@ class Store:
         key: str | None = None,
         *,
         limit: int | None = None,
-        after: str | None = None,
+        cursor: str | None = None,
     ) -> Page[Entry]:
         """List the keys immediately below ``key``, or below the root.
 
         Includes subkeys and metadata, and keys that exist only implicitly
         because something beneath them has content.
 
-        ``limit`` and ``after`` page the level. Neither has a default: this
+        ``limit`` and ``cursor`` page the level. Neither has a default: this
         layer offers pagination and holds no opinion about how much a caller
         can take, which is the tools' and the command line's question and they
         answer it differently.
+
+        No :class:`KeyRange` here, deliberately. This reads one *level*, not a
+        stretch of the order, and the cursor is the only bound a level has ever
+        needed; a range would have to be threaded through three separate
+        queries for no caller that exists.
         """
         parent = keys.parse(_scope(key)).doc_key
-        bound = _cursor_bound(after)
+        bound = _cursor_bound(cursor)
 
         # Both halves are taken past the same cursor and merged before either
         # is cut. Cutting them separately is what makes the two disagree about
@@ -916,36 +1061,23 @@ class Store:
 
     def _selection(
         self,
-        key: str | None,
+        subtree: BoundedSubtree,
+        key_range: KeyRange,
         *,
         meta_name: str | Sequence[str] | None,
-        depth: int | None,
-        after_subtree: str | None = None,
-        before: str | None = None,
-        final_subtree: str | None = None,
     ) -> tuple[str, list[object]]:
         """The WHERE clause naming a subtree read, shared by every caller of one.
 
         One predicate, so that a survey, its count, and the list of what the
         survey could not see all agree about what was in range.
 
-        ``key`` and ``depth`` say which subtree and how far down; the three
-        bounds narrow that to a window inside it, and :func:`_range_bounds` has
-        what each one means. They are part of the selection rather than of the
-        page, so a caller reading a subtree in windows gets a count per window
-        and the counts add up to the whole.
+        The three parts are independent and are all required to hold: a row is
+        in the selection when it is inside ``subtree``, carries the metadata
+        asked for, **and** falls inside ``key_range``. A page cursor is not
+        part of this, which is what keeps ``total`` describing the selection
+        rather than the remainder of it.
         """
-        where = []
-        params: list[object] = []
-
-        # The root needs no predicate at all: everything is at or below it.
-        # A clause that said so would still be evaluated per row, and against
-        # `doc_key`, which carries no index of its own.
-        parsed = keys.parse(_scope(key))
-        if parsed.doc_key != keys.ROOT:
-            below, bounds = _below("doc_key", parsed.doc_key)
-            where.append(f"(doc_key = ? OR {below})")
-            params += [parsed.doc_key, *bounds]
+        where, params = subtree.clauses()
 
         if meta_name is None:
             where.append("meta_name IS NULL")
@@ -956,25 +1088,7 @@ class Store:
             where.append(f"meta_name IN ({', '.join('?' * len(names))})")
             params += names
 
-        if depth is not None:
-            if depth < 0:
-                raise ValueError("depth must not be negative")
-            base = keys.depth(_scope(key))
-            # A segment count SQLite can compute per row: the delimiters plus
-            # one. In SQL rather than over the results, because a depth filter
-            # applied afterwards has already paid to fetch what it discards.
-            # The root has no segments and so breaks the formula -- delimiters
-            # plus one makes it depth 1, and `depth=0` from the root would then
-            # exclude the very document it names.
-            where.append(
-                "(CASE WHEN doc_key = '' THEN 0 ELSE "
-                "length(doc_key) - length(replace(doc_key, '/', '')) + 1 END) - ? <= ?"
-            )
-            params += [base, depth]
-
-        clauses, bounds = _range_bounds(
-            after_subtree=after_subtree, before=before, final_subtree=final_subtree
-        )
+        clauses, bounds = key_range.clauses()
         where += clauses
         params += bounds
 
@@ -991,55 +1105,47 @@ class Store:
     @_logged("get_documents")
     def get_documents(
         self,
-        key: str | None = None,
+        subtree: BoundedSubtree = EVERYTHING,
         *,
+        key_range: KeyRange = UNBOUNDED,
+        cursor: str | None = None,
         meta_name: str | Sequence[str] | None = None,
-        depth: int | None = None,
         max_chars: int = DEFAULT_BULK_MAX_CHARS,
         limit: int | None = None,
-        after: str | None = None,
         max_total_chars: int | None = None,
-        after_subtree: str | None = None,
-        before: str | None = None,
-        final_subtree: str | None = None,
     ) -> Page[Excerpt]:
-        """Read everything at and below ``key``, in key order.
+        """Read everything ``subtree`` names, in key order.
 
         With ``meta_name`` the result holds those metadata entries instead of
         documents, which is how the titles of every document under a key are
-        listed in one call. ``depth`` limits how far below ``key`` to descend,
-        counted in segments; the default is unlimited.
+        listed in one call.
+
+        ``key_range`` narrows the subtree to a stretch of the order inside it,
+        and the two hold together: a row is returned when it is in the subtree
+        *and* in the range. It bounds the selection, so ``total`` and
+        ``total_chars`` describe that stretch, and a caller reading one subtree
+        as several ranges can add the answers up.
+
+        ``cursor`` is not one of the bounds. It is where the last page stopped,
+        it moves within the range as a caller pages, and it deliberately does
+        not reach the totals: what a caller cannot work out from a page is how
+        much of the whole they are holding.
 
         Two axes bound the answer and both are needed. ``max_chars`` caps each
-        document, ``limit`` and ``after`` page the collection, and
+        document, ``limit`` and ``cursor`` page the collection, and
         ``max_total_chars`` caps the page as a whole -- without that last one
         the two axes multiply, and a hundred documents at two thousand
         characters each honours both stated bounds while returning two hundred
         thousand characters.
-
-        ``after_subtree``, ``before`` and ``final_subtree`` narrow the subtree
-        to a window inside it -- see :func:`_range_bounds`. They bound the
-        selection rather than the page, so ``total`` and ``total_chars``
-        describe the window, and a caller reading one subtree as several
-        windows can add the answers up. ``after`` is not one of them: it is the
-        cursor, it moves within a window, and a page's totals have never
-        depended on where the reader had got to.
         """
-        where, params = self._selection(
-            key,
-            meta_name=meta_name,
-            depth=depth,
-            after_subtree=after_subtree,
-            before=before,
-            final_subtree=final_subtree,
-        )
+        where, params = self._selection(subtree, key_range, meta_name=meta_name)
         total, total_chars = self._selection_totals(where, params)
 
         sql = f"SELECT * FROM documents WHERE {where}"
         page_params = list(params)
-        if after is not None:
+        if cursor is not None:
             sql += " AND sort_key > ?"
-            page_params.append(_cursor_bound(after))
+            page_params.append(_cursor_bound(cursor))
         sql += " ORDER BY sort_key"
 
         items: list[Excerpt] = []
@@ -1073,13 +1179,10 @@ class Store:
 
     def _missing_selection(
         self,
-        key: str | None,
+        subtree: BoundedSubtree,
+        key_range: KeyRange,
         *,
         meta_name: str | Sequence[str],
-        depth: int | None,
-        after_subtree: str | None = None,
-        before: str | None = None,
-        final_subtree: str | None = None,
     ) -> tuple[str, list[object], list[str]]:
         """The WHERE clause naming documents carrying none of ``meta_name``.
 
@@ -1091,14 +1194,7 @@ class Store:
         if not names:
             raise ValueError("meta_name must not be an empty sequence")
 
-        where, params = self._selection(
-            key,
-            meta_name=None,
-            depth=depth,
-            after_subtree=after_subtree,
-            before=before,
-            final_subtree=final_subtree,
-        )
+        where, params = self._selection(subtree, key_range, meta_name=None)
         where += (
             f" AND NOT EXISTS (SELECT 1 FROM documents AS meta "
             f"WHERE meta.doc_key = documents.doc_key "
@@ -1109,34 +1205,28 @@ class Store:
     @_logged("missing_meta_stats")
     def missing_meta_stats(
         self,
-        key: str | None = None,
+        subtree: BoundedSubtree = EVERYTHING,
         *,
+        key_range: KeyRange = UNBOUNDED,
+        window: KeyRange = UNBOUNDED,
         meta_name: str | Sequence[str] = "title",
-        depth: int | None = None,
-        after: str | None = None,
-        before_inclusive: str | None = None,
-        after_subtree: str | None = None,
-        before: str | None = None,
-        final_subtree: str | None = None,
         sample: int = 0,
     ) -> MissingMeta:
         """What a metadata survey could not see, over exactly one page's window.
 
-        ``after`` and ``before_inclusive`` are that survey's own cursors --
-        metadata keys, not document keys -- and they bound this the way they
-        bound the page: exclusive below, inclusive above, each ``None`` meaning
-        the page ran to that end of the collection. ``before_inclusive`` is
-        spelled out because the inclusive half is the surprising one and
-        because ``before`` now means something else here.
+        **Two ranges, measured against two different things**, and a document
+        has to satisfy both. ``key_range`` is measured against a document's own
+        position, as everywhere else in the store. ``window`` is measured
+        against the position its metadata *would* have taken, which is the
+        order the survey walks, so this is where a survey's own cursors go --
+        ``KeyRange(after=page_start, before_inclusive=page_end)`` is a page,
+        exclusive below and inclusive above, each end left unset when the page
+        ran to that end of the collection.
 
-        ``after_subtree``, ``before`` and ``final_subtree`` are the ordinary
-        range bounds of :func:`_range_bounds`, and they are **not** cursors:
-        they are measured against the document's own ``sort_key`` rather than
-        against the position its metadata would have taken. A document is
-        inside a skipped subtree because of where the document is, not because
-        of where a title it does not have would have sorted. The two kinds of
-        bound compose -- a survey reading one subtree in windows passes the
-        range bounds of the window and the cursors of the page within it.
+        The split is not a technicality. A document is inside a subtree that
+        was stepped over because of where the *document* is, and is inside a
+        page because of where its *title* would have sorted, and a survey
+        reading one subtree in several ranges needs to say both at once.
 
         A document carrying none of the names has no row in the ordering the
         survey walks, so it has no position in it either. One is synthesised:
@@ -1166,14 +1256,7 @@ class Store:
         ``idx_documents_meta`` on ``meta_name`` and neither bound could seek
         anyway. The window is one page wide, which is what keeps it affordable.
         """
-        where, params, names = self._missing_selection(
-            key,
-            meta_name=meta_name,
-            depth=depth,
-            after_subtree=after_subtree,
-            before=before,
-            final_subtree=final_subtree,
-        )
+        where, params, names = self._missing_selection(subtree, key_range, meta_name=meta_name)
 
         # Where the row would have sorted had the document carried the name.
         # Asked for several, a document would first have appeared at the
@@ -1188,12 +1271,10 @@ class Store:
         root = min(keys.sort_form(keys.META_PREFIX + n) for n in names)
         position = "(CASE WHEN sort_key = '' THEN ? ELSE sort_key || ? END)"
 
-        if after is not None:
-            where += f" AND {position} > ?"
-            params += [root, suffix, _cursor_bound(after)]
-        if before_inclusive is not None:
-            where += f" AND {position} <= ?"
-            params += [root, suffix, _cursor_bound(before_inclusive)]
+        clauses, bounds = window.clauses(position, [root, suffix])
+        for clause in clauses:
+            where += f" AND {clause}"
+        params += bounds
 
         total, total_chars = self._selection_totals(where, params)
 
@@ -1210,17 +1291,14 @@ class Store:
     @_logged("keys_missing_meta")
     def keys_missing_meta(
         self,
-        key: str | None = None,
+        subtree: BoundedSubtree = EVERYTHING,
         *,
+        key_range: KeyRange = UNBOUNDED,
+        cursor: str | None = None,
         meta_name: str | Sequence[str] = "title",
-        depth: int | None = None,
         limit: int | None = None,
-        after: str | None = None,
-        after_subtree: str | None = None,
-        before: str | None = None,
-        final_subtree: str | None = None,
     ) -> Page[str]:
-        """Document keys at and below ``key`` carrying none of ``meta_name``.
+        """Document keys in ``subtree`` carrying none of ``meta_name``.
 
         A survey by ``!title`` only sees documents that have one, so on its own
         it silently under-reports the store. This names what the survey missed.
@@ -1230,27 +1308,19 @@ class Store:
         every document in the subtree through ``get_documents`` and throw the
         content away.
 
-        ``after_subtree``, ``before`` and ``final_subtree`` narrow the subtree
-        the same way they narrow a survey, and for the same reason: the two
-        have to be askable over one window or they stop describing one stretch
-        of the store.
+        ``key_range`` narrows the subtree exactly as it narrows a survey, and
+        for the same reason: the two have to be askable over one stretch of the
+        store or they stop describing the same one.
         """
-        where, params, _ = self._missing_selection(
-            key,
-            meta_name=meta_name,
-            depth=depth,
-            after_subtree=after_subtree,
-            before=before,
-            final_subtree=final_subtree,
-        )
+        where, params, _ = self._missing_selection(subtree, key_range, meta_name=meta_name)
 
         total, total_chars = self._selection_totals(where, params)
 
         sql = f"SELECT key FROM documents WHERE {where}"
         page_params = list(params)
-        if after is not None:
+        if cursor is not None:
             sql += " AND sort_key > ?"
-            page_params.append(_cursor_bound(after))
+            page_params.append(_cursor_bound(cursor))
         sql += " ORDER BY sort_key"
         if limit is not None:
             sql += " LIMIT ?"
@@ -1479,60 +1549,23 @@ def _below(column: str, doc_key: str) -> tuple[str, list[object]]:
     return f"({column} >= ? AND {column} < ?)", [lo, hi]
 
 
-def _range_bounds(
-    *,
-    after_subtree: str | None = None,
-    before: str | None = None,
-    final_subtree: str | None = None,
-) -> tuple[list[str], list[object]]:
-    """One-sided bounds on a key range, as predicates on ``sort_key``.
+def _position(key: str) -> str:
+    """Where ``key`` sits in the order: the padded sort form of the parsed key.
 
-    Each names a key, each is optional, and together they cut any window out of
-    the order a listing walks:
-
-    * ``before`` -- strictly before that key. Its subtree goes with it, since
-      every descendant sorts after its parent, so this is the whole of the key
-      and everything under it excluded from above.
-    * ``after_subtree`` -- strictly after that key *and* everything below it.
-      The other edge of the same cut, and the reason this is not spelled with
-      ``after``: a cursor is exclusive of the key it names and **inclusive of
-      that key's children**, which is right for resuming a page and wrong for
-      stepping over a subtree. Nothing else can say "past all of this".
-    * ``final_subtree`` -- no later than the end of that key's subtree: before
-      it, at it, or below it.
-
-    So a subtree to be left out of an answer is named twice, once from each
-    side: ``before=k`` ends the stretch in front of it and ``after_subtree=k``
-    begins the stretch behind it. Neither names a key that has to exist, which
-    is what a caller skipping a range cannot supply -- there is no key
-    "just past ``k``'s last descendant" to hand to a cursor.
-
-    These bound the **selection**, not the page, so a count taken over them
-    counts the window. That is what makes the windows either side of a skipped
-    subtree add up: each reports its own stretch, and the stretches tile.
+    Every bound in the store compares against one of these, so a key is parsed
+    and normalised on the way into a comparison exactly once and in one place.
     """
-    clauses: list[str] = []
-    params: list[object] = []
-    if after_subtree is not None:
-        clauses.append("sort_key >= ?")
-        params.append(keys.sort_subtree_end(after_subtree))
-    if before is not None:
-        clauses.append("sort_key < ?")
-        params.append(keys.sort_form(keys.parse(before).key))
-    if final_subtree is not None:
-        clauses.append("sort_key < ?")
-        params.append(keys.sort_subtree_end(final_subtree))
-    return clauses, params
+    return keys.sort_form(keys.parse(key).key)
 
 
-def _cursor_bound(after: str | None) -> str | None:
-    """What a cursor compares against: the padded sort form of the key.
+def _cursor_bound(cursor: str | None) -> str | None:
+    """What a cursor compares against, or None when there is no cursor.
 
     A cursor names a key, never a position. The store is written to while it is
     being read, so under a positional cursor anything landing before it shifts
     every later page and a page silently repeats or skips. A key does not move.
     """
-    return keys.sort_form(keys.parse(after).key) if after is not None else None
+    return None if cursor is None else _position(cursor)
 
 
 

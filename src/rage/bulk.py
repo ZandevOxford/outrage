@@ -108,7 +108,7 @@ def levels(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
     """
     cursor = None
     while True:
-        page = opened.list_keys(key, limit=PAGE, after=cursor)
+        page = opened.list_keys(key, limit=PAGE, cursor=cursor)
         yield from page.items
         if page.next_cursor is None:
             return

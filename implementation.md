@@ -123,20 +123,38 @@ connections rather than one shared between them — the concurrency fix spans
 mounts without an addition.
 
 It needed one thing, added later: **range bounds**, so that a traversal can
-step over the stretch a mount shadows. `Store.get_documents`,
-`keys_missing_meta` and `missing_meta_stats` take `after_subtree`, `before` and
-`final_subtree` alongside `key` and `depth` — see `_range_bounds`, which has
-what each means. They know nothing about mounts; they are ordinary bounds on a
-key range, and `before` and `after_subtree` name the same key from opposite
-sides so a subtree can be cut out without naming a key that does not exist.
-They bound the **selection**, not the page, so a count taken over a window
-counts that window and the windows either side of a mount add up to the whole.
-`missing_meta_stats` keeps its survey cursors separately — `after` and
-`before_inclusive`, measured against the position a document's metadata would
-have taken — because a document is inside a shadowed subtree because of where
-the *document* is. `Store.level_entry` was added with them: how one key appears
-in its parent's listing, which is what the level totals need in order to count
-a mount point once.
+step over the stretch a mount shadows. A subtree read in `Store` is now bounded
+by three separate things, all of which must hold, and each is its own argument:
+
+* **`BoundedSubtree(key, depth)`** — which part of the hierarchy to read.
+  Measured on `doc_key`, because metadata shares its document's `doc_key`, so
+  one predicate takes a document and its metadata together and a metadata key
+  has the depth of the document it belongs to. `EVERYTHING` is the default.
+* **`KeyRange`** — which stretch of the order to read, measured on `sort_key`.
+  Six one-sided bounds, all optional and all ANDed: `after_inclusive`, `after`,
+  `after_subtree`, `before`, `before_inclusive`, `final_subtree` — three cuts
+  from below and three from above, which is every place a cut can fall relative
+  to a key. `KeyRange.clauses(column, column_params)` renders them as SQL, with
+  `column` an expression rather than a name. `UNBOUNDED` is the default.
+* **`cursor`** — where the last page stopped, on the methods that page,
+  including `list_keys`, whose `after` was renamed to it so the store has one
+  word for it.
+
+`KeyRange` knows nothing about mounts; `before` and `after_subtree` name the
+same key from opposite sides, so a subtree can be cut out without naming a key
+that does not exist. A range bounds the **selection**, not the page, so a count
+taken over a window counts that window and the windows either side of a mount
+add up to the whole — which is exactly why the cursor is *not* one of its
+bounds. `BoundedSubtree` is deliberately not expressed as a `KeyRange` either:
+a caller must be able to give both, and folding one into the other makes the
+pair inexpressible. `missing_meta_stats` therefore takes **two** ranges,
+`key_range` measured against a document's own position and `window` against the
+position its metadata would have taken, because a document is inside a shadowed
+subtree because of where the *document* is. `context/23/decisions/range-types`
+in the store has the reasoning, including why `after_inclusive` and
+`final_subtree` are kept with no caller. `Store.level_entry` was added with
+these: how one key appears in its parent's listing, which is what the level
+totals need in order to count a mount point once.
 
 `keys.MAX_SEGMENTS` is **64**, half `keys.MAX_JOINED_SEGMENTS`, and bounds both
 a key inside a store and a mount point. That is what makes the join total:

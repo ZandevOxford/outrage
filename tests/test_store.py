@@ -9,7 +9,13 @@ from rage import keys
 from rage import store as store_module
 from rage.eventlog import EventLog
 from rage.keys import InvalidKeyError
-from rage.store import KeyNotFoundError, PatternNotFoundError, Store
+from rage.store import (
+    BoundedSubtree,
+    KeyNotFoundError,
+    KeyRange,
+    PatternNotFoundError,
+    Store,
+)
 
 
 @pytest.fixture
@@ -138,9 +144,8 @@ def test_migrates_period_delimited_keys_to_slashes(tmp_path):
         assert s._conn.execute("PRAGMA user_version").fetchone()[0] == store_module.SCHEMA_VERSION
         assert s.retrieve_document("context/a1b2/design").content == "Body."
         assert [e.key for e in s.list_keys("context/a1b2").items] == ["context/a1b2/design"]
-        assert [e.key for e in s.get_documents("context", meta_name="title").items] == [
-            "context/a1b2/design/!title"
-        ]
+        survey = s.get_documents(BoundedSubtree("context"), meta_name="title")
+        assert [e.key for e in survey.items] == ["context/a1b2/design/!title"]
 
 
 # -- storing -------------------------------------------------------------
@@ -373,7 +378,7 @@ def test_wildcard_is_rejected_when_reading_or_deleting(store):
     with pytest.raises(InvalidKeyError):
         store.delete("tmp/?")
     with pytest.raises(InvalidKeyError):
-        store.get_documents("tmp/?")
+        store.get_documents(BoundedSubtree("tmp/?"))
     with pytest.raises(InvalidKeyError):
         store.list_keys("tmp/?")
 
@@ -551,7 +556,7 @@ def test_list_empty(store):
 
 
 def test_get_documents_returns_the_subtree(populated):
-    keys_found = [e.key for e in populated.get_documents("context").items]
+    keys_found = [e.key for e in populated.get_documents(BoundedSubtree("context")).items]
     assert keys_found == [
         "context/a1b2/design",
         "context/a1b2/task",
@@ -562,11 +567,12 @@ def test_get_documents_returns_the_subtree(populated):
 def test_get_documents_includes_the_key_itself(store):
     store.store_document("a", "body")
     store.store_document("a/b", "child")
-    assert [e.key for e in store.get_documents("a").items] == ["a", "a/b"]
+    assert [e.key for e in store.get_documents(BoundedSubtree("a")).items] == ["a", "a/b"]
 
 
 def test_get_documents_lists_titles_across_a_subtree(populated):
-    found = {e.key: e.content for e in populated.get_documents("context", meta_name="title").items}
+    survey = populated.get_documents(BoundedSubtree("context"), meta_name="title")
+    found = {e.key: e.content for e in survey.items}
     assert found == {
         "context/a1b2/design/!title": "Store schema",
         "context/a1b2/task/!title": "Delete tool",
@@ -578,13 +584,14 @@ def test_get_documents_accepts_several_metadata_names(store):
     store.store_document("a/!title", "T")
     store.store_document("a/!summary", "S")
     store.store_document("a/!other", "O")
-    found = [e.key for e in store.get_documents("a", meta_name=["title", "summary"]).items]
+    survey = store.get_documents(BoundedSubtree("a"), meta_name=["title", "summary"])
+    found = [e.key for e in survey.items]
     assert found == ["a/!summary", "a/!title"]
 
 
 def test_get_documents_rejects_an_empty_metadata_list(store):
     with pytest.raises(ValueError, match="meta_name"):
-        store.get_documents("a", meta_name=[])
+        store.get_documents(BoundedSubtree("a"), meta_name=[])
 
 
 def test_get_documents_everything(populated):
@@ -592,21 +599,23 @@ def test_get_documents_everything(populated):
 
 
 def test_get_documents_depth(populated):
-    assert [e.key for e in populated.get_documents("context", depth=0).items] == []
-    assert [e.key for e in populated.get_documents("context", depth=1).items] == []
-    assert len(populated.get_documents("context", depth=2).items) == 3
-    assert [e.key for e in populated.get_documents(depth=1).items] == []
+    assert [e.key for e in populated.get_documents(BoundedSubtree("context", depth=0)).items] == []
+    assert [e.key for e in populated.get_documents(BoundedSubtree("context", depth=1)).items] == []
+    assert len(populated.get_documents(BoundedSubtree("context", depth=2)).items) == 3
+    assert [e.key for e in populated.get_documents(BoundedSubtree(None, depth=1)).items] == []
 
 
 def test_keys_missing_meta_names_what_a_title_survey_cannot_see(populated):
     # Only project/reference/implementation was stored without a title.
     assert populated.keys_missing_meta().items == ["project/reference/implementation"]
-    assert populated.keys_missing_meta("context").items == []
+    assert populated.keys_missing_meta(BoundedSubtree("context")).items == []
 
 
 def test_keys_missing_meta_follows_the_key_and_depth_filters(populated):
-    assert populated.keys_missing_meta("project").items == ["project/reference/implementation"]
-    assert populated.keys_missing_meta("project", depth=1).items == []
+    assert populated.keys_missing_meta(BoundedSubtree("project")).items == [
+        "project/reference/implementation"
+    ]
+    assert populated.keys_missing_meta(BoundedSubtree("project", depth=1)).items == []
 
 
 def test_keys_missing_meta_takes_several_names(populated):
@@ -624,7 +633,7 @@ def test_keys_missing_meta_rejects_an_empty_name_list(store):
 
 def test_get_documents_truncates_each_document(store):
     store.store_document("a/b", "x" * 5_000)
-    (excerpt,) = store.get_documents("a").items
+    (excerpt,) = store.get_documents(BoundedSubtree("a")).items
     assert excerpt.returned == store_module.DEFAULT_BULK_MAX_CHARS
     assert excerpt.total == 5_000
     assert excerpt.next_offset == store_module.DEFAULT_BULK_MAX_CHARS
@@ -633,7 +642,7 @@ def test_get_documents_truncates_each_document(store):
 def test_get_documents_does_not_confuse_sibling_prefixes(store):
     store.store_document("a/b/c", "x")
     store.store_document("a/beta/d", "y")
-    assert [e.key for e in store.get_documents("a/b").items] == ["a/b/c"]
+    assert [e.key for e in store.get_documents(BoundedSubtree("a/b")).items] == ["a/b/c"]
 
 
 # -- deleting ------------------------------------------------------------
@@ -726,8 +735,8 @@ def test_a_store_without_a_log_writes_nothing(tmp_path):
         (lambda s: s.store_document("a/b", "body"), "store_document"),
         (lambda s: s.retrieve_document("a/b"), "retrieve_document"),
         (lambda s: s.list_keys("a").items, "list_keys"),
-        (lambda s: s.get_documents("a").items, "get_documents"),
-        (lambda s: s.keys_missing_meta("a").items, "keys_missing_meta"),
+        (lambda s: s.get_documents(BoundedSubtree("a")).items, "get_documents"),
+        (lambda s: s.keys_missing_meta(BoundedSubtree("a")).items, "keys_missing_meta"),
         (lambda s: s.descendant_count("a"), "descendant_count"),
         (lambda s: s.delete("a/b"), "delete"),
     ],
@@ -798,7 +807,7 @@ def test_work_done_on_a_caller_s_behalf_is_recorded_too(logged, tmp_path):
 
 def test_keys_missing_meta_is_one_access_now(logged, tmp_path):
     logged.store_document("a/b", "body")
-    logged.keys_missing_meta("a")
+    logged.keys_missing_meta(BoundedSubtree("a"))
 
     # It used to read every document in the subtree through get_documents and
     # throw the content away, which the log is what showed.
@@ -941,7 +950,8 @@ def test_numbered_keys_come_back_in_numeric_order(tmp_path):
         for _ in range(12):
             s.store_document("findings/?", "a finding")
 
-        numbered = [e.key.rsplit("/", 1)[1] for e in s.get_documents("findings").items]
+        found = s.get_documents(BoundedSubtree("findings")).items
+        numbered = [e.key.rsplit("/", 1)[1] for e in found]
         assert numbered == [str(n) for n in range(1, 13)]
         listed = [e.key.rsplit("/", 1)[1] for e in s.list_keys("findings").items]
         assert listed == [str(n) for n in range(1, 13)]
@@ -973,7 +983,7 @@ def test_a_padded_key_names_the_same_document_as_the_unpadded_one(tmp_path):
 
         s.store_document("context/7/task", "replaced")
         assert s.retrieve_document("context/007/task").content == "replaced"
-        assert len(s.get_documents("context").items) == 1
+        assert len(s.get_documents(BoundedSubtree("context")).items) == 1
 
 
 def test_allocation_counts_past_a_key_that_was_written_padded(tmp_path):
@@ -997,7 +1007,8 @@ def test_migrates_a_store_that_predates_the_sort_key(tmp_path):
     with Store(directory) as s:
         assert s._conn.execute("PRAGMA user_version").fetchone()[0] == store_module.SCHEMA_VERSION
         # notes/03 was rewritten, not just indexed: the key it names has changed.
-        assert [e.key for e in s.get_documents("notes").items] == ["notes/2", "notes/3", "notes/10"]
+        found = s.get_documents(BoundedSubtree("notes")).items
+        assert [e.key for e in found] == ["notes/2", "notes/3", "notes/10"]
         assert s.retrieve_document("notes/3").content == "third, written padded"
 
 
@@ -1069,7 +1080,7 @@ def test_the_migration_fills_in_a_sort_key_for_every_row(tmp_path):
 # -- pagination ----------------------------------------------------------
 
 
-def paged(call, **kwargs) -> list:
+def paged(call, *args, **kwargs) -> list:
     """Everything ``call`` returns, taken one page at a time through the cursor.
 
     Guards the two ways a cursor fails to terminate rather than looping on
@@ -1080,7 +1091,7 @@ def paged(call, **kwargs) -> list:
     collected: list = []
     cursor = None
     for _ in range(1000):
-        page = call(after=cursor, **kwargs)
+        page = call(*args, cursor=cursor, **kwargs)
         collected += page.items
         if page.next_cursor is None:
             return collected
@@ -1146,7 +1157,7 @@ def test_a_parked_cursor_returns_what_was_written_after_it(store):
     # what is new since I last looked are the same operation.
     store.store_document("findings/?", "written by someone else")
 
-    page = store.list_keys("findings", after=cursor)
+    page = store.list_keys("findings", cursor=cursor)
 
     assert [entry.key for entry in page.items] == ["findings/10"]
 
@@ -1154,7 +1165,7 @@ def test_a_parked_cursor_returns_what_was_written_after_it(store):
 def test_a_cursor_may_be_written_padded(store):
     a_level(store, 4)
 
-    page = store.list_keys("findings", after="findings/02")
+    page = store.list_keys("findings", cursor="findings/02")
 
     assert [entry.key for entry in page.items] == ["findings/3", "findings/4"]
 
@@ -1208,12 +1219,12 @@ def test_get_documents_pages_the_collection(populated):
 
 
 def test_get_documents_states_the_size_of_the_whole(populated):
-    page = populated.get_documents("context", limit=1)
+    page = populated.get_documents(BoundedSubtree("context"), limit=1)
 
     assert page.returned == 1
     assert page.total == 3
     assert page.total_chars == sum(
-        len(excerpt.content) for excerpt in populated.get_documents("context").items
+        len(excerpt.content) for excerpt in populated.get_documents(BoundedSubtree("context")).items
     )
     assert page.next_cursor == "context/a1b2/design"
 
@@ -1222,7 +1233,12 @@ def test_a_page_is_capped_in_characters_as_well_as_in_documents(store):
     for number in range(1, 11):
         store.store_document(f"notes/{number}", "x" * 500)
 
-    page = store.get_documents("notes", limit=10, max_chars=500, max_total_chars=1200)
+    page = store.get_documents(
+        BoundedSubtree("notes"),
+        limit=10,
+        max_chars=500,
+        max_total_chars=1200,
+    )
 
     # Both stated bounds are honoured by ten documents of five hundred
     # characters, which is five thousand characters. The second cap is what
@@ -1237,7 +1253,7 @@ def test_a_document_larger_than_the_budget_still_comes_back(store):
     store.store_document("notes/1", "x" * 5000)
     store.store_document("notes/2", "y" * 5000)
 
-    page = store.get_documents("notes", max_chars=5000, max_total_chars=100)
+    page = store.get_documents(BoundedSubtree("notes"), max_chars=5000, max_total_chars=100)
 
     # Otherwise the page is empty, the cursor does not move, and a caller
     # following it makes no progress for ever.
@@ -1250,19 +1266,21 @@ def test_the_character_budget_pages_to_the_end(store):
         store.store_document(f"notes/{number}", "x" * 500)
 
     seen = [
-        excerpt.key for excerpt in paged(store.get_documents, key="notes", max_total_chars=1200)
+        excerpt.key
+        for excerpt in paged(store.get_documents, BoundedSubtree("notes"), max_total_chars=1200)
     ]
 
     assert len(seen) == 10
-    assert seen == [excerpt.key for excerpt in store.get_documents("notes").items]
+    assert seen == [excerpt.key for excerpt in store.get_documents(BoundedSubtree("notes")).items]
 
 
 def test_get_documents_depth_still_bounds_a_paged_read(populated):
-    page = populated.get_documents("context", depth=2, limit=1)
+    page = populated.get_documents(BoundedSubtree("context", depth=2), limit=1)
 
     assert page.total == 3
     assert page.returned == 1
-    assert [excerpt.key for excerpt in paged(populated.get_documents, key="context", depth=2)] == [
+    walked = paged(populated.get_documents, BoundedSubtree("context", depth=2))
+    assert [excerpt.key for excerpt in walked] == [
         "context/a1b2/design",
         "context/a1b2/task",
         "context/c3d4/design",
@@ -1274,12 +1292,12 @@ def test_keys_missing_meta_pages_and_states_the_whole(store):
         store.store_document(f"notes/{number}", "body")
     store.store_document("notes/3/!title", "Titled")
 
-    page = store.keys_missing_meta("notes", limit=2)
+    page = store.keys_missing_meta(BoundedSubtree("notes"), limit=2)
 
     assert page.items == ["notes/1", "notes/2"]
     assert page.total == 4
     assert page.next_cursor == "notes/2"
-    assert paged(store.keys_missing_meta, key="notes", limit=2) == [
+    assert paged(store.keys_missing_meta, BoundedSubtree("notes"), limit=2) == [
         "notes/1",
         "notes/2",
         "notes/4",
@@ -1291,8 +1309,8 @@ def test_keys_missing_meta_wants_all_of_the_names_missing(store):
     store.store_document("a/b", "body")
     store.store_document("a/b/!title", "Titled")
 
-    assert store.keys_missing_meta("a", meta_name=["title", "summary"]).items == []
-    assert store.keys_missing_meta("a", meta_name="summary").items == ["a/b"]
+    assert store.keys_missing_meta(BoundedSubtree("a"), meta_name=["title", "summary"]).items == []
+    assert store.keys_missing_meta(BoundedSubtree("a"), meta_name="summary").items == ["a/b"]
 
 
 def test_a_level_of_nothing_but_containers_pages_to_the_end(store):
@@ -1338,9 +1356,17 @@ def test_missing_meta_stats_bounds_by_the_surveys_own_cursors(store):
         store.store_document(key, "body")
     store.store_document("n/2/!title", "T")
 
-    whole = store.missing_meta_stats("n", sample=10)
-    below = store.missing_meta_stats("n", before_inclusive="n/2/!title", sample=10)
-    above = store.missing_meta_stats("n", after="n/2/!title", sample=10)
+    whole = store.missing_meta_stats(BoundedSubtree("n"), sample=10)
+    below = store.missing_meta_stats(
+        BoundedSubtree("n"),
+        window=KeyRange(before_inclusive="n/2/!title"),
+        sample=10,
+    )
+    above = store.missing_meta_stats(
+        BoundedSubtree("n"),
+        window=KeyRange(after="n/2/!title"),
+        sample=10,
+    )
 
     # Exclusive below, inclusive above, so the two halves partition the whole.
     assert whole.sample == ["n/1", "n/3", "n/4"]
@@ -1358,8 +1384,9 @@ def test_missing_meta_stats_places_a_document_where_its_metadata_would_sort(stor
     # document order: a/!title < a/x/!title < a/y/!title, exactly as
     # a < a/x < a/y. Everything above therefore sits on the same side of the
     # cursor in both orderings.
-    assert store.missing_meta_stats(before_inclusive="a/y/!title", sample=10).sample == ["a", "a/x"]
-    assert store.missing_meta_stats(after="a/y/!title", sample=10).sample == []
+    below = store.missing_meta_stats(window=KeyRange(before_inclusive="a/y/!title"), sample=10)
+    assert below.sample == ["a", "a/x"]
+    assert store.missing_meta_stats(window=KeyRange(after="a/y/!title"), sample=10).sample == []
 
     # Two separate defects put `a` on the wrong side of this before: the `:`
     # separator until schema 4, and then `/` as the sort delimiter until
@@ -1444,9 +1471,11 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
 
         after, seen, counted = None, [], 0
         while True:
-            page = store.get_documents(meta_name=["title"], limit=1, after=after)
+            page = store.get_documents(meta_name=["title"], limit=1, cursor=after)
             window = store.missing_meta_stats(
-                meta_name=["title"], after=after, before_inclusive=page.next_cursor, sample=100
+                window=KeyRange(after=after, before_inclusive=page.next_cursor),
+                meta_name=["title"],
+                sample=100,
             )
             seen += window.sample
             counted += window.total
@@ -1584,34 +1613,37 @@ def test_a_zero_limit_counts_a_window_without_reading_it(ranged):
 def test_before_excludes_the_key_and_everything_below_it(ranged):
     # Not just the key: a descendant sorts after its parent, so a bound that
     # stopped at the key alone would still walk into its subtree.
-    assert keys_of(ranged.get_documents(before="m")) == ["a"]
+    assert keys_of(ranged.get_documents(key_range=KeyRange(before="m"))) == ["a"]
 
 
 def test_after_subtree_starts_past_the_whole_subtree(ranged):
-    assert keys_of(ranged.get_documents(after_subtree="m")) == ["z"]
+    assert keys_of(ranged.get_documents(key_range=KeyRange(after_subtree="m"))) == ["z"]
 
 
 def test_a_cursor_stops_at_the_key_and_a_subtree_bound_stops_past_it(ranged):
     # The distinction the two exist for. `after` resumes a page, so it is
     # exclusive of the key and inclusive of that key's children; nothing else
     # can say "past all of this", which is what stepping over a mount needs.
-    assert keys_of(ranged.get_documents(after="m")) == ["m/x", "m/x/deep", "z"]
-    assert keys_of(ranged.get_documents(after_subtree="m")) == ["z"]
+    assert keys_of(ranged.get_documents(cursor="m")) == ["m/x", "m/x/deep", "z"]
+    assert keys_of(ranged.get_documents(key_range=KeyRange(after_subtree="m"))) == ["z"]
 
 
 def test_final_subtree_runs_to_the_end_of_the_subtree(ranged):
-    assert keys_of(ranged.get_documents(final_subtree="m")) == ["a", "m", "m/x", "m/x/deep"]
+    within = ranged.get_documents(key_range=KeyRange(final_subtree="m"))
+    assert keys_of(within) == ["a", "m", "m/x", "m/x/deep"]
 
 
 def test_a_key_and_a_subtree_bound_compose(ranged):
-    assert keys_of(ranged.get_documents("m", before="m/x")) == ["m"]
-    assert keys_of(ranged.get_documents("m", after_subtree="m/x")) == []
+    inside = ranged.get_documents(BoundedSubtree("m"), key_range=KeyRange(before="m/x"))
+    assert keys_of(inside) == ["m"]
+    past = ranged.get_documents(BoundedSubtree("m"), key_range=KeyRange(after_subtree="m/x"))
+    assert keys_of(past) == []
 
 
 def test_the_windows_either_side_of_a_subtree_tile_the_rest(ranged):
     whole = ranged.get_documents()
-    below = ranged.get_documents(before="m")
-    above = ranged.get_documents(after_subtree="m")
+    below = ranged.get_documents(key_range=KeyRange(before="m"))
+    above = ranged.get_documents(key_range=KeyRange(after_subtree="m"))
 
     assert keys_of(below) + keys_of(above) == ["a", "z"]
     assert below.total + above.total == whole.total - 3  # m, m/x, m/x/deep
@@ -1622,26 +1654,26 @@ def test_range_bounds_count_the_window_and_a_cursor_does_not(ranged):
     # The bounds are part of the selection, so a count taken over them counts
     # the window and windows can be added up. The cursor is not: a page's
     # totals have never depended on where the reader had got to.
-    windowed = ranged.get_documents(before="m")
+    windowed = ranged.get_documents(key_range=KeyRange(before="m"))
     assert windowed.total == 1
 
-    resumed = ranged.get_documents(after="a")
+    resumed = ranged.get_documents(cursor="a")
     assert resumed.total == ranged.get_documents().total
     assert keys_of(resumed) == ["m", "m/x", "m/x/deep", "z"]
 
 
 def test_metadata_travels_with_the_document_it_belongs_to(ranged):
-    survey = ranged.get_documents(meta_name=["title"], before="m")
+    survey = ranged.get_documents(key_range=KeyRange(before="m"), meta_name=["title"])
     assert keys_of(survey) == []
-    survey = ranged.get_documents(meta_name=["title"], final_subtree="m")
+    survey = ranged.get_documents(key_range=KeyRange(final_subtree="m"), meta_name=["title"])
     assert keys_of(survey) == ["m/!title"]
 
 
 def test_keys_missing_meta_takes_the_same_bounds(ranged):
     ranged.store_document("a/!title", "A")
     whole = ranged.keys_missing_meta(meta_name="title")
-    below = ranged.keys_missing_meta(meta_name="title", before="m")
-    above = ranged.keys_missing_meta(meta_name="title", after_subtree="m")
+    below = ranged.keys_missing_meta(key_range=KeyRange(before="m"), meta_name="title")
+    above = ranged.keys_missing_meta(key_range=KeyRange(after_subtree="m"), meta_name="title")
 
     # `m` carries a title of its own; the two below it do not.
     assert whole.items == ["m/x", "m/x/deep", "z"]
@@ -1654,15 +1686,22 @@ def test_missing_meta_stats_bounds_the_range_and_the_window_separately(ranged):
     # The range bound is measured against the document's own position and the
     # cursor against the position its title would have taken. A document is
     # inside a skipped subtree because of where the document is.
-    gap = ranged.missing_meta_stats(meta_name="title", before="m", sample=10)
+    gap = ranged.missing_meta_stats(key_range=KeyRange(before="m"), meta_name="title", sample=10)
     assert gap.sample == ["a"]
 
-    gap = ranged.missing_meta_stats(meta_name="title", after_subtree="m", sample=10)
+    gap = ranged.missing_meta_stats(
+        key_range=KeyRange(after_subtree="m"),
+        meta_name="title",
+        sample=10,
+    )
     assert gap.sample == ["z"]
 
     # Both kinds at once: the window inside the range.
     gap = ranged.missing_meta_stats(
-        meta_name="title", after_subtree="m", before_inclusive="z/!title", sample=10
+        key_range=KeyRange(after_subtree="m"),
+        window=KeyRange(before_inclusive="z/!title"),
+        meta_name="title",
+        sample=10,
     )
     assert gap.sample == ["z"]
 
@@ -1671,7 +1710,7 @@ def test_a_subtree_bound_on_the_root_is_refused(ranged):
     # Everything is beneath the root, so no bound can be drawn around it. The
     # alternative is a bound that quietly matches nothing.
     with pytest.raises(ValueError, match="no subtree bounds"):
-        ranged.get_documents(before=None, after_subtree="")
+        ranged.get_documents(key_range=KeyRange(before=None, after_subtree=""))
 
 
 def test_sort_subtree_end_bounds_a_subtree_in_sort_order():
@@ -1761,7 +1800,7 @@ def test_concurrent_reads_are_neither_corrupt_nor_silently_empty(store):
 
     def read(_):
         for _ in range(200):
-            page = store.get_documents(key="a", meta_name=["title"])
+            page = store.get_documents(BoundedSubtree("a"), meta_name=["title"])
             # The loud failure was an exception; the quiet one was a page
             # reporting a total it did not carry, with no cursor to say why.
             assert page.returned == len(page.items)
@@ -1865,7 +1904,10 @@ def test_none_and_the_root_name_the_same_scope(populated):
     assert [e.key for e in populated.list_keys(None).items] == [
         e.key for e in populated.list_keys("").items
     ]
-    assert populated.get_documents(None).total == populated.get_documents("").total
+    assert (
+        populated.get_documents(BoundedSubtree(None)).total
+        == populated.get_documents(BoundedSubtree("")).total
+    )
 
 
 def test_depth_is_counted_from_the_root(populated):
@@ -1874,8 +1916,9 @@ def test_depth_is_counted_from_the_root(populated):
     # The root is depth 0, so `depth=0` names it and nothing else. The segment
     # count SQLite computes is delimiters plus one, which would make the root
     # depth 1 and exclude it from the one selection that is only about it.
-    assert [e.key for e in populated.get_documents("", depth=0).items] == [""]
-    assert [e.key for e in populated.get_documents("", depth=1).items] == ["", "readme"]
+    assert [e.key for e in populated.get_documents(BoundedSubtree("", depth=0)).items] == [""]
+    found = populated.get_documents(BoundedSubtree("", depth=1)).items
+    assert [e.key for e in found] == ["", "readme"]
 
 
 def test_descendant_count_from_the_root_counts_everything_below_it(populated):
@@ -1922,10 +1965,14 @@ def test_the_roots_missing_title_is_measured_where_it_would_have_sorted(populate
     # window than the one its title would really have sorted in.
     populated.store_document("", "body")
     first = populated.missing_meta_stats(
-        meta_name="title", before_inclusive="context/a1b2/design/!title", sample=5
+        window=KeyRange(before_inclusive="context/a1b2/design/!title"),
+        meta_name="title",
+        sample=5,
     )
     later = populated.missing_meta_stats(
-        meta_name="title", after="context/a1b2/design/!title", sample=5
+        window=KeyRange(after="context/a1b2/design/!title"),
+        meta_name="title",
+        sample=5,
     )
     assert "" in first.sample
     assert "" not in later.sample
