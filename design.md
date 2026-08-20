@@ -71,6 +71,16 @@ same code path rather than a second one.
 Configuration, and only at startup: `--mount KEY=PATH`, repeatable. Nothing
 adds or removes a mount on a running server.
 
+**A mount may be read-only**: `--mount-ro KEY=PATH`, and every write routed
+there is refused before the store is reached. That is the case the whole
+feature was pointed at — a shared reference base beside a local read-write
+store — and the refusal is deliberately early, because a refusal that arrives
+after the caller thought it had written is the failure class this project keeps
+finding. It is enforced in the routing, so the database file is opened no
+differently and nothing outside this server is prevented from writing to it. A
+read-only mount is never *created*: a mistyped path would otherwise mount as an
+empty store that no write could contradict.
+
 The point of it is `project/reference/scale`: session context is small,
 write-heavy and per-project, while a reference base of tens of thousands of
 documents is large, read-mostly, and *the same corpus for every project that
@@ -96,7 +106,8 @@ arbitrary. The server says so once on stderr at startup rather than refusing to
 start, since the keys are still reachable in the store that holds them.
 
 **Reads and writes cross a boundary; queries do not.** A read, a write and a
-delete route to one store and translate. A subtree read — `get_documents`,
+delete route to one store and translate, and a write or a delete routed to a
+read-only mount is refused there. A subtree read — `get_documents`,
 `keys_missing_meta`, a recursive delete — covers the one store that owns its
 key, and *says which mounts it did not descend into*. A partial answer must not
 be indistinguishable from a whole one, which is the standing argument from
@@ -107,7 +118,8 @@ position, so a merge of two ordered streams is already feasible.
 **A listing does cross**, and has to. A mount point is a key no store knows
 about — the store beneath it has no row there, and the store above it cannot
 see where it was mounted — so the table splices it into the level above as
-`kind: "mount"`, described by the inner root. Without that a mounted store is
+`kind: "mount"` — or `"read-only mount"`, which is the only place that fact is
+announced — described by the inner root. Without that a mounted store is
 invisible to anyone who does not already know its prefix. Both halves are
 merged before either is cut, for the same reason the store merges its own two
 halves first.

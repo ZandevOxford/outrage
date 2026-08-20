@@ -139,9 +139,22 @@ in the mount points at that level, merging before it cuts; `get_documents` and
 grow a field only when there is something to say, so a single store answer is
 the shape it was before mounts existed.
 
+**Read-only mounts** — `--mount-ro KEY=PATH`, and `rage config --mount-ro` to
+record one. `Mount.read_only` carries it, `Resolved.writable(action)` raises
+`ReadOnlyMountError`, and the two write tools resolve through
+`_resolve_for_write` rather than `_resolve` so a write path names itself and
+cannot pick up the reading one by default. The refusal happens before the store
+is called; `Store` is still untouched. A listing reports the mount point as
+`kind: "read-only mount"`, which is the only announcement — a `read_only` field
+on `Entry` would appear as a null on every entry of every listing. `open_mounts`
+refuses a read-only mount whose database does not exist, since `Store` would
+otherwise create one, and `server.main` now renders a `RageError` as one line
+and exits 1 rather than tracebacking, which is the rule `cli.main` already
+followed.
+
 Deliberately not done, and recorded in `project/reference/planned/mounts`:
-read-only mounts, aggregation across a boundary, and mounts in the CLI —
-`rage check` and `rage backup` are still per-directory.
+aggregation across a boundary, and mounts in the CLI — `rage check` and
+`rage backup` are still per-directory.
 
 ### 4. Integration with Claude Code — done
 

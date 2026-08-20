@@ -14,7 +14,14 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from rage import keys
-from rage.mounts import MOUNT_KIND, MountError, Mounts, open_mounts, parse_spec
+from rage.mounts import (
+    MOUNT_KIND,
+    READ_ONLY_MOUNT_KIND,
+    MountError,
+    Mounts,
+    open_mounts,
+    parse_spec,
+)
 from rage.server import build_server, parse_args
 from rage.store import Store
 
@@ -498,3 +505,192 @@ def test_rage_check_finds_a_key_that_predates_the_bound(tmp_path):
     with Store(tmp_path / "clean") as clean:
         clean.store_document("ordinary", "fine")
         assert not [p for p in maintenance.check(clean).problems if "segments" in p.summary]
+
+
+# -- read-only mounts -----------------------------------------------------
+#
+# The motivating case of the whole feature: a shared read-mostly reference base
+# beside a local read-write store. The refusal lives in the routing, so these
+# drive it through the server wherever a caller would see it, and through the
+# table where the question is about how the table was described.
+
+
+@pytest.fixture
+def read_only_table(tmp_path):
+    """As `table`, but `ref` refuses writes and `lib/deep` still accepts them."""
+    root = Store(tmp_path / "root")
+    ref = Store(tmp_path / "ref")
+    deep = Store(tmp_path / "deep")
+
+    root.store_document("context/1/state", "Where we got to.", title="State")
+    ref.store_document("", "The reference base.", title="Reference")
+    ref.store_document("python/asyncio", "Event loops.", title="asyncio")
+    deep.store_document("a", "Deep.", title="Deep")
+
+    built = Mounts({"": root, "ref": ref, "lib/deep": deep}, read_only=["ref"])
+    yield built
+    built.close()
+
+
+@pytest.fixture
+def read_only_server(read_only_table):
+    return build_server(read_only_table)
+
+
+def test_a_read_only_mount_refuses_a_write_below_it(read_only_server):
+    message = call_expecting_error(
+        read_only_server, "store_document", key="ref/python/asyncio", content="Rewritten."
+    )
+    assert "read-only" in message
+    assert "ref" in message
+
+
+def test_a_read_only_mount_refuses_a_write_at_the_mount_point(read_only_server):
+    message = call_expecting_error(
+        read_only_server, "store_document", key="ref", content="Rewritten."
+    )
+    assert "read-only" in message
+
+
+def test_a_read_only_mount_refuses_an_allocating_write(read_only_server):
+    """`?` must be refused too: it is the write that does not name its own key."""
+    message = call_expecting_error(
+        read_only_server, "store_document", key="ref/notes/?", content="New."
+    )
+    assert "read-only" in message
+
+
+def test_a_read_only_mount_refuses_a_delete(read_only_server):
+    message = call_expecting_error(read_only_server, "delete_keys", key="ref/python/asyncio")
+    assert "read-only" in message
+
+
+def test_a_refused_write_leaves_the_store_exactly_as_it_was(read_only_server, read_only_table):
+    """The point of refusing in the routing: the store is never reached at all."""
+    before = call(read_only_server, "retrieve_document", key="ref/python/asyncio")
+    call_expecting_error(
+        read_only_server, "store_document", key="ref/python/asyncio", content="Rewritten."
+    )
+    after = call(read_only_server, "retrieve_document", key="ref/python/asyncio")
+    assert after["content"] == before["content"]
+    assert after["updated_at"] == before["updated_at"]
+    # And nothing was created alongside it either.
+    assert call(read_only_server, "list_keys", key="ref/notes")["total"] == 0
+
+
+def test_a_read_only_mount_still_reads(read_only_server):
+    assert call(read_only_server, "retrieve_document", key="ref")["content"] == (
+        "The reference base."
+    )
+    assert call(read_only_server, "retrieve_document", key="ref/python/asyncio")["content"] == (
+        "Event loops."
+    )
+    titles = call(read_only_server, "get_documents", key="ref", meta_name=["title"])
+    assert {d["key"] for d in titles["documents"]} == {"ref/!title", "ref/python/asyncio/!title"}
+
+
+def test_a_listing_says_which_mount_is_read_only(read_only_server):
+    entries = {e["key"]: e for e in call(read_only_server, "list_keys")["entries"]}
+    assert entries["ref"]["kind"] == READ_ONLY_MOUNT_KIND
+    # The writable mount is unchanged, so the kind is what distinguishes them.
+    assert entries["lib"]["kind"] == "implicit"
+    assert call(read_only_server, "list_keys", key="lib")["entries"][0]["kind"] == MOUNT_KIND
+
+
+def test_a_writable_mount_is_unaffected(read_only_server):
+    call(read_only_server, "store_document", key="lib/deep/b", content="Written.", title="B")
+    assert call(read_only_server, "retrieve_document", key="lib/deep/b")["content"] == "Written."
+
+
+def test_the_root_is_unaffected(read_only_server):
+    call(read_only_server, "store_document", key="context/2/task", content="Task.", title="Task")
+    assert call(read_only_server, "retrieve_document", key="context/2/task")["content"] == "Task."
+
+
+def test_a_delete_above_a_read_only_mount_is_allowed_and_says_what_it_kept(read_only_table):
+    """The delete resolves to the root, which is writable; the mount is untouched."""
+    server = build_server(read_only_table)
+    result = call(server, "delete_keys", key="", recursive=True)
+    assert "ref" in result["mounts_kept"]
+    assert call(server, "retrieve_document", key="ref/python/asyncio")["content"] == "Event loops."
+
+
+def test_a_read_only_flag_naming_nothing_mounted_is_refused(tmp_path):
+    """A typo that would otherwise start a server with everything writable."""
+    root = Store(tmp_path / "root")
+    ref = Store(tmp_path / "ref")
+    try:
+        with pytest.raises(MountError) as raised:
+            Mounts({"": root, "ref": ref}, read_only=["reference"])
+        assert "nothing is mounted at 'reference'" in str(raised.value)
+    finally:
+        root.close()
+        ref.close()
+
+
+def test_the_root_cannot_be_mounted_read_only(tmp_path):
+    root = Store(tmp_path / "root")
+    try:
+        with pytest.raises(MountError) as raised:
+            Mounts({"": root}, read_only=[""])
+        assert "root" in str(raised.value)
+    finally:
+        root.close()
+
+
+def test_a_read_only_mount_is_not_created_when_it_does_not_exist(tmp_path):
+    """`Store` would happily make one, and an empty reference base reads as fine."""
+    missing = tmp_path / "not-there"
+    with pytest.raises(MountError) as raised:
+        open_mounts(tmp_path / "root", (), [f"ref={missing}"])
+    assert "read-only mount" in str(raised.value)
+    assert not missing.exists()
+
+
+def test_open_mounts_marks_only_the_read_only_specs(tmp_path):
+    Store(tmp_path / "ref").close()
+    Store(tmp_path / "extra").close()
+    with open_mounts(
+        tmp_path / "root", [f"lib={tmp_path / 'extra'}"], [f"ref={tmp_path / 'ref'}"]
+    ) as built:
+        assert [m.prefix for m in built.read_only] == ["ref"]
+        assert built.resolve("ref/x").read_only
+        assert not built.resolve("lib/x").read_only
+        assert not built.resolve("anything").read_only
+
+
+def test_the_same_mount_point_cannot_be_both(tmp_path):
+    Store(tmp_path / "ref").close()
+    with pytest.raises(MountError) as raised:
+        open_mounts(tmp_path / "root", [f"ref={tmp_path / 'ref'}"], [f"ref={tmp_path / 'ref'}"])
+    assert "more than one store is mounted" in str(raised.value)
+
+
+def test_the_server_takes_mount_ro_from_the_command_line():
+    args = parse_args(["--mount", "lib=/tmp/lib", "--mount-ro", "ref=/tmp/ref"])
+    assert args.mounts == ["lib=/tmp/lib"]
+    assert args.read_only_mounts == ["ref=/tmp/ref"]
+
+
+def test_nothing_is_read_only_by_default(table):
+    assert table.read_only == []
+    assert not table.resolve("ref/python/asyncio").read_only
+
+
+def test_the_server_reports_a_bad_mount_table_as_one_line(tmp_path, capsys):
+    """`errors.py`'s rule, which the server did not follow: an answer, not a traceback."""
+    from rage.server import main
+
+    assert main(["--dir", str(tmp_path / "root"), "--mount", "no-delimiter"]) == 1
+    err = capsys.readouterr().err
+    assert err.startswith("rage: ")
+    assert "KEY=PATH" in err
+
+
+def test_the_server_reports_a_missing_read_only_store_as_one_line(tmp_path, capsys):
+    from rage.server import main
+
+    missing = tmp_path / "not-there"
+    assert main(["--dir", str(tmp_path / "root"), "--mount-ro", f"ref={missing}"]) == 1
+    assert "read-only mount" in capsys.readouterr().err
+    assert not missing.exists()
