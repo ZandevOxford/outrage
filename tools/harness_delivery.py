@@ -1,7 +1,7 @@
 """Did the harness deliver what the server and the hooks sent?
 
 Rage depends on three channels that all run from the client into the model, and
-this project has now been bitten by two of them:
+this project has now been bitten by three of them:
 
 * **`PreCompact` hooks** cannot deliver text at all -- see
   `project/reference/planned/checkpoint-hook`. Found by trying it.
@@ -35,6 +35,36 @@ The canary log adds a third side the transcript cannot provide: a token minted
 before the harness saw anything. A token in the log and in no transcript is a
 delivery failure even if the harness recorded no attachment at all.
 
+## Per invocation, not per session
+
+Two hooks can answer the same `SessionStart`, and on a resume they do: both
+run, both print context, and the client builds a block from only one of them.
+An earlier version of this tool asked only whether a *session* received
+anything, and so reported `delivered` for sessions that lost half their output
+-- with the canary, whose text differs every run, supplying the one block that
+made the answer come out yes. See `harness-delivery/tool-counts`.
+
+Two hooks answering one event also share a hook *name* (`SessionStart:resume`),
+so invocations cannot be keyed by it either; they are a list, not a mapping.
+
+Each `hook_success` is therefore paired with the block built from it, by
+matching the `additionalContext` it printed against the entries of the
+`hook_additional_context` that closes the same event. Equal counts are not
+enough: the pairing is by content, and a matched block is consumed so that two
+hooks printing the same text need two blocks between them.
+
+## Repeats are suppressed, and that is not the bug
+
+A resume re-runs every hook and surfaces only what is new: a block whose text
+is already in the transcript is not built again. Nothing is lost -- the earlier
+copy is still there for the model to read -- so an unmatched invocation whose
+text *was* delivered earlier in the same transcript is reported as a `repeat`,
+and only text that never arrived at all counts as discarded.
+
+That distinction is what keeps the exit status meaningful in both directions:
+without it every resume looks like claude-code#10373, and the one real signal
+drowns. See `project/reference/harness-delivery/resume`.
+
 Usage::
 
     python3 tools/harness_delivery.py            # every session for this project
@@ -45,8 +75,9 @@ readme half is readable from the transcript alone, but checking the essentials
 survived means importing the server's own strings, and a bare `python3` has no
 `mcp`. It says which of the two it managed.
 
-Exit status is 0 when every hook that ran also arrived, 1 when one did not, and
-2 when there is no evidence either way -- which is not a pass.
+Exit status is 0 when every hook invocation that printed context was delivered
+or accounted for as a repeat, 1 when one was discarded, and 2 when there is no
+evidence either way -- which is not a pass.
 """
 
 from __future__ import annotations
@@ -74,6 +105,10 @@ TRUNCATION_MARKER = "… [truncated]"
 #: instructions budget -- or one that has not restarted since -- from a live one.
 README_HEADING_PREFIX = "--- `readme`:"
 
+#: What became of one invocation's output. `quiet` means it printed nothing to
+#: deliver, which is not a delivery question at all.
+DELIVERED, REPEAT, DISCARDED, QUIET = "delivered", "repeat", "discarded", "quiet"
+
 
 def transcript_dir(project: Path) -> Path:
     """The transcript directory for a project path.
@@ -85,34 +120,76 @@ def transcript_dir(project: Path) -> Path:
 
 
 @dataclass
+class HookRun:
+    """One hook invocation, and what became of what it printed.
+
+    The unit of judgement. A session is not one, because two hooks answer one
+    event; a hook name is not one, because those two share it.
+    """
+
+    event: str
+    #: The part after the colon in `SessionStart:resume`, empty when there is none.
+    source: str
+    #: The `additionalContext` it printed, empty when it printed none.
+    context: str
+    status: str = QUIET
+
+    @property
+    def name(self) -> str:
+        return f"{self.event}:{self.source}" if self.source else self.event
+
+    @property
+    def spoke(self) -> bool:
+        """Whether this invocation had anything to deliver in the first place."""
+        return bool(self.context)
+
+
+@dataclass
 class Session:
     """One transcript, reduced to the deliveries it can testify about."""
 
     session_id: str
     path: Path
-    #: hookName -> stdout, for every hook the client reports as having run.
-    executed: dict[str, str] = field(default_factory=dict)
-    #: The context blocks the harness actually built from those hooks.
+    #: Every hook invocation, in the order the client recorded them.
+    hooks: list[HookRun] = field(default_factory=list)
+    #: The context blocks the harness actually built, from any hook.
     delivered: list[str] = field(default_factory=list)
     #: MCP instruction blocks, and whether the client cut them.
     mcp_blocks: list[str] = field(default_factory=list)
 
     @property
+    def session_start_runs(self) -> list[HookRun]:
+        return [h for h in self.hooks if h.event == "SessionStart"]
+
+    @property
     def sources(self) -> list[str]:
         """The SessionStart sources seen, e.g. ``startup``, ``compact``."""
-        return sorted(
-            name.partition(":")[2] or "?"
-            for name in self.executed
-            if name.startswith("SessionStart")
-        )
+        return sorted({h.source or "?" for h in self.session_start_runs})
 
     @property
     def session_start_ran(self) -> bool:
-        return any(name.startswith("SessionStart") for name in self.executed)
+        return bool(self.session_start_runs)
+
+    @property
+    def discarded_runs(self) -> list[HookRun]:
+        return [h for h in self.session_start_runs if h.status == DISCARDED]
+
+    @property
+    def repeat_runs(self) -> list[HookRun]:
+        return [h for h in self.session_start_runs if h.status == REPEAT]
+
+    @property
+    def delivered_runs(self) -> list[HookRun]:
+        return [h for h in self.session_start_runs if h.status == DELIVERED]
 
     @property
     def session_start_arrived(self) -> bool:
-        return bool(self.delivered)
+        """Whether every invocation that printed context was accounted for.
+
+        Not `bool(self.delivered)`. One surviving block used to clear a whole
+        session, which is the defect in `harness-delivery/tool-counts`.
+        """
+        return not self.discarded_runs
 
     @property
     def truncated_mcp(self) -> list[str]:
@@ -122,13 +199,76 @@ class Session:
         """The one line that says whether this session was lied to."""
         if not self.session_start_ran:
             return "no-hook"
-        if not self.session_start_arrived:
+        if self.discarded_runs:
             return "DISCARDED"
         return "delivered"
 
 
+def hook_context(stdout: str) -> str:
+    """The context an invocation asked to have delivered.
+
+    JSON on stdout is the documented form. A hook may instead print bare text,
+    which the client takes wholesale, so that is the fallback -- but only for
+    non-JSON, since a JSON payload that carries no `additionalContext` asked for
+    nothing and must not be read as having asked for its own source.
+    """
+    text = stdout.strip()
+    if not text:
+        return ""
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return text
+    if not isinstance(payload, dict):
+        return ""
+    specific = payload.get("hookSpecificOutput")
+    if isinstance(specific, dict):
+        value = specific.get("additionalContext")
+        if isinstance(value, str):
+            return value
+    return ""
+
+
+def _take(blocks: list[str], context: str) -> bool:
+    """Claim the block built from `context`, removing it so it is claimed once.
+
+    Exact match first. The fallback to containment is for a client that wraps a
+    block in a header rather than passing it through, which has not been seen
+    but would otherwise read as a discard.
+    """
+    for candidate in (lambda b: b == context, lambda b: context in b):
+        for i, block in enumerate(blocks):
+            if candidate(block):
+                del blocks[i]
+                return True
+    return False
+
+
+def _settle(runs: list[HookRun], blocks: list[str], already: set[str]) -> None:
+    """Decide what became of each invocation answering one event.
+
+    `already` is the text delivered *earlier* in this transcript, which is what
+    separates a repeat the client deduplicated from output it dropped.
+    """
+    remaining = list(blocks)
+    for run in runs:
+        if not run.spoke:
+            run.status = QUIET
+        elif _take(remaining, run.context):
+            run.status = DELIVERED
+        elif run.context in already:
+            run.status = REPEAT
+        else:
+            run.status = DISCARDED
+
+
 def read_session(path: Path) -> Session:
     session = Session(session_id=path.stem, path=path)
+    #: Invocations awaiting the block that would close their event.
+    pending: dict[str, list[HookRun]] = {}
+    #: Text already delivered, so a later repeat can be told from a discard.
+    already: set[str] = set()
+
     with path.open(errors="replace") as fh:
         for line in fh:
             try:
@@ -141,13 +281,37 @@ def read_session(path: Path) -> Session:
                 continue
             attachment = entry.get("attachment") or {}
             kind = attachment.get("type")
+
             if kind == "hook_success":
-                session.executed[str(attachment.get("hookName"))] = attachment.get("stdout") or ""
+                event, _, source = str(attachment.get("hookName") or "").partition(":")
+                pending.setdefault(event, []).append(
+                    HookRun(
+                        event=event,
+                        source=source,
+                        context=hook_context(attachment.get("stdout") or ""),
+                    )
+                )
             elif kind == "hook_additional_context":
                 content = attachment.get("content") or []
-                session.delivered.extend(content if isinstance(content, list) else [str(content)])
+                blocks = content if isinstance(content, list) else [str(content)]
+                event = str(attachment.get("hookName") or "")
+                if event not in pending and len(pending) == 1:
+                    # The attachment names the event rather than the hook, but
+                    # do not depend on that spelling when there is no ambiguity.
+                    event = next(iter(pending))
+                runs = pending.pop(event, [])
+                _settle(runs, blocks, already)
+                session.hooks.extend(runs)
+                session.delivered.extend(blocks)
+                already.update(blocks)
             elif kind == "mcp_instructions_delta":
                 session.mcp_blocks.extend(attachment.get("addedBlocks") or [])
+
+    # Anything still pending never had a block built from it at all. That is
+    # claude-code#10373 in its original form, and it settles against no blocks.
+    for runs in pending.values():
+        _settle(runs, [], already)
+        session.hooks.extend(runs)
     return session
 
 
@@ -229,7 +393,10 @@ def main(argv: list[str] | None = None) -> int:
                     {
                         "session_id": s.session_id,
                         "sources": s.sources,
-                        "executed": sorted(s.executed),
+                        "runs": [
+                            {"hook": h.name, "spoke": h.spoke, "status": h.status}
+                            for h in s.session_start_runs
+                        ],
                         "delivered_blocks": len(s.delivered),
                         "verdict": s.verdict(),
                         "mcp_blocks": len(s.mcp_blocks),
@@ -249,33 +416,45 @@ def main(argv: list[str] | None = None) -> int:
     else:
         _report(sessions, canaries)
 
-    discarded = [s for s in sessions if s.verdict() == "DISCARDED"]
+    discarded = [s for s in sessions if s.discarded_runs]
     lost = [r for r, where in canaries if not where]
     return 1 if discarded or lost else 0
 
 
 def _report(sessions: list[Session], canaries: list[tuple[dict[str, Any], str]]) -> None:
     ran = [s for s in sessions if s.session_start_ran]
-    print(f"{len(sessions)} transcripts, {len(ran)} with a SessionStart hook configured\n")
-    print(f"  {'session':10}  {'source':17}  {'ran':4}  {'arrived':8}  verdict")
+    runs = [h for s in sessions for h in s.session_start_runs]
+    spoke = [h for h in runs if h.spoke]
+    print(
+        f"{len(sessions)} transcripts, {len(ran)} with a SessionStart hook, "
+        f"{len(runs)} invocations of it\n"
+    )
+    print(f"  {'session':10}  {'source':17}  {'ran':4}  {'got':4}  {'rpt':4}  verdict")
     for s in sessions:
+        counts = (
+            (f"{len(s.session_start_runs):<4}", f"{len(s.delivered_runs):<4}",
+             f"{len(s.repeat_runs):<4}")
+            if s.session_start_ran
+            else ("-   ", "-   ", "-   ")
+        )
         print(
             f"  {s.session_id[:8]:10}  {','.join(s.sources) or '-':17}  "
-            f"{'yes' if s.session_start_ran else '-':4}  "
-            f"{('yes' if s.session_start_arrived else 'NO') if s.session_start_ran else '-':8}  "
-            f"{s.verdict()}"
+            f"{counts[0]}  {counts[1]}  {counts[2]}  {s.verdict()}"
         )
 
-    discarded = [s for s in ran if not s.session_start_arrived]
+    discarded = [h for h in runs if h.status == DISCARDED]
+    repeats = [h for h in runs if h.status == REPEAT]
     print()
     if not ran:
         print("No SessionStart hook has run here. This is not a pass.")
     elif discarded:
-        print(f"claude-code#10373 IS PRESENT: {len(discarded)} session(s) ran the hook")
-        print("and discarded its output. Sources affected: ", end="")
-        print(", ".join(sorted({src for s in discarded for src in s.sources})) or "?")
+        print(f"claude-code#10373 IS PRESENT: {len(discarded)} invocation(s) printed")
+        print("context and had none built from it. Sources affected: ", end="")
+        print(", ".join(sorted({h.source or "?" for h in discarded})) or "?")
     else:
-        print(f"Every one of the {len(ran)} hooks that ran also arrived.")
+        print(f"All {len(spoke)} invocations that printed context are accounted for:")
+        print(f"{len(spoke) - len(repeats)} delivered, {len(repeats)} suppressed as repeats of")
+        print("text already in the transcript -- see harness-delivery/resume.")
         print(f"Sources covered: {', '.join(sorted({src for s in ran for src in s.sources}))}")
         print("Untested sources deliver no verdict -- see the canary section below.")
 
@@ -312,9 +491,9 @@ def report_instructions(newest: Session) -> None:
     print(f"\nMCP instructions in the newest session ({newest.session_id[:8]}):")
     if not body.startswith(README_HEADING_PREFIX):
         print("  OLD ORDERING -- the block does not open with the readme. Either the")
-        print("  server predates the instructions budget, or it has not restarted")
-        print("  since. Instructions are sent once at initialisation, and /clear does")
-        print("  not restart the server: this needs a new client, not a new context.")
+        print("  server predates the instructions budget, or the session was served")
+        print("  older text. Instructions are sent once at initialisation, and neither")
+        print("  /clear nor a resume replaces them: this needs a whole new session.")
         return
 
     print("  readme DELIVERED -- the block opens with it, so the ordering is live.")
