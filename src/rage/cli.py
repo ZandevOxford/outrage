@@ -114,6 +114,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=config_module.SERVER_NAME,
         help=f"Name to register the server under (default: {config_module.SERVER_NAME}).",
     )
+    config.add_argument(
+        "--mount",
+        dest="mounts",
+        action="append",
+        default=[],
+        metavar="KEY=PATH",
+        help=(
+            "Record a --mount for the server: another store's directory under "
+            "KEY, as in ref=/srv/reference/.rage. Repeatable, written absolute, "
+            "and refused here if the mount point is not a valid key."
+        ),
+    )
     _log_options(config)
     config.add_argument(
         "--dry-run",
@@ -580,7 +592,9 @@ def config_command(args: argparse.Namespace, out: TextIO) -> int:
         else config_module.config_path(args.scope, project_dir)
     )
     directory = args.directory or config_module.default_store_dir(project_dir)
-    entry = config_module.server_entry(directory, log=args.log, log_content=args.log_content)
+    entry = config_module.server_entry(
+        directory, log=args.log, log_content=args.log_content, mounts=args.mounts
+    )
 
     change, merged, original = config_module.plan(path, args.scope, entry, name=args.name)
     _report(change, out, dry_run=args.dry_run)

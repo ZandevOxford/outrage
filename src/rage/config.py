@@ -19,12 +19,14 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from .errors import RageError
 from .eventlog import DEFAULT as LOG_BESIDE_STORE
+from .mounts import SPEC_DELIMITER, parse_spec
 from .store import DEFAULT_DIR_NAME
 
 #: The name this server is registered under. Also the key that a re-run
@@ -95,6 +97,7 @@ def server_entry(
     *,
     log: Any = None,
     log_content: str | None = None,
+    mounts: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Build the configuration entry for a store at ``directory``.
 
@@ -107,9 +110,20 @@ def server_entry(
     file beside the store. Logging is off unless it is asked for here, and it is
     asked for here rather than by hand because an entry edited by hand is the
     failure this module exists to prevent.
+
+    ``mounts`` are ``KEY=PATH`` specs, each recorded as a ``--mount``. They go
+    through the same parse the server will do, so a misspelled mount point is
+    refused while somebody is looking at the command that wrote it rather than
+    at a client that silently failed to start a server. Each path is made
+    absolute for exactly the reason ``--dir`` is: a mount resolved against an
+    unpredictable working directory would create a second, empty store rather
+    than fail.
     """
     argv = list(command) if command is not None else launch_command()
     args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
+    for spec in mounts:
+        prefix, path = parse_spec(spec)
+        args += ["--mount", f"{prefix}{SPEC_DELIMITER}{path.expanduser().resolve()}"]
     if log is not None:
         args.append("--log")
         # Absolute for the same reason the store directory is.
