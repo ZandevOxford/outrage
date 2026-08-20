@@ -69,37 +69,55 @@ DEFAULT_PAGE_CHARS = 20000
 #: at any size; at reference scale the list would *be* the corpus.
 WITHOUT_META_SAMPLE = 10
 
-INSTRUCTIONS = """\
+#: What a client is assumed to deliver of a server's instructions before it
+#: cuts them. An observation of one client, not a protocol guarantee: Claude
+#: Code truncates at 2048 characters, measured on 2026-08-19 across this
+#: project's own transcripts and again the day after. Whether the number is
+#: fixed, shared between servers, or really a token count is unestablished —
+#: 2047 characters landing on a power of two is the argument for characters.
+#: Everything ordered before this point survives on that client; everything
+#: after it may not, and nothing may be *only* said after it.
+DELIVERY_BUDGET = 2048
+
+#: The half that has to survive truncation: the grammar of a key, how one is
+#: allocated, and that a listing is a page. Ordered second, after the store's
+#: own readme, because a session that gets this and nothing else can still read
+#: and write correctly, while one that gets the protocol and no routing does
+#: not know where anything is.
+ESSENTIALS = """\
 A store for notes, designs and task context that outlives a single session.
 
-Keys are hierarchical, slash delimited strings such as `context/<id>/design`.
-A segment beginning with `!` is metadata about the document above it, such as
-`context/<id>/design/!title`, and `/` is the only separator there is. A path
-may continue below a metadata segment, and everything under one is metadata
-rather than a document. Intermediate keys exist implicitly; nothing needs to be
-created before writing to a key beneath it.
-
-A segment may hold almost any text — `/` and the control characters below tab
-are the only exclusions — so a key can mirror a real name without transforming
-it. Keys are not file paths, but they read like them: notes about a file can
-live at `notes/src/myfile.py`.
+Keys are hierarchical, slash delimited strings such as `context/<id>/design`,
+and `/` is the only separator there is. A segment beginning with `!` is
+metadata about the document above it, such as `context/<id>/design/!title`.
+Intermediate keys exist implicitly; nothing needs creating before writing
+beneath one.
 
 When storing, a `?` in place of a whole segment asks the store to allocate a
 number for it, at any depth: `context/?/design` writes to `context/1/design` in
-an empty store, and `context/1/findings/?` writes the next document beneath
-`findings`. The result reports the key actually written, which is what to use
-for anything else belonging with it, such as `context/1/task`.
+an empty store. The result reports the key actually written, which is what to
+use for anything else belonging with it, such as `context/1/task`.
 
-Prefer storing a document under a descriptive key and passing a `title`, so
-that later sessions can survey what is stored with
-`get_documents(meta_name=["title"])` before reading anything in full.
+Store a document under a descriptive key and pass a `title`, so that later
+sessions can survey what is here with `get_documents(meta_name=["title"])`
+before reading anything in full.
 
 Every listing is a page, not the whole store. Each one reports `returned`
 beside `total`, and a `next_cursor` when more remains: pass it back as `after`
 to continue from exactly where the page stopped. Read `total` before treating a
-result as everything there is — the difference between 20 of 22 and 20 of
-40000 is the difference between a listing and a sample. Every `next_cursor`
-goes back as `after` on the tool that produced it, with no exceptions.
+result as everything there is — 20 of 22 is a listing, 20 of 40000 is a sample.
+"""
+
+#: The half that can be lost. Not one word of it is unimportant; every part is
+#: recoverable somewhere a session reaches anyway — the tool descriptions, the
+#: packaged skill, or a failure that explains itself when it happens. That is
+#: the whole test for putting something here rather than in `ESSENTIALS`.
+TAIL = """\
+A segment may hold almost any text — `/` and the control characters below tab
+are the only exclusions — so a key can mirror a real name without transforming
+it. Keys are not file paths, but they read like them: notes about a file can
+live at `notes/src/myfile.py`. A path may continue below a metadata segment,
+and everything under one is metadata rather than a document.
 
 A survey also reports the untitled documents under `without_meta`, as a count
 and a few examples covering the same stretch of the store as the page itself.
@@ -115,22 +133,76 @@ one — `?` allocates the key, so this costs no naming decision.
 A key that holds nothing itself but has keys beneath it is a container: reading
 it fails, listing it does not.
 
-The document at `readme` is the store's entry point: what this particular store
-holds, and what to read before anything else. It is appended below when there
-is one, so a session starts with it rather than having to know to ask. It is
-read once, when the server starts, so a readme written or changed during a
-session reaches the next one and not this one.
+The document at `readme` is a store's entry point: what that particular store
+holds, and what to read before anything else. It is carried at the top of these
+instructions when there is one, so a session starts with it rather than having
+to know to ask. If you work out how a store is organised, or what a later
+session should read first, `readme` is where that belongs.
 """
+
+#: The static text entire, in delivery order. Kept as one name because it is
+#: what a client that does not truncate receives, and what anything documenting
+#: the server should quote.
+INSTRUCTIONS = f"{ESSENTIALS}\n{TAIL}"
 
 #: The key whose document introduces the store. One name, so that a session
 #: arriving at a store nobody described to it has somewhere to look, and a
 #: session that learns how one is organised has somewhere to write it.
 README_KEY = "readme"
 
-#: How much of the readme is carried in the instructions. It rides in the
-#: context of every session against this store, so it is a routing document and
-#: not a manual: names what is here, points at what to read, and stops.
-README_MAX_CHARS = 2000
+#: How the readme is introduced, and the one thing about it a session cannot
+#: work out for itself. Both are paid for out of the same budget as the readme
+#: they wrap, so both say the least that is still true: the heading carries why
+#: the document is here, the note carries when it was read. Everything else
+#: about the convention is in ``TAIL``, where it can afford to be.
+README_HEADING = f"--- `{README_KEY}`: this store's own introduction, so you start with it ---"
+README_NOTE = (
+    f"Read once, when the server started — a `{README_KEY}` changed during a "
+    f"session reaches the next one, not this one."
+)
+
+#: What is said when the store has no readme. The empty store is exactly where
+#: naming the convention is worth most, since the session that goes on to learn
+#: the layout is the one that can write it down.
+NO_README = (
+    f"This store has no `{README_KEY}` document. If you work out how it is "
+    f"organised, or what a later session should read first, store that there."
+)
+
+
+def _compose(opening: str) -> str:
+    """The delivered text: the opening block, then the essentials, then the tail.
+
+    One function so that what is measured against ``DELIVERY_BUDGET`` is built
+    the same way as the string actually sent, rather than by a second estimate
+    of it that can drift out of step.
+    """
+    return f"{opening}\n\n{ESSENTIALS}\n{TAIL}"
+
+
+def _protected(opening: str) -> str:
+    """The part of a composition that has to survive the cut: everything but the tail."""
+    return _compose(opening).removesuffix(f"\n{TAIL}")
+
+
+#: What the readme's own block costs before a word of it is written: the
+#: heading, the note below it, the blank lines between, and the essentials that
+#: follow. Measured from the real strings, so editing any of them moves the cap.
+SCAFFOLDING_CHARS = len(_protected(f"{README_HEADING}\n\n\n\n{README_NOTE}"))
+
+#: How much of the readme is carried, computed rather than chosen: whatever the
+#: budget has left once the scaffolding is paid for. The old constant bounded
+#: the wrong thing — it asked how long a routing document ought to be, when the
+#: question the client actually answers is how much room is left before the
+#: cut. That number was negative, so no readme of any length was ever
+#: delivered. See `project/reference/planned/instructions-budget`.
+README_MAX_CHARS = DELIVERY_BUDGET - SCAFFOLDING_CHARS
+
+#: The smallest readme worth having a mechanism for: enough to name what a
+#: store holds and point at two or three keys. ``test_the_essentials_leave_room``
+#: fails if the static text grows back over the cut, which is the failure that
+#: produced all of this.
+README_FLOOR_CHARS = 600
 
 #: What is said when the store has no readme. The empty store is exactly where
 #: naming the convention is worth most, since the session that goes on to learn
@@ -142,7 +214,7 @@ NO_README = (
 
 
 def instructions(store: Store) -> str:
-    """The static instructions, with this store's own readme appended.
+    """This store's own readme, then the essentials, then the tail.
 
     Delivered rather than requested. A line telling a session to go and read a
     key is a line that can be read past, and this project has two records of
@@ -151,6 +223,12 @@ def instructions(store: Store) -> str:
     call and cannot be skipped, which is the same argument that puts `title` in
     the tool signature: reachable at the moment it applies, rather than
     depending on somebody remembering it then.
+
+    The order is the whole point. A client cuts this text at some length it
+    does not announce -- ``DELIVERY_BUDGET`` records the one measurement there
+    is -- so what is written first is what survives, and the readme was last
+    for long enough that it never arrived once. What is at risk now is
+    ``TAIL``, which is chosen to be the recoverable half.
 
     Over ``README_MAX_CHARS`` nothing is inlined and the length is reported
     instead. A silently shortened entry point would be the project's own
@@ -162,16 +240,14 @@ def instructions(store: Store) -> str:
     except KeyNotFoundError:
         # Also the container case: a key with documents beneath it and nothing
         # of its own introduces nothing.
-        return f"{INSTRUCTIONS}\n{NO_README}\n"
+        return _compose(NO_README)
 
     if excerpt.truncated:
-        return (
-            f"{INSTRUCTIONS}\n"
+        return _compose(
             f"The `{README_KEY}` document here is {excerpt.total} characters, too long to "
-            f"carry in these instructions. Read it before starting.\n"
+            f"carry in these instructions. Read it before starting."
         )
-    heading = f"--- `{README_KEY}`, this store's own introduction ---"
-    return f"{INSTRUCTIONS}\n{heading}\n\n{excerpt.content}\n"
+    return _compose(f"{README_HEADING}\n\n{excerpt.content.rstrip()}\n\n{README_NOTE}")
 
 
 class RequestLog:
@@ -685,8 +761,12 @@ def main(argv: list[str] | None = None) -> None:
 
 
 __all__ = [
+    "DELIVERY_BUDGET",
+    "ESSENTIALS",
     "INSTRUCTIONS",
     "README_KEY",
+    "README_MAX_CHARS",
+    "TAIL",
     "RequestLog",
     "build_server",
     "instructions",

@@ -9,15 +9,25 @@ Python implemented MCP server primarily for use in local mode.
 Provides access to the data store.
 
 **The store introduces itself.** The document at the key `readme` is a store's
-entry point — what it holds and what to read first — and the server appends it
-to its own instructions at startup, so it reaches a session without a tool call
-and without the session knowing to ask. A line telling a reader to go and read
-a key is a line that can be read past; this is the same argument that puts
-`title` in the tool signature rather than in a convention document. It is
-capped: over `README_MAX_CHARS` the length is reported and nothing is inlined,
-because a silently shortened entry point is the failure the entry point exists
-to prevent. Instructions are sent once at initialisation, so a readme written
+entry point — what it holds and what to read first — and the server carries it
+at the *top* of its own instructions at startup, so it reaches a session
+without a tool call and without the session knowing to ask. A line telling a
+reader to go and read a key is a line that can be read past; this is the same
+argument that puts `title` in the tool signature rather than in a convention
+document. Instructions are sent once at initialisation, so a readme written
 during a session reaches the next one.
+
+**Delivery is a budget, not a promise.** A client may cut a server's
+instructions at a length it does not announce — Claude Code cuts at
+`DELIVERY_BUDGET` characters, which is an observation of one client and not a
+protocol guarantee. So the static text is ordered by what must survive:
+`ESSENTIALS` (the key grammar, allocation, and that a listing is a page) is
+delivered after the readme and before `TAIL`, and nothing may be said *only*
+in the tail. `README_MAX_CHARS` is computed from what the budget has left over
+after the essentials rather than chosen, since the question the client actually
+answers is how much room is left before the cut. Over that cap the length is
+reported and nothing is inlined, because a silently shortened entry point is
+the failure the entry point exists to prevent.
 
 ### Data store
 
