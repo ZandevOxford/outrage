@@ -102,9 +102,10 @@ uses one.
 
 ### Command line tool
 
-Partly implemented: `rage get`, `set`, `ls`, `dump`, `rm`, `check`, `export`,
-`import`, `config`, `backup` and `log`. Installing the packaged skill and its
-hooks is the piece still outstanding.
+Implemented, all five pieces, as of 2026-08-19: `rage get`, `set`, `ls`,
+`dump`, `rm`, `check`, `export`, `import`, `config`, `backup`, `log` and
+`init` — the last of which writes the MCP entry, installs the `SessionStart`
+hook and copies the packaged skill and agents into a project.
 
 A CLI over the same store library, covering everything the MCP server exposes
 plus the operations that only make sense from a shell:
@@ -182,10 +183,15 @@ are moments at which nothing prompts an agent to reach for one:
   and arrives without warning.
 
 Neither is a request, so neither reliably triggers a skill. Both are events, and
-events are what hooks are for, so a `SessionStart` hook points at the survey and
-a `PreCompact` hook asks for a checkpoint. Both emit static text and depend on
-nothing — not the store, not the interpreter path — so they cannot fail in a way
-that blocks a session.
+events are what hooks are for, so a `SessionStart` hook points at the survey.
+It emits static text and depends on nothing — not the store, not the interpreter
+path — so it cannot fail in a way that blocks a session.
+
+The second moment is **not** covered, and not for want of trying. A `PreCompact`
+hook was written and removed on 2026-08-19: it delivers nothing to the model at
+all, producing no attachment of any kind in the transcript — invisible rather
+than rejected. The moment is still worth reaching and how to reach it is open;
+see `planned/checkpoint-hook` in the rage store.
 
 This is the same principle as putting `title` in the tool signature: the
 convention should be reachable at the moment it applies, rather than requiring
@@ -453,7 +459,8 @@ silently remove a whole context. Storing an empty document is *not* a deletion;
 it leaves an empty document in place.
 
 Deleting a key that holds nothing itself is a no-op, and an empty result is
-indistinguishable from a successful deletion of an empty key. A non-recursive
+indistinguishable from a successful deletion of a key holding an empty
+document. A non-recursive
 delete therefore reports how many keys it left standing beneath the target, so
 the guard rail announces itself instead of looking like success.
 
@@ -475,21 +482,28 @@ CREATE TABLE documents (
   parent     TEXT NOT NULL,     -- derived: enclosing key
   content    TEXT NOT NULL,
   format     TEXT,              -- 'markdown' | 'json'
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  sort_key   TEXT NOT NULL      -- derived: the sort form, see Sorting
 );
 
 CREATE INDEX idx_documents_parent ON documents(parent);
 CREATE INDEX idx_documents_meta   ON documents(meta_name, doc_key);
+CREATE INDEX idx_documents_sort   ON documents(sort_key);
 ```
 
-`doc_key`, `meta_name` and `parent` are all derived from `key` on write. They
-are stored rather than computed at query time so that the two main access
-patterns are plain indexed lookups:
+`doc_key`, `meta_name`, `parent` and `sort_key` are all derived from `key` on
+write. They are stored rather than computed at query time so that the main
+access patterns are plain indexed lookups:
 
 * *List keys immediately under X* is an equality match on `parent`. The parent
   of `A/B/!title` is `A/B`, so a document's metadata lists alongside its
   subkeys, as required. Implicit intermediate keys need never be materialised —
   they fall out of a `DISTINCT parent` query.
+
+  The root is the one exception, and it costs one clause rather than a branch.
+  Being its own parent, it would match its own listing, so every such query
+  reads `parent = ? AND key <> ?` against the same value. No other key is its
+  own parent, so the second test excludes nothing anywhere else.
 * *Get one metadata name across a subtree* is a range scan on
   `(meta_name, doc_key)`.
 
@@ -525,8 +539,6 @@ SQLite runs in WAL mode to tolerate concurrent readers.
 * **Semantic search**, implemented as additional metadata holding vectors. Not a
   current consideration, but the flat metadata namespace above is intended to
   accommodate it without a schema change.
-
-* **The command line tool** described under Components.
 
 * **Key move and rename.** Not possible today: a key is the identity of a
   document, so relocating a subtree means rewriting every key beneath it and

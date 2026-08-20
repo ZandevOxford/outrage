@@ -3,8 +3,11 @@
 ## Currently implemented
 
 Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4. Package
-installed in editable mode with `pip install -e ".[dev]"`. 177 tests passing;
-`ruff check` and `ruff format --check` clean.
+installed in editable mode with `pip install -e ".[dev]"`. 638 tests and 11
+doctests passing, `ruff check` clean, as of 2026-08-20. Doctests are not in
+`testpaths` and need a second run: `pytest --doctest-modules src/rage`.
+`ruff format --check` reports six files it would reformat and has done for
+some time; the project lints and does not enforce the formatter.
 
 ### 0. Project scaffolding — done
 
@@ -25,6 +28,15 @@ would let `a/b` pick up `a/beta`. Everything under `a/b` sorts within
 `["a/b/", "a/b0")` because `/` and `0` are adjacent code points, so subtree
 scans stay exact index range scans no matter what a segment may contain.
 
+The root, added 2026-08-20, is the key with no segments. It parses, holds a
+document, carries metadata as `!title`, and is its own parent. It has no
+subtree bounds — everything is beneath it and no string bounds every key from
+above — so `subtree_range` **raises** for it rather than returning the
+`["/", "0")` the formula would give, which matches nothing at all and would
+have read as a confident zero out of a full store. Callers select with no range
+predicate instead. `depth` is 0 for it, and `displayed` spells it `/`, because
+`""` in a report reads as a missing name rather than as a key.
+
 ### 2. Data store — `src/rage/store.py` — done
 
 Directory resolution, schema creation and migration under `PRAGMA user_version`,
@@ -34,6 +46,16 @@ MCP dependency.
 Formats are detected: content that parses as a JSON object or array is recorded
 as `json`, everything else as `markdown`, and an explicit argument overrides
 both.
+
+A null key means the root wherever a call takes a subtree, resolved once on the
+way in so nothing below carries a second spelling of "everywhere". Three shared
+query fragments keep the root from needing a branch per caller: `_scope` for
+that resolution, `_children_clause` — `parent = ? AND key <> ?` against the
+same value, which is what stops the root listing as its own child — and
+`_below`. Two `CASE` expressions handle the places SQL recomputes a key
+property that the root breaks: the per-row segment count, which would make the
+root depth 1, and the synthesised position in `missing_meta_stats`, which is
+not the root's sort key plus a suffix because the root contributes no segment.
 
 `store_document` returns the key it wrote, which is how a caller learns the
 number allocated for a `?` segment. Allocation reads before it writes, so that
@@ -62,9 +84,11 @@ that is preferred to trusting a count nobody took.
 ### 3. MCP server — `src/rage/server.py` — done
 
 Stdio server built on `MCPServer` from the MCP Python SDK, exposing
-`retrieve_document`, `store_document`, `list_keys`, `get_documents` and
-`delete_keys`. Argument shaping and result shaping only; all behaviour lives in
-the store. Argument constraints are declared with pydantic `Field`, so bad
+`retrieve_document`, `store_document`, `list_keys`, `get_documents`,
+`keys_missing_meta` and `delete_keys`. Argument shaping and result shaping
+only; all behaviour lives in the store. The three tools taking a scope resolve
+an omitted or null key to the root before echoing it, so a result names the
+scope that was used rather than the absence the caller sent. Argument constraints are declared with pydantic `Field`, so bad
 arguments are rejected before reaching the store, and read only and destructive
 tool annotations are set.
 
@@ -176,7 +200,8 @@ tools whose behaviour was already known.
   install.
 * `.claude/skills/rage` — a relative symlink to it, so this project uses the
   copy it is editing.
-* `.claude/settings.json` — `SessionStart` and `PreCompact` hooks.
+* `.claude/settings.json` — a `SessionStart` hook. A `PreCompact` hook was
+  installed here too until 2026-08-19; see below for why it is gone.
 * `tests/test_skill.py` — the skill is packaged, its frontmatter names it, and
   the symlink still resolves to the packaged file.
 
@@ -186,10 +211,10 @@ records, storing as the work goes rather than at the end, and what to check
 before the end. It deliberately does not restate the key grammar or the argument
 rules, which the tool descriptions carry and enforce.
 
-The hooks exist because a skill has to be reached for, and the two moments that
-matter most — the start of a session, and just before context is lost — are not
-moments anything prompts an agent to reach. The hook emits static text and
-depends on nothing, so it cannot fail in a way that costs a session.
+Two hooks were written, because a skill has to be reached for and the two
+moments that matter most — the start of a session, and just before context is
+lost — are not moments anything prompts an agent to reach. Each emits static
+text and depends on nothing, so neither can fail in a way that costs a session.
 
 Only the `SessionStart` half survives. The `PreCompact` hook was removed on
 2026-08-19 once it was clear it delivers nothing; the second moment is still
