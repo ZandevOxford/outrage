@@ -22,6 +22,7 @@ from pydantic import Field
 from . import __version__, eventlog, keys
 from . import mounts as mounts_module
 from . import store as store_module
+from .errors import RageError
 from .eventlog import EventLog
 from .mounts import Mounts, Resolved
 from .store import (
@@ -47,6 +48,20 @@ def _scope(key: str | None) -> str:
 def _resolve(table: Mounts, key: str | None, *, allow_wildcard: bool = False) -> Resolved:
     """Which store answers for ``key``, with an omitted key meaning the root."""
     return table.resolve(_scope(key), allow_wildcard=allow_wildcard)
+
+
+def _resolve_for_write(
+    table: Mounts, key: str, *, action: str = "write", allow_wildcard: bool = False
+) -> Resolved:
+    """As ``_resolve``, but refuse a key owned by a read-only mount.
+
+    A second function rather than a flag on the first, so that the write paths
+    name themselves and a tool that writes cannot pick up the reading one by
+    default. The refusal happens **here**, before the store is touched, which
+    is the whole requirement: "a refusal that arrives after the caller thought
+    it had written is the failure class this project keeps finding".
+    """
+    return _resolve(table, key, allow_wildcard=allow_wildcard).writable(action)
 
 
 def _inward_cursor(found: Resolved, after: str | None) -> str | None:
@@ -559,7 +574,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             ),
         ] = None,
     ) -> dict[str, Any]:
-        found = _resolve(table, key, allow_wildcard=True)
+        found = _resolve_for_write(table, key, allow_wildcard=True)
         written = found.store.store_document(
             found.key, content, format, title=title, encoding=encoding
         )
@@ -592,7 +607,8 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             "metadata. Omit the key to list the top level. Keys of kind "
             "'implicit' hold no content themselves but have something beneath "
             + (
-                "them. A key of kind 'mount' is where another store is mounted; "
+                "them. A key of kind 'mount' is where another store is mounted, "
+                "and 'read-only mount' is one that refuses writes; "
                 "it reads and lists like any other key, but a query or a survey "
                 "does not cross into it, so ask again with the mount's own key. "
                 if table.multiple
@@ -831,7 +847,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             bool, Field(description="Also delete everything beneath the key")
         ] = False,
     ) -> dict[str, Any]:
-        found = _resolve(table, key)
+        found = _resolve_for_write(table, key, action="delete")
         removed = found.store.delete(found.key, recursive=recursive)
         deleted = _outward_keys(found, removed)
         result: dict[str, Any] = {"key": key, "deleted": deleted, "count": len(deleted)}
@@ -962,6 +978,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--mount-ro",
+        dest="read_only_mounts",
+        action="append",
+        default=[],
+        metavar=f"KEY{mounts_module.SPEC_DELIMITER}PATH",
+        help=(
+            "Mount a store read-only: as --mount, but every write routed there "
+            "is refused before it reaches the store. For a shared reference "
+            "base beside a local read-write store. Repeatable. The store must "
+            "already exist, since a mistyped path would otherwise be created "
+            "and mount as an empty one. This refuses writes through this "
+            "server; it does not make the file read-only to anything else."
+        ),
+    )
+    parser.add_argument(
         "--log",
         nargs="?",
         const=eventlog.DEFAULT,
@@ -987,7 +1018,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     # Resolved here rather than left to the store, because the log defaults to
     # a file beside the database and so needs the same answer.
@@ -998,7 +1029,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     log.start(version=__version__, directory=str(directory), log=str(log.path))
     try:
-        with mounts_module.open_mounts(directory, args.mounts, log=log) as table:
+        with mounts_module.open_mounts(
+            directory, args.mounts, args.read_only_mounts, log=log
+        ) as table:
             for mount in table.shadowing():
                 # Stderr, not a refusal: the configuration is usable, and the
                 # keys that vanish are in a store the operator can still reach.
@@ -1009,11 +1042,20 @@ def main(argv: list[str] | None = None) -> None:
                     file=sys.stderr,
                 )
             build_server(table, log).run("stdio")
+    except RageError as exc:
+        # The same rule `cli.main` follows, and for the same reason: a mount
+        # table that cannot be built is an answer about the configuration, not
+        # a bug, and a traceback in a client's stderr is where an operator is
+        # least able to read one. Anything that is not a RageError still
+        # tracebacks, because that is a bug in rage.
+        print(f"rage: {exc}", file=sys.stderr)
+        return 1
     finally:
         # A process that is killed writes no stop event, which is itself worth
         # being able to see in the log.
         log.stop()
         log.close()
+    return 0
 
 
 __all__ = [

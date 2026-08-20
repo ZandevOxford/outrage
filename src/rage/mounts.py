@@ -20,23 +20,30 @@ Without it a store mounted at ``ref`` would have no way to answer for the
 document or the title *at* ``ref``, and a survey could not say what the mount
 is.
 
+A mount may be **read-only**, which is where the whole feature was pointed: a
+shared read-mostly reference base beside a local read-write store. The refusal
+lives here, in the routing, and is checked before the store is called at all --
+``Store`` knows nothing about it, and the database file is not opened any
+differently. So this refuses writes *through this server*; it does not make the
+file read-only to anything else.
+
 Configuration only, and only at startup: nothing here adds or removes a mount
-on a running server. See ``project/reference/planned/mounts`` for the questions
-that are deliberately still open, chief among them what a read-only mount is
-and where a write to a new key goes.
+on a running server, and nothing marks one read-only after it. See
+``project/reference/planned/mounts`` for the questions that are deliberately
+still open, chief among them where a write to a new key goes.
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from . import keys
 from .errors import RageError
 from .eventlog import EventLog
-from .store import Entry, KeyNotFoundError, Store
+from .store import DB_FILENAME, Entry, KeyNotFoundError, Store
 
 #: Separates a mount point from its store directory in a ``--mount`` argument.
 #: ``=`` rather than ``:`` because a Windows path holds a colon and no key can
@@ -51,9 +58,36 @@ SPEC_DELIMITER = "="
 #: is the part that matters for navigating to it.
 MOUNT_KIND = "mount"
 
+#: The ``kind`` for a mount point whose store refuses writes. A separate kind
+#: rather than a ``read_only`` field on :class:`~rage.store.Entry`, because a
+#: field would appear on *every* entry in every listing as a null -- and a
+#: result grows a field only when there is something to say, which is decision
+#: 5 in ``context/20/decisions``. The kind is already the field that says what
+#: a key is, only one key in a listing is a mount at all, and the words carry
+#: their own meaning to a caller who has never read any of this.
+#:
+#: This is also the only place the fact is announced. The instructions do not
+#: mention mounts -- see ``instructions`` on why a mounted store's readme is
+#: not carried -- so, exactly like the existence of a mount, being read-only
+#: costs nothing until somebody looks at the listing.
+READ_ONLY_MOUNT_KIND = "read-only mount"
+
 
 class MountError(RageError, ValueError):
     """Raised when a mount table cannot be built as described."""
+
+
+class ReadOnlyMountError(RageError, PermissionError):
+    """Raised when a write is routed to a mount that was mounted read-only.
+
+    Separate from :class:`MountError`, which is about a table that cannot be
+    *built*: this one is about a request, and the table it names is working as
+    configured.
+
+    ``PermissionError`` is the builtin it keeps, following the rule in
+    ``errors.py`` that each subclass keeps the builtin it already inherited --
+    a caller that catches ``OSError`` around a write goes on working.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +98,19 @@ class Mount:
     """The key this store is mounted at, normalised. The root mount's is ``""``."""
 
     store: Store
+
+    read_only: bool = False
+    """Whether this server refuses writes routed here.
+
+    Defaults to False so that every existing construction of a ``Mount`` means
+    what it meant before, and so the single store case cannot become read-only
+    by accident.
+    """
+
+    @property
+    def kind(self) -> str:
+        """What a listing calls this mount point."""
+        return READ_ONLY_MOUNT_KIND if self.read_only else MOUNT_KIND
 
     @property
     def name(self) -> str:
@@ -123,11 +170,54 @@ class Resolved:
     def store(self) -> Store:
         return self.mount.store
 
+    @property
+    def read_only(self) -> bool:
+        return self.mount.read_only
+
+    def writable(self, action: str = "write") -> Resolved:
+        """This, or raise if the mount that owns the key refuses writes.
+
+        Returns itself so a caller reads as one expression and cannot resolve a
+        key, forget to check it, and write anyway -- the failure this guards is
+        precisely a refusal that arrives too late to matter, so the shape that
+        makes forgetting awkward is worth the small strangeness of a method
+        that returns its own receiver.
+
+        ``action`` is the verb for the message, because "cannot write" reads
+        wrongly for a delete and a caller reading a refusal should not have to
+        translate it back into what they asked for.
+
+        The message names the mount rather than only the key, because the key
+        looks perfectly ordinary and the reason it was refused is somewhere the
+        caller cannot see: the command line the server was started with.
+        """
+        if not self.read_only:
+            return self
+        raise ReadOnlyMountError(
+            f"cannot {action} {keys.displayed(self.outer)!r}: the store mounted at "
+            f"{self.mount.name!r} is read-only. It was mounted with --mount-ro; start "
+            f"the server with --mount instead to allow changes here."
+        )
+
 
 class Mounts:
     """The mount table: a prefix to store map, and the routing over it."""
 
-    def __init__(self, stores: Mapping[str, Store]) -> None:
+    def __init__(self, stores: Mapping[str, Store], *, read_only: Collection[str] = ()) -> None:
+        # Normalised before anything is compared against it, so that a mount
+        # point spelled one way in `stores` and another way here still names
+        # the same mount. A read-only flag that silently applied to nothing
+        # would be the worst of the available failures.
+        refusing = set()
+        for prefix in read_only:
+            parsed = keys.parse(prefix)
+            if parsed.key == keys.ROOT:
+                raise MountError(
+                    "the store at the root cannot be mounted read-only: it is the one "
+                    "--dir names, and it owns every key no mount claims"
+                )
+            refusing.add(parsed.key)
+
         by_prefix: dict[str, Mount] = {}
         for prefix, store in stores.items():
             parsed = keys.parse(prefix)
@@ -140,7 +230,21 @@ class Mounts:
                 raise MountError(
                     f"more than one store is mounted at {keys.displayed(parsed.key)!r}"
                 )
-            by_prefix[parsed.key] = Mount(prefix=parsed.key, store=store)
+            by_prefix[parsed.key] = Mount(
+                prefix=parsed.key, store=store, read_only=parsed.key in refusing
+            )
+
+        # A read-only flag naming a mount point nothing is mounted at is a
+        # typo, and the kind that reads as if it worked: the server would start,
+        # every mount would be writable, and nothing would say why. Refused
+        # rather than ignored.
+        unmatched = sorted(refusing - set(by_prefix), key=keys.sort_form)
+        if unmatched:
+            raise MountError(
+                f"nothing is mounted at "
+                f"{', '.join(repr(keys.displayed(k)) for k in unmatched)}, so it cannot "
+                f"be mounted read-only"
+            )
 
         if keys.ROOT not in by_prefix:
             raise MountError(
@@ -166,6 +270,11 @@ class Mounts:
     @property
     def root(self) -> Mount:
         return self._by_prefix[keys.ROOT]
+
+    @property
+    def read_only(self) -> list[Mount]:
+        """The mounts that refuse writes, in key order."""
+        return [m for m in self._mounts if m.read_only]
 
     @property
     def multiple(self) -> bool:
@@ -300,10 +409,10 @@ class Mounts:
         try:
             root = mount.store.retrieve_document(keys.ROOT, max_chars=1)
         except KeyNotFoundError:
-            return Entry(key=mount.prefix, kind=MOUNT_KIND, size=None, format=None, updated_at=None)
+            return Entry(key=mount.prefix, kind=mount.kind, size=None, format=None, updated_at=None)
         return Entry(
             key=mount.prefix,
-            kind=MOUNT_KIND,
+            kind=mount.kind,
             size=root.total,
             format=root.format,
             updated_at=root.updated_at,
@@ -356,25 +465,49 @@ def parse_spec(spec: str) -> tuple[str, Path]:
 def open_mounts(
     root: str | os.PathLike[str] | None,
     specs: Sequence[str] = (),
+    read_only_specs: Sequence[str] = (),
     *,
     log: EventLog | None = None,
 ) -> Mounts:
     """Open the root store and every ``KEY=PATH`` mount, as one table.
 
+    ``specs`` are mounted read-write and ``read_only_specs`` read-only; the two
+    share one namespace, so mounting the same key in both is the same collision
+    as mounting it twice in either.
+
     Every spec is parsed before any store is opened, so a table that cannot be
     described is refused without half of it existing. A failure part way
     through the opening closes what was already open, since a process that
     exits without doing so leaves a WAL behind.
+
+    A read-only mount must already exist. ``Store`` creates its directory and
+    migrates a database on the way in, so without this check a mistyped path
+    would be *created*, mount as an empty store, and read as though the
+    reference base were simply empty -- while the flag that was supposed to
+    protect it made it impossible to notice by writing. That is the same
+    argument ``parse_spec`` makes for validating a mount point early, one step
+    further along.
     """
-    table = [parse_spec(spec) for spec in specs]
+    writable = [parse_spec(spec) for spec in specs]
+    refusing = [parse_spec(spec) for spec in read_only_specs]
+    for prefix, path in refusing:
+        database = Path(path).expanduser() / DB_FILENAME
+        if not database.exists():
+            raise MountError(
+                f"the read-only mount at {keys.displayed(prefix)!r} has no store at "
+                f"{str(path)!r}: {DB_FILENAME} is not there. A read-only mount is not "
+                f"created, since a mistyped path would mount as an empty store that no "
+                f"write could ever contradict."
+            )
+
     opened: dict[str, Store] = {}
     try:
         opened[keys.ROOT] = Store(root, log=log)
-        for prefix, path in table:
+        for prefix, path in [*writable, *refusing]:
             if prefix in opened:
                 raise MountError(f"more than one store is mounted at {prefix!r}")
             opened[prefix] = Store(path, log=log)
-        return Mounts(opened)
+        return Mounts(opened, read_only=[prefix for prefix, _ in refusing])
     except Exception:
         for store in opened.values():
             store.close()
@@ -383,10 +516,12 @@ def open_mounts(
 
 __all__ = [
     "MOUNT_KIND",
+    "READ_ONLY_MOUNT_KIND",
     "SPEC_DELIMITER",
     "Mount",
     "MountError",
     "Mounts",
+    "ReadOnlyMountError",
     "Resolved",
     "open_mounts",
     "parse_spec",

@@ -126,6 +126,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "and refused here if the mount point is not a valid key."
         ),
     )
+    config.add_argument(
+        "--mount-ro",
+        dest="read_only_mounts",
+        action="append",
+        default=[],
+        metavar="KEY=PATH",
+        help=(
+            "Record a --mount-ro for the server: as --mount, but the server "
+            "refuses every write routed there. Repeatable."
+        ),
+    )
     _log_options(config)
     config.add_argument(
         "--dry-run",
@@ -593,7 +604,11 @@ def config_command(args: argparse.Namespace, out: TextIO) -> int:
     )
     directory = args.directory or config_module.default_store_dir(project_dir)
     entry = config_module.server_entry(
-        directory, log=args.log, log_content=args.log_content, mounts=args.mounts
+        directory,
+        log=args.log,
+        log_content=args.log_content,
+        mounts=args.mounts,
+        read_only_mounts=args.read_only_mounts,
     )
 
     change, merged, original = config_module.plan(path, args.scope, entry, name=args.name)
