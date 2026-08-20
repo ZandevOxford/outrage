@@ -700,6 +700,40 @@ class Store:
 
     # -- reading ---------------------------------------------------------
 
+    def level_entry(self, key: str) -> Entry | None:
+        """How ``key`` appears in its parent's listing, or None if it does not.
+
+        The same three answers :meth:`list_keys` gives about one key without
+        listing the level to find it: a stored row, an implicit key that exists
+        only because something lies beneath it, or nothing at all.
+
+        Asked by a caller that has to reconcile this store's level with keys
+        from somewhere else and must not count the same position twice. A
+        cheaper pair of questions -- does the key exist, does it have
+        descendants -- gets one corner wrong: metadata sits *at* a key rather
+        than below it, so a key holding only metadata has no document and no
+        descendants and still appears in the listing. This tests the ``key``
+        column, which metadata is part of, rather than ``doc_key``, which it
+        is not.
+        """
+        parsed = keys.parse(key)
+        if parsed.key == keys.ROOT:
+            raise ValueError("the root is not a child of anything, so it has no listing entry")
+
+        row = self._conn.execute(
+            "SELECT * FROM documents WHERE key = ?", (parsed.key,)
+        ).fetchone()
+        if row is not None:
+            return _entry(row)
+
+        lo, hi = keys.subtree_range(parsed.key)
+        beneath = self._conn.execute(
+            "SELECT 1 FROM documents WHERE key >= ? AND key < ? LIMIT 1", (lo, hi)
+        ).fetchone()
+        if beneath is None:
+            return None
+        return Entry(key=parsed.key, kind="implicit", size=None, format=None, updated_at=None)
+
     @_logged("retrieve_document")
     def retrieve_document(
         self,
@@ -807,16 +841,7 @@ class Store:
             sql += " LIMIT ?"
             params.append(limit + 1)
 
-        return [
-            Entry(
-                key=row["key"],
-                kind="metadata" if row["meta_name"] is not None else "document",
-                size=len(row["content"]),
-                format=row["format"],
-                updated_at=row["updated_at"],
-            )
-            for row in self._conn.execute(sql, params)
-        ]
+        return [_entry(row) for row in self._conn.execute(sql, params)]
 
     def _implicit_child_query(self, parent: str) -> tuple[str, dict[str, object]]:
         """A SELECT over the children of ``parent`` that hold no content.
@@ -895,11 +920,20 @@ class Store:
         *,
         meta_name: str | Sequence[str] | None,
         depth: int | None,
+        after_subtree: str | None = None,
+        before: str | None = None,
+        final_subtree: str | None = None,
     ) -> tuple[str, list[object]]:
         """The WHERE clause naming a subtree read, shared by every caller of one.
 
         One predicate, so that a survey, its count, and the list of what the
         survey could not see all agree about what was in range.
+
+        ``key`` and ``depth`` say which subtree and how far down; the three
+        bounds narrow that to a window inside it, and :func:`_range_bounds` has
+        what each one means. They are part of the selection rather than of the
+        page, so a caller reading a subtree in windows gets a count per window
+        and the counts add up to the whole.
         """
         where = []
         params: list[object] = []
@@ -938,6 +972,12 @@ class Store:
             )
             params += [base, depth]
 
+        clauses, bounds = _range_bounds(
+            after_subtree=after_subtree, before=before, final_subtree=final_subtree
+        )
+        where += clauses
+        params += bounds
+
         return " AND ".join(where) if where else "1", params
 
     def _selection_totals(self, where: str, params: list[object]) -> tuple[int, int]:
@@ -959,6 +999,9 @@ class Store:
         limit: int | None = None,
         after: str | None = None,
         max_total_chars: int | None = None,
+        after_subtree: str | None = None,
+        before: str | None = None,
+        final_subtree: str | None = None,
     ) -> Page[Excerpt]:
         """Read everything at and below ``key``, in key order.
 
@@ -973,8 +1016,23 @@ class Store:
         the two axes multiply, and a hundred documents at two thousand
         characters each honours both stated bounds while returning two hundred
         thousand characters.
+
+        ``after_subtree``, ``before`` and ``final_subtree`` narrow the subtree
+        to a window inside it -- see :func:`_range_bounds`. They bound the
+        selection rather than the page, so ``total`` and ``total_chars``
+        describe the window, and a caller reading one subtree as several
+        windows can add the answers up. ``after`` is not one of them: it is the
+        cursor, it moves within a window, and a page's totals have never
+        depended on where the reader had got to.
         """
-        where, params = self._selection(key, meta_name=meta_name, depth=depth)
+        where, params = self._selection(
+            key,
+            meta_name=meta_name,
+            depth=depth,
+            after_subtree=after_subtree,
+            before=before,
+            final_subtree=final_subtree,
+        )
         total, total_chars = self._selection_totals(where, params)
 
         sql = f"SELECT * FROM documents WHERE {where}"
@@ -1019,6 +1077,9 @@ class Store:
         *,
         meta_name: str | Sequence[str],
         depth: int | None,
+        after_subtree: str | None = None,
+        before: str | None = None,
+        final_subtree: str | None = None,
     ) -> tuple[str, list[object], list[str]]:
         """The WHERE clause naming documents carrying none of ``meta_name``.
 
@@ -1030,7 +1091,14 @@ class Store:
         if not names:
             raise ValueError("meta_name must not be an empty sequence")
 
-        where, params = self._selection(key, meta_name=None, depth=depth)
+        where, params = self._selection(
+            key,
+            meta_name=None,
+            depth=depth,
+            after_subtree=after_subtree,
+            before=before,
+            final_subtree=final_subtree,
+        )
         where += (
             f" AND NOT EXISTS (SELECT 1 FROM documents AS meta "
             f"WHERE meta.doc_key = documents.doc_key "
@@ -1046,15 +1114,29 @@ class Store:
         meta_name: str | Sequence[str] = "title",
         depth: int | None = None,
         after: str | None = None,
+        before_inclusive: str | None = None,
+        after_subtree: str | None = None,
         before: str | None = None,
+        final_subtree: str | None = None,
         sample: int = 0,
     ) -> MissingMeta:
         """What a metadata survey could not see, over exactly one page's window.
 
-        ``after`` and ``before`` are that survey's own cursors -- metadata keys,
-        not document keys -- and they bound this the way they bound the page:
-        exclusive below, inclusive above, each ``None`` meaning the page ran to
-        that end of the collection.
+        ``after`` and ``before_inclusive`` are that survey's own cursors --
+        metadata keys, not document keys -- and they bound this the way they
+        bound the page: exclusive below, inclusive above, each ``None`` meaning
+        the page ran to that end of the collection. ``before_inclusive`` is
+        spelled out because the inclusive half is the surprising one and
+        because ``before`` now means something else here.
+
+        ``after_subtree``, ``before`` and ``final_subtree`` are the ordinary
+        range bounds of :func:`_range_bounds`, and they are **not** cursors:
+        they are measured against the document's own ``sort_key`` rather than
+        against the position its metadata would have taken. A document is
+        inside a skipped subtree because of where the document is, not because
+        of where a title it does not have would have sorted. The two kinds of
+        bound compose -- a survey reading one subtree in windows passes the
+        range bounds of the window and the cursors of the page within it.
 
         A document carrying none of the names has no row in the ordering the
         survey walks, so it has no position in it either. One is synthesised:
@@ -1084,7 +1166,14 @@ class Store:
         ``idx_documents_meta`` on ``meta_name`` and neither bound could seek
         anyway. The window is one page wide, which is what keeps it affordable.
         """
-        where, params, names = self._missing_selection(key, meta_name=meta_name, depth=depth)
+        where, params, names = self._missing_selection(
+            key,
+            meta_name=meta_name,
+            depth=depth,
+            after_subtree=after_subtree,
+            before=before,
+            final_subtree=final_subtree,
+        )
 
         # Where the row would have sorted had the document carried the name.
         # Asked for several, a document would first have appeared at the
@@ -1102,9 +1191,9 @@ class Store:
         if after is not None:
             where += f" AND {position} > ?"
             params += [root, suffix, _cursor_bound(after)]
-        if before is not None:
+        if before_inclusive is not None:
             where += f" AND {position} <= ?"
-            params += [root, suffix, _cursor_bound(before)]
+            params += [root, suffix, _cursor_bound(before_inclusive)]
 
         total, total_chars = self._selection_totals(where, params)
 
@@ -1127,6 +1216,9 @@ class Store:
         depth: int | None = None,
         limit: int | None = None,
         after: str | None = None,
+        after_subtree: str | None = None,
+        before: str | None = None,
+        final_subtree: str | None = None,
     ) -> Page[str]:
         """Document keys at and below ``key`` carrying none of ``meta_name``.
 
@@ -1137,8 +1229,20 @@ class Store:
         itself uses, so the two agree about what was in range. It used to read
         every document in the subtree through ``get_documents`` and throw the
         content away.
+
+        ``after_subtree``, ``before`` and ``final_subtree`` narrow the subtree
+        the same way they narrow a survey, and for the same reason: the two
+        have to be askable over one window or they stop describing one stretch
+        of the store.
         """
-        where, params, _ = self._missing_selection(key, meta_name=meta_name, depth=depth)
+        where, params, _ = self._missing_selection(
+            key,
+            meta_name=meta_name,
+            depth=depth,
+            after_subtree=after_subtree,
+            before=before,
+            final_subtree=final_subtree,
+        )
 
         total, total_chars = self._selection_totals(where, params)
 
@@ -1317,6 +1421,17 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
     return replace(first, content=content, returned=len(content), next_offset=offset)
 
 
+def _entry(row: sqlite3.Row) -> Entry:
+    """A stored row as a listing entry."""
+    return Entry(
+        key=row["key"],
+        kind="metadata" if row["meta_name"] is not None else "document",
+        size=len(row["content"]),
+        format=row["format"],
+        updated_at=row["updated_at"],
+    )
+
+
 def _scope(key: str | None) -> str:
     """The key a scope argument names, with ``None`` meaning the root.
 
@@ -1362,6 +1477,52 @@ def _below(column: str, doc_key: str) -> tuple[str, list[object]]:
         return f"{column} <> ?", [keys.ROOT]
     lo, hi = keys.subtree_range(doc_key)
     return f"({column} >= ? AND {column} < ?)", [lo, hi]
+
+
+def _range_bounds(
+    *,
+    after_subtree: str | None = None,
+    before: str | None = None,
+    final_subtree: str | None = None,
+) -> tuple[list[str], list[object]]:
+    """One-sided bounds on a key range, as predicates on ``sort_key``.
+
+    Each names a key, each is optional, and together they cut any window out of
+    the order a listing walks:
+
+    * ``before`` -- strictly before that key. Its subtree goes with it, since
+      every descendant sorts after its parent, so this is the whole of the key
+      and everything under it excluded from above.
+    * ``after_subtree`` -- strictly after that key *and* everything below it.
+      The other edge of the same cut, and the reason this is not spelled with
+      ``after``: a cursor is exclusive of the key it names and **inclusive of
+      that key's children**, which is right for resuming a page and wrong for
+      stepping over a subtree. Nothing else can say "past all of this".
+    * ``final_subtree`` -- no later than the end of that key's subtree: before
+      it, at it, or below it.
+
+    So a subtree to be left out of an answer is named twice, once from each
+    side: ``before=k`` ends the stretch in front of it and ``after_subtree=k``
+    begins the stretch behind it. Neither names a key that has to exist, which
+    is what a caller skipping a range cannot supply -- there is no key
+    "just past ``k``'s last descendant" to hand to a cursor.
+
+    These bound the **selection**, not the page, so a count taken over them
+    counts the window. That is what makes the windows either side of a skipped
+    subtree add up: each reports its own stretch, and the stretches tile.
+    """
+    clauses: list[str] = []
+    params: list[object] = []
+    if after_subtree is not None:
+        clauses.append("sort_key >= ?")
+        params.append(keys.sort_subtree_end(after_subtree))
+    if before is not None:
+        clauses.append("sort_key < ?")
+        params.append(keys.sort_form(keys.parse(before).key))
+    if final_subtree is not None:
+        clauses.append("sort_key < ?")
+        params.append(keys.sort_subtree_end(final_subtree))
+    return clauses, params
 
 
 def _cursor_bound(after: str | None) -> str | None:

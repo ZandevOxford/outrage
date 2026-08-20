@@ -109,6 +109,15 @@ _SORT_META = "\x01"
 _SORT_DOC = "\x02"
 _SORT_DELIMITER = "\x03"
 
+#: What bounds a subtree from above in sort form. Strictly between
+#: ``_SORT_DELIMITER``, which every descendant follows its parent with, and
+#: ``MIN_SEGMENT_CHAR``, which every key that is *not* a descendant must reach
+#: before it can differ. That gap is what makes a subtree a range on
+#: ``sort_key`` rather than a prefix match. See :func:`sort_subtree_end`.
+_AFTER_SORT_DELIMITER = "\x04"
+
+assert _SORT_DELIMITER < _AFTER_SORT_DELIMITER < MIN_SEGMENT_CHAR
+
 #: A segment that names nothing but a number. Deliberately not str.isdigit,
 #: which accepts superscripts and other digits that int() then rejects.
 NUMERIC_RE = re.compile(r"\A[0-9]+\Z")
@@ -505,6 +514,41 @@ def subtree_range(key: str) -> tuple[str, str]:
             "select without a range predicate instead"
         )
     return doc_key + DELIMITER, doc_key + _AFTER_DELIMITER
+
+
+def sort_subtree_end(key: str) -> str:
+    """The sort form immediately past everything at and below ``key``.
+
+    :func:`subtree_range` bounds a subtree on ``doc_key`` and excludes the key
+    itself; this bounds it on ``sort_key`` and includes it, so
+    ``sort_form(k) <= sort_key < sort_subtree_end(k)`` is exactly ``k``, its
+    metadata and its descendants -- one contiguous stretch of the order a
+    listing walks. That is what lets a caller name a range *around* a subtree
+    without naming a key that does not exist.
+
+    Every descendant continues ``sort_form(k)`` with ``_SORT_DELIMITER``, and
+    every key that sorts after ``k`` without being one of its descendants has
+    to differ by then with a real segment character, which is higher still.
+    ``_AFTER_SORT_DELIMITER`` sits in the gap between the two.
+
+    **The root has no such bound**, for the reason :func:`subtree_range` gives:
+    everything is beneath it, and its sort form is the empty string rather than
+    a marked segment, so nothing can be appended to it that a descendant would
+    sort below. This raises rather than returning a bound that quietly matches
+    nothing.
+
+    >>> sort_form("a") < sort_form("a/b") < sort_subtree_end("a")
+    True
+    >>> sort_subtree_end("a") < sort_form("a-x")
+    True
+    """
+    doc_key = parse(key).key
+    if doc_key == ROOT:
+        raise ValueError(
+            "the root has no subtree bounds, since everything is beneath it; "
+            "select without a range predicate instead"
+        )
+    return sort_form(doc_key) + _AFTER_SORT_DELIMITER
 
 
 def with_prefix(prefix: str, key: str) -> str:

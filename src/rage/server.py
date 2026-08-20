@@ -11,6 +11,7 @@ import dataclasses
 import itertools
 import sys
 import time
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from mcp.server import MCPServer
@@ -28,8 +29,10 @@ from .mounts import Mounts, Resolved
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
+    Entry,
     Excerpt,
     KeyNotFoundError,
+    Page,
     Store,
 )
 
@@ -114,18 +117,162 @@ def _outward_cursor(found: Resolved, cursor: str | None) -> str | None:
     return None if cursor is None else found.mount.outer(cursor)
 
 
-def _covered(found: Resolved, outer_key: str) -> bool:
-    """Whether the answering store already holds ``outer_key`` at its level.
+def _replaced(found: Resolved, outer_key: str) -> Entry | None:
+    """The entry a mount point displaces from the answering store's own level.
 
-    Asked only of the keys a mount contributes to a listing, and only so the
-    level totals count them once. A mount point that the store beneath it also
-    holds is a misconfiguration -- ``Mounts.shadowing`` reports it at startup --
-    but a total that double counted it would be wrong every listing after.
+    Asked only of the keys a mount contributes to a listing, and only so that
+    the level totals describe what the listing shows. A mount point the store
+    beneath it also holds is a misconfiguration -- ``Mounts.shadowing`` reports
+    it at startup -- but the totals have to be right for every listing after,
+    and a mount **replaces** what it shadows rather than adding to it: one
+    position in the level, and the characters are the mount's, not the ones
+    underneath it that nothing can now read.
     """
     inner = found.mount.inner(outer_key)
-    if inner is None:
-        return False
-    return found.store.exists(inner) or found.store.descendant_count(inner) > 0
+    return None if inner is None else found.store.level_entry(inner)
+
+
+def _shadowed(table: Mounts, at: Resolved, key: str | None) -> list[str]:
+    """The mount points below ``key``, named as the store answering for it names them.
+
+    These are the stretches of that store a subtree read must step over. The
+    store still holds every row beneath a mount point -- mounting shadows the
+    keys, it does not remove them -- so a traversal that simply walks the
+    subtree walks straight through them and reports documents that reading by
+    key would refuse.
+
+    Sorted, and with any mount nested inside another dropped: the outer one's
+    range already covers it, and a window between the two would be empty.
+    Sorting is what makes that test local, since an ancestor always sorts
+    immediately before its descendants.
+    """
+    inside: list[str] = []
+    for mount in table.below(_scope(key)):
+        # A mount below `key` is below the store answering for `key` too: that
+        # store's mount point is the longest prefix of `key`, so it is a prefix
+        # of anything below it as well.
+        inner = at.mount.inner(mount.prefix)
+        assert inner is not None
+        inside.append(inner)
+
+    inside.sort(key=keys.sort_form)
+    kept: list[str] = []
+    for name in inside:
+        if kept and keys.strip_prefix(kept[-1], name):
+            continue
+        kept.append(name)
+    return kept
+
+
+def _windows(shadowed: list[str]) -> list[tuple[str | None, str | None]]:
+    """The stretches left of a subtree once ``shadowed`` is taken out of it.
+
+    Each is an ``(after_subtree, before)`` pair for ``Store``, naming the same
+    mount point from both sides: ``before=m`` ends the stretch in front of it,
+    ``after_subtree=m`` starts the one behind. ``None`` at either end means the
+    subtree's own edge.
+
+    With nothing shadowed this is one unbounded window, so a store with no
+    mounts below the key takes exactly the query it always took.
+    """
+    windows: list[tuple[str | None, str | None]] = []
+    lo: str | None = None
+    for name in shadowed:
+        windows.append((lo, name))
+        lo = name
+    windows.append((lo, None))
+    return windows
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _Span:
+    """One window, and how far into it a page reached.
+
+    ``reached`` is the last key the page emitted from this window when the page
+    stopped inside it, and None when the page covered the window whole. It is
+    what a second question asked about the same page -- ``without_meta`` -- has
+    to be bounded by, or the two halves stop describing one stretch of the
+    store.
+    """
+
+    after_subtree: str | None
+    before: str | None
+    reached: str | None
+
+
+def _across_windows[T](
+    windows: list[tuple[str | None, str | None]],
+    read: Callable[..., Page[T]],
+    *,
+    limit: int,
+    max_total_chars: int | None,
+    key_of: Callable[[T], str],
+    size_of: Callable[[T], int],
+) -> tuple[list[T], int, int, str | None, list[_Span]]:
+    """Read a subtree as several windows and answer as though it were one.
+
+    The windows are disjoint and in key order, so the items concatenate and the
+    totals add: each window counts its own stretch, and the stretches tile the
+    subtree minus what was shadowed. That is why the range bounds belong to the
+    store's *selection* rather than to its page -- a count taken per window is
+    the only kind that can be summed.
+
+    Every window is read, even after the page is full, because ``total`` and
+    ``total_chars`` describe the whole collection and not the part returned.
+    Those later reads take ``limit=0``: they cost a count and fetch nothing,
+    and a non-zero total in one of them is what says there is another page.
+
+    The cursor is the last key **emitted**. A window that stopped part way
+    through gives one that already says so, since a store's cursor is its own
+    last emitted key; what this must not do is take a cursor from a window
+    further on, or let a page that filled up exactly at a window's edge report
+    no cursor at all while a later window still holds something. The second is
+    why every window is counted even after the page is full.
+    """
+    items: list[T] = []
+    total = 0
+    total_chars = 0
+    spent = 0
+    spans: list[_Span] = []
+    cursor: str | None = None
+    more = False
+    stopped = False
+
+    for lo, hi in windows:
+        bounds: dict[str, Any] = {
+            "after_subtree": lo,
+            "before": hi,
+            "limit": 0 if stopped else limit - len(items),
+        }
+        # Only when the caller has a character budget at all. A collection of
+        # keys has none, and passing one it does not take would be a decision
+        # about its shape taken here rather than by the tool that has it.
+        if max_total_chars is not None:
+            bounds["max_total_chars"] = max_total_chars - spent
+        page = read(**bounds)
+        total += page.total
+        total_chars += page.total_chars
+
+        if stopped:
+            # Past the end of the page. Nothing was asked for, so anything at
+            # all in this window lies after the cursor and is another page.
+            more = more or page.total > 0
+            continue
+
+        items += page.items
+        spent += sum(size_of(item) for item in page.items)
+        if page.next_cursor is not None:
+            spans.append(_Span(lo, hi, page.next_cursor))
+            cursor, more, stopped = page.next_cursor, True, True
+        else:
+            spans.append(_Span(lo, hi, None))
+            stopped = len(items) >= limit or (
+                max_total_chars is not None and spent >= max_total_chars
+            )
+
+    if more and cursor is None:
+        cursor = key_of(items[-1]) if items else None
+    return items, total, total_chars, cursor, spans
 
 
 def _unsearched(table: Mounts, key: str | None) -> list[str]:
@@ -671,14 +818,23 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         if not cut and listing.next_cursor is not None:
             marks.append(_outward_cursor(found, listing.next_cursor))
         more = cut or listing.next_cursor is not None
-        added = [e for e in children if not _covered(found, e.key)]
 
+        # The store counted its whole level, including whatever a mount now
+        # stands in front of. A mount replaces that position rather than
+        # joining it, so the displaced entry comes back out of the totals
+        # before the mount's own goes in -- otherwise the level reports the
+        # characters of a document the same listing has just declined to show.
+        replaced = [_replaced(found, e.key) for e in children]
         result: dict[str, Any] = {
             "key": _scope(key),
             "entries": [dataclasses.asdict(e) for e in items],
             "returned": len(items),
-            "total": listing.total + len(added),
-            "total_chars": listing.total_chars + sum(e.size or 0 for e in added),
+            "total": listing.total + sum(1 for e in replaced if e is None),
+            "total_chars": (
+                listing.total_chars
+                - sum(e.size or 0 for e in replaced if e is not None)
+                + sum(e.size or 0 for e in children)
+            ),
             "next_cursor": max(marks, key=keys.sort_form) if more and marks else None,
         }
         return result
@@ -732,23 +888,37 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         ] = DEFAULT_PAGE_CHARS,
     ) -> dict[str, Any]:
         at = _resolve(table, key)
-        found = at.store.get_documents(
-            at.key,
-            meta_name=meta_name,
-            depth=depth,
-            max_chars=max_chars,
+        inward = _inward_cursor(at, after)
+
+        # A mount shadows the keys beneath it, but the store underneath still
+        # holds every row: read straight through and the survey reports
+        # documents that reading them by key would refuse. So the subtree is
+        # read as the windows a mount point leaves between them.
+        windows = _windows(_shadowed(table, at, key))
+        items, total, total_chars, cursor, spans = _across_windows(
+            windows,
+            lambda **bounds: at.store.get_documents(
+                at.key,
+                meta_name=meta_name,
+                depth=depth,
+                max_chars=max_chars,
+                after=inward,
+                **bounds,
+            ),
             limit=limit,
-            after=_inward_cursor(at, after),
             max_total_chars=max_total_chars,
+            key_of=lambda excerpt: excerpt.key,
+            size_of=lambda excerpt: excerpt.returned,
         )
-        documents = _outward_items(at, found.items)
+
+        documents = _outward_items(at, items)
         result: dict[str, Any] = {
             "key": _scope(key),
             "count": len(documents),
             "returned": len(documents),
-            "total": found.total,
-            "total_chars": found.total_chars,
-            "next_cursor": _outward_cursor(at, found.next_cursor),
+            "total": total,
+            "total_chars": total_chars,
+            "next_cursor": _outward_cursor(at, cursor),
             "documents": [_excerpt_result(e) for e in documents],
         }
         if meta_name is not None:
@@ -760,18 +930,30 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             # and "none missing here" are answers a caller must be able to tell
             # apart. No cursor: pass the same `key` to keys_missing_meta to
             # enumerate them, which is the collection this only counts.
-            gap = at.store.missing_meta_stats(
-                at.key,
-                meta_name=meta_name,
-                depth=depth,
-                after=_inward_cursor(at, after),
-                before=found.next_cursor,
-                sample=WITHOUT_META_SAMPLE,
+            # Asked once per window the page reached, and over exactly the
+            # stretch of each that the page covered, so the two halves still
+            # describe one span of the store and the spans still tile as a
+            # caller pages. A window the page never reached is not asked about
+            # at all: it is not part of this page's window.
+            missing = [
+                at.store.missing_meta_stats(
+                    at.key,
+                    meta_name=meta_name,
+                    depth=depth,
+                    after=inward,
+                    before_inclusive=span.reached,
+                    after_subtree=span.after_subtree,
+                    before=span.before,
+                    sample=WITHOUT_META_SAMPLE,
+                )
+                for span in spans
+            ]
+            sample = _outward_keys(
+                at, [key for gap in missing for key in gap.sample][:WITHOUT_META_SAMPLE]
             )
-            sample = _outward_keys(at, gap.sample)
             result["without_meta"] = {
-                "total": gap.total,
-                "total_chars": gap.total_chars,
+                "total": sum(gap.total for gap in missing),
+                "total_chars": sum(gap.total_chars for gap in missing),
                 "sample": sample,
             }
         # A subtree read covers one store. Said rather than left to be inferred
@@ -814,21 +996,34 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         ] = None,
     ) -> dict[str, Any]:
         at = _resolve(table, key)
-        missing = at.store.keys_missing_meta(
-            at.key,
-            meta_name=meta_name if meta_name is not None else "title",
-            depth=depth,
+        inward = _inward_cursor(at, after)
+
+        # Windowed for the reason the survey is: the store beneath a mount
+        # still holds the rows the mount shadows, and naming a document that
+        # cannot be read is the failure this whole tool exists to prevent.
+        items, total, total_chars, cursor, _ = _across_windows(
+            _windows(_shadowed(table, at, key)),
+            lambda **bounds: at.store.keys_missing_meta(
+                at.key,
+                meta_name=meta_name if meta_name is not None else "title",
+                depth=depth,
+                after=inward,
+                **bounds,
+            ),
             limit=limit,
-            after=_inward_cursor(at, after),
+            max_total_chars=None,
+            key_of=lambda name: name,
+            size_of=lambda name: 0,
         )
-        names = _outward_keys(at, missing.items)
+
+        names = _outward_keys(at, items)
         result: dict[str, Any] = {
             "key": _scope(key),
             "keys": names,
             "returned": len(names),
-            "total": missing.total,
-            "total_chars": missing.total_chars,
-            "next_cursor": _outward_cursor(at, missing.next_cursor),
+            "total": total,
+            "total_chars": total_chars,
+            "next_cursor": _outward_cursor(at, cursor),
         }
         _note_unsearched(result, _unsearched(table, key))
         return result

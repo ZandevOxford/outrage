@@ -368,6 +368,242 @@ def test_nothing_shadows_when_the_mount_point_is_empty(table):
     assert table.shadowing() == []
 
 
+@pytest.fixture
+def shadowing(tmp_path):
+    """A root store whose `project` subtree a mount stands in front of."""
+    root = Store(tmp_path / "root")
+    inner = Store(tmp_path / "inner")
+
+    root.store_document("readme", "The readme.", title="Readme")
+    root.store_document("project", "The index.", title="Project")
+    root.store_document("project/reference/env", "How to run.", title="Env")
+    root.store_document("project/untitled", "No title here.")
+    root.store_document("zzz", "Last.", title="Last")
+
+    inner.store_document("", "Mounted.", title="Mounted root")
+    inner.store_document("shown", "Reachable.", title="Shown")
+
+    with Mounts({"": root, "project": inner}) as built:
+        yield built
+
+
+@pytest.fixture
+def shadowed_server(shadowing):
+    return build_server(shadowing)
+
+
+def survey(server, **arguments):
+    return [d["key"] for d in call(server, "get_documents", **arguments)["documents"]]
+
+
+def test_a_survey_does_not_report_what_reading_by_key_would_refuse(shadowed_server):
+    # The failure this fixes. A survey rooted *above* a mount point used to
+    # walk the outer store straight through the shadowed subtree, because that
+    # store still holds every row and nothing removed them -- so it listed 44
+    # keys that reading them then refused. `list_keys` upheld the invariant and
+    # the traversals did not.
+    assert survey(shadowed_server, meta_name=["title"]) == ["readme/!title", "zzz/!title"]
+    assert survey(shadowed_server, depth=1) == ["readme", "zzz"]
+
+    # And the titles the survey shows are the ones a read can reach.
+    for key in survey(shadowed_server, meta_name=["title"]):
+        assert call(shadowed_server, "retrieve_document", key=key)["content"]
+
+    # The mount's own documents are not in it either, and the answer says so
+    # rather than letting a total that looks whole imply otherwise. A listing
+    # crosses the boundary; a query does not.
+    result = call(shadowed_server, "get_documents", meta_name=["title"])
+    assert result["mounts_not_searched"] == ["project"]
+
+
+def test_a_shadowed_key_is_not_named_as_missing_metadata(shadowed_server):
+    # `project/untitled` has no title and is unreachable. Naming it would send
+    # a caller to a key that does not answer, which is the whole failure.
+    assert call(shadowed_server, "keys_missing_meta")["keys"] == []
+
+
+def test_without_meta_does_not_count_what_it_cannot_show(shadowed_server):
+    result = call(shadowed_server, "get_documents", meta_name=["title"])
+    assert result["without_meta"] == {"total": 0, "total_chars": 0, "sample": []}
+
+
+def test_a_survey_counts_the_windows_it_actually_read(shadowed_server):
+    result = call(shadowed_server, "get_documents", meta_name=["title"])
+    assert result["total"] == 2 == result["returned"]
+    # `Project`, the title of the document the mount shadows, is not among them.
+    assert result["total_chars"] == len("Readme") + len("Last")
+
+
+def test_the_mounts_own_title_is_what_the_survey_shows_at_the_mount_point(shadowed_server):
+    # The mount point resolves to the mounted store, so `project/!title` is the
+    # inner root's title and not the shadowed one underneath it.
+    assert call(shadowed_server, "retrieve_document", key="project/!title")["content"] == (
+        "Mounted root"
+    )
+
+
+def test_paging_a_survey_across_a_mount_tiles_without_gap_or_overlap(shadowing):
+    # Untitled documents either side of the mount and one inside the stretch it
+    # shadows. `without_meta` describes this page's own window, so paging has
+    # to tile those windows exactly: no document counted twice, none missed,
+    # and the shadowed one never counted at all.
+    root = shadowing.root.store
+    root.store_document("aaa", "Before the mount, untitled.")
+    root.store_document("yyy", "After the mount, untitled.")
+    server = build_server(shadowing)
+
+    after, seen, counted, sampled = None, [], 0, []
+    while True:
+        page = call(server, "get_documents", meta_name=["title"], limit=1, after=after)
+        seen += [d["key"] for d in page["documents"]]
+        counted += page["without_meta"]["total"]
+        sampled += page["without_meta"]["sample"]
+        if page["next_cursor"] is None:
+            break
+        after = page["next_cursor"]
+        assert len(seen) < 10, "cursor is not advancing"
+
+    assert seen == ["readme/!title", "zzz/!title"]
+    assert counted == 2
+    assert sampled == ["aaa", "yyy"]
+    assert len(sampled) == len(set(sampled)), "double counted across windows"
+    assert call(server, "keys_missing_meta")["keys"] == sampled
+
+
+def test_a_page_ending_on_a_window_edge_still_says_there_is_more(shadowing):
+    # The case that would truncate the collection silently. The window in
+    # front of the mount holds exactly one document, so the store fills the
+    # page and reaches the window's end at the same moment and has no cursor of
+    # its own to give. Whether there is another page is a question only the
+    # windows behind it can answer.
+    server = build_server(shadowing)
+    page = call(server, "get_documents", meta_name=["title"], limit=1)
+
+    assert [d["key"] for d in page["documents"]] == ["readme/!title"]
+    assert page["next_cursor"] == "readme/!title"
+
+    rest = call(server, "get_documents", meta_name=["title"], limit=1, after=page["next_cursor"])
+    assert [d["key"] for d in rest["documents"]] == ["zzz/!title"]
+    assert rest["next_cursor"] is None
+
+
+def test_a_character_budget_is_spent_across_the_windows_not_per_window(shadowing):
+    # One budget for the page, however many windows it is read in. Spent per
+    # window instead, a page would return one budget's worth for each mount.
+    root = shadowing.root.store
+    root.store_document("aaa", "x" * 400, title="Before")
+    root.store_document("yyy", "y" * 400, title="After")
+    server = build_server(shadowing)
+
+    page = call(server, "get_documents", max_total_chars=500, limit=100)
+    returned = sum(d["returned"] for d in page["documents"])
+
+    # Spent per window this page would have carried `yyy` too, on a second
+    # budget of its own, and returned 816 characters against a stated 500.
+    assert returned <= 500
+    assert page["next_cursor"] is not None
+
+    seen = [d["key"] for d in page["documents"]]
+    while page["next_cursor"] is not None:
+        page = call(
+            server, "get_documents", max_total_chars=500, limit=100, after=page["next_cursor"]
+        )
+        seen += [d["key"] for d in page["documents"]]
+        assert len(seen) < 20, "cursor is not advancing"
+
+    assert seen == ["aaa", "readme", "yyy", "zzz"]
+
+
+def test_paging_keys_missing_meta_across_a_mount_reaches_both_sides(shadowing):
+    # Untitled keys either side of the mount, so a page has to cross it.
+    root = shadowing.root.store
+    root.store_document("aaa", "Before the mount, untitled.")
+    root.store_document("yyy", "After the mount, untitled.")
+    server = build_server(shadowing)
+
+    after, seen = None, []
+    while True:
+        page = call(server, "keys_missing_meta", limit=1, after=after)
+        seen += page["keys"]
+        if page["next_cursor"] is None:
+            break
+        after = page["next_cursor"]
+        assert len(seen) < 10, "cursor is not advancing"
+
+    assert seen == ["aaa", "yyy"]
+    assert call(server, "keys_missing_meta")["total"] == 2
+
+
+def test_a_listing_counts_the_mount_and_not_what_it_replaced(shadowed_server):
+    listing = call(shadowed_server, "list_keys")
+    assert [e["key"] for e in listing["entries"]] == ["project", "readme", "zzz"]
+    assert listing["total"] == 3
+    # The mount's own root document, never the 10 characters of the document it
+    # stands in front of, which this same listing declines to show.
+    assert listing["total_chars"] == len("The readme.") + len("Last.") + len("Mounted.")
+
+
+def test_a_listing_counts_a_mount_point_the_store_holds_only_metadata_for(tmp_path):
+    # The corner a cheaper test missed: metadata sits *at* a key, so `ref` here
+    # has no document and no descendants, and still occupies a position in the
+    # level the store counted.
+    root = Store(tmp_path / "root")
+    inner = Store(tmp_path / "inner")
+    root.store_document("ref/!title", "Stale title")
+    inner.store_document("", "Mounted.", title="Mounted root")
+
+    with Mounts({"": root, "ref": inner}) as table:
+        listing = call(build_server(table), "list_keys")
+        assert [e["key"] for e in listing["entries"]] == ["ref"]
+        assert listing["total"] == 1
+        assert listing["total_chars"] == len("Mounted.")
+
+
+def test_a_nested_mount_leaves_no_empty_window(tmp_path):
+    # Two mounts, one inside the other. The outer one's range already covers
+    # the inner, and a window drawn between them would be empty.
+    root = Store(tmp_path / "root")
+    outer = Store(tmp_path / "outer")
+    nested = Store(tmp_path / "nested")
+    root.store_document("a", "A", title="A")
+    root.store_document("lib/hidden", "Unreachable.", title="Hidden")
+    root.store_document("lib/deep/alsohidden", "Unreachable.", title="Also")
+    root.store_document("z", "Z", title="Z")
+    outer.store_document("shown", "Reachable.", title="Shown")
+    nested.store_document("deeper", "Reachable.", title="Deeper")
+
+    with Mounts({"": root, "lib": outer, "lib/deep": nested}) as table:
+        server = build_server(table)
+        assert survey(server, meta_name=["title"]) == ["a/!title", "z/!title"]
+        assert call(server, "get_documents", meta_name=["title"])["total"] == 2
+
+
+def test_a_survey_inside_a_mount_still_stops_at_a_mount_below_it(tmp_path):
+    # The windows are named as the *answering* store names them, so a mount
+    # nested inside another is stepped over in that store's own key space.
+    root = Store(tmp_path / "root")
+    outer = Store(tmp_path / "outer")
+    nested = Store(tmp_path / "nested")
+    outer.store_document("a", "A", title="A")
+    outer.store_document("deep/hidden", "Unreachable.", title="Hidden")
+    nested.store_document("shown", "Reachable.", title="Shown")
+
+    with Mounts({"": root, "lib": outer, "lib/deep": nested}) as table:
+        server = build_server(table)
+        result = call(server, "get_documents", key="lib", meta_name=["title"])
+        assert [d["key"] for d in result["documents"]] == ["lib/a/!title"]
+        assert result["mounts_not_searched"] == ["lib/deep"]
+
+
+def test_nothing_changes_for_a_key_with_no_mount_below_it(table):
+    # The single window case is the same query it always was, so a store with
+    # no mount under the key answers exactly as it did before any of this.
+    result = call(build_server(table), "get_documents", key="context", meta_name=["title"])
+    assert [d["key"] for d in result["documents"]] == ["context/1/state/!title"]
+    assert result["total"] == 1
+    assert "mounts_not_searched" not in result
+
+
 # -- configuration ---------------------------------------------------------
 
 
