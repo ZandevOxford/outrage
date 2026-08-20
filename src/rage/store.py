@@ -11,6 +11,7 @@ import inspect
 import json
 import os
 import sqlite3
+import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -29,6 +30,13 @@ from .keys import Key
 DEFAULT_DIR_NAME = ".rage"
 
 DB_FILENAME = "store.sqlite"
+
+#: How long a writer waits for another writer to finish before giving up, in
+#: milliseconds. SQLite's own default is zero -- a busy database fails on the
+#: spot rather than waiting -- which is invisible with one connection and the
+#: usual cause of spurious "database is locked" with several. Generous, because
+#: every write here is small and the alternative to waiting is an error.
+BUSY_TIMEOUT_MS = 5000
 
 #: Where backups go when no destination is given, relative to the store
 #: directory, and how they are named within it.
@@ -260,16 +268,51 @@ class Store:
         self.directory = resolve_directory(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.path = self.directory / DB_FILENAME
-        self._conn = sqlite3.connect(self.path, check_same_thread=False)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL")
-        self._conn.execute("PRAGMA synchronous=NORMAL")
+        # One connection per thread, opened on first use. The server runs its
+        # sync tool handlers in a worker pool, so a single shared connection
+        # was being used from several threads at once -- which SQLite reported
+        # as `bad parameter or other API misuse`, and, about a third of the
+        # time, as an empty result set that raised nothing at all. See
+        # `project/reference/planned/concurrency`.
+        self._local = threading.local()
+        # Migrating here, on the constructing thread, is what lets every later
+        # connection assume the schema is already current: two threads can
+        # never race to apply the same migration, because only this one ever
+        # tries.
+        self._migrate()
+
+    def _connect(self) -> sqlite3.Connection:
+        """A new connection, configured exactly like every other one.
+
+        ``check_same_thread`` is left at its default. Turning it off is a
+        promise to serialise access by hand, and nothing here does; leaving it
+        on means a connection that escapes to another thread fails loudly
+        rather than returning quiet nonsense.
+        """
+        conn = sqlite3.connect(self.path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        # WAL lets readers run alongside a writer, but writers still take
+        # turns, and without this a second one is refused *immediately*: the
+        # default busy timeout is zero. Waiting is what makes a concurrent
+        # write look like it merely took a moment.
+        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         # Ordering stays defined in one place. The stored `sort_key` covers
         # every real row, but the implicit children of a level are derived from
         # the `parent` column and have no row of their own, so a query that has
         # to order or bound them needs the same padding SQLite cannot express.
-        self._conn.create_function("sort_form", 1, keys.sort_form, deterministic=True)
-        self._migrate()
+        # Registered per connection, because that is the scope SQLite gives it.
+        conn.create_function("sort_form", 1, keys.sort_form, deterministic=True)
+        return conn
+
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """This thread's connection, opened on first use."""
+        conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._local.conn = self._connect()
+        return conn
 
     def _migrate(self) -> None:
         with self._conn:
@@ -435,7 +478,18 @@ class Store:
         return self._conn
 
     def close(self) -> None:
-        self._conn.close()
+        """Close this thread's connection.
+
+        Only this thread's: SQLite refuses to let one thread touch another's
+        connection at all, closing included, which is the same rule that makes
+        the per-thread connections safe in the first place. The rest are
+        released when their thread ends or the process exits -- the lifetime
+        the one shared connection effectively had anyway.
+        """
+        conn: sqlite3.Connection | None = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            self._local.conn = None
 
     def __enter__(self) -> Store:
         return self

@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -1549,3 +1550,84 @@ def test_metadata_may_have_a_subtree(store):
     # a metadata key would count as one.
     page = store.get_documents(meta_name=["title"])
     assert [d.key for d in page.items] == ["a/!title"]
+
+
+# -- concurrency ---------------------------------------------------------
+#
+# The server runs its sync tool handlers in a worker pool, so two tool calls
+# issued in one batch reach the store from two threads at once. A single shared
+# connection made that corrupt: SQLite raised `bad parameter or other API
+# misuse`, and about a third of the failures were empty pages that raised
+# nothing at all. Every other test here is single-threaded and so could not see
+# it. See `project/reference/planned/concurrency`.
+
+
+def _in_threads(work, threads=6):
+    """Run ``work(i)`` in parallel, re-raising whatever any thread raised."""
+    failures = []
+
+    def run(i):
+        try:
+            work(i)
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            failures.append(exc)
+
+    workers = [threading.Thread(target=run, args=(i,)) for i in range(threads)]
+    for t in workers:
+        t.start()
+    for t in workers:
+        t.join()
+    if failures:
+        raise failures[0]
+
+
+def test_concurrent_reads_are_neither_corrupt_nor_silently_empty(store):
+    for i in range(20):
+        store.store_document(f"a/doc{i}", "body", title=f"title {i}")
+
+    def read(_):
+        for _ in range(200):
+            page = store.get_documents(key="a", meta_name=["title"])
+            # The loud failure was an exception; the quiet one was a page
+            # reporting a total it did not carry, with no cursor to say why.
+            assert page.returned == len(page.items)
+            assert page.total == 20
+            assert page.items
+
+    _in_threads(read)
+
+
+def test_concurrent_writes_do_not_hand_out_a_number_twice(store):
+    """`?` allocation reads the highest number in use, then writes past it.
+
+    Across connections that is only safe because the write takes the lock up
+    front -- `BEGIN IMMEDIATE` -- and because a writer waits its turn instead
+    of failing on the spot, which is what `BUSY_TIMEOUT_MS` buys.
+    """
+    allocated = []
+    lock = threading.Lock()
+
+    def allocate(_):
+        mine = [store.store_document("c/?/doc", "x", title="a") for _ in range(20)]
+        with lock:
+            allocated.extend(mine)
+
+    _in_threads(allocate, threads=5)
+
+    assert len(allocated) == 100
+    assert len(set(allocated)) == 100
+
+
+def test_a_connection_does_not_escape_its_thread(store):
+    """Each thread gets its own, so the objects differ and nothing is shared."""
+    seen = {}
+    lock = threading.Lock()
+
+    def note(i):
+        store.list_keys()  # opens this thread's connection
+        with lock:
+            seen[i] = id(store._conn)
+
+    _in_threads(note, threads=4)
+
+    assert len(set(seen.values())) == 4
