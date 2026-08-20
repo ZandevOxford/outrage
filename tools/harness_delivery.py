@@ -276,10 +276,19 @@ def _report(sessions: list[Session], canaries: list[tuple[dict[str, Any], str]])
         print("\nNo canary tokens minted yet. The table above is the client's own")
         print("account of itself; the canary is the half it cannot author.")
 
-    truncated = [s for s in sessions if s.truncated_mcp]
-    if truncated:
-        print(f"\nMCP instructions cut in {len(truncated)}/{len(sessions)} sessions", end="")
-        print(" (the readme never arrives -- context/12/verification)")
+    # Sessions arrive oldest first, so the last one carrying instructions is
+    # the current client's answer. The running total can never fall -- past
+    # transcripts are immutable -- so it says what has happened and not whether
+    # it still happens, and only the second question is a check a fix can pass.
+    carrying = [s for s in sessions if s.mcp_blocks]
+    truncated = [s for s in carrying if s.truncated_mcp]
+    if carrying:
+        newest = carrying[-1]
+        state = "CUT" if newest.truncated_mcp else "whole"
+        print(f"\nMCP instructions in the newest session ({newest.session_id[:8]}): {state}")
+        print(f"  cut in {len(truncated)}/{len(carrying)} sessions carrying them, all time")
+        if newest.truncated_mcp:
+            print("  Ordering is what decides the loss -- see planned/instructions-budget.")
 
 
 if __name__ == "__main__":

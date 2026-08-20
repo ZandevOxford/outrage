@@ -637,7 +637,36 @@ def test_a_readme_is_carried_in_the_instructions(store):
     # is a line that can be read past, and the whole point is that this one
     # arrives before the session has to know to ask.
     assert "Read `project` next." in text
-    assert text.startswith(server_module.INSTRUCTIONS)
+    assert server_module.ESSENTIALS in text
+    assert server_module.TAIL in text
+
+
+def test_the_readme_is_delivered_before_the_protocol(store):
+    store.store_document("readme", "# This store\n\nRead `project` next.")
+
+    text = server_module.instructions(store)
+
+    # The client cuts this text at a length it does not announce, so order is
+    # what decides what survives. The readme was last for long enough that it
+    # never reached a session at all; see `planned/instructions-budget`.
+    assert text.index("Read `project` next.") < text.index(server_module.ESSENTIALS)
+    assert text.index(server_module.ESSENTIALS) < text.index(server_module.TAIL)
+
+
+def test_the_essentials_leave_room_for_a_readme(store):
+    # The whole failure was static prose growing past the cut and pushing the
+    # store's own routing off the end. This fails the moment that starts again,
+    # rather than three weeks later when somebody re-measures a transcript.
+    assert server_module.README_MAX_CHARS >= server_module.README_FLOOR_CHARS
+
+    store.store_document("readme", "x" * server_module.README_MAX_CHARS)
+    text = server_module.instructions(store)
+
+    # Everything ahead of the tail is what the budget has to cover. The tail is
+    # allowed to fall past the cut -- that is what makes it the tail.
+    delivered = text.removesuffix(f"\n{server_module.TAIL}")
+    assert len(delivered) <= server_module.DELIVERY_BUDGET
+    assert "x" * server_module.README_MAX_CHARS in delivered
 
 
 def test_a_store_with_no_readme_is_told_the_convention(store):
