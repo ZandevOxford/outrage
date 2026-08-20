@@ -7,6 +7,8 @@
         "/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/.rage",
         "--mount",
         "mount_test=/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/.rage-mount-test",
+        "--mount-ro",
+        "ref=/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/.rage-mount-ro",
         "--log"
       ]
     }
