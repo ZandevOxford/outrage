@@ -105,11 +105,25 @@ merging two stores that disagree about one key has no answer that is not
 arbitrary. The server says so once on stderr at startup rather than refusing to
 start, since the keys are still reachable in the store that holds them.
 
+Shadowing binds a **traversal** as tightly as it binds a read. The store
+beneath a mount still holds every one of those rows — mounting hides keys, it
+does not delete them — so a survey that simply walks a subtree walks straight
+through them and reports documents that reading them by key would refuse. That
+is the failure the store exists to prevent, and it is the reason `Store` grew
+range bounds: a subtree that a mount interrupts is read as the **windows**
+either side of it. `before=k` ends the stretch in front of a mount point and
+`after_subtree=k` begins the one behind, so the mount point is named from both
+sides and neither name has to be a key that exists — there is no key "just past
+the last thing under `k`" for a cursor to be given. The bounds narrow the
+selection rather than the page, which is what lets each window carry its own
+count and the counts be added up.
+
 **Reads and writes cross a boundary; queries do not.** A read, a write and a
 delete route to one store and translate, and a write or a delete routed to a
 read-only mount is refused there. A subtree read — `get_documents`,
 `keys_missing_meta`, a recursive delete — covers the one store that owns its
-key, and *says which mounts it did not descend into*. A partial answer must not
+key, minus the stretches its mounts claim, and *says which mounts it did not
+descend into*. A partial answer must not
 be indistinguishable from a whole one, which is the standing argument from
 `context/8/decisions`. Aggregating across mounts is deferred, not abandoned:
 `sort_key` is derived from the key alone and a cursor names a key rather than a

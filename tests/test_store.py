@@ -1339,7 +1339,7 @@ def test_missing_meta_stats_bounds_by_the_surveys_own_cursors(store):
     store.store_document("n/2/!title", "T")
 
     whole = store.missing_meta_stats("n", sample=10)
-    below = store.missing_meta_stats("n", before="n/2/!title", sample=10)
+    below = store.missing_meta_stats("n", before_inclusive="n/2/!title", sample=10)
     above = store.missing_meta_stats("n", after="n/2/!title", sample=10)
 
     # Exclusive below, inclusive above, so the two halves partition the whole.
@@ -1358,7 +1358,7 @@ def test_missing_meta_stats_places_a_document_where_its_metadata_would_sort(stor
     # document order: a/!title < a/x/!title < a/y/!title, exactly as
     # a < a/x < a/y. Everything above therefore sits on the same side of the
     # cursor in both orderings.
-    assert store.missing_meta_stats(before="a/y/!title", sample=10).sample == ["a", "a/x"]
+    assert store.missing_meta_stats(before_inclusive="a/y/!title", sample=10).sample == ["a", "a/x"]
     assert store.missing_meta_stats(after="a/y/!title", sample=10).sample == []
 
     # Two separate defects put `a` on the wrong side of this before: the `:`
@@ -1446,7 +1446,7 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
         while True:
             page = store.get_documents(meta_name=["title"], limit=1, after=after)
             window = store.missing_meta_stats(
-                meta_name=["title"], after=after, before=page.next_cursor, sample=100
+                meta_name=["title"], after=after, before_inclusive=page.next_cursor, sample=100
             )
             seen += window.sample
             counted += window.total
@@ -1550,6 +1550,180 @@ def test_metadata_may_have_a_subtree(store):
     # a metadata key would count as one.
     page = store.get_documents(meta_name=["title"])
     assert [d.key for d in page.items] == ["a/!title"]
+
+
+# -- range bounds --------------------------------------------------------
+
+
+@pytest.fixture
+def ranged(store):
+    """Four top level keys, the middle one with a subtree of its own."""
+    store.store_document("a", "A")
+    store.store_document("m", "M")
+    store.store_document("m/!title", "Middle")
+    store.store_document("m/x", "MX")
+    store.store_document("m/x/deep", "MXD")
+    store.store_document("z", "Z")
+    return store
+
+
+def keys_of(page) -> list[str]:
+    return [item.key for item in page.items]
+
+
+def test_a_zero_limit_counts_a_window_without_reading_it(ranged):
+    # What a caller reading several windows asks of the ones past the end of
+    # its page: the totals still describe the whole collection, so every window
+    # has to be counted even after the page is full.
+    page = ranged.get_documents(limit=0)
+    assert page.items == []
+    assert page.total == 5  # the documents; the title is not one of them
+    assert page.next_cursor is None
+
+
+def test_before_excludes_the_key_and_everything_below_it(ranged):
+    # Not just the key: a descendant sorts after its parent, so a bound that
+    # stopped at the key alone would still walk into its subtree.
+    assert keys_of(ranged.get_documents(before="m")) == ["a"]
+
+
+def test_after_subtree_starts_past_the_whole_subtree(ranged):
+    assert keys_of(ranged.get_documents(after_subtree="m")) == ["z"]
+
+
+def test_a_cursor_stops_at_the_key_and_a_subtree_bound_stops_past_it(ranged):
+    # The distinction the two exist for. `after` resumes a page, so it is
+    # exclusive of the key and inclusive of that key's children; nothing else
+    # can say "past all of this", which is what stepping over a mount needs.
+    assert keys_of(ranged.get_documents(after="m")) == ["m/x", "m/x/deep", "z"]
+    assert keys_of(ranged.get_documents(after_subtree="m")) == ["z"]
+
+
+def test_final_subtree_runs_to_the_end_of_the_subtree(ranged):
+    assert keys_of(ranged.get_documents(final_subtree="m")) == ["a", "m", "m/x", "m/x/deep"]
+
+
+def test_a_key_and_a_subtree_bound_compose(ranged):
+    assert keys_of(ranged.get_documents("m", before="m/x")) == ["m"]
+    assert keys_of(ranged.get_documents("m", after_subtree="m/x")) == []
+
+
+def test_the_windows_either_side_of_a_subtree_tile_the_rest(ranged):
+    whole = ranged.get_documents()
+    below = ranged.get_documents(before="m")
+    above = ranged.get_documents(after_subtree="m")
+
+    assert keys_of(below) + keys_of(above) == ["a", "z"]
+    assert below.total + above.total == whole.total - 3  # m, m/x, m/x/deep
+    assert below.total_chars + above.total_chars == whole.total_chars - len("M" + "MX" + "MXD")
+
+
+def test_range_bounds_count_the_window_and_a_cursor_does_not(ranged):
+    # The bounds are part of the selection, so a count taken over them counts
+    # the window and windows can be added up. The cursor is not: a page's
+    # totals have never depended on where the reader had got to.
+    windowed = ranged.get_documents(before="m")
+    assert windowed.total == 1
+
+    resumed = ranged.get_documents(after="a")
+    assert resumed.total == ranged.get_documents().total
+    assert keys_of(resumed) == ["m", "m/x", "m/x/deep", "z"]
+
+
+def test_metadata_travels_with_the_document_it_belongs_to(ranged):
+    survey = ranged.get_documents(meta_name=["title"], before="m")
+    assert keys_of(survey) == []
+    survey = ranged.get_documents(meta_name=["title"], final_subtree="m")
+    assert keys_of(survey) == ["m/!title"]
+
+
+def test_keys_missing_meta_takes_the_same_bounds(ranged):
+    ranged.store_document("a/!title", "A")
+    whole = ranged.keys_missing_meta(meta_name="title")
+    below = ranged.keys_missing_meta(meta_name="title", before="m")
+    above = ranged.keys_missing_meta(meta_name="title", after_subtree="m")
+
+    # `m` carries a title of its own; the two below it do not.
+    assert whole.items == ["m/x", "m/x/deep", "z"]
+    assert below.items == []
+    assert above.items == ["z"]
+    assert below.total + above.total == whole.total - 2
+
+
+def test_missing_meta_stats_bounds_the_range_and_the_window_separately(ranged):
+    # The range bound is measured against the document's own position and the
+    # cursor against the position its title would have taken. A document is
+    # inside a skipped subtree because of where the document is.
+    gap = ranged.missing_meta_stats(meta_name="title", before="m", sample=10)
+    assert gap.sample == ["a"]
+
+    gap = ranged.missing_meta_stats(meta_name="title", after_subtree="m", sample=10)
+    assert gap.sample == ["z"]
+
+    # Both kinds at once: the window inside the range.
+    gap = ranged.missing_meta_stats(
+        meta_name="title", after_subtree="m", before_inclusive="z/!title", sample=10
+    )
+    assert gap.sample == ["z"]
+
+
+def test_a_subtree_bound_on_the_root_is_refused(ranged):
+    # Everything is beneath the root, so no bound can be drawn around it. The
+    # alternative is a bound that quietly matches nothing.
+    with pytest.raises(ValueError, match="no subtree bounds"):
+        ranged.get_documents(before=None, after_subtree="")
+
+
+def test_sort_subtree_end_bounds_a_subtree_in_sort_order():
+    assert keys.sort_form("a") < keys.sort_form("a/!title") < keys.sort_subtree_end("a")
+    assert keys.sort_form("a/b/c") < keys.sort_subtree_end("a")
+    # The trap `subtree_range` exists for, in sort space: `a` does not contain
+    # `a-x`, however much the two look alike.
+    assert keys.sort_subtree_end("a") < keys.sort_form("a-x")
+    with pytest.raises(ValueError, match="no subtree bounds"):
+        keys.sort_subtree_end("")
+
+
+# -- a key's place in its parent's listing --------------------------------
+
+
+def test_level_entry_describes_a_stored_key(ranged):
+    entry = ranged.level_entry("m")
+    assert (entry.kind, entry.size) == ("document", 1)
+    assert ranged.level_entry("m/!title").kind == "metadata"
+
+
+def test_level_entry_describes_a_key_that_only_has_something_below_it(store):
+    store.store_document("a/b", "body")
+    entry = store.level_entry("a")
+    assert (entry.kind, entry.size) == ("implicit", None)
+
+
+def test_level_entry_sees_a_key_that_holds_only_metadata(store):
+    # The corner a cheaper pair of questions gets wrong: metadata sits *at* a
+    # key, so this key has no document and no descendants and still appears in
+    # its parent's listing.
+    store.store_document("a/!title", "T")
+    assert store.level_entry("a").kind == "implicit"
+    assert store.exists("a") is False
+    assert store.descendant_count("a") == 0
+
+
+def test_level_entry_is_none_for_a_key_the_store_does_not_hold(ranged):
+    assert ranged.level_entry("nothing") is None
+    assert ranged.level_entry("m/x/deeper") is None
+
+
+def test_level_entry_refuses_the_root(ranged):
+    with pytest.raises(ValueError, match="not a child of anything"):
+        ranged.level_entry("")
+
+
+def test_level_entry_agrees_with_the_listing_it_describes(ranged):
+    ranged.store_document("implied/below", "b")
+    level = {entry.key: entry for entry in ranged.list_keys().items}
+    for key in ["a", "m", "z", "implied"]:
+        assert ranged.level_entry(key) == level[key], key
 
 
 # -- concurrency ---------------------------------------------------------
@@ -1748,7 +1922,7 @@ def test_the_roots_missing_title_is_measured_where_it_would_have_sorted(populate
     # window than the one its title would really have sorted in.
     populated.store_document("", "body")
     first = populated.missing_meta_stats(
-        meta_name="title", before="context/a1b2/design/!title", sample=5
+        meta_name="title", before_inclusive="context/a1b2/design/!title", sample=5
     )
     later = populated.missing_meta_stats(
         meta_name="title", after="context/a1b2/design/!title", sample=5

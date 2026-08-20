@@ -116,11 +116,27 @@ the bound they enforce (`MAX_SEGMENTS`, via `keys.fits`) is already there.
 `reference`, and getting that wrong would route a key to a store that has never
 heard of it.
 
-The storage layer is untouched. It needed nothing: `sort_key` is derived from
-the key alone, so rows from different mounts already sort against each other,
-and `Store` holds its own `threading.local`, so N stores in one thread is N
+The storage layer needed almost nothing: `sort_key` is derived from the key
+alone, so rows from different mounts already sort against each other, and
+`Store` holds its own `threading.local`, so N stores in one thread is N
 connections rather than one shared between them — the concurrency fix spans
 mounts without an addition.
+
+It needed one thing, added later: **range bounds**, so that a traversal can
+step over the stretch a mount shadows. `Store.get_documents`,
+`keys_missing_meta` and `missing_meta_stats` take `after_subtree`, `before` and
+`final_subtree` alongside `key` and `depth` — see `_range_bounds`, which has
+what each means. They know nothing about mounts; they are ordinary bounds on a
+key range, and `before` and `after_subtree` name the same key from opposite
+sides so a subtree can be cut out without naming a key that does not exist.
+They bound the **selection**, not the page, so a count taken over a window
+counts that window and the windows either side of a mount add up to the whole.
+`missing_meta_stats` keeps its survey cursors separately — `after` and
+`before_inclusive`, measured against the position a document's metadata would
+have taken — because a document is inside a shadowed subtree because of where
+the *document* is. `Store.level_entry` was added with them: how one key appears
+in its parent's listing, which is what the level totals need in order to count
+a mount point once.
 
 `keys.MAX_SEGMENTS` is **64**, half `keys.MAX_JOINED_SEGMENTS`, and bounds both
 a key inside a store and a mount point. That is what makes the join total:
@@ -134,10 +150,17 @@ keys written before the bound was halved.
 The routing lives in the server, which is where the argument and result shaping
 already lives. Per tool: `retrieve_document`, `store_document` and
 `delete_keys` route to the owning mount and translate; `list_keys` also splices
-in the mount points at that level, merging before it cuts; `get_documents` and
-`keys_missing_meta` cover one store and report `mounts_not_searched`. Results
-grow a field only when there is something to say, so a single store answer is
-the shape it was before mounts existed.
+in the mount points at that level, merging before it cuts, and counts a mount
+as *replacing* what it stands in front of rather than joining it;
+`get_documents` and `keys_missing_meta` read their store as the windows the
+mounts below the key leave between them (`_shadowed`, `_windows`,
+`_across_windows`) and report `mounts_not_searched`. One limit and one
+character budget are spent across all the windows of a page, the totals are
+summed, and `without_meta` is asked once per window over exactly the stretch
+the page covered, so a survey's windows still tile as a caller pages. With no
+mount below the key there is a single unbounded window, which is the query it
+always was. Results grow a field only when there is something to say, so a
+single store answer is the shape it was before mounts existed.
 
 **Read-only mounts** — `--mount-ro KEY=PATH`, and `rage config --mount-ro` to
 record one. `Mount.read_only` carries it, `Resolved.writable(action)` raises
@@ -154,7 +177,9 @@ followed.
 
 Deliberately not done, and recorded in `project/reference/planned/mounts`:
 aggregation across a boundary, and mounts in the CLI — `rage check` and
-`rage backup` are still per-directory.
+`rage backup` are still per-directory. The range bounds are the primitive that
+first half now needs: reading a subtree as ordered windows is what a merge
+across two stores would interleave.
 
 ### 4. Integration with Claude Code — done
 
