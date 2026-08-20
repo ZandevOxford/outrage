@@ -110,17 +110,97 @@ def test_delimiters_are_tidied_before_the_key_is_judged(written, stored):
     assert keys.parse(written).key == stored
 
 
+# -- the root ------------------------------------------------------------
+
+
 @pytest.mark.parametrize("key", ["", "/", "//", "///"])
-def test_there_is_no_root_key(key):
-    # Slash normalisation runs first, so these all reduce to the empty string
-    # and are then refused like any other empty key. The root is the parent of
-    # a top level key, not a key you can address.
-    with pytest.raises(InvalidKeyError, match="must not be empty"):
-        keys.parse(key)
+def test_every_spelling_of_the_root_is_the_root(key):
+    # Slash normalisation runs first, so these all reduce to the empty string.
+    # Since schema 5's grammar that is the root rather than an error.
+    assert keys.parse(key).key == keys.ROOT
 
 
-def test_root_is_not_a_valid_key():
-    assert not keys.is_valid(keys.ROOT)
+def test_root_is_a_valid_key():
+    assert keys.is_valid(keys.ROOT)
+
+
+def test_root_derives_a_document_key_and_no_metadata():
+    parsed = keys.parse(keys.ROOT)
+    assert parsed.doc_key == keys.ROOT
+    assert parsed.meta_name is None
+    assert not parsed.is_metadata
+
+
+def test_the_root_is_its_own_parent():
+    # As POSIX makes `/..` be `/`. What matters is that an ancestor walk
+    # terminates without a second value meaning "nowhere"; `store` is where
+    # the consequence is paid, by excluding the root from its own listing.
+    assert keys.parse(keys.ROOT).parent == keys.ROOT
+
+
+def test_the_root_has_no_ancestors():
+    # It encloses everything and is implied by nothing: it is always there,
+    # unlike the implicit keys `ancestors` exists to name.
+    assert keys.ancestors(keys.ROOT) == []
+    assert keys.ancestors("a") == []
+
+
+def test_the_root_is_depth_zero():
+    assert keys.depth(keys.ROOT) == 0
+    assert keys.depth("!title") == 0
+
+
+def test_the_root_has_no_subtree_bounds():
+    # Refused rather than answered, because the bounds the formula gives for
+    # the root match nothing at all -- a caller that skipped the check would
+    # read a confident zero out of a full store.
+    with pytest.raises(ValueError, match="no subtree bounds"):
+        keys.subtree_range(keys.ROOT)
+
+
+@pytest.mark.parametrize(
+    ("key", "meta_name", "parent"),
+    [
+        ("!title", "title", ""),
+        ("!summary", "summary", ""),
+        # A path may continue below a metadata segment, and `parent` stays what
+        # it is everywhere else: the key without its last segment.
+        ("!title/b", "title/b", "!title"),
+    ],
+)
+def test_metadata_may_attach_to_the_root(key, meta_name, parent):
+    parsed = keys.parse(key)
+    assert parsed.doc_key == keys.ROOT
+    assert parsed.meta_name == meta_name
+    assert parsed.parent == parent
+
+
+def test_root_metadata_keeps_its_spelling_when_reparsed():
+    # Joined with the document key it would come out as `/!title`, which
+    # normalises to something else on the next parse: a key that is not the
+    # one it was built from.
+    assert keys.parse("!title").key == "!title"
+    assert keys.parse(keys.parse("!title").key).key == "!title"
+
+
+def test_the_root_sorts_first_and_ahead_of_its_own_metadata():
+    # The one place the segment marking would invert rather than order: marked
+    # as a segment the root would sort *after* `!title`, since the metadata
+    # marker is the lower of the two. It sorts as the empty string instead.
+    assert keys.sort_form(keys.ROOT) < keys.sort_form("!title")
+    assert keys.sort_form("!title") < keys.sort_form("a")
+    assert keys.sort_form("a") < keys.sort_form("a/!title")
+
+
+def test_the_root_sort_form_collides_with_nothing():
+    # Sort keys have to stay unique: pagination resumes with `sort_key > ?`
+    # over a non-unique index, so a collision silently skips a row.
+    others = ["a", "!title", "a/b", "a/!title", "0", "\t"]
+    assert all(keys.sort_form(keys.ROOT) != keys.sort_form(k) for k in others)
+
+
+def test_a_wildcard_at_the_top_level_allocates_under_the_root():
+    assert keys.parse("?", allow_wildcard=True).wildcard_parent == keys.ROOT
 
 
 # -- what is still refused ------------------------------------------------
@@ -129,8 +209,6 @@ def test_root_is_not_a_valid_key():
 @pytest.mark.parametrize(
     "key",
     [
-        "!title",       # metadata with no document above it
-        "!title/x",
         "context/!",    # a metadata segment with no name
         "context/!/x",
         "a/?",          # a wildcard outside a write
@@ -161,7 +239,7 @@ def test_a_key_is_bounded():
 def test_is_valid():
     assert keys.is_valid("a/b/!c")
     assert keys.is_valid("a//b")  # normalised, not refused
-    assert not keys.is_valid("")
+    assert keys.is_valid("")  # the root
 
 
 def test_metadata_may_attach_to_an_implicit_key():

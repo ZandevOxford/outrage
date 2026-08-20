@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__, bulk, eventlog, install, logread, maintenance, store
+from . import __version__, bulk, eventlog, install, keys, logread, maintenance, store
 from . import config as config_module
 from .errors import RageError
 
@@ -709,7 +709,10 @@ def set_command(args: argparse.Namespace, out: TextIO) -> int:
 
     # The resolved directory, not the one asked for: a mistyped --dir creates a
     # store rather than failing, so the only defence is saying where it went.
-    print(f"{written}  {len(content)} characters in {directory / store.DB_FILENAME}", file=out)
+    print(
+        f"{keys.displayed(written)}  {len(content)} characters in {directory / store.DB_FILENAME}",
+        file=out,
+    )
     return 0
 
 
@@ -766,7 +769,7 @@ def dump_command(args: argparse.Namespace, out: TextIO) -> int:
             if args.limit is not None and shown >= args.limit:
                 print(f"rage: stopped at --limit {args.limit}", file=sys.stderr)
                 break
-            header = f"=== {excerpt.key}"
+            header = f"=== {keys.displayed(excerpt.key)}"
             if excerpt.truncated:
                 # Named on the line above the content, so that a reader sees it
                 # before reading rather than after acting on half a document.
@@ -865,10 +868,14 @@ def _report_transfers(
     counted: dict[str, int] = {}
     for transfer in transfers:
         counted[transfer.action] = counted.get(transfer.action, 0) + 1
-        left, right = transfer.key, transfer.path
+        # `-` means there is no key or no path -- a file that mapped to no key,
+        # a key that mapped to no file. The root is a key, so it is spelled
+        # rather than blanked: `key or "-"` would report it as absent.
+        left = "-" if transfer.key is None else keys.displayed(transfer.key)
+        right = transfer.path or "-"
         if source_first:
             left, right = right, left
-        line = f"{_verb(transfer.action, args.dry_run):<11} {left or '-'}  ->  {right or '-'}"
+        line = f"{_verb(transfer.action, args.dry_run):<11} {left}  ->  {right}"
         if transfer.reason is not None:
             line += f"  ({transfer.reason})"
         print(line, file=out)
@@ -910,7 +917,7 @@ def rm_command(args: argparse.Namespace, out: TextIO) -> int:
         if args.dry_run:
             # Asking the store rather than predicting: a dry run that computes
             # its own answer is one that can disagree with what it previews.
-            print(f"would delete {args.key}", file=out)
+            print(f"would delete {keys.displayed(args.key)}", file=out)
             if args.recursive:
                 # The whole subtree, not one level of it: a preview that shows
                 # the first level of a deletion reaching five is not a preview
@@ -928,9 +935,9 @@ def rm_command(args: argparse.Namespace, out: TextIO) -> int:
         removed = opened.delete(args.key, recursive=args.recursive)
 
     for key in removed:
-        print(f"deleted {key}", file=out)
+        print(f"deleted {keys.displayed(key)}", file=out)
     if not removed:
-        print(f"nothing stored at {args.key}", file=out)
+        print(f"nothing stored at {keys.displayed(args.key)}", file=out)
     _report_remainder(args, beneath - (len(removed) - 1 if args.recursive else 0), out)
     return 0
 
@@ -947,7 +954,10 @@ def _report_remainder(
     if args.recursive or beneath <= 0:
         return
     verb = "would remain" if dry_run else "remain"
-    print(f"  {beneath} keys below {args.key} {verb}; --recursive to take them too", file=out)
+    print(
+        f"  {beneath} keys below {keys.displayed(args.key)} {verb}; --recursive to take them too",
+        file=out,
+    )
 
 
 def check_command(args: argparse.Namespace, out: TextIO) -> int:

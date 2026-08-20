@@ -187,7 +187,10 @@ def _check_orphan_metadata(connection: sqlite3.Connection, report: Report) -> No
     that cannot be read, so it is worth naming.
     """
     orphans = [
-        row["doc_key"]
+        # Spelled rather than printed raw: the root can carry a title without
+        # a document beneath it, and a blank name in this list would read as
+        # no name at all.
+        keys.displayed(row["doc_key"])
         for row in connection.execute(
             "SELECT DISTINCT doc_key FROM documents WHERE meta_name IS NOT NULL "
             "AND doc_key NOT IN (SELECT key FROM documents WHERE meta_name IS NULL)"

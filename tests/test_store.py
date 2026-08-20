@@ -160,7 +160,7 @@ def test_store_returns_the_key_written(store):
 
 def test_store_validates_the_key(store):
     with pytest.raises(InvalidKeyError):
-        store.store_document("!title", "x")
+        store.store_document("context/!", "x")
 
 
 def test_store_normalises_the_key_it_is_given(store):
@@ -1631,3 +1631,144 @@ def test_a_connection_does_not_escape_its_thread(store):
     _in_threads(note, threads=4)
 
     assert len(set(seen.values())) == 4
+
+
+# -- the root ------------------------------------------------------------
+
+
+def test_a_document_can_be_stored_at_the_root(store):
+    store.store_document("", "# This store\n\nWhat it holds.")
+    assert store.retrieve_document("").content.startswith("# This store")
+    assert store.exists("")
+
+
+@pytest.mark.parametrize("written", ["", "/", "///"])
+def test_every_spelling_of_the_root_reaches_one_document(store, written):
+    store.store_document(written, "body")
+    assert store.retrieve_document("").content == "body"
+    assert store.list_keys().total == 0  # nothing lists as a child of itself
+
+
+def test_a_title_on_the_root_is_stored_as_its_own_metadata(store):
+    store.store_document("", "body", title="This store")
+    assert store.retrieve_document("!title").content == "This store"
+
+
+def test_the_root_is_not_a_child_of_itself(populated):
+    populated.store_document("", "body")
+    keys_at_top = [entry.key for entry in populated.list_keys().items]
+    assert "" not in keys_at_top
+    assert keys_at_top == ["context", "project"]
+
+
+def test_the_root_is_not_counted_into_the_top_level(populated):
+    before = populated.list_keys()
+    populated.store_document("", "body of the root")
+    after = populated.list_keys()
+    # The row exists and is readable; what it must not do is appear in, or be
+    # counted into, the level it is the parent of.
+    assert after.total == before.total
+    assert after.total_chars == before.total_chars
+
+
+def test_root_metadata_does_list_below_the_root(populated):
+    populated.store_document("", "body", title="This store")
+    keys_at_top = [entry.key for entry in populated.list_keys().items]
+    # Metadata on the root is a child of the root, unlike the root itself, and
+    # sorts ahead of the subkeys the way any document's metadata does.
+    assert keys_at_top == ["!title", "context", "project"]
+
+
+def test_the_root_document_is_read_by_a_subtree_read(populated):
+    populated.store_document("", "body")
+    found = [excerpt.key for excerpt in populated.get_documents().items]
+    assert "" in found
+    assert found[0] == ""  # and it sorts first
+
+
+def test_none_and_the_root_name_the_same_scope(populated):
+    populated.store_document("", "body")
+    assert [e.key for e in populated.list_keys(None).items] == [
+        e.key for e in populated.list_keys("").items
+    ]
+    assert populated.get_documents(None).total == populated.get_documents("").total
+
+
+def test_depth_is_counted_from_the_root(populated):
+    populated.store_document("", "root body")
+    populated.store_document("readme", "top level body")
+    # The root is depth 0, so `depth=0` names it and nothing else. The segment
+    # count SQLite computes is delimiters plus one, which would make the root
+    # depth 1 and exclude it from the one selection that is only about it.
+    assert [e.key for e in populated.get_documents("", depth=0).items] == [""]
+    assert [e.key for e in populated.get_documents("", depth=1).items] == ["", "readme"]
+
+
+def test_descendant_count_from_the_root_counts_everything_below_it(populated):
+    before = populated.descendant_count("")
+    populated.store_document("", "body", title="This store")
+    # Strictly below, and metadata is never a descendant of the key it sits on
+    # -- true of the root exactly as it is of any other key, so neither of the
+    # two rows just written is counted.
+    assert populated.descendant_count("") == before
+    assert before == populated.descendant_count("context") + populated.descendant_count("project")
+
+
+def test_deleting_the_root_takes_its_metadata_and_leaves_the_rest(populated):
+    populated.store_document("", "body", title="This store")
+    removed = populated.delete("")
+    assert sorted(removed) == ["", "!title"]
+    assert populated.list_keys().total == 2  # context and project, untouched
+
+
+def test_recursive_delete_at_the_root_empties_the_store(populated):
+    populated.store_document("", "body")
+    removed = populated.delete("", recursive=True)
+    assert "" in removed
+    assert populated.get_documents().total == 0
+
+
+def test_a_survey_by_title_sees_the_stores_own_title(populated):
+    populated.store_document("", "body", title="This store")
+    survey = populated.get_documents(meta_name=["title"])
+    assert "!title" in [excerpt.key for excerpt in survey.items]
+
+
+def test_a_root_document_without_a_title_is_reported_as_missing_one(populated):
+    populated.store_document("", "body")
+    missing = populated.keys_missing_meta(meta_name="title")
+    assert "" in missing.items
+
+
+def test_the_roots_missing_title_is_measured_where_it_would_have_sorted(populated):
+    # The root is the one document whose metadata is *not* its sort form plus a
+    # suffix: it contributes no segment, so `!title` is a first segment rather
+    # than one joined onto a previous. Concatenating anyway still tiles, so
+    # nothing would be double counted -- it would just be filed under a later
+    # window than the one its title would really have sorted in.
+    populated.store_document("", "body")
+    first = populated.missing_meta_stats(
+        meta_name="title", before="context/a1b2/design/!title", sample=5
+    )
+    later = populated.missing_meta_stats(
+        meta_name="title", after="context/a1b2/design/!title", sample=5
+    )
+    assert "" in first.sample
+    assert "" not in later.sample
+
+
+def test_autonumbering_allocates_at_the_top_level(store):
+    assert store.store_document("?", "first") == "1"
+    assert store.store_document("?", "second") == "2"
+
+
+def test_a_title_on_the_root_with_no_document_is_named_in_a_check(store, tmp_path):
+    from rage import maintenance
+
+    # Legal, and easy to reach: titling a store is not the same as writing a
+    # document at its root. The report has to be able to name the root, or the
+    # detail line carries a blank where a key should be.
+    store.store_document("!title", "This store")
+    report = maintenance.check(store)
+    notes = [p for p in report.problems if p.summary == "some metadata has no document"]
+    assert notes and notes[0].detail == "/"

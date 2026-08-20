@@ -218,9 +218,22 @@ cannot mirror a real name.
 
 A key is a Unicode string naming a position in a hierarchy.
 
-* A key is **one or more segments** joined by `/`, and `/` is the only
-  separator there is. **There is no root key**: the empty string is not
-  addressable, and is the parent of a top level key rather than a key itself.
+* A key is **zero or more segments** joined by `/`, and `/` is the only
+  separator there is. The key with **no segments is the root**, spelled by the
+  empty string. It is a key like any other — it holds a document, carries
+  metadata, and is returned by a read — and it is also the parent of every top
+  level key.
+  * **The root is its own parent**, the way POSIX makes `/..` be `/`. That is
+    what lets an ancestor walk terminate without a second value meaning
+    "nowhere", and it is why every query listing a level has to exclude the
+    root from its own listing. One clause does that, in `store`.
+  * **A key is always a string, and `null` is not one.** A key parameter left
+    out, or sent as `null`, means the root. It is resolved to `""` at the
+    entry point, so nothing below carries a second spelling of "everywhere".
+  * The cost, accepted: an empty string sent in error now addresses the root
+    rather than failing. By convention nothing significant lives there, and
+    the roots that will matter — a mounted store's own — are behind a mount
+    prefix that an error does not produce.
 * A segment is **1 to 1024 characters**; a key is **at most 128 segments**.
   Both are bounds on the absurd, not targets. A segment is typically well under
   20 characters and a key a handful of segments, unless it is mirroring a
@@ -240,8 +253,9 @@ A key is a Unicode string naming a position in a hierarchy.
   round-trip the name it mirrors.
 * Keys **are** normalised in two other ways, both before validation:
   * Leading and trailing `/` are stripped and runs of `/` are coalesced. Since
-    this runs first, `"/"` reduces to the empty string and is then refused like
-    any other empty key — it is not a spelling of the root.
+    this runs first, `"/"` and `"///"` reduce to the empty string, which is the
+    root: they are spellings of it rather than errors, which is what a key
+    mirroring a filesystem path ought to do.
   * A *wholly* numeric segment loses its leading zeros, so `context/01` and
     `context/1` are one key rather than two. `0` normalises to itself, and a
     segment that merely contains digits — `v01`, `1.2` — is left alone. This
@@ -249,7 +263,8 @@ A key is a Unicode string naming a position in a hierarchy.
 * A segment beginning with `!` names **metadata** about the document its
   segment sits under. A key splits at its **first** `!` segment: everything
   before it is the document key, everything from it onward is the metadata
-  name. A path may continue below a metadata segment, so `a/!title/b` is an
+  name. A key that is *only* metadata segments is metadata on the root, so
+  `!title` is the store's own title. A path may continue below a metadata segment, so `a/!title/b` is an
   entry on `a` named `title/b`. **Everything below a `!` is metadata** — there
   is no document under a metadata path, which is what keeps `meta_name IS NULL`
   an honest test for "is a document".
@@ -286,6 +301,20 @@ The sort form does three things to each segment, and each removes a defect:
   so a document's metadata sorts ahead of its subkeys.
 * **Segments are joined with `\x03`** rather than `/`, so a subtree sorts
   immediately after its parent.
+* **The root sorts as the empty string**, not as one marked empty segment, so
+  it comes before its own metadata and before every top level key. Given a
+  segment marker it would sort *after* `!title`, since the metadata marker is
+  the lower of the two — the one place the marking would invert rather than
+  order. It collides with nothing, because every other sort form begins with a
+  marker.
+
+The root is also the one document whose metadata is **not** its sort form plus
+a fixed suffix: it contributes no segment, so `!title` is a first segment
+rather than one joined onto a previous. Anything synthesising where a missing
+metadata entry *would* have sorted has to say so — `missing_meta_stats` does,
+with a `CASE`. Concatenating anyway would still tile, since the map stays
+monotone, but it would file the root under a later window than the one its
+title would really have sorted in.
 
 All three markers sort below the lowest character a segment may hold, so none
 can occur inside a segment: the encoding needs no escaping, and **two distinct
