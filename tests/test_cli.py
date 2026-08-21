@@ -167,9 +167,9 @@ def test_config_records_mounts_as_files_inside_the_store_directory(tmp_path):
 
 
 def test_a_command_reaches_a_second_store_in_the_same_directory(tmp_path):
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(tmp_path / ".rage", filename="ref.sqlite") as other:
+    with SqliteStore(tmp_path / ".rage", filename="ref.sqlite") as other:
         other.store_document("only/here", "in the second store")
 
     status, output = run(
@@ -196,9 +196,9 @@ def test_a_command_is_required():
 
 
 def a_store(directory: Path) -> None:
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(directory) as store:
+    with SqliteStore(directory) as store:
         store.store_document("context/1/task", "Build the backup command.", title="Task")
 
 
@@ -414,10 +414,10 @@ def test_a_filter_matching_nothing_says_so(tmp_path):
 
 def a_long_store(directory: Path, size: int = 5000) -> str:
     """A store holding one document longer than the bulk cap, and its content."""
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
     content = "start\n" + "filler line\n" * size + "end of the document\n"
-    with Store(directory) as store:
+    with SqliteStore(directory) as store:
         store.store_document("notes/long", content, title="A long document")
     return content
 
@@ -448,10 +448,10 @@ def test_dump_caps_each_document_when_asked(tmp_path):
 
 
 def test_dump_reads_long_metadata_to_the_end_too(tmp_path):
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
     value = "a very long summary. " * 400
-    with Store(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".rage") as store:
         store.store_document("notes/long", "body", title="Short")
         store.store_document("notes/long/!summary", value)
 
@@ -463,9 +463,9 @@ def test_dump_reads_long_metadata_to_the_end_too(tmp_path):
 
 
 def test_dump_exports_a_subtree_at_full_length(tmp_path):
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".rage") as store:
         for name in ("one", "two"):
             store.store_document(f"notes/{name}", "x" * 4000, title=name)
 
@@ -488,9 +488,9 @@ def test_get_prints_a_long_document_whole(tmp_path):
 
 
 def test_get_writes_no_newline_of_its_own(tmp_path, capsys):
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".rage") as store:
         store.store_document("notes/one", "no trailing newline here")
 
     _, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/one")
@@ -577,7 +577,7 @@ def test_set_refuses_two_sources(tmp_path, capsys):
 def test_reading_a_store_that_is_not_there_is_refused(tmp_path, capsys):
     status = main(["get", "--dir", str(tmp_path / "absent"), "notes/one"], io.StringIO())
 
-    # Store() would create one, and an empty store answers every question with
+    # SqliteStore() would create one, and an empty store answers every question with
     # a confident nothing.
     assert status == 1
     assert "no store at" in capsys.readouterr().err
@@ -589,9 +589,9 @@ def test_reading_a_store_that_is_not_there_is_refused(tmp_path, capsys):
 
 def a_tree(directory: Path) -> None:
     """A store with a container, documents beneath it, and metadata."""
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(directory) as store:
+    with SqliteStore(directory) as store:
         for number in (1, 2, 10):
             store.store_document(f"notes/{number}", f"body {number}", title=f"Note {number}")
         store.store_document("notes/1/detail", "deeper")
@@ -754,17 +754,17 @@ def test_check_reports_a_row_stored_under_the_wrong_parent(tmp_path):
 
 
 def test_check_repairs_the_write_ahead_log(tmp_path):
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
     directory = tmp_path / ".rage"
-    with Store(directory) as store:
+    with SqliteStore(directory) as store:
         store.store_document("notes/one", "x" * 200000)
 
     database = directory / "store.sqlite"
     log = directory / "store.sqlite-wal"
     # Reproduce an unfolded log: writes land in the sidecar, and closing the
     # store is what would normally checkpoint them back.
-    held_open = Store(directory)
+    held_open = SqliteStore(directory)
     held_open.store_document("notes/two", "y" * 400000)
     assert log.stat().st_size > database.stat().st_size
 
@@ -785,9 +785,9 @@ def test_check_repairs_the_write_ahead_log(tmp_path):
 
 
 def a_wide_store(directory: Path, count: int, content: str = "body") -> None:
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(directory) as store:
+    with SqliteStore(directory) as store:
         for number in range(1, count + 1):
             store.store_document(f"notes/{number}", content, title=f"Note {number}")
 
@@ -819,9 +819,9 @@ def test_ls_pages_rather_than_asking_for_everything(tmp_path, monkeypatch):
 
 def test_ls_recursive_pages_at_every_level(tmp_path, monkeypatch):
     import rage.bulk
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".rage") as store:
         for number in range(1, 8):
             store.store_document(f"deep/{number}/leaf", "content")
     monkeypatch.setattr(rage.bulk, "PAGE", 2)
@@ -872,22 +872,22 @@ def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
 
     import rage.bulk
     import rage.cli
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
     a_wide_store(tmp_path / ".rage", 10)
     monkeypatch.setattr(rage.bulk, "PAGE", 2)
 
     calls = 0
-    original = Store.get_documents
+    original = SqliteStore.get_documents
 
     def counted(self, *args, **kwargs):
         nonlocal calls
         calls += 1
         return original(self, *args, **kwargs)
 
-    monkeypatch.setattr(Store, "get_documents", counted)
+    monkeypatch.setattr(SqliteStore, "get_documents", counted)
 
-    with Store(tmp_path / ".rage") as opened:
+    with SqliteStore(tmp_path / ".rage") as opened:
         arguments = argparse.Namespace(key="notes", meta_name=None, depth=None, max_chars=None)
         first = next(rage.cli._documents(opened, arguments))
 
@@ -898,9 +898,9 @@ def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
 
 
 def test_rm_dry_run_previews_the_whole_subtree_not_one_level(tmp_path):
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".rage") as store:
         store.store_document("tree/one", "content")
         store.store_document("tree/one/two/three", "content")
 
@@ -944,9 +944,9 @@ def test_a_malformed_key_is_one_line_and_not_a_traceback(tmp_path, capsys):
 
 
 def an_exportable_store(directory: Path) -> Path:
-    from rage.store import Store
+    from rage.store_sqlite import SqliteStore
 
-    with Store(directory) as store:
+    with SqliteStore(directory) as store:
         store.store_document("project", "# Project", title="The project")
         store.store_document("project/reference/env", '{"python": "3.14"}')
     return directory

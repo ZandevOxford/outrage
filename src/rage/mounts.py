@@ -627,11 +627,11 @@ def open_mounts(
 
     opened: dict[str, Store] = {}
     try:
-        opened[keys.ROOT] = Store(base, filename=root_mount, log=log)
+        opened[keys.ROOT] = store_module.default_store(base, filename=root_mount, log=log)
         for prefix, path in [*writable, *refusing]:
             if prefix in opened:
                 raise MountError("mount-duplicate", mount=prefix)
-            opened[prefix] = Store(base, filename=path, log=log)
+            opened[prefix] = store_module.default_store(base, filename=path, log=log)
         return Mounts(opened, read_only=[prefix for prefix, _ in refusing])
     except Exception:
         for store in opened.values():

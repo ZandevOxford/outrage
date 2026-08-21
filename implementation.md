@@ -37,11 +37,32 @@ have read as a confident zero out of a full store. Callers select with no range
 predicate instead. `depth` is 0 for it, and `displayed` spells it `/`, because
 `""` in a report reads as a missing name rather than as a key.
 
-### 2. Data store — `src/rage/store.py` — done
+### 2. Data store — `src/rage/store.py`, `src/rage/store_sqlite.py` — done
 
 Directory resolution, schema creation and migration under `PRAGMA user_version`,
 WAL mode, and all five operations with the semantics recorded in design.md. No
 MCP dependency.
+
+**Split in two, ahead of a backend that is not SQLite.** `store.py` holds the
+interface: the constants, the errors, `Excerpt`, `Page`, `Entry`, `MissingMeta`,
+`Backup`, `KeyRange`, `BoundedSubtree`, and an abstract `Store` carrying the
+contract each operation states. `store_sqlite.py` holds `SqliteStore` and
+everything only SQLite can answer — the schema and its four migrations, the
+connection per thread, the SQL each operation compiles to, and the online
+backup. Two things moved with it rather than staying on the value types:
+`KeyRange.clauses` and `BoundedSubtree.clauses` are now `_range_clauses` and
+`_subtree_clauses` there, because what a bound *means* is the namespace's
+business and what it compiles to is a backend's.
+
+Where the file lives stays on the base — `store_file`, the directory, the
+`mkdir` — because it is the same question for every backend and the one rule
+`--dir` and a mount spec both go through. So does `backup_path`, whose point is
+the two refusals rather than the copying, and which now takes the store file's
+own extension for a default name.
+
+`store.default_store` is the one place a backend is chosen, and it defers the
+import to avoid a cycle. Every caller — the server, the CLI, the mount table —
+goes through it or `open_store` rather than naming a class.
 
 Formats are detected: content that parses as a JSON object or array is recorded
 as `json`, everything else as `markdown`, and an explicit argument overrides
@@ -368,10 +389,10 @@ of it was being kept.
   single `os.write` to an `O_APPEND` descriptor so that two processes sharing a
   log cannot interleave. Content is bounded by a policy, which is also what
   keeps a line short enough for that to hold.
-* `src/rage/store.py` — a `_logged` decorator over the seven public methods,
-  and a `log` argument defaulting to a null object. Method bodies are
-  untouched, so the change that added logging could not have altered
-  behaviour.
+* `src/rage/store.py` — a `_logged` decorator, and a `log` argument defaulting
+  to a null object. Method bodies are untouched, so the change that added
+  logging could not have altered behaviour. The decorator stays here, shared,
+  and the backend applies it to the methods it implements.
 * `src/rage/server.py` — `RequestLog`, a `ServerMiddleware`. Registered only
   when there is somewhere to write.
 * `--log`, `--log-content` on the server; the same two on `rage config`, which

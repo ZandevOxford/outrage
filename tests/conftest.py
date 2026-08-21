@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import re
+import threading
 from collections.abc import Iterator
 from typing import Any
 
@@ -39,3 +40,29 @@ def raises_rendered(
         return
     rendered = messages.render(raised.value, name=name)
     assert re.search(match, rendered), f"{match!r} does not match {rendered!r}"
+
+
+def in_threads(work, threads=6):
+    """Run ``work(i)`` in parallel, re-raising whatever any thread raised.
+
+    Shared because concurrency is asked about from two sides: whether the store
+    stays correct under parallel callers (``test_store.py``) and whether a
+    SQLite connection stays on the thread that opened it
+    (``test_store_sqlite.py``). One helper, so the two cannot drift into
+    testing slightly different things.
+    """
+    failures = []
+
+    def run(i):
+        try:
+            work(i)
+        except BaseException as exc:  # noqa: BLE001 - reported below
+            failures.append(exc)
+
+    workers = [threading.Thread(target=run, args=(i,)) for i in range(threads)]
+    for t in workers:
+        t.start()
+    for t in workers:
+        t.join()
+    if failures:
+        raise failures[0]

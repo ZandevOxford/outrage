@@ -16,12 +16,12 @@ from conftest import raises_rendered
 
 from rage import bulk
 from rage.keys import InvalidKeyError
-from rage.store import Store
+from rage.store_sqlite import SqliteStore
 
 
 @pytest.fixture
 def store(tmp_path):
-    with Store(tmp_path / "store") as opened:
+    with SqliteStore(tmp_path / "store") as opened:
         yield opened
 
 
@@ -141,7 +141,7 @@ def test_export_and_import_round_trip_every_key(populated, tmp_path):
         if entry.kind != "implicit"
     }
 
-    with Store(tmp_path / "fresh") as fresh:
+    with SqliteStore(tmp_path / "fresh") as fresh:
         list(bulk.import_tree(fresh, target))
         after = {
             entry.key: fresh.retrieve_document(entry.key)
@@ -319,7 +319,7 @@ def test_import_skips_hidden_files_unless_asked(store, tmp_path):
 
     assert "hidden" not in str(actions(bulk.import_tree(store, source)))
 
-    with Store(tmp_path / "other") as other:
+    with SqliteStore(tmp_path / "other") as other:
         moved = list(bulk.import_tree(other, source, hidden=True))
 
     assert other_keys(moved) >= {".DS_Store", ".hidden/secret"}

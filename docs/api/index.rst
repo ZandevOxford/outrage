@@ -20,13 +20,16 @@ written in these terms.
 Storage
 -------
 
-One SQLite database, and the routing that makes several of them look like
-one namespace.
+What a store is, the SQLite implementation of it, and the routing that makes
+several stores look like one namespace. :mod:`rage.store` is the contract and
+:mod:`rage.store_sqlite` is the only backend this build has; a caller that
+does not care which reads the first and never names the second.
 
 .. toctree::
    :maxdepth: 1
 
    store
+   store_sqlite
    mounts
 
 Front ends

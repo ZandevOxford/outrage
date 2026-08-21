@@ -36,8 +36,15 @@ Python library for storing data used by the MCP server.
 Data is stored in an SQLite database local to the current project.
 
 The store is kept independent of the MCP server: it has no knowledge of MCP and
-can be tested and reused on its own. Initially a single module; it may become a
-package later.
+can be tested and reused on its own.
+
+**The interface and the backend are separate modules.** `rage.store` says what
+a store is — the operations, the value types every answer comes back as, and
+the two ways a call bounds what it is asking about — as an abstract `Store`.
+`rage.store_sqlite` is the implementation: the schema, its migrations, the
+connection handling, and the SQL. SQLite is the only backend, and
+`store.default_store` is the single place the package chooses it; a second
+backend (see *Deferred*) inherits the vocabulary rather than inventing one.
 
 #### Store location
 

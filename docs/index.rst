@@ -21,8 +21,10 @@ Where to start
 and the rules there -- the root as a valid key, metadata as a segment, the
 sort form -- explain shapes that look arbitrary elsewhere.
 
-Then :mod:`rage.store` for how a key becomes a row and a stretch of the
-order, and :mod:`rage.mounts` for how one namespace spans several stores.
+Then :mod:`rage.store` for what a store is -- the operations, and the four
+types every answer comes back as -- and :mod:`rage.store_sqlite` for how a key
+becomes a row and a stretch of the order in the one backend that exists.
+:mod:`rage.mounts` is how one namespace spans several stores.
 :mod:`rage.server` and :mod:`rage.cli` are the two front ends over the same
 library, and the pair is why :mod:`rage.messages` exists.
 
