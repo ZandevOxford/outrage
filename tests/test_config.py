@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import raises_rendered
 
 from rage import config as config_module
 from rage import eventlog, store
@@ -216,7 +217,7 @@ def test_unparseable_file_is_left_alone(tmp_path):
     path = tmp_path / ".claude.json"
     path.write_text('{"broken": ', encoding="utf-8")
 
-    with pytest.raises(ConfigError, match="not valid JSON"):
+    with raises_rendered(ConfigError, "not valid JSON"):
         plan(path, "user", {"command": "x", "args": []})
 
     assert path.read_text() == '{"broken": '
@@ -226,7 +227,7 @@ def test_non_object_file_is_left_alone(tmp_path):
     path = tmp_path / ".mcp.json"
     path.write_text("[1, 2, 3]", encoding="utf-8")
 
-    with pytest.raises(ConfigError, match="does not hold a JSON object"):
+    with raises_rendered(ConfigError, "does not hold a JSON object"):
         plan(path, "project", {"command": "x", "args": []})
 
 
@@ -234,7 +235,7 @@ def test_non_object_servers_field_is_left_alone(tmp_path):
     path = tmp_path / ".mcp.json"
     write_json(path, {"mcpServers": ["rage"]})
 
-    with pytest.raises(ConfigError, match="not an object"):
+    with raises_rendered(ConfigError, "not an object"):
         plan(path, "project", {"command": "x", "args": []})
 
 
@@ -242,7 +243,7 @@ def test_non_object_existing_entry_is_left_alone(tmp_path):
     path = tmp_path / ".mcp.json"
     write_json(path, {"mcpServers": {"rage": "rage-server"}})
 
-    with pytest.raises(ConfigError, match="not an object"):
+    with raises_rendered(ConfigError, "not an object"):
         plan(path, "project", {"command": "x", "args": []})
 
 
@@ -369,7 +370,7 @@ def test_a_misspelled_mount_point_is_refused_while_writing_the_config(tmp_path):
 
     with pytest.raises(MountError):
         config_module.server_entry(tmp_path, command=["rage-server"], mounts=["no-delimiter"])
-    with pytest.raises(MountError, match="no mount point"):
+    with raises_rendered(MountError, "no mount point"):
         config_module.server_entry(tmp_path, command=["rage-server"], mounts=["=/srv/x"])
 
 

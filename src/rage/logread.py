@@ -264,9 +264,9 @@ def read_log(path: str | os.PathLike[str]) -> Log:
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError as exc:
-        raise LogError(f"no log file at {path}") from exc
+        raise LogError("log-missing", path=str(path)) from exc
     except OSError as exc:
-        raise LogError(f"cannot read {path}: {exc}") from exc
+        raise LogError("log-unreadable", path=str(path), reason=str(exc)) from exc
 
     log = Log(path=path)
     for number, line in enumerate(text.splitlines(), start=1):

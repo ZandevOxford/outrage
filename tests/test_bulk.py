@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 
 import pytest
+from conftest import raises_rendered
 
 from rage import bulk
 from rage.keys import InvalidKeyError
@@ -407,7 +408,7 @@ def test_the_root_document_has_no_path_yet(store):
     # Parked, not decided: the empty stem gives `.md`, which is hidden, which
     # an import skips by default -- so a round trip would drop the root
     # document rather than relocate it. Refused loudly until that is settled.
-    with pytest.raises(bulk.Unmappable, match="no file name"):
+    with raises_rendered(bulk.Unmappable, "no file name"):
         bulk.path_for_key("")
 
 

@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from conftest import raises_rendered
 
 from rage.config import ConfigError
 from rage.install import (
@@ -216,7 +217,7 @@ def test_a_broken_template_is_refused_rather_than_installed(tmp_path, monkeypatc
     write_json(broken, {"hooks": {HOOK_EVENT: [FOREIGN]}})
     monkeypatch.setattr("rage.install.TEMPLATE", broken)
 
-    with pytest.raises(InstallError, match="marker"):
+    with raises_rendered(InstallError, "marker"):
         template_entry()
 
 

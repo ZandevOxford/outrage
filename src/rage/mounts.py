@@ -44,7 +44,15 @@ from . import keys
 from . import store as store_module
 from .errors import RageError
 from .eventlog import EventLog
-from .store import DB_FILENAME, Entry, KeyNotFoundError, Store, store_file
+from .store import (
+    DB_FILENAME,
+    BoundedSubtree,
+    Entry,
+    KeyNotFoundError,
+    KeyRange,
+    Store,
+    store_file,
+)
 
 #: Separates a mount point from its store file in a ``--mount`` argument.
 #: ``=`` rather than ``:`` because a Windows path holds a colon and no key can
@@ -145,15 +153,66 @@ class Mount:
         """
         name = keys.with_prefix(self.prefix, key)
         if not keys.fits(name):
-            raise MountError(
-                f"{keys.displayed(key)!r} in the store mounted at {self.name!r} has no "
-                f"name in this namespace: joined it exceeds "
-                f"{keys.MAX_JOINED_SEGMENTS} segments. The store holds a key deeper "
-                f"than {keys.MAX_SEGMENTS} segments, which `rage check` reports; it "
-                f"predates that bound and has to be moved before the store can be "
-                f"mounted here."
-            )
+            raise MountError("mount-key-too-deep", key=key, mount=self.prefix)
         return name
+
+
+@dataclass(frozen=True, slots=True)
+class Segment:
+    """One stretch of one store, as part of reading across a mount boundary.
+
+    A subtree spanning mounts is not one query and cannot be: the rows live in
+    different databases. It is a *sequence* of these, in key order, each naming
+    the store to ask, which part of that store's hierarchy is in scope, and
+    which stretch of its order. Concatenate their answers and the totals add,
+    which is what lets a traversal answer as though the subtree were one thing.
+
+    ``subtree`` and ``key_range`` are both in the mounted store's **own**
+    namespace: a mounted store never learns where it was mounted, so the
+    translation happens here and the results are put back by ``mount.outer``.
+    """
+
+    mount: Mount
+    subtree: BoundedSubtree
+    key_range: KeyRange
+
+    @property
+    def store(self) -> Store:
+        return self.mount.store
+
+    def resume_from(self, after: str | None) -> tuple[str | None, bool]:
+        """This segment's own cursor, and whether the page already passed it.
+
+        A cursor names a key in the one namespace, so it means something
+        different to each store a traversal crosses, and recomputing it at
+        every boundary is the only way it keeps meaning the same *place*.
+        Three answers, and all three are needed:
+
+        * a key **inside this segment's store** -- the cursor falls here, so
+          the store resumes from it;
+        * ``None`` with ``False`` -- the cursor lies before this segment, which
+          therefore starts at its own beginning;
+        * ``None`` with ``True`` -- this segment lies entirely **behind** the
+          cursor, so an earlier page has already returned it.
+
+        The last is what a single store never needed: within one store a
+        cursor and a range are ANDed and a stretch before the cursor comes back
+        empty on its own. Across stores the cursor cannot even be spelled in
+        the namespace of a store it does not name, so being behind it has to be
+        an answer rather than an empty result. Such a segment is still
+        *counted* -- totals describe the whole collection and have never
+        depended on where the reader had got to.
+        """
+        if after is None:
+            return None, False
+        inner = self.mount.inner(after)
+        if inner is not None:
+            return inner, False
+        # Not a key this store can name, so the whole of it lies on one side of
+        # the cursor: a subtree occupies one contiguous stretch of the order,
+        # and the cursor is not in it.
+        position = keys.sort_form(keys.parse(after, max_segments=keys.MAX_JOINED_SEGMENTS).key)
+        return None, position >= keys.sort_subtree_end(self.mount.prefix)
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,9 +254,7 @@ class Resolved:
         if not self.read_only:
             return self
         raise ReadOnlyMountError(
-            f"cannot {action} {keys.displayed(self.outer)!r}: the store mounted at "
-            f"{self.mount.name!r} is read-only. It was mounted with --mount-ro; start "
-            f"the server with --mount instead to allow changes here."
+            "mount-read-only", key=self.outer, mount=self.mount.prefix, action=action
         )
 
 
@@ -213,24 +270,16 @@ class Mounts:
         for prefix in read_only:
             parsed = keys.parse(prefix)
             if parsed.key == keys.ROOT:
-                raise MountError(
-                    "the store at the root cannot be mounted read-only: it is the one "
-                    "--dir names, and it owns every key no mount claims"
-                )
+                raise MountError("mount-root-read-only")
             refusing.add(parsed.key)
 
         by_prefix: dict[str, Mount] = {}
         for prefix, store in stores.items():
             parsed = keys.parse(prefix)
             if parsed.is_metadata:
-                raise MountError(
-                    f"cannot mount at {keys.displayed(parsed.key)!r}: a mount point may not "
-                    f"be metadata, since everything below one is metadata too"
-                )
+                raise MountError("mount-point-is-metadata", mount=parsed.key)
             if parsed.key in by_prefix:
-                raise MountError(
-                    f"more than one store is mounted at {keys.displayed(parsed.key)!r}"
-                )
+                raise MountError("mount-duplicate", mount=parsed.key)
             by_prefix[parsed.key] = Mount(
                 prefix=parsed.key, store=store, read_only=parsed.key in refusing
             )
@@ -241,17 +290,10 @@ class Mounts:
         # rather than ignored.
         unmatched = sorted(refusing - set(by_prefix), key=keys.sort_form)
         if unmatched:
-            raise MountError(
-                f"nothing is mounted at "
-                f"{', '.join(repr(keys.displayed(k)) for k in unmatched)}, so it cannot "
-                f"be mounted read-only"
-            )
+            raise MountError("mount-read-only-unmatched", mounts=unmatched)
 
         if keys.ROOT not in by_prefix:
-            raise MountError(
-                "a mount table needs a store at the root, since it is what owns "
-                "every key no other mount claims"
-            )
+            raise MountError("mount-table-has-no-root")
 
         # Ordered the way a listing is, so anything built by walking this comes
         # out in key order without a second sort.
@@ -322,10 +364,10 @@ class Mounts:
     def below(self, key: str | None) -> list[Mount]:
         """The mounts strictly beneath ``key``, in key order.
 
-        What a subtree read of ``key`` does not cover. Queries and surveys do
-        not cross a mount boundary yet, so this is how they say what they did
-        not look at rather than returning a partial answer that reads like a
-        whole one.
+        Every mount below ``key``, nested ones included, which is what makes
+        this the wrong list to traverse with: use ``directly_below``, or
+        ``segments``, which is built on it. This one answers "which stores does
+        this subtree touch", for a caller reporting rather than reading.
         """
         outer = keys.parse(
             keys.ROOT if key is None else key, max_segments=keys.MAX_JOINED_SEGMENTS
@@ -336,6 +378,76 @@ class Mounts:
         # `key` rather than below it, and answers for it rather than being
         # missed by it.
         return [m for m in self._mounts if keys.strip_prefix(outer, m.prefix)]
+
+    def directly_below(self, key: str | None) -> list[Mount]:
+        """The mounts beneath ``key`` that no other mount beneath it contains.
+
+        The ones a traversal of ``key`` meets *first*, in key order. A mount
+        nested inside another is left out because it is not reached from here:
+        it is reached from the mount containing it, one level further down, and
+        that is what makes nesting fall out of recursion rather than needing a
+        case of its own.
+
+        Taking them in search order is what makes the test local. An ancestor
+        sorts immediately before its descendants, so a mount is nested exactly
+        when the last one kept is a prefix of it, and nothing further back can
+        contain it.
+        """
+        kept: list[Mount] = []
+        for mount in self.below(key):
+            if kept and keys.strip_prefix(kept[-1].prefix, mount.prefix):
+                continue
+            kept.append(mount)
+        return kept
+
+    def segments(self, key: str | None, depth: int | None = None) -> list[Segment]:
+        """``key``'s subtree as the stretches of each store that make it up.
+
+        In key order, disjoint, and covering every key at or below ``key`` that
+        any store answers for -- so a traversal that reads each in turn reads
+        the subtree, mounts included, and one that reads only the first behaves
+        as it did before mounts existed.
+
+        The store answering for ``key`` contributes the stretches *between* the
+        mounts below it, named from both sides: ``before`` ends the stretch in
+        front of a mount point and ``after_subtree`` starts the one behind it.
+        That is not only an optimisation. The outer store still holds every row
+        a mount shadows, so a traversal that did not step over them would
+        report documents that reading by key refuses -- the defect in
+        ``planned/mounts/shadow-leak``, of which this is the general form.
+
+        A mount past the depth budget is stepped over but not descended into:
+        its stretch is still cut out of the store above, since those rows are
+        unreachable whether or not anything asked for them.
+        """
+        at = self.resolve(key)
+        return self._segments(at.mount, at.key, at.outer, depth)
+
+    def _segments(
+        self, mount: Mount, inner: str, outer: str, budget: int | None
+    ) -> list[Segment]:
+        """``segments`` for one store, recursing into the mounts it contains."""
+        subtree = BoundedSubtree(inner, budget)
+        found: list[Segment] = []
+        lo: str | None = None
+
+        for below in self.directly_below(outer):
+            # As the store answering here names it: the stretch to be cut out
+            # is a range in *this* store's order, and this store has never
+            # heard of the prefix it was mounted at.
+            edge = mount.inner(below.prefix)
+            assert edge is not None  # `directly_below` returns only keys under `outer`
+            found.append(Segment(mount, subtree, KeyRange(after_subtree=lo, before=edge)))
+
+            left = keys.remaining_depth(budget, outer, below.prefix)
+            if left is None or left >= 0:
+                # The mount point is the inner store's root, so a descent
+                # always starts a subtree over again from its own beginning.
+                found += self._segments(below, keys.ROOT, below.prefix, left)
+            lo = edge
+
+        found.append(Segment(mount, subtree, KeyRange(after_subtree=lo)))
+        return found
 
     def children(self, parent: str | None) -> list[Entry]:
         """The keys immediately below ``parent`` that exist because a mount does.
@@ -455,18 +567,12 @@ def parse_spec(spec: str) -> tuple[str, Path]:
     # namespace above it could not.
     prefix, delimiter, path = spec.partition(SPEC_DELIMITER)
     if not delimiter:
-        raise MountError(
-            f"mount {spec!r} is not in KEY{SPEC_DELIMITER}FILE form, "
-            f"as in ref{SPEC_DELIMITER}reference.sqlite"
-        )
+        raise MountError("mount-spec-malformed", spec=spec)
     if not path:
-        raise MountError(f"mount {spec!r} names no store file")
+        raise MountError("mount-spec-has-no-file", spec=spec)
     parsed = keys.parse(prefix)
     if parsed.key == keys.ROOT:
-        raise MountError(
-            f"mount {spec!r} has no mount point; the store at the root is the "
-            f"one --root-mount names"
-        )
+        raise MountError("mount-spec-at-root", spec=spec)
     return parsed.key, Path(path)
 
 
@@ -516,10 +622,7 @@ def open_mounts(
         database = store_file(base, path)
         if not database.exists():
             raise MountError(
-                f"the read-only mount at {keys.displayed(prefix)!r} has no store at "
-                f"{str(database)!r}. A read-only mount is not created, since a "
-                f"mistyped name would mount as an empty store that no write could "
-                f"ever contradict."
+                "mount-read-only-missing", mount=prefix, path=str(database)
             )
 
     opened: dict[str, Store] = {}
@@ -527,7 +630,7 @@ def open_mounts(
         opened[keys.ROOT] = Store(base, filename=root_mount, log=log)
         for prefix, path in [*writable, *refusing]:
             if prefix in opened:
-                raise MountError(f"more than one store is mounted at {prefix!r}")
+                raise MountError("mount-duplicate", mount=prefix)
             opened[prefix] = Store(base, filename=path, log=log)
         return Mounts(opened, read_only=[prefix for prefix, _ in refusing])
     except Exception:

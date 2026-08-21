@@ -339,7 +339,7 @@ def parse(
     Raises InvalidKeyError if it does not match the grammar.
     """
     if not isinstance(key, str):
-        raise InvalidKeyError(f"key must be a string, got {type(key).__name__}")
+        raise InvalidKeyError("key-not-a-string", got=type(key).__name__)
 
     original = key
     key = normalise_key(key)
@@ -350,7 +350,7 @@ def parse(
     segments = key.split(DELIMITER) if key else []
     if len(segments) > max_segments:
         raise InvalidKeyError(
-            f"key {original!r} has {len(segments)} segments; at most {max_segments} are allowed"
+            "key-too-many-segments", key=original, segments=len(segments), limit=max_segments
         )
 
     # Everything from the first metadata segment onward is metadata, so a path
@@ -372,17 +372,11 @@ def parse(
         if segment != WILDCARD:
             continue
         if not allow_wildcard:
-            raise InvalidKeyError(
-                f"key {original!r} may not contain {WILDCARD!r}; "
-                f"it is allowed only when storing"
-            )
+            raise InvalidKeyError("key-wildcard-not-allowed", key=original)
         if meta_at is not None and index >= meta_at:
-            raise InvalidKeyError(
-                f"key {original!r} may not allocate a metadata segment; "
-                f"{WILDCARD!r} is allowed only in the document part of a key"
-            )
+            raise InvalidKeyError("key-wildcard-in-metadata", key=original)
         if wildcard_parent is not None:
-            raise InvalidKeyError(f"key {original!r} has more than one {WILDCARD!r} segment")
+            raise InvalidKeyError("key-multiple-wildcards", key=original)
         wildcard_parent = DELIMITER.join(_normalise(p) for p in doc_segments[:index])
 
     # Normalised only after validation, so a complaint names the segment as it
@@ -416,18 +410,19 @@ def _check_segment(segment: str, key: str) -> None:
     what = "metadata segment" if segment.startswith(META_PREFIX) else "segment"
 
     if segment == META_PREFIX:
-        raise InvalidKeyError(f"key {key!r} has no metadata name after {META_PREFIX!r}")
+        raise InvalidKeyError("key-empty-metadata-name", key=key)
     if len(segment) > MAX_SEGMENT_CHARS:
         raise InvalidKeyError(
-            f"{what} in key {key!r} is {len(segment)} characters; "
-            f"at most {MAX_SEGMENT_CHARS} are allowed"
+            "key-segment-too-long", key=key, what=what, length=len(segment)
         )
     for character in segment:
         if character < MIN_SEGMENT_CHAR:
             raise InvalidKeyError(
-                f"{what} {segment!r} in key {key!r} is not valid: it contains "
-                f"{character!r}, and a segment may not hold characters below "
-                f"{MIN_SEGMENT_CHAR!r}"
+                "key-segment-bad-character",
+                key=key,
+                what=what,
+                segment=segment,
+                character=character,
             )
 
 
@@ -453,7 +448,7 @@ def substitute_wildcard(key: str, segment: str) -> str:
     """
     parsed = parse(key, allow_wildcard=True)
     if not parsed.has_wildcard:
-        raise InvalidKeyError(f"key {key!r} has no {WILDCARD!r} segment to substitute")
+        raise InvalidKeyError("key-no-wildcard-to-substitute", key=key)
     return DELIMITER.join(
         segment if part == WILDCARD else part for part in parsed.key.split(DELIMITER)
     )
@@ -491,6 +486,32 @@ def depth(key: str) -> int:
     """
     doc_key = parse(key).doc_key
     return 0 if doc_key == ROOT else doc_key.count(DELIMITER) + 1
+
+
+def remaining_depth(budget: int | None, key: str, below: str) -> int | None:
+    """What is left of a depth budget measured from ``key`` once it reaches ``below``.
+
+    A depth is counted in segments from the key a read was *asked* about, so a
+    traversal that descends into a store mounted further down has to hand that
+    store the part of the budget the descent did not spend -- and hand it as a
+    number measured from the mounted store's own root, which is where its keys
+    begin. Computed here, once, rather than at each traversal: the same
+    arithmetic written twice is how the root came to be depth 1 in SQL and
+    depth 0 in Python, which cost two silent defects
+    (``project/reference/planned/root-key/impact``).
+
+    Unlimited stays unlimited. A **negative** result means ``below`` already
+    lies past the budget, so nothing there is in scope -- not even its own row.
+    Zero is in scope and means only that row is.
+
+    >>> remaining_depth(2, "", "ref"), remaining_depth(2, "a", "a/b/c")
+    (1, 0)
+    >>> remaining_depth(None, "", "ref"), remaining_depth(0, "", "ref")
+    (None, -1)
+    """
+    if budget is None:
+        return None
+    return budget - (depth(below) - depth(key))
 
 
 def subtree_range(key: str) -> tuple[str, str]:

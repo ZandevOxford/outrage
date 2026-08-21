@@ -1,4 +1,5 @@
 import pytest
+from conftest import raises_rendered
 
 from rage import keys
 from rage.keys import InvalidKeyError
@@ -78,12 +79,12 @@ def test_a_segment_may_hold_almost_anything(key):
 def test_control_characters_below_tab_are_refused(bad):
     # Excluded so the sort form can mark segments without escaping, and so a
     # NUL cannot truncate a key inside some C string along the way.
-    with pytest.raises(InvalidKeyError, match="below"):
+    with raises_rendered(InvalidKeyError, "below"):
         keys.parse(f"a/x{bad}y")
 
 
 def test_refusing_a_control_character_names_it():
-    with pytest.raises(InvalidKeyError, match=r"\\x00"):
+    with raises_rendered(InvalidKeyError, r"\\x00"):
         keys.parse("a/\x00")
 
 
@@ -226,13 +227,13 @@ def test_parse_rejects_non_strings():
 
 def test_a_segment_is_bounded():
     assert keys.is_valid("a/" + "x" * keys.MAX_SEGMENT_CHARS)
-    with pytest.raises(InvalidKeyError, match="at most"):
+    with raises_rendered(InvalidKeyError, "at most"):
         keys.parse("a/" + "x" * (keys.MAX_SEGMENT_CHARS + 1))
 
 
 def test_a_key_is_bounded():
     assert keys.is_valid("/".join("x" * keys.MAX_SEGMENTS))
-    with pytest.raises(InvalidKeyError, match="at most"):
+    with raises_rendered(InvalidKeyError, "at most"):
         keys.parse("/".join("x" * (keys.MAX_SEGMENTS + 1)))
 
 
@@ -304,7 +305,7 @@ def test_wildcard_parent_is_the_key_enclosing_the_wildcard(key, wildcard_parent)
 
 def test_wildcard_is_rejected_unless_allowed():
     # Reads and deletes parse without it, so `?` can never read as a pattern.
-    with pytest.raises(InvalidKeyError, match="only when storing"):
+    with raises_rendered(InvalidKeyError, "only when storing"):
         keys.parse("tmp/?")
 
 
@@ -317,14 +318,14 @@ def test_only_a_whole_segment_is_a_wildcard():
 
 
 def test_two_wildcards_are_refused():
-    with pytest.raises(InvalidKeyError, match="more than one"):
+    with raises_rendered(InvalidKeyError, "more than one"):
         keys.parse("tmp/?/?", allow_wildcard=True)
 
 
 def test_a_metadata_segment_cannot_be_allocated():
     # Allocation numbers a document's children; a metadata name is chosen, not
     # counted, so `?` there is a mistake worth naming.
-    with pytest.raises(InvalidKeyError, match="document part"):
+    with raises_rendered(InvalidKeyError, "document part"):
         keys.parse("a/!title/?", allow_wildcard=True)
 
 

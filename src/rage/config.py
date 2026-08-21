@@ -177,9 +177,9 @@ def read_config(path: Path) -> tuple[dict[str, Any], str | None]:
     try:
         loaded = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise ConfigError(f"{path} is not valid JSON ({exc}); leaving it alone") from exc
+        raise ConfigError("config-not-json", path=str(path), reason=str(exc)) from exc
     if not isinstance(loaded, dict):
-        raise ConfigError(f"{path} does not hold a JSON object; leaving it alone")
+        raise ConfigError("config-not-an-object", path=str(path))
     return loaded, text
 
 
@@ -197,11 +197,11 @@ def plan(
     config, original = read_config(path)
     servers = config.get(SERVERS_FIELD, {})
     if not isinstance(servers, dict):
-        raise ConfigError(f"{path} has a {SERVERS_FIELD!r} that is not an object; leaving it alone")
+        raise ConfigError("config-field-not-an-object", path=str(path), field=SERVERS_FIELD)
 
     previous = servers.get(name)
     if previous is not None and not isinstance(previous, dict):
-        raise ConfigError(f"{path} has a {name!r} server that is not an object; leaving it alone")
+        raise ConfigError("config-server-not-an-object", path=str(path), server=name)
 
     if previous is None:
         action = "created"
