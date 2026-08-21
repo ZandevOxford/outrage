@@ -28,7 +28,7 @@ RAGE_ERRORS = {
     "BackupError",
     "CheckError",
     "ConfigError",
-    "ConflictingSource",
+    "ConflictingSourceError",
     "InstallError",
     "InvalidKeyError",
     "KeyNotFoundError",
@@ -36,9 +36,9 @@ RAGE_ERRORS = {
     "MountError",
     "PatternNotFoundError",
     "ReadOnlyMountError",
-    "SourceMissing",
+    "SourceMissingError",
     "StoreFileError",
-    "Unmappable",
+    "UnmappableError",
 }
 
 
