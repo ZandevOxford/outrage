@@ -31,7 +31,6 @@ from pathlib import Path
 from . import keys
 from .eventlog import EventLog
 from .store import (
-    DB_FILENAME,
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
     ENCODINGS,
@@ -59,6 +58,13 @@ from .store import (
     _position,
     _scope,
 )
+
+#: What a SQLite store's file is called when a caller names none. The name a
+#: second backend's default would sit beside, each in its own module, neither
+#: needing a qualifier to say which storage it is for. That a store *is* a file
+#: inside a directory is not decided here -- see :func:`rage.store.store_file`;
+#: only what this backend calls one.
+DEFAULT_STORE_FILE = "store.sqlite"
 
 #: The schema this code writes, and the version a store is migrated up to when
 #: it is opened. Every bump needs a migration that reads the version below it;
@@ -98,11 +104,13 @@ BUSY_TIMEOUT_MS = 5000
 class SqliteStore(Store):
     """A document store held in a single SQLite database."""
 
+    default_filename = DEFAULT_STORE_FILE
+
     def __init__(
         self,
         directory: str | os.PathLike[str] | None = None,
         *,
-        filename: str | os.PathLike[str] = DB_FILENAME,
+        filename: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
     ) -> None:
         # Where the file is, and the directory around it, are the base's
@@ -1184,6 +1192,7 @@ def _below(column: str, doc_key: str) -> tuple[str, list[object]]:
 
 __all__ = [
     "BUSY_TIMEOUT_MS",
+    "DEFAULT_STORE_FILE",
     "SCHEMA_VERSION",
     "SqliteStore",
 ]

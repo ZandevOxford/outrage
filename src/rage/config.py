@@ -27,7 +27,7 @@ from typing import Any
 from .errors import RageError
 from .eventlog import DEFAULT as LOG_BESIDE_STORE
 from .mounts import SPEC_DELIMITER, parse_spec
-from .store import DB_FILENAME, DEFAULT_DIR_NAME
+from .store import DEFAULT_DIR_NAME, default_store_file
 
 #: The name this server is registered under. Also the key that a re-run
 #: replaces, which is what keeps unrelated servers in the file untouched.
@@ -135,7 +135,7 @@ def server_entry(
     """
     argv = list(command) if command is not None else launch_command()
     args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
-    if root_mount is not None and root_mount != DB_FILENAME:
+    if root_mount is not None and root_mount != default_store_file():
         args += ["--root-mount", root_mount]
     for flag, specs in (("--mount", mounts), ("--mount-ro", read_only_mounts)):
         for spec in specs:

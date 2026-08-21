@@ -556,7 +556,7 @@ def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
         help=(
             f"{verb} --root-mount for the server: the store answering for every "
             f"key no mount claims, as a file inside --dir (default: "
-            f"{store.DB_FILENAME}). Written only when it is not the default."
+            f"{store.default_store_file()}). Written only when it is not the default."
         ),
     )
     parser.add_argument(
@@ -607,10 +607,10 @@ def _store_option(parser: argparse.ArgumentParser) -> None:
         "--store",
         dest="filename",
         metavar="FILE",
-        default=store.DB_FILENAME,
+        default=store.default_store_file(),
         help=(
             f"Which store in that directory, as a file relative to it "
-            f"(default: {store.DB_FILENAME}). The server's --mount and "
+            f"(default: {store.default_store_file()}). The server's --mount and "
             f"--root-mount name stores the same way."
         ),
     )

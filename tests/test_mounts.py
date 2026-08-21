@@ -816,9 +816,9 @@ def test_the_server_takes_repeated_mount_arguments():
 
 
 def test_the_root_mount_defaults_to_the_usual_store_file():
-    from rage.store import DB_FILENAME
+    from rage.store import default_store_file
 
-    assert parse_args([]).root_mount == DB_FILENAME
+    assert parse_args([]).root_mount == default_store_file()
     assert parse_args(["--root-mount", "main.sqlite"]).root_mount == "main.sqlite"
 
 

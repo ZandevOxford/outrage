@@ -795,7 +795,7 @@ def test_a_backup_is_a_store_that_can_be_opened(populated, tmp_path):
 
     restored_dir = tmp_path / "restored"
     restored_dir.mkdir()
-    (restored_dir / store_module.DB_FILENAME).write_bytes(result.path.read_bytes())
+    (restored_dir / store_module.default_store_file()).write_bytes(result.path.read_bytes())
 
     with SqliteStore(restored_dir) as restored:
         assert restored.retrieve_document("context/a1b2/task").content == "Add a delete tool."
@@ -1754,6 +1754,23 @@ def test_every_operation_a_caller_uses_is_declared_abstract():
             "close",
         }
     )
+
+
+def test_a_store_named_no_file_takes_its_own_backend_s_default(tmp_path):
+    """None means *this* backend's store file, not the package's default.
+
+    The two agree while there is one backend, and are still asked separately:
+    a store constructed directly names its own class, so it can never be
+    opened under a file name some other backend chose. Every front end asks
+    :func:`~rage.store.default_store_file` instead, which is what keeps the
+    command line and the server from naming a backend to print a default.
+    """
+    s = SqliteStore(tmp_path / ".rage")
+    try:
+        assert s.path.name == SqliteStore.default_filename
+    finally:
+        s.close()
+    assert store_module.default_store_file() == SqliteStore.default_filename
 
 
 def test_what_the_interface_settles_is_settled_once(tmp_path):
