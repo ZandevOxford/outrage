@@ -21,9 +21,9 @@ the store reports the key it chose.
 The store, the MCP server, the key handling, the skill and the command line
 tool are implemented. The tool covers the store operations (`rage get`, `set`,
 `ls`, `dump`, `rm`), bulk export and import to a directory of files (`rage
-export`, `rage import`), the MCP configuration (`rage config`), a verified
-backup (`rage backup`), the event log (`rage log`), and setting a project up
-(`rage init`). See [implementation.md](implementation.md) for what is done and
+export`, `rage import`), building a read-only parquet store (`rage pack`), the
+MCP configuration (`rage config`), a verified backup (`rage backup`), the event
+log (`rage log`), and setting a project up (`rage init`). See [implementation.md](implementation.md) for what is done and
 what is next.
 
 `rage init` is the way in: run it in a project and it registers the MCP server,
@@ -44,8 +44,15 @@ change without writing.
 ## Components
 
 * **MCP server** — Python, stdio, for local use. Exposes the store as tools.
-* **Data store** — a Python library over SQLite, independent of MCP so that it
-  can be tested and reused on its own.
+* **Data store** — a Python library, independent of MCP so that it can be
+  tested and reused on its own. One interface with two backends behind it, and
+  which one a store uses follows from its file's extension. **SQLite** is the
+  read-write default: a store accumulated a document at a time, which is what
+  session context and notes on a codebase are. **Parquet** is one columnar
+  file, written whole by `rage pack` and read many times, for a reference base
+  of tens of thousands of documents — 11× smaller than the same corpus in
+  SQLite, and it seeks a range rather than scanning one. It refuses writes,
+  which is the storage rather than a setting.
 * **Skill** — `src/rage/skills/rage/SKILL.md`, initially for Claude Code,
   covering when to store and retrieve and what key conventions to follow. It
   ships inside the package so that an install carries it, and `rage init`

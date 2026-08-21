@@ -444,6 +444,73 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     import_.set_defaults(handler=_import_command)
 
+    pack = subcommands.add_parser(
+        "pack",
+        help="build a read-only parquet store from a tree or another store",
+        description=(
+            "Write a parquet store: one file, sorted by key, holding a whole "
+            "corpus. Parquet is read-only here -- it is not updated in place, "
+            "so there is no import that adds to one -- and this is the way "
+            "documents get in. The source is either a directory of files, "
+            "mapped to keys exactly as `rage import` maps them, or an existing "
+            "store, whose documents, metadata and timestamps all come across; "
+            "the second is how a reference base is usually made, by "
+            "accumulating into a SQLite store and compacting it afterwards. "
+            "Nothing is written until the whole file is, so an interrupted "
+            "pack leaves no store behind and the report says `read` rather "
+            "than `wrote`. Mount the result with the server's --mount-ro, or "
+            "read it directly with --store."
+        ),
+    )
+    pack.add_argument(
+        "target", metavar="FILE", help="Parquet file to write. Created, with its parents."
+    )
+    source = pack.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--from-dir", metavar="DIRECTORY", default=None, help="Directory of files to pack."
+    )
+    source.add_argument(
+        "--from-store",
+        metavar="FILE",
+        default=None,
+        help=(
+            "A store in --dir to pack, as a file relative to it. Any backend, "
+            "so a parquet store can be repacked to a later format this way."
+        ),
+    )
+    pack.add_argument(
+        "--dir",
+        dest="directory",
+        metavar="PATH",
+        default=None,
+        help=(
+            f"Store directory --from-store is read from. Defaults to "
+            f"{store.ENV_DIR}, then {store.DEFAULT_DIR_NAME} in the working "
+            f"directory."
+        ),
+    )
+    pack.add_argument(
+        "key",
+        nargs="?",
+        default=None,
+        help=(
+            "Key prefix. Documents are stored beneath it when packing a "
+            "directory, and the subtree packed when packing a store."
+        ),
+    )
+    pack.add_argument(
+        "--hidden",
+        action="store_true",
+        help="Include files and directories whose name begins with a dot.",
+    )
+    pack.add_argument(
+        "--overwrite", action="store_true", help="Replace the target if it is already there."
+    )
+    pack.add_argument(
+        "--dry-run", action="store_true", help="Report what would be packed without writing it."
+    )
+    pack.set_defaults(handler=_pack_command)
+
     rm = subcommands.add_parser(
         "rm",
         help="delete a key",
@@ -982,6 +1049,7 @@ def _report_transfers(
 #: What to call each action when counting them up, as against when reporting
 #: one as it happens: "5 written" rather than "5 wrote".
 _NOUNS = {
+    bulk.READ: "packed",
     bulk.WROTE: "written",
     bulk.SKIPPED: "skipped",
     bulk.FAILED: "failed",
@@ -993,9 +1061,59 @@ def _verb(action: str, dry_run: bool) -> str:
     """What to call an action that a dry run did not take."""
     if not dry_run:
         return action
-    return {bulk.WROTE: "would write", bulk.SKIPPED: "would skip", bulk.STOPPED: "would stop"}.get(
+    return {
+        bulk.WROTE: "would write",
+        bulk.READ: "would pack",
+        bulk.SKIPPED: "would skip",
+        bulk.STOPPED: "would stop",
+    }.get(
         action, action
     )
+
+
+def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Build a parquet store from a directory or from another store.
+
+    The two sources differ in one thing worth naming: packing a store keeps
+    each document's ``updated_at`` and packing a tree cannot, because a file's
+    modification time is not the store's timestamp for a document. So a pack of
+    a store is a compaction and a pack of a tree is an import that happens to
+    land in parquet.
+    """
+    target = Path(args.target).expanduser()
+    if args.from_store is not None:
+        with _open_existing(argparse.Namespace(
+            directory=args.directory, filename=args.from_store
+        )) as opened:
+            status = _report_transfers(
+                bulk.pack(
+                    target,
+                    bulk.documents_from_store(opened, args.key),
+                    overwrite=args.overwrite,
+                    dry_run=args.dry_run,
+                ),
+                args,
+                out,
+                source_first=False,
+            )
+    else:
+        status = _report_transfers(
+            bulk.pack(
+                target,
+                bulk.documents_from_tree(args.from_dir, args.key, hidden=args.hidden),
+                overwrite=args.overwrite,
+                dry_run=args.dry_run,
+            ),
+            args,
+            out,
+            source_first=True,
+        )
+    if not args.dry_run and status == 0:
+        # The one line that says the file exists, since every line above it
+        # said only that a document was read. To stderr with the counts, so a
+        # report piped onward is still just the documents.
+        print(f"rage: packed into {target}", file=sys.stderr)
+    return status
 
 
 def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -1054,9 +1172,11 @@ def _check_command(args: argparse.Namespace, out: TextIO) -> int:
     The one pair of subcommands that is about a *backend* rather than about
     documents: :mod:`rage.maintenance` asks SQLite about integrity, the schema
     version and the WAL, and takes a
-    :class:`~rage.store_sqlite.SqliteStore` for it. That is what
-    ``_open_existing`` hands back while SQLite is the only backend; a second
-    one would need this command to say which store it can check.
+    :class:`~rage.store_sqlite.SqliteStore` for it. ``_open_existing`` hands
+    back whichever backend the store file names, so pointing this at a parquet
+    store is something a caller can now do -- and ``maintenance`` refuses it in
+    a sentence rather than reaching for a connection that is not there. What a
+    backend-agnostic report would hold is still open; see ``planned/storage``.
     """
     with _open_existing(args) as opened:
         report = maintenance.check(opened)

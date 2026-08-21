@@ -1166,3 +1166,120 @@ def test_export_reports_the_root_document_as_a_key_not_as_absent(tmp_path):
     assert status != 0
     assert "failed      /  ->" in output
     assert "no file name" in output
+
+
+# -- pack ------------------------------------------------------------------
+
+
+def test_pack_builds_a_parquet_store_from_a_store(tmp_path, capsys):
+    """The compaction: accumulate into SQLite, then pack it into one file."""
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    an_exportable_store(tmp_path / ".rage")
+
+    status, output = run(
+        "pack",
+        str(tmp_path / "ref.parquet"),
+        "--dir",
+        str(tmp_path / ".rage"),
+        "--from-store",
+        "store.sqlite",
+    )
+
+    assert status == 0
+    # `read`, not `wrote`: nothing is written until the whole file is, and an
+    # interrupted pack has written nothing at all.
+    assert "read" in output and "wrote" not in output
+    assert "3 packed" in capsys.readouterr().err
+    assert (tmp_path / "ref.parquet").exists()
+
+    _, listed = run("ls", "--dir", str(tmp_path), "--store", "ref.parquet", "--recursive")
+    assert "project/reference/env" in listed
+
+
+def test_pack_builds_a_parquet_store_from_a_directory(tmp_path):
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    an_exportable_store(tmp_path / ".rage")
+    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+
+    status, _ = run("pack", str(tmp_path / "ref.parquet"), "--from-dir", str(tmp_path / "out"))
+
+    assert status == 0
+    _, shown = run("get", "--dir", str(tmp_path), "--store", "ref.parquet", "project")
+    assert "# Project" in shown
+
+
+def test_pack_needs_exactly_one_source(tmp_path):
+    """Mutually exclusive and required, so neither is a silent default."""
+    with pytest.raises(SystemExit):
+        parse_args(["pack", str(tmp_path / "out.parquet")])
+    with pytest.raises(SystemExit):
+        parse_args(["pack", "out.parquet", "--from-dir", "a", "--from-store", "b"])
+
+
+def test_pack_dry_run_reports_and_writes_nothing(tmp_path, capsys):
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    an_exportable_store(tmp_path / ".rage")
+
+    status, output = run(
+        "pack",
+        str(tmp_path / "ref.parquet"),
+        "--dir",
+        str(tmp_path / ".rage"),
+        "--from-store",
+        "store.sqlite",
+        "--dry-run",
+    )
+
+    assert status == 0
+    assert "would pack" in output
+    assert "dry run, nothing changed" in capsys.readouterr().err
+    assert not (tmp_path / "ref.parquet").exists()
+
+
+def test_pack_refuses_a_target_that_is_already_there(tmp_path, capsys):
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    an_exportable_store(tmp_path / ".rage")
+    args = (
+        "pack",
+        str(tmp_path / "ref.parquet"),
+        "--dir",
+        str(tmp_path / ".rage"),
+        "--from-store",
+        "store.sqlite",
+    )
+    assert run(*args)[0] == 0
+
+    status, output = run(*args)
+    assert status == 1
+    # Refused before a document is read, not after the whole source has been:
+    # a refusal that arrives at the end of a long pack is the right answer at
+    # the least useful moment.
+    assert output == ""
+    assert "pass --overwrite" in capsys.readouterr().err
+
+    assert run(*args, "--overwrite")[0] == 0
+
+
+def test_writing_to_a_parquet_store_is_refused_as_a_message(tmp_path, capsys):
+    """A refusal reaches the user as one line and a status, not a traceback.
+
+    And the line does not offer a flag, because unlike a read-only *mount*
+    there is none that would make the write succeed.
+    """
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    an_exportable_store(tmp_path / ".rage")
+    run(
+        "pack",
+        str(tmp_path / "ref.parquet"),
+        "--dir",
+        str(tmp_path / ".rage"),
+        "--from-store",
+        "store.sqlite",
+    )
+
+    status, _ = run("set", "--dir", str(tmp_path), "--store", "ref.parquet", "a", "--content", "x")
+
+    assert status == 1
+    reported = capsys.readouterr().err
+    assert "written whole rather than updated" in reported
+    assert "rage pack" in reported

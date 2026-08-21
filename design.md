@@ -41,10 +41,19 @@ can be tested and reused on its own.
 **The interface and the backend are separate modules.** `rage.store` says what
 a store is — the operations, the value types every answer comes back as, and
 the two ways a call bounds what it is asking about — as an abstract `Store`.
-`rage.store_sqlite` is the implementation: the schema, its migrations, the
-connection handling, and the SQL. SQLite is the only backend, and
-`store.default_store` is the single place the package chooses it; a second
-backend (see *Deferred*) inherits the vocabulary rather than inventing one.
+There are two implementations. `rage.store_sqlite` is the read-write one — the
+schema, its migrations, the connection handling, and the SQL — and is what a
+store is opened as when its file says nothing else. `rage.store_parquet` is one
+columnar file, written whole and read many times, for a reference base of tens
+of thousands of documents; it refuses writes, and `rage pack` is how documents
+get into one.
+
+`store._backend_for` is the single place the package chooses between them, and
+it chooses **by the store file's extension**: `.sqlite` and `.parquet`. So a
+mount spec says `ref=python.parquet` and means it, with no new grammar and no
+`--backend` flag threaded through the server, the command line and the mount
+table. An unrecognised extension is the default backend rather than an error —
+a store file has always been free to be called anything.
 
 #### Store location
 

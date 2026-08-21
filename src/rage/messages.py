@@ -304,6 +304,16 @@ def _mount_root_read_only(name: Namer, /, **_: Any) -> str:
     )
 
 
+@template("mount-root-not-writable")
+def _mount_root_not_writable(name: Namer, /, *, backend: str, **_: Any) -> str:
+    return (
+        f"the store at the root is a {backend}, which cannot be written: the "
+        f"root owns every key no mount claims, so nothing would have anywhere "
+        f"to go. Mount it at a prefix with --mount-ro, or open it directly to "
+        f"read it."
+    )
+
+
 @template("mount-point-is-metadata")
 def _mount_point_is_metadata(name: Namer, /, *, mount: str, **_: Any) -> str:
     return (
@@ -370,6 +380,17 @@ def _cursor_outside_subtree(name: Namer, /, *, cursor: str, mount: str, key: str
 @template("check-unreadable")
 def _check_unreadable(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
     return f"cannot read {path}: {reason}"
+
+
+@template("check-wrong-backend")
+def _check_wrong_backend(name: Namer, /, *, path: str, backend: str, action: str, **_: Any) -> str:
+    return (
+        f"cannot {action} {path}: it is a {backend}, and this asks SQLite "
+        f"about integrity, the schema version and the write-ahead log, which "
+        f"only SQLite has. Nothing needs checking here -- a parquet store is "
+        f"one file with no sidecar -- but saying so is not the same as having "
+        f"looked."
+    )
 
 
 @template("check-no-store")
@@ -443,6 +464,74 @@ def _assets_missing(name: Namer, /, *, asset: str, path: str, **_: Any) -> str:
 @template("assets-empty")
 def _assets_empty(name: Namer, /, *, asset: str, path: str, **_: Any) -> str:
     return f"packaged {asset} content is empty at {path}"
+
+
+# -- store: which backend, and what it will not do -------------------------
+
+
+@template("store-read-only")
+def _store_read_only(name: Namer, /, *, key: str, path: str, action: str, **_: Any) -> str:
+    # Deliberately does *not* offer a flag to drop, which is what separates
+    # this from `mount-read-only`: no way of opening a parquet file makes a
+    # write to it succeed, and advice that cannot work is worse than none.
+    return (
+        f"cannot {action} {name(key)!r}: {path} is a parquet store, which is "
+        f"written whole rather than updated. Build a new one with `rage pack`."
+    )
+
+
+@template("backend-unavailable")
+def _backend_unavailable(
+    name: Namer, /, *, filename: str, backend: str, reason: str, **_: Any
+) -> str:
+    return f"{filename} needs the {backend} backend, which will not load: {reason}"
+
+
+@template("parquet-needs-pyarrow")
+def _parquet_needs_pyarrow(name: Namer, /, *, reason: str, **_: Any) -> str:
+    return (
+        f"a parquet store needs pyarrow, which is not installed: {reason}. "
+        f"Install it with `pip install 'rage[parquet]'`."
+    )
+
+
+@template("parquet-store-missing")
+def _parquet_store_missing(name: Namer, /, *, path: str, **_: Any) -> str:
+    return (
+        f"there is no parquet store at {path}. Unlike a SQLite store this one "
+        f"is not created empty: it has no write that would fill it, so an "
+        f"empty one could only ever read back empty. Build it with `rage pack`."
+    )
+
+
+@template("parquet-not-a-store")
+def _parquet_not_a_store(name: Namer, /, *, path: str, **_: Any) -> str:
+    return (
+        f"{path} is a parquet file but not a rage store: it carries no format "
+        f"version, so its columns are somebody else's and mean something else"
+    )
+
+
+@template("parquet-format-newer")
+def _parquet_format_newer(name: Namer, /, *, path: str, found: int, expected: int, **_: Any) -> str:
+    return (
+        f"{path} is written in parquet store format {found} and this build "
+        f"reads {expected}; it is not migrated in place, so repack it or "
+        f"upgrade rage"
+    )
+
+
+@template("parquet-target-exists")
+def _parquet_target_exists(name: Namer, /, *, path: str, **_: Any) -> str:
+    return f"{path} already exists; pass --overwrite to replace it"
+
+
+@template("parquet-build-wildcard")
+def _parquet_build_wildcard(name: Namer, /, *, key: str, **_: Any) -> str:
+    return (
+        f"cannot pack {key!r}: a '?' is allocated by reading the store for a "
+        f"free number, and a store being built has nothing to read"
+    )
 
 
 # -- the command line ------------------------------------------------------

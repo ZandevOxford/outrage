@@ -18,12 +18,18 @@ The vocabulary is the interesting part, and it is worth reading in this order:
 * :class:`Entry` is how one key appears in its parent's listing, which is the
   only place the difference between a stored key and an implicit one shows.
 
-:class:`Store` itself is abstract. The operations carry the contract every
-backend implements; the implementation this build ships is
-:class:`rage.store_sqlite.SqliteStore`, and :func:`default_store` is the one
-place in the package that chooses it. A second backend is planned -- see
-``project/reference/planned/parquet`` -- and the point of the split is that it
-inherits this vocabulary rather than inventing a second one.
+:class:`Store` itself is abstract, and there are two implementations. The
+operations carry the contract both answer:
+:class:`rage.store_sqlite.SqliteStore` is a read-write database accumulated a
+document at a time, and :class:`rage.store_parquet.ParquetStore` is one
+columnar file written whole and read many times, for a reference base of tens
+of thousands of documents. They share none of the storage and every word of
+the vocabulary below, which is the point of the split.
+
+:func:`_backend_for` is the one place in the package that chooses between
+them, and it chooses by the store file's extension. So nothing above here --
+not the server, not the command line, not the mount table -- names a backend
+to open one.
 
 Independent of MCP: everything here is callable and testable on its own. Read
 :mod:`rage.keys` first for what a key is, which everything below is written in
@@ -34,6 +40,7 @@ terms of; the key namespace and the tool semantics are argued in ``design.md``
 from __future__ import annotations
 
 import functools
+import importlib
 import inspect
 import json
 import os
@@ -107,6 +114,23 @@ class PatternNotFoundError(RageError, LookupError):
 
 class BackupError(RageError, RuntimeError):
     """Raised when a backup cannot be taken, or cannot be shown to be good."""
+
+
+class ReadOnlyStoreError(RageError, PermissionError):
+    """Raised when a store is asked to write and its backend cannot.
+
+    Distinct from :class:`rage.mounts.ReadOnlyMountError`, which is about a
+    *configuration*: a store that could be written was mounted with
+    ``--mount-ro``, and starting the server without that flag would let the
+    write through. This one is about the storage. A parquet file is not
+    updated in place, so no flag exists that would make the same call succeed,
+    and telling a caller to drop one would be advice that does not work.
+    """
+
+
+class BackendError(RageError, RuntimeError):
+    """Raised when a backend cannot be used: absent, or asked for a file it
+    did not write."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,6 +444,15 @@ class Store(ABC):
     #: :func:`store_file`. :func:`default_store_file` is how the rest of the
     #: package asks for it without naming a backend to ask.
     default_filename: ClassVar[str]
+
+    #: Whether this backend can be written at all. False says the *storage*
+    #: refuses, which is not the same as a store that was mounted read-only:
+    #: a mount's refusal comes off with a flag and this one does not. A caller
+    #: deciding whether to offer a write reads this; a caller that writes
+    #: anyway gets :class:`ReadOnlyStoreError` from the backend, since a class
+    #: var nobody consulted must not be the only thing standing between a
+    #: corpus and a half-written file.
+    writable: ClassVar[bool] = True
 
     def __init__(
         self,
@@ -815,23 +848,66 @@ class Store(ABC):
         return target
 
 
+#: The extension each backend claims, and the class behind it. The **single
+#: place** the package decides which storage a store file is kept in.
+#:
+#: A registry rather than a ``backend=`` argument threaded through the server,
+#: the command line and the mount table, because a store is already addressed
+#: as a *file* and a backend already names its own -- so if a backend names its
+#: file, the file can name the backend, and ``--mount-ro ref=python.parquet``
+#: needs no new grammar to say what it obviously means.
+#:
+#: Named by module and class rather than holding the classes, because each
+#: backend is written in terms of this module and importing one at module scope
+#: would be a cycle. :func:`_backend_for` resolves an entry on use.
+_BACKENDS: dict[str, tuple[str, str]] = {
+    ".sqlite": (".store_sqlite", "SqliteStore"),
+    ".parquet": (".store_parquet", "ParquetStore"),
+}
+
+#: The extension a store file has when nobody says otherwise, and so the
+#: backend an unrecognised name falls back to. See :func:`_backend_for` for why
+#: the fallback is a fallback rather than a refusal.
+DEFAULT_BACKEND = ".sqlite"
+
+
 def _backend() -> type[Store]:
-    """The backend class this build uses when nobody names one.
+    """The backend class this build uses when nobody names one."""
+    return _backend_for(None)
 
-    The **single place** the package decides that a store is SQLite. Everything
-    else -- the server, the command line, the mount table -- asks for a store,
-    or for what a store file is called, and is handed the answer; so a second
-    backend arrives here and nowhere else.
 
-    The import is deferred rather than made at module scope, because the
-    backend is written in terms of this module and importing it back at the top
-    would be a cycle. That is the shape the choice has to take while there is
-    exactly one default; a real backend *argument* is a decision worth taking
-    when there is something to choose between.
+def _backend_for(filename: str | os.PathLike[str] | None) -> type[Store]:
+    """Which backend keeps a store file called ``filename``.
+
+    ``None`` means the default. Everything else is read from the extension:
+    ``ref.parquet`` is a parquet store and ``ref.sqlite`` is a SQLite one.
+
+    **An unrecognised extension is the default backend, not an error.** A store
+    file has always been free to be called anything -- ``ref.db`` and
+    ``monday.sqlite`` alike -- and turning every unclaimed name into a refusal
+    would break configurations that named a file before any backend claimed an
+    extension. So the registry recognises the names a backend has claimed; it
+    does not decide which names are allowed. A name that means to be parquet
+    and is spelled ``ref.parq`` opens as SQLite, which is the cost of that, and
+    the store it opens is empty rather than wrong.
+
+    The import failing is not a bug here: pyarrow is an optional extra, so a
+    ``.parquet`` mount on an install without it has to say so in a sentence
+    rather than raise ``ModuleNotFoundError`` at whoever is watching.
     """
-    from .store_sqlite import SqliteStore
-
-    return SqliteStore
+    extension = DEFAULT_BACKEND if filename is None else Path(filename).suffix
+    module_name, class_name = _BACKENDS.get(extension, _BACKENDS[DEFAULT_BACKEND])
+    try:
+        module = importlib.import_module(module_name, __package__)
+    except ImportError as exc:
+        raise BackendError(
+            "backend-unavailable",
+            filename=str(filename),
+            backend=class_name,
+            reason=str(exc),
+        ) from exc
+    backend: type[Store] = getattr(module, class_name)
+    return backend
 
 
 def default_store_file() -> str:
@@ -859,8 +935,11 @@ def default_store(
     """A store of the backend this build opens when nobody names one.
 
     ``filename`` of None means whatever that backend calls its store file.
+    Any other name picks the backend that claims its extension, so a caller
+    holding a mount's file name opens the right storage without naming one --
+    see :func:`_backend_for`.
     """
-    return _backend()(directory, filename=filename, log=log)
+    return _backend_for(filename)(directory, filename=filename, log=log)
 
 
 @contextmanager
@@ -1137,6 +1216,7 @@ def _excerpt(
 __all__ = [
     "BACKUP_DIR_NAME",
     "BACKUP_STAMP",
+    "DEFAULT_BACKEND",
     "DEFAULT_BULK_MAX_CHARS",
     "DEFAULT_DIR_NAME",
     "DEFAULT_MAX_CHARS",
@@ -1146,6 +1226,7 @@ __all__ = [
     "FORMATS",
     "UNBOUNDED",
     "Backup",
+    "BackendError",
     "BackupError",
     "BoundedSubtree",
     "Entry",
@@ -1155,6 +1236,7 @@ __all__ = [
     "MissingMeta",
     "Page",
     "PatternNotFoundError",
+    "ReadOnlyStoreError",
     "Store",
     "StoreFileError",
     "default_store",

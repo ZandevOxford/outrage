@@ -89,6 +89,12 @@ SKIPPED = "skipped"
 #: This one could not cross, and the rest were still tried. ``reason`` says why.
 FAILED = "failed"
 
+#: Read and held for a file that is not written yet. A pack cannot report a
+#: document as written while it goes -- nothing is written until the whole
+#: parquet file is -- and calling it ``wrote`` in the meantime would be a
+#: report an interrupted run made untrue. See :func:`pack_tree`.
+READ = "read"
+
 #: The collision that ended the run, under ``STOP``. Reported rather than
 #: swallowed, so a caller can see where the transfer stopped and why; nothing
 #: after it is yielded at all.
@@ -115,6 +121,19 @@ class Transfer:
     path: Path | None
     reason: str | None = None
     characters: int = 0
+
+
+#: One document as :meth:`rage.store_parquet.ParquetStore.build` takes it:
+#: key, content, the format or None to detect it, and the timestamp or None
+#: for now. A tuple rather than a class because it is what a build consumes
+#: and nothing holds one for longer than that.
+Document = tuple[str, str, str | None, str | None]
+
+#: What a pack's source yields: the report of one document, and the document
+#: itself -- or None where there is nothing to pack, which is a symlink or a
+#: file that would not read. Paired so a caller can print the walk as it
+#: happens while the rows accumulate for a file that is written at the end.
+Packable = tuple[Transfer, Document | None]
 
 
 # -- walking the store ---------------------------------------------------
@@ -415,6 +434,116 @@ def _entries(root: Path, *, hidden: bool) -> Iterator[tuple[Path, str]]:
             yield entry, "file"
 
 
+# -- into a file that is written whole -----------------------------------
+
+
+def documents_from_tree(
+    source: str | os.PathLike[str],
+    key: str | None = None,
+    *,
+    hidden: bool = False,
+) -> Iterator[Packable]:
+    """Every file below ``source`` as a document, beside the report of it.
+
+    The same walk, mapping and refusals :func:`import_tree` makes -- one path
+    to a key, symlinks named and not followed, a file that is not text reported
+    rather than mangled -- so a tree packs to exactly the keys importing it
+    would have produced. Shared by walking the same helpers rather than by
+    calling ``import_tree``, which needs a store to write to and this does not.
+
+    Yields the ``Transfer`` first so a caller can report as it reads, and the
+    row second, or None when there is nothing to pack. ``updated_at`` is None:
+    a file's modification time is not the store's timestamp for the document,
+    and inventing one at build time is the honest answer -- see
+    :meth:`rage.store_parquet.ParquetStore.build`.
+    """
+    source = Path(source).expanduser()
+    if not source.is_dir():
+        raise SourceMissingError("import-source-missing", source=str(source))
+
+    for path, kind in _entries(source, hidden=hidden):
+        relative = PurePosixPath(path.relative_to(source).as_posix())
+        if kind == "symlink":
+            yield Transfer(SKIPPED, None, path, "symlink"), None
+            continue
+        try:
+            stored, format = key_for_path(relative, key)
+        except keys.InvalidKeyError as exc:
+            yield Transfer(FAILED, None, path, messages.render(exc)), None
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            yield Transfer(FAILED, stored, path, str(exc)), None
+            continue
+        yield (
+            Transfer(READ, stored, path, characters=len(content)),
+            (stored, content, format, None),
+        )
+
+
+def documents_from_store(
+    opened: store.Store, key: str | None = None
+) -> Iterator[Packable]:
+    """Every document at and below ``key`` in ``opened``, beside the report.
+
+    The other half of a pack, and the one a reference base is usually made
+    with: accumulate into a writable store, then compact. Built on the same
+    walk an export uses, so metadata comes across as the rows it is -- a
+    ``!title`` is a key like any other here, and a packed store surveys exactly
+    as the one it came from did. An export that left every title behind would
+    make the survey worthless, and so would a pack.
+
+    Timestamps come across too, which is what makes this a compaction rather
+    than a copy that quietly restamps the corpus.
+    """
+    for stored, _ in _exported(opened, key):
+        whole = store.read_all(opened, stored)
+        yield (
+            Transfer(READ, stored, None, characters=whole.total),
+            (stored, whole.content, whole.format, whole.updated_at),
+        )
+
+
+def pack(
+    target: str | os.PathLike[str],
+    documents: Iterator[Packable],
+    *,
+    overwrite: bool = False,
+    dry_run: bool = False,
+) -> Iterator[Transfer]:
+    """Report each document as it is read, then write them all as one file.
+
+    **The write is at the end, and that is the shape of the format rather than
+    a choice.** A parquet store is sorted by key on the way in and its
+    statistics describe the whole of it, so there is no point at which half a
+    file is a usable store. So this reports ``read`` per document, not
+    ``wrote``: an interrupted pack has written nothing, and a report claiming
+    otherwise would be the kind of half-truth ``import_tree`` streams
+    specifically to avoid.
+
+    Nothing is skipped for collisions the way an import is. There is nothing to
+    collide with -- the target is a new file, refused outright if it is already
+    there unless ``overwrite`` -- and two source documents claiming one key is
+    resolved by the last one, which is what overwriting means everywhere else.
+    """
+    from .store_parquet import ParquetStore
+
+    # Before a single document is read. A pack reads its whole source before
+    # writing anything, so checking at the write would refuse only after the
+    # reading was done — right answer, least useful moment.
+    ParquetStore.check_target(target, overwrite=overwrite)
+
+    rows: list[Document] = []
+    for transfer, row in documents:
+        if row is not None:
+            rows.append(row)
+        yield transfer
+
+    if not dry_run:
+        ParquetStore.build(target, rows, overwrite=overwrite)
+
+
 def _check_conflict(on_conflict: str) -> None:
     if on_conflict not in CONFLICTS:
         raise ValueError(f"on_conflict must be one of {CONFLICTS}, got {on_conflict!r}")
@@ -422,11 +551,14 @@ def _check_conflict(on_conflict: str) -> None:
 
 __all__ = [
     "CONFLICTS",
+    "Document",
     "EXTENSION_BY_FORMAT",
     "FAILED",
     "FORMAT_BY_EXTENSION",
     "OVERWRITE",
     "PAGE",
+    "Packable",
+    "READ",
     "SKIP",
     "SKIPPED",
     "STOP",
@@ -436,8 +568,11 @@ __all__ = [
     "SourceMissingError",
     "Transfer",
     "UnmappableError",
+    "documents_from_store",
+    "documents_from_tree",
     "export_tree",
     "import_tree",
+    "pack",
     "key_for_path",
     "levels",
     "path_for_key",
