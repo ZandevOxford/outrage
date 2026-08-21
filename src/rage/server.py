@@ -385,6 +385,9 @@ _forbid_unknown_arguments()
 #: items are tiny -- a hundred titles is a survey a model can hold, and it is
 #: the whole store for the session-scale case these defaults are mostly serving.
 DEFAULT_ITEM_LIMIT = 100
+
+#: The character half of that pair: what one page may total before it stops,
+#: whatever the item count still allows.
 DEFAULT_PAGE_CHARS = 20000
 
 #: Keys named in `without_meta` before it stops listing and only counts. Its
@@ -484,6 +487,9 @@ README_KEY = "readme"
 #: the document is here, the note carries when it was read. Everything else
 #: about the convention is in ``TAIL``, where it can afford to be.
 README_HEADING = f"--- `{README_KEY}`: this store's own introduction, so you start with it ---"
+
+#: The second half of that pair: when the readme was read, which is the one
+#: thing about it a session cannot work out from the text itself.
 README_NOTE = (
     f"Read once, when the server started — a `{README_KEY}` changed during a "
     f"session reaches the next one, not this one."
@@ -531,14 +537,6 @@ README_MAX_CHARS = DELIVERY_BUDGET - SCAFFOLDING_CHARS
 #: fails if the static text grows back over the cut, which is the failure that
 #: produced all of this.
 README_FLOOR_CHARS = 600
-
-#: What is said when the store has no readme. The empty store is exactly where
-#: naming the convention is worth most, since the session that goes on to learn
-#: the layout is the one that can write it down.
-NO_README = (
-    f"This store has no `{README_KEY}` document. If you work out how it is "
-    f"organised, or what a later session should read first, store that there."
-)
 
 
 def instructions(store: Store | Mounts) -> str:
@@ -1370,13 +1368,20 @@ def main(argv: list[str] | None = None) -> int:
 
 
 __all__ = [
+    "DEFAULT_ITEM_LIMIT",
+    "DEFAULT_PAGE_CHARS",
     "DELIVERY_BUDGET",
     "ESSENTIALS",
     "INSTRUCTIONS",
+    "NO_README",
+    "README_FLOOR_CHARS",
+    "README_HEADING",
     "README_KEY",
     "README_MAX_CHARS",
+    "README_NOTE",
+    "SCAFFOLDING_CHARS",
     "TAIL",
-    "Mounts",
+    "WITHOUT_META_SAMPLE",
     "RequestLog",
     "build_server",
     "instructions",

@@ -60,15 +60,32 @@ FORMATS = {extension: format for format, extension in EXTENSIONS.items()}
 #: the caller named.
 TRAVERSAL = (".", "..")
 
+#: Leave what is already there and carry on. The default, because a transfer
+#: that overwrites by accident cannot be undone from here.
 SKIP = "skip"
+
+#: Replace what is already there.
 OVERWRITE = "overwrite"
+
+#: Stop the whole transfer at the first collision, having written what came
+#: before it. What a caller wants when a collision means the wrong target.
 STOP = "stop"
+
 #: What to do about something already there, at the far end.
 CONFLICTS = (SKIP, OVERWRITE, STOP)
 
+#: The outcome recorded on a :class:`Transfer`: it crossed.
 WROTE = "wrote"
+
+#: Something was already there and ``SKIP`` was asked for.
 SKIPPED = "skipped"
+
+#: This one could not cross, and the rest were still tried. ``reason`` says why.
 FAILED = "failed"
+
+#: The collision that ended the run, under ``STOP``. Reported rather than
+#: swallowed, so a caller can see where the transfer stopped and why; nothing
+#: after it is yielded at all.
 STOPPED = "stopped"
 
 
@@ -395,3 +412,28 @@ def _entries(root: Path, *, hidden: bool) -> Iterator[tuple[Path, str]]:
 def _check_conflict(on_conflict: str) -> None:
     if on_conflict not in CONFLICTS:
         raise ValueError(f"on_conflict must be one of {CONFLICTS}, got {on_conflict!r}")
+
+
+__all__ = [
+    "CONFLICTS",
+    "EXTENSIONS",
+    "FAILED",
+    "FORMATS",
+    "OVERWRITE",
+    "PAGE",
+    "SKIP",
+    "SKIPPED",
+    "STOP",
+    "STOPPED",
+    "TRAVERSAL",
+    "WROTE",
+    "SourceMissing",
+    "Transfer",
+    "Unmappable",
+    "export_tree",
+    "import_tree",
+    "key_for_path",
+    "levels",
+    "path_for_key",
+    "walk",
+]

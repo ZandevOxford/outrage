@@ -648,6 +648,7 @@ __all__ = [
     "Mounts",
     "ReadOnlyMountError",
     "Resolved",
+    "Segment",
     "open_mounts",
     "parse_spec",
 ]

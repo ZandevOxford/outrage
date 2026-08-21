@@ -73,8 +73,11 @@ MARKER = "rage-managed:session-start"
 #: file to copy over: only the key below ``hooks`` is ours.
 TEMPLATE = Path(__file__).parent / "hooks" / "settings.json"
 
+#: The settings file the fragment is merged into, inside ``.claude``.
 SETTINGS_NAME = "settings.json"
 
+#: The key below which that merge happens. Everything else in the file is
+#: somebody else's and is written back as it was found.
 HOOKS_FIELD = "hooks"
 
 
@@ -216,6 +219,7 @@ def install(project_dir: str | Path, dry_run: bool = False) -> HookChange:
 #: interpreter or an absolute path, and a copy of it is complete on its own.
 ASSET_DIRS = ("skills", "agents")
 
+#: Where a project's skills, agents and settings live, relative to its root.
 CLAUDE_DIR = ".claude"
 
 
@@ -396,9 +400,10 @@ def init(
 __all__ = [
     "ASSET_DIRS",
     "CLAUDE_DIR",
-    "HOOK_EVENT",
     "HOOKS_FIELD",
+    "HOOK_EVENT",
     "MARKER",
+    "SETTINGS_NAME",
     "TEMPLATE",
     "FileChange",
     "HookChange",

@@ -41,8 +41,12 @@ PROJECT_CONFIG_NAME = ".mcp.json"
 #: MCP servers, which is why nothing here rewrites more of it than one key.
 USER_CONFIG_NAME = ".claude.json"
 
+#: The key holding the servers, in both configuration files. The rest of
+#: either file belongs to somebody else and is written back untouched.
 SERVERS_FIELD = "mcpServers"
 
+#: Where a configuration may be written, and the order of preference: the
+#: project it is for, or the user who runs it.
 SCOPES = ("project", "user")
 
 #: Console script installed by this package, and the fallback for when it is
@@ -276,6 +280,7 @@ def _mode_for(path: Path) -> int:
 __all__ = [
     "PROJECT_CONFIG_NAME",
     "SCOPES",
+    "SCRIPT_NAME",
     "SERVERS_FIELD",
     "SERVER_NAME",
     "USER_CONFIG_NAME",

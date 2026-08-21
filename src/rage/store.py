@@ -23,7 +23,6 @@ from typing import Any, TypeVar
 from . import eventlog, keys
 from .errors import RageError
 from .eventlog import EventLog
-from .keys import Key
 
 #: Default directory name, relative to the working directory, when neither
 #: --dir nor RAGE_DIR is given.
@@ -44,10 +43,17 @@ DB_FILENAME = "store.sqlite"
 BUSY_TIMEOUT_MS = 5000
 
 #: Where backups go when no destination is given, relative to the store
-#: directory, and how they are named within it.
+#: directory.
 BACKUP_DIR_NAME = "backups"
+
+#: How a backup is named within that directory. Sortable, so a listing is in
+#: age order without parsing anything, and to the second, because two backups
+#: in one minute is a thing that happens while working on the store itself.
 BACKUP_STAMP = "%Y%m%d-%H%M%S"
 
+#: Environment variable naming the store directory, consulted when no ``--dir``
+#: is given. See :func:`resolve_directory` for the order the three sources
+#: are tried in.
 ENV_DIR = "RAGE_DIR"
 
 #: Cap on a single retrieve, so one oversized document cannot flood an agent's
@@ -58,6 +64,8 @@ DEFAULT_MAX_CHARS = 8000
 #: listing rather than a read.
 DEFAULT_BULK_MAX_CHARS = 2000
 
+#: What a document may be stored as. Detected from the content when a caller
+#: names neither, and the only thing the store knows about a document's text.
 FORMATS = ("markdown", "json")
 
 #: Encodings a caller may use for the content and title it passes in. These
@@ -65,6 +73,10 @@ FORMATS = ("markdown", "json")
 #: decoded back to plain text before it is written. See ``_decode``.
 ENCODINGS = ("json-string",)
 
+#: The schema this code writes, and the version a store is migrated up to when
+#: it is opened. Every bump needs a migration that reads the version below it;
+#: an older store is upgraded in place, and a newer one is refused rather than
+#: read with the wrong shape assumed.
 SCHEMA_VERSION = 5
 
 _TABLE = """
@@ -340,9 +352,13 @@ class BoundedSubtree:
         return clauses, params
 
 
-#: Every key, and every key at and below the root: the defaults for a call that
-#: puts no bound of its own on what it reads.
+#: Every key at and below the root: the default selection for a call that puts
+#: no bound of its own on which part of the hierarchy it reads.
 EVERYTHING = BoundedSubtree()
+
+#: The whole of the order, bounded at neither end: the default for a call that
+#: names no stretch. Distinct from :data:`EVERYTHING` on purpose -- one bounds
+#: the hierarchy and the other the order, and a subtree read needs both.
 UNBOUNDED = KeyRange()
 
 
@@ -1815,12 +1831,27 @@ def _excerpt(row: sqlite3.Row, start: int, length: int | None, max_chars: int) -
 
 
 __all__ = [
+    "BACKUP_DIR_NAME",
+    "BACKUP_STAMP",
+    "BUSY_TIMEOUT_MS",
+    "DB_FILENAME",
     "DEFAULT_BULK_MAX_CHARS",
+    "DEFAULT_DIR_NAME",
     "DEFAULT_MAX_CHARS",
+    "ENCODINGS",
+    "ENV_DIR",
+    "EVERYTHING",
+    "FORMATS",
+    "SCHEMA_VERSION",
+    "UNBOUNDED",
+    "Backup",
+    "BackupError",
+    "BoundedSubtree",
     "Entry",
     "Excerpt",
-    "Key",
     "KeyNotFoundError",
+    "KeyRange",
+    "MissingMeta",
     "Page",
     "PatternNotFoundError",
     "Store",
