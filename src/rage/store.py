@@ -25,10 +25,10 @@ place in the package that chooses it. A second backend is planned -- see
 ``project/reference/planned/parquet`` -- and the point of the split is that it
 inherits this vocabulary rather than inventing a second one.
 
-Independent of MCP: everything here is callable and testable on its own. See
-``design.md`` for the key namespace and the tool semantics, and
-:mod:`rage.keys` for what a key is, which everything below is written in terms
-of.
+Independent of MCP: everything here is callable and testable on its own. Read
+:mod:`rage.keys` first for what a key is, which everything below is written in
+terms of; the key namespace and the tool semantics are argued in ``design.md``
+**at the root of the repository**, which is not part of this reference.
 """
 
 from __future__ import annotations
@@ -135,6 +135,12 @@ class Excerpt:
 
     @property
     def truncated(self) -> bool:
+        """Whether part of the document was left unread.
+
+        The same fact as ``next_offset is not None``, named so that a caller
+        deciding whether to read on does not have to know that. Reading on
+        means passing ``next_offset`` back as ``offset``.
+        """
         return self.next_offset is not None
 
 
@@ -182,6 +188,13 @@ class Page[T]:
 
     @property
     def truncated(self) -> bool:
+        """Whether the collection continues past this page.
+
+        Deliberately not ``returned < total``: ``total`` describes the whole
+        selection and ``returned`` only this page, so that comparison is true
+        of every page but the last *and* of a page that ended exactly at the
+        end. The cursor is the one that knows.
+        """
         return self.next_cursor is not None
 
 

@@ -312,6 +312,13 @@ class Filter:
     errors: bool = False
 
     def matches(self, event: Event) -> bool:
+        """Whether one event satisfies every field that is set.
+
+        Fields combine with AND, and an unset field constrains nothing, so an
+        empty filter matches everything. ``session`` matches on a prefix and
+        ``key`` on a substring, because both are typed by hand at a command
+        line; the rest are exact.
+        """
         if self.session is not None and not event.session.startswith(self.session):
             return False
         if self.call is not None and event.call != self.call:
@@ -329,6 +336,12 @@ class Filter:
         return True
 
     def select(self, events: Iterable[Event]) -> list[Event]:
+        """The events that :meth:`matches` accepts, in the order they arrived.
+
+        The many-at-once form of the same question, which is what every caller
+        actually wants; ``matches`` is public because a caller streaming a
+        large log asks it one event at a time.
+        """
         return [event for event in events if self.matches(event)]
 
 
@@ -344,6 +357,13 @@ class TruncatedRead:
 
     @property
     def followed_up(self) -> bool:
+        """Whether the caller ever came back for the rest of the document.
+
+        The question the pairing exists to answer. False is the interesting
+        answer: it means an agent was handed part of a document and acted on
+        it, which is what ``project/reference/planned/agents`` was guessing
+        about before this could be measured.
+        """
         return self.resumed_by is not None
 
 
@@ -416,12 +436,25 @@ class Summary:
 
     @property
     def mean_accesses(self) -> float:
+        """Store accesses per tool call, averaged over the calls seen.
+
+        Per *call*, not per session or per event: it says how much work one
+        tool call costs the store, which is what a change to a tool's
+        implementation moves. Zero when nothing was called, rather than
+        undefined.
+        """
         if not self.accesses_per_call:
             return 0.0
         return sum(self.accesses_per_call.values()) / len(self.accesses_per_call)
 
     @property
     def followed_up(self) -> int:
+        """How many of the truncated reads were resumed in the same session.
+
+        Against ``len(self.truncated)`` for the share that was not. Same
+        session deliberately: a resume in a later one is a new reader arriving
+        at the document, not this reader coming back.
+        """
         return sum(1 for read in self.truncated if read.followed_up)
 
 

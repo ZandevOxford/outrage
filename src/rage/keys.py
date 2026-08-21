@@ -21,7 +21,12 @@ A key being written may use ``?`` as a whole segment to ask the store to
 allocate a number for it. A segment that is purely numeric is normalised by
 stripping its leading zeros, so ``context/01`` and ``context/1`` are the same
 key, and is sorted as though zero padded, so ``context/2`` comes before
-``context/10``. See design.md.
+``context/10``.
+
+The reasoning behind the grammar, the sort form and the schema is in
+``design.md`` **at the root of the repository**, which is not part of this
+reference -- these pages are generated from the docstrings and contain nothing
+else.
 """
 
 from __future__ import annotations

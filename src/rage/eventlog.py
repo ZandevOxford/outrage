@@ -164,9 +164,23 @@ class EventLog:
         self.emit("start", pid=os.getpid(), content=self.content, **fields)
 
     def stop(self, **fields: Any) -> None:
+        """Record that this process is finishing, and leave the log open.
+
+        A line, not a lifecycle step: it dates the end of a session's events
+        the way ``start`` dates their beginning. Writing continues to work
+        afterwards, which is deliberate -- a shutdown that still has something
+        to record is exactly when the log matters.
+        """
         self.emit("stop", **fields)
 
     def close(self) -> None:
+        """Release the file descriptor and refuse to write again.
+
+        The lifecycle step, and the opposite half of the pair: nothing is
+        recorded, and every later ``emit`` is silently dropped rather than
+        raising, because a log that fails a call it was only observing has
+        broken the thing it exists to watch. Idempotent.
+        """
         with self._lock:
             if self._fd is not None:
                 os.close(self._fd)
