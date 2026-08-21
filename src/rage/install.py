@@ -73,7 +73,12 @@ MARKER = "rage-managed:session-start"
 #: file to copy over: only the key below ``hooks`` is ours.
 TEMPLATE = Path(__file__).parent / "hooks" / "settings.json"
 
-#: The settings file the fragment is merged into, inside ``.claude``.
+#: Where a project's skills, agents and settings live, relative to its root.
+#: Declared above its three users rather than beside the assets, because the
+#: settings path is one of them and used to spell the directory out.
+CLAUDE_DIR = ".claude"
+
+#: The settings file the fragment is merged into, inside :data:`CLAUDE_DIR`.
 SETTINGS_NAME = "settings.json"
 
 #: The key below which that merge happens. Everything else in the file is
@@ -111,7 +116,8 @@ class HookChange:
 
 
 def settings_path(project_dir: str | Path) -> Path:
-    return Path(project_dir) / ".claude" / SETTINGS_NAME
+    """Where a project's settings file is, whether or not it exists yet."""
+    return Path(project_dir) / CLAUDE_DIR / SETTINGS_NAME
 
 
 def template_entry() -> dict[str, Any]:
@@ -218,10 +224,6 @@ def install(project_dir: str | Path, dry_run: bool = False) -> HookChange:
 #: a client reads directly: nothing here is executed, so nothing here needs an
 #: interpreter or an absolute path, and a copy of it is complete on its own.
 ASSET_DIRS = ("skills", "agents")
-
-#: Where a project's skills, agents and settings live, relative to its root.
-CLAUDE_DIR = ".claude"
-
 
 @dataclass(frozen=True, slots=True)
 class FileChange:
