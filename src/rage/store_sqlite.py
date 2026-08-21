@@ -33,9 +33,7 @@ from .eventlog import EventLog
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
-    ENCODINGS,
     EVERYTHING,
-    FORMATS,
     UNBOUNDED,
     Backup,
     BackupError,
@@ -49,8 +47,6 @@ from .store import (
     PatternNotFoundError,
     Store,
     _cursor_bound,
-    _decode,
-    _detect_format,
     _excerpt,
     _find_occurrence,
     _logged,
@@ -359,26 +355,11 @@ class SqliteStore(Store):
         that path reads the level before it writes, and a deferred transaction
         would let two callers read the same highest number and pick it twice.
         """
-        parsed = keys.parse(key, allow_wildcard=True)
-        if not isinstance(content, str):
-            raise TypeError(f"content must be a string, got {type(content).__name__}")
-        if encoding is not None:
-            if encoding not in ENCODINGS:
-                raise ValueError(f"encoding must be one of {ENCODINGS}, got {encoding!r}")
-            content = _decode(content, encoding, "content")
-            if title is not None:
-                if not isinstance(title, str):
-                    raise TypeError(f"title must be a string, got {type(title).__name__}")
-                title = _decode(title, encoding, "title")
-        if format is None:
-            format = _detect_format(content)
-        elif format not in FORMATS:
-            raise ValueError(f"format must be one of {FORMATS}, got {format!r}")
-        if title is not None:
-            if parsed.is_metadata:
-                raise ValueError(f"cannot attach a title to metadata key {key!r}")
-            if not isinstance(title, str):
-                raise TypeError(f"title must be a string, got {type(title).__name__}")
+        # Inside the logged method, deliberately: `_logged` has already bound
+        # the arguments the caller passed, which is what the log is for.
+        parsed, content, format, title = self._validated(
+            key, content, format, title=title, encoding=encoding
+        )
 
         # Allocating reads before it writes, so the whole thing has to be one
         # transaction that excludes other writers: a deferred transaction would

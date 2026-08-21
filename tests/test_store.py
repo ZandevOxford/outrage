@@ -10,7 +10,9 @@ the schema, its migrations, the connection per thread -- is in
 ``test_store_sqlite.py``.
 """
 
+import ast
 import json
+import pathlib
 import sqlite3
 import threading
 
@@ -1754,6 +1756,54 @@ def test_every_operation_a_caller_uses_is_declared_abstract():
             "close",
         }
     )
+
+
+def test_validation_normalises_what_a_backend_then_writes():
+    """The arguments as they are written, with every refusal already made.
+
+    The shared half of ``store_document``: a backend gets the parsed key, the
+    decoded content, a format that is never None, and the decoded title. Only
+    the wildcard is left to it, because which number a ``?`` becomes is read
+    from the store inside the transaction that writes it.
+    """
+    parsed, content, format, title = Store._validated(
+        "notes/?", '"{\\"a\\": 1}"', None, title='"Numbers"', encoding="json-string"
+    )
+    assert parsed.has_wildcard
+    assert content == '{"a": 1}'
+    # Detected after the decode, not before: the JSON *literal* the caller sent
+    # is a string, and it is the document inside it that is an object.
+    assert format == "json"
+    assert title == "Numbers"
+
+
+def test_every_backend_validates_by_calling_the_shared_check():
+    """A backend that validated differently would be a second namespace.
+
+    Read from the source rather than exercised, because the failure it guards
+    against is a backend quietly doing its own checks: that passes every
+    behavioural test written against *it*, and diverges only where nobody
+    looked. There is one backend today, and this is what a second one has to
+    pass on the day it is written.
+    """
+    stores = 0
+    for path in sorted(pathlib.Path(store_module.__file__).parent.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if not any(isinstance(b, ast.Name) and b.id == "Store" for b in node.bases):
+                continue
+            for method in node.body:
+                if not isinstance(method, ast.FunctionDef) or method.name != "store_document":
+                    continue
+                stores += 1
+                assert any(
+                    isinstance(call, ast.Call)
+                    and isinstance(call.func, ast.Attribute)
+                    and call.func.attr == "_validated"
+                    for call in ast.walk(method)
+                ), f"{path.name}: {node.name}.store_document validates on its own"
+    assert stores, "no backend found to check"
 
 
 def test_a_store_named_no_file_takes_its_own_backend_s_default(tmp_path):

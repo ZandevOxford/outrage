@@ -496,7 +496,70 @@ class Store(ABC):
         and all, which is decoded before it is written. The stored document is
         plain text either way, so readers are unaffected. Its purpose is to
         make damage in transit loud — see ``_decode``.
+
+        Every refusal above is :meth:`_validated`'s, which an implementation
+        calls before it writes anything.
         """
+
+    @classmethod
+    def _validated(
+        cls,
+        key: str,
+        content: str,
+        format: str | None,
+        *,
+        title: str | None,
+        encoding: str | None,
+    ) -> tuple[keys.Key, str, str, str | None]:
+        """What :meth:`store_document` accepts, and what it turns into.
+
+        Returns the parsed key, the decoded content, the resolved format and
+        the decoded title — the arguments as they are actually written, with
+        every refusal already made. A ``?`` in the key survives this: which
+        number it becomes is read from the store, inside the transaction that
+        writes it, and is the one part of the call that is not decidable here.
+
+        A classmethod rather than a template method calling down into the
+        backend. It leaves every implementation's control flow exactly where it
+        is, while making it impossible for a backend to validate differently
+        without visibly not calling this — two stores that disagreed about what
+        a key or a format is would be two namespaces, which is the thing the
+        split of :mod:`rage.store` from a backend exists to prevent.
+
+        **Call it inside the logged method.** ``_logged`` binds the caller's
+        arguments before the body runs, so validation lifted out in front of
+        the decorated call would leave the log recording the normalised
+        arguments rather than the ones that arrived — and what the caller
+        actually passed is the one thing that log is for.
+
+        The order is guarded, not incidental: the key parses first, then the
+        content is a string, then the encoding decodes it, then the format is
+        detected from what the decode produced, and the title is checked last.
+        Detecting a format before decoding would read the JSON *literal* rather
+        than the document inside it. ``tests/test_store.py`` has a case per
+        refusal.
+        """
+        parsed = keys.parse(key, allow_wildcard=True)
+        if not isinstance(content, str):
+            raise TypeError(f"content must be a string, got {type(content).__name__}")
+        if encoding is not None:
+            if encoding not in ENCODINGS:
+                raise ValueError(f"encoding must be one of {ENCODINGS}, got {encoding!r}")
+            content = _decode(content, encoding, "content")
+            if title is not None:
+                if not isinstance(title, str):
+                    raise TypeError(f"title must be a string, got {type(title).__name__}")
+                title = _decode(title, encoding, "title")
+        if format is None:
+            format = _detect_format(content)
+        elif format not in FORMATS:
+            raise ValueError(f"format must be one of {FORMATS}, got {format!r}")
+        if title is not None:
+            if parsed.is_metadata:
+                raise ValueError(f"cannot attach a title to metadata key {key!r}")
+            if not isinstance(title, str):
+                raise TypeError(f"title must be a string, got {type(title).__name__}")
+        return parsed, content, format, title
 
     @abstractmethod
     def delete(
