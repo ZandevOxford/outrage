@@ -19,7 +19,8 @@ import pytest
 from rage import keys, messages
 from rage.errors import RageError
 from rage.mounts import Mount, Mounts, ReadOnlyMountError
-from rage.store import KeyNotFoundError, Store
+from rage.store import KeyNotFoundError
+from rage.store_sqlite import SqliteStore
 
 SOURCE = pathlib.Path(messages.__file__).parent
 RAGE_ERRORS = {
@@ -173,7 +174,7 @@ def test_a_render_without_a_template_raises_rather_than_guessing():
 
 def test_a_read_only_refusal_still_names_the_key_that_was_asked_for(tmp_path):
     """Raised at the boundary, so it was already right; kept so it stays right."""
-    with Store(tmp_path / "root") as root, Store(tmp_path / "ref") as ref:
+    with SqliteStore(tmp_path / "root") as root, SqliteStore(tmp_path / "ref") as ref:
         with Mounts({"": root, "ref": ref}, read_only=["ref"]) as table:
             with pytest.raises(ReadOnlyMountError) as raised:
                 table.resolve("ref/x").writable()

@@ -18,6 +18,12 @@ Nothing here is destructive. The two repairs are a WAL checkpoint and a
 VACUUM: both rewrite where the bytes live and neither changes a document. A
 repair that could lose content would need a backup first, and this module
 deliberately has no such repair to offer.
+
+Backend specific, and unapologetically so. Everything here is a question about
+a SQLite database, so it takes a :class:`~rage.store_sqlite.SqliteStore` and
+reaches through its ``connection``; there is nothing on the abstract
+:class:`~rage.store.Store` for it to ask, because "is the WAL larger than the
+database" has no meaning for a store kept some other way.
 """
 
 from __future__ import annotations
@@ -28,7 +34,8 @@ from pathlib import Path
 
 from . import keys
 from .errors import RageError
-from .store import DB_FILENAME, SCHEMA_VERSION, Store, store_file
+from .store import DB_FILENAME, store_file
+from .store_sqlite import SCHEMA_VERSION, SqliteStore
 
 
 class CheckError(RageError, RuntimeError):
@@ -90,12 +97,13 @@ _REPAIRS = frozenset({_WAL_UNCHECKPOINTED})
 WAL_RATIO = 1.0
 
 
-def check(store: Store) -> Report:
+def check(store: SqliteStore) -> Report:
     """Ask SQLite and the schema whether the store is what it should be.
 
     Read-only. It runs against an open store rather than a path because the
-    invariants being checked are the ones ``Store`` writes rows under, and
-    opening through ``Store`` is also what proves the file opens at all.
+    invariants being checked are the ones :class:`~rage.store_sqlite.SqliteStore`
+    writes rows under, and opening through it is also what proves the file opens
+    at all.
     """
     connection = store.connection
     report = Report(path=store.path)
@@ -119,8 +127,8 @@ def check(store: Store) -> Report:
             )
         )
     elif report.schema < SCHEMA_VERSION:
-        # Not a fault: opening through Store migrates. Worth saying because it
-        # means the file on disk is not the shape the code assumes until then.
+        # Not a fault: opening through SqliteStore migrates. Worth saying because
+        # it means the file on disk is not the shape the code assumes until then.
         report.problems.append(
             Problem(
                 "note",
@@ -250,7 +258,7 @@ def _listed(names: list[str], shown: int = 5) -> str:
     return ", ".join(names[:shown]) + (f", and {rest} more" if rest > 0 else "")
 
 
-def _check_wal(store: Store, report: Report) -> None:
+def _check_wal(store: SqliteStore, report: Report) -> None:
     """Compare the database with its write-ahead log."""
     report.main_bytes = store.path.stat().st_size if store.path.exists() else 0
     wal = store.path.with_name(store.path.name + "-wal")
@@ -277,7 +285,7 @@ class Repaired:
     after: int
 
 
-def repair(store: Store) -> list[Repaired]:
+def repair(store: SqliteStore) -> list[Repaired]:
     """Fold the write-ahead log back and compact the database.
 
     Both steps are safe to run on a healthy store and safe to run twice. Sizes
@@ -305,7 +313,7 @@ def repair(store: Store) -> list[Repaired]:
     return done
 
 
-def _sizes(store: Store) -> tuple[int, int]:
+def _sizes(store: SqliteStore) -> tuple[int, int]:
     """Bytes in the database and in its write-ahead log, in that order."""
     wal = store.path.with_name(store.path.name + "-wal")
     return (

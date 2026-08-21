@@ -13,18 +13,18 @@ from rage import eventlog
 from rage import server as server_module
 from rage.eventlog import EventLog
 from rage.server import RequestLog, build_server, parse_args
-from rage.store import Store
+from rage.store_sqlite import SqliteStore
 
 
 @pytest.fixture
 def store(tmp_path):
-    with Store(tmp_path) as opened:
+    with SqliteStore(tmp_path) as opened:
         yield opened
 
 
 @pytest.fixture
 def server(tmp_path):
-    with Store(tmp_path) as store:
+    with SqliteStore(tmp_path) as store:
         store.store_document("context/a1b2/design", "# Store schema\n\n" + "body " * 1000)
         store.store_document("context/a1b2/design/!title", "Store schema")
         store.store_document("context/c3d4/task", "Add a delete tool.")
@@ -336,7 +336,7 @@ def session_calls(tmp_path, *calls, content="excerpt"):
     log = EventLog(tmp_path / "log.jsonl", content=content)
 
     async def drive():
-        with Store(tmp_path / "store", log=log) as store:
+        with SqliteStore(tmp_path / "store", log=log) as store:
             store.store_document("a/b", "hello there", title="A doc")
             server = build_server(store, log)
             low = server._lowlevel_server
@@ -362,7 +362,7 @@ def session_calls(tmp_path, *calls, content="excerpt"):
 
 
 def test_the_middleware_is_registered_only_when_there_is_a_log(tmp_path):
-    with Store(tmp_path) as store:
+    with SqliteStore(tmp_path) as store:
         plain = build_server(store)
         logged = build_server(store, EventLog(tmp_path / "log.jsonl"))
 
@@ -444,7 +444,7 @@ def test_the_content_policy_reaches_the_request_layer(tmp_path):
 
 
 def a_wide_store(tmp_path, count: int, content: str = "body"):
-    store = Store(tmp_path)
+    store = SqliteStore(tmp_path)
     for number in range(1, count + 1):
         store.store_document(f"notes/{number}", content, title=f"Note {number}")
     return store
@@ -501,7 +501,7 @@ def test_a_read_is_capped_in_characters_before_it_reaches_the_limit(tmp_path):
 
 
 def test_the_untitled_are_counted_rather_than_listed(tmp_path):
-    store = Store(tmp_path)
+    store = SqliteStore(tmp_path)
     for number in range(1, 31):
         store.store_document(f"notes/{number}", "body")
     with store:
@@ -532,7 +532,7 @@ def test_the_instructions_say_a_listing_is_a_page(server):
 
 
 def test_the_untitled_are_enumerated_by_the_tool_that_pages_them(tmp_path):
-    store = Store(tmp_path)
+    store = SqliteStore(tmp_path)
     for number in range(1, 31):
         store.store_document(f"notes/{number}", "body")
 
@@ -551,7 +551,7 @@ def test_the_untitled_are_enumerated_by_the_tool_that_pages_them(tmp_path):
 
 
 def test_missing_metadata_is_asked_for_one_name_at_a_time(tmp_path):
-    store = Store(tmp_path)
+    store = SqliteStore(tmp_path)
     store.store_document("notes/1", "body", title="Titled")
 
     with store:
@@ -566,7 +566,7 @@ def test_missing_metadata_is_asked_for_one_name_at_a_time(tmp_path):
 
 
 def test_missing_metadata_defaults_to_titles(tmp_path):
-    store = Store(tmp_path)
+    store = SqliteStore(tmp_path)
     store.store_document("notes/1", "body")
 
     with store:
@@ -574,7 +574,7 @@ def test_missing_metadata_defaults_to_titles(tmp_path):
 
 
 def test_the_untitled_are_counted_over_this_page_not_the_whole_subtree(tmp_path):
-    store = Store(tmp_path)
+    store = SqliteStore(tmp_path)
     for number in range(1, 9):
         store.store_document(f"notes/{number}", "body")
     for number in (2, 5, 7):
@@ -600,7 +600,7 @@ def test_the_untitled_are_counted_over_this_page_not_the_whole_subtree(tmp_path)
 
 
 def test_paging_a_survey_tiles_its_windows(tmp_path):
-    store = Store(tmp_path)
+    store = SqliteStore(tmp_path)
     # `a` and `a/x` are both documents: a key holding content and having keys
     # beneath it is ordinary here, and it is what makes the windows subtle.
     for key in ["a", "a/x", "a/y", "b", "b/p", "c"]:

@@ -1032,7 +1032,15 @@ def _report_remainder(
 
 
 def check_command(args: argparse.Namespace, out: TextIO) -> int:
-    """Report on the store file, and optionally fold its sidecar back in."""
+    """Report on the store file, and optionally fold its sidecar back in.
+
+    The one pair of subcommands that is about a *backend* rather than about
+    documents: :mod:`rage.maintenance` asks SQLite about integrity, the schema
+    version and the WAL, and takes a
+    :class:`~rage.store_sqlite.SqliteStore` for it. That is what
+    ``_open_existing`` hands back while SQLite is the only backend; a second
+    one would need this command to say which store it can check.
+    """
     with _open_existing(args) as opened:
         report = maintenance.check(opened)
         _print_report(report, out)

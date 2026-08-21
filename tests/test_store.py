@@ -1,10 +1,21 @@
+"""What a store does, asked of the only backend there is.
+
+Every test here is about the contract :class:`rage.store.Store` states -- keys,
+ranges, subtrees, pages, excerpts, the event log -- rather than about how
+SQLite keeps any of it. It runs against
+:class:`~rage.store_sqlite.SqliteStore` because that is the one implementation
+this build has, and a second backend should be able to pass this file
+unchanged but for the fixtures at the top. What is genuinely SQLite's own --
+the schema, its migrations, the connection per thread -- is in
+``test_store_sqlite.py``.
+"""
+
 import json
 import sqlite3
 import threading
-from pathlib import Path
 
 import pytest
-from conftest import raises_rendered
+from conftest import in_threads, raises_rendered
 
 from rage import keys
 from rage import store as store_module
@@ -17,11 +28,12 @@ from rage.store import (
     PatternNotFoundError,
     Store,
 )
+from rage.store_sqlite import SqliteStore
 
 
 @pytest.fixture
 def store(tmp_path):
-    with Store(tmp_path / "store") as s:
+    with SqliteStore(tmp_path / "store") as s:
         yield s
 
 
@@ -29,7 +41,7 @@ def store(tmp_path):
 def logged(tmp_path):
     """A store that records what it is asked to do."""
     log = EventLog(tmp_path / "log.jsonl")
-    with Store(tmp_path / "store", log=log) as s:
+    with SqliteStore(tmp_path / "store", log=log) as s:
         yield s
     log.close()
 
@@ -53,17 +65,10 @@ def populated(store):
 # -- setup ---------------------------------------------------------------
 
 
-def test_creates_directory_and_database(tmp_path):
-    directory = tmp_path / "nested" / ".rage"
-    with Store(directory) as s:
-        assert s.path == directory / "store.sqlite"
-    assert (directory / "store.sqlite").exists()
-
-
 def test_reopening_keeps_content(tmp_path):
-    with Store(tmp_path) as s:
+    with SqliteStore(tmp_path) as s:
         s.store_document("a", "hello")
-    with Store(tmp_path) as s:
+    with SqliteStore(tmp_path) as s:
         assert s.retrieve_document("a").content == "hello"
 
 
@@ -75,78 +80,6 @@ def test_resolve_directory_prefers_explicit_then_env_then_cwd(tmp_path, monkeypa
     monkeypatch.setenv(store_module.ENV_DIR, str(tmp_path / "from-env"))
     assert store_module.resolve_directory() == tmp_path / "from-env"
     assert store_module.resolve_directory(tmp_path / "explicit") == tmp_path / "explicit"
-
-
-def test_rejects_a_newer_schema(tmp_path):
-    with Store(tmp_path) as s:
-        s._conn.execute("PRAGMA user_version=999")
-        s._conn.commit()
-    with pytest.raises(RuntimeError, match="newer version"):
-        Store(tmp_path)
-
-
-#: The table as it stood before ``sort_key`` was added. Spelled out rather than
-#: taken from ``store._SCHEMA``, which is the *current* schema: building an old
-#: store out of the new definition tests the migration against a database that
-#: never existed.
-_SCHEMA_BEFORE_SORT_KEY = """
-CREATE TABLE documents (
-  key        TEXT PRIMARY KEY,
-  doc_key    TEXT NOT NULL,
-  meta_name  TEXT,
-  parent     TEXT NOT NULL,
-  content    TEXT NOT NULL,
-  format     TEXT,
-  updated_at TEXT NOT NULL
-);
-"""
-
-
-def an_old_store(directory: Path, version: int, rows: list[tuple]) -> None:
-    """A store at ``version``, written the way that version wrote them."""
-    directory.mkdir(exist_ok=True)
-    conn = sqlite3.connect(directory / "store.sqlite")
-    conn.executescript(_SCHEMA_BEFORE_SORT_KEY)
-    conn.executemany(
-        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, updated_at)"
-        " VALUES (?, ?, ?, ?, ?, 'markdown', 'then')",
-        rows,
-    )
-    conn.execute(f"PRAGMA user_version={version}")
-    conn.commit()
-    conn.close()
-
-
-def test_migrates_period_delimited_keys_to_slashes(tmp_path):
-    """A schema 1 store was written before the delimiter changed."""
-    directory = tmp_path / ".rage"
-    directory.mkdir()
-    conn = sqlite3.connect(directory / "store.sqlite")
-    conn.executescript(_SCHEMA_BEFORE_SORT_KEY)
-    conn.executemany(
-        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, updated_at)"
-        " VALUES (?, ?, ?, ?, ?, 'markdown', 'then')",
-        [
-            ("context.a1b2.design", "context.a1b2.design", None, "context.a1b2", "Body."),
-            (
-                "context.a1b2.design:title",
-                "context.a1b2.design",
-                "title",
-                "context.a1b2.design",
-                "Store schema",
-            ),
-        ],
-    )
-    conn.execute("PRAGMA user_version=1")
-    conn.commit()
-    conn.close()
-
-    with Store(directory) as s:
-        assert s._conn.execute("PRAGMA user_version").fetchone()[0] == store_module.SCHEMA_VERSION
-        assert s.retrieve_document("context/a1b2/design").content == "Body."
-        assert [e.key for e in s.list_keys("context/a1b2").items] == ["context/a1b2/design"]
-        survey = s.get_documents(BoundedSubtree("context"), meta_name="title")
-        assert [e.key for e in survey.items] == ["context/a1b2/design/!title"]
 
 
 # -- storing -------------------------------------------------------------
@@ -721,7 +654,7 @@ def test_storing_an_empty_document_is_not_a_deletion(store):
 
 
 def test_a_store_without_a_log_writes_nothing(tmp_path):
-    with Store(tmp_path / "store") as s:
+    with SqliteStore(tmp_path / "store") as s:
         s.store_document("a/b", "body")
         s.retrieve_document("a/b")
 
@@ -864,7 +797,7 @@ def test_a_backup_is_a_store_that_can_be_opened(populated, tmp_path):
     restored_dir.mkdir()
     (restored_dir / store_module.DB_FILENAME).write_bytes(result.path.read_bytes())
 
-    with Store(restored_dir) as restored:
+    with SqliteStore(restored_dir) as restored:
         assert restored.retrieve_document("context/a1b2/task").content == "Add a delete tool."
 
 
@@ -923,7 +856,7 @@ def test_the_store_itself_is_refused_as_a_destination(populated):
 def test_a_short_backup_is_refused_rather_than_returned(populated, monkeypatch):
     """The count is the only check that catches a copy which opens cleanly."""
     monkeypatch.setattr(
-        store_module.Store,
+        SqliteStore,
         "_verify_backup",
         lambda self, target: (_ for _ in ()).throw(
             store_module.BackupError("backup-short", target=str(target), found=0, expected=7)
@@ -947,7 +880,7 @@ def test_a_backup_is_logged_with_what_it_wrote(logged, tmp_path):
 
 
 def test_numbered_keys_come_back_in_numeric_order(tmp_path):
-    with Store(tmp_path) as s:
+    with SqliteStore(tmp_path) as s:
         for _ in range(12):
             s.store_document("findings/?", "a finding")
 
@@ -964,7 +897,7 @@ def test_a_cursor_parked_on_a_key_does_not_miss_a_later_one(tmp_path):
     Sorting keys as text puts 'findings/10' behind 'findings/9', so a reader
     resuming after the ninth would never see the tenth.
     """
-    with Store(tmp_path) as s:
+    with SqliteStore(tmp_path) as s:
         for _ in range(9):
             s.store_document("findings/?", "before")
         ninth = s.list_keys("findings").items[-1].key
@@ -975,7 +908,7 @@ def test_a_cursor_parked_on_a_key_does_not_miss_a_later_one(tmp_path):
 
 
 def test_a_padded_key_names_the_same_document_as_the_unpadded_one(tmp_path):
-    with Store(tmp_path) as s:
+    with SqliteStore(tmp_path) as s:
         written = s.store_document("context/007/task", "the body")
 
         assert written == "context/7/task"
@@ -988,94 +921,9 @@ def test_a_padded_key_names_the_same_document_as_the_unpadded_one(tmp_path):
 
 
 def test_allocation_counts_past_a_key_that_was_written_padded(tmp_path):
-    with Store(tmp_path) as s:
+    with SqliteStore(tmp_path) as s:
         s.store_document("context/007", "seventh")
         assert s.store_document("context/?", "next") == "context/8"
-
-
-def test_migrates_a_store_that_predates_the_sort_key(tmp_path):
-    directory = tmp_path / ".rage"
-    an_old_store(
-        directory,
-        version=2,
-        rows=[
-            ("notes/10", "notes/10", None, "notes", "tenth"),
-            ("notes/2", "notes/2", None, "notes", "second"),
-            ("notes/03", "notes/03", None, "notes", "third, written padded"),
-        ],
-    )
-
-    with Store(directory) as s:
-        assert s._conn.execute("PRAGMA user_version").fetchone()[0] == store_module.SCHEMA_VERSION
-        # notes/03 was rewritten, not just indexed: the key it names has changed.
-        found = s.get_documents(BoundedSubtree("notes")).items
-        assert [e.key for e in found] == ["notes/2", "notes/3", "notes/10"]
-        assert s.retrieve_document("notes/3").content == "third, written padded"
-
-
-def test_a_store_holding_both_spellings_is_refused_rather_than_merged(tmp_path):
-    directory = tmp_path / ".rage"
-    an_old_store(
-        directory,
-        version=2,
-        rows=[
-            ("notes/1", "notes/1", None, "notes", "one spelling"),
-            ("notes/01", "notes/01", None, "notes", "the other"),
-        ],
-    )
-
-    # Nothing can tell which of the two was meant, so neither is thrown away.
-    with pytest.raises(RuntimeError, match="one key once leading zeros"):
-        Store(directory)
-
-
-def test_a_migrated_store_has_exactly_the_schema_a_fresh_one_has(tmp_path):
-    """Otherwise an older build writes rows a newer one cannot order.
-
-    `ALTER TABLE ADD COLUMN` needs a default for a NOT NULL column, and that
-    default outlives the migration: a server still running the previous build
-    would insert an empty sort key without complaint, and those rows sort ahead
-    of everything. Observed, not hypothetical.
-    """
-    migrated = tmp_path / "migrated"
-    an_old_store(migrated, version=2, rows=[("notes/1", "notes/1", None, "notes", "body")])
-    with Store(migrated):
-        pass
-
-    with Store(tmp_path / "fresh") as s:
-        s.store_document("notes/1", "body")
-
-    def shape(directory):
-        conn = sqlite3.connect(directory / "store.sqlite")
-        # name, type, notnull and default per column, plus the indexes. Not the
-        # DDL text: ALTER TABLE RENAME quotes the table name, which differs
-        # without meaning anything, while the column default -- the thing that
-        # was actually wrong -- does not show up in a casual reading of it.
-        columns = [tuple(row[1:5]) for row in conn.execute("PRAGMA table_info(documents)")]
-        indexes = sorted(row[1] for row in conn.execute("PRAGMA index_list(documents)"))
-        return columns, indexes
-
-    assert shape(migrated) == shape(tmp_path / "fresh")
-
-    columns, _ = shape(migrated)
-    sort_key = [column for column in columns if column[0] == "sort_key"]
-    assert sort_key == [("sort_key", "TEXT", 1, None)], "sort_key must be NOT NULL with no default"
-
-
-def test_the_migration_fills_in_a_sort_key_for_every_row(tmp_path):
-    directory = tmp_path / ".rage"
-    an_old_store(
-        directory,
-        version=2,
-        rows=[
-            ("notes/1", "notes/1", None, "notes", "body"),
-            ("notes/1/!title", "notes/1", "title", "notes/1", "A title"),
-        ],
-    )
-
-    with Store(directory) as s:
-        empty = s._conn.execute("SELECT count(*) FROM documents WHERE sort_key = ''").fetchone()[0]
-        assert empty == 0
 
 
 # -- pagination ----------------------------------------------------------
@@ -1401,46 +1249,6 @@ def test_missing_meta_stats_rejects_an_empty_name_list(store):
         store.missing_meta_stats(meta_name=[])
 
 
-def test_schema_3_metadata_keys_migrate_to_a_segment(tmp_path):
-    # A schema 3 store, written before metadata became a segment.
-    path = tmp_path / "store.sqlite"
-    con = sqlite3.connect(path)
-    con.executescript(store_module._TABLE.format(name="documents") + store_module._INDEXES)
-    con.executemany(
-        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, "
-        "updated_at, sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            ("a", "a", None, "", "body", "markdown", "2026-01-01T00:00:00+00:00", "a"),
-            ("a/b", "a/b", None, "a", "body", "markdown", "2026-01-01T00:00:00+00:00", "a/b"),
-            ("a:title", "a", "title", "a", "A", "markdown", "2026-01-01T00:00:00+00:00", "a:title"),
-            ("a/b:title", "a/b", "title", "a/b", "B", "markdown",
-             "2026-01-01T00:00:00+00:00", "a/b:title"),
-        ],
-    )
-    con.execute("PRAGMA user_version=3")
-    con.commit()
-    con.close()
-
-    opened = Store(tmp_path)
-
-    # The key moved; what was derived from it did not, because none of those
-    # columns ever held the suffix.
-    rows = {r["key"]: r for r in opened.connection.execute("SELECT * FROM documents")}
-    assert set(rows) == {"a", "a/b", "a/!title", "a/b/!title"}
-    assert rows["a/!title"]["doc_key"] == "a"
-    assert rows["a/!title"]["meta_name"] == "title"
-    assert rows["a/!title"]["parent"] == "a"
-    assert rows["a/b/!title"]["content"] == "B"
-
-    # And the sort keys now put a document's metadata ahead of its subtree.
-    assert rows["a/!title"]["sort_key"] < rows["a/b"]["sort_key"]
-    assert rows["a/!title"]["sort_key"] < rows["a/b/!title"]["sort_key"]
-
-    assert opened.retrieve_document("a/!title").content == "A"
-    version = opened.connection.execute("PRAGMA user_version").fetchone()[0]
-    assert version == store_module.SCHEMA_VERSION
-
-
 def test_survey_windows_tile_over_adversarial_keys(tmp_path):
     """Windows must tile whatever the keys look like, not just tidy ones.
 
@@ -1464,7 +1272,7 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
 
     for mask in range(1, 2 ** len(keyset)):
         titled = [k for i, k in enumerate(keyset) if mask >> i & 1]
-        store = Store(tmp_path / f"s{mask}")
+        store = SqliteStore(tmp_path / f"s{mask}")
         for key in keyset:
             store.store_document(key, "body")
         for key in titled:
@@ -1489,58 +1297,6 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
         assert len(seen) == len(set(seen)), f"double counted, titled={titled}"
         assert counted == whole.total, f"titled={titled}"
         store.connection.close()
-
-
-def test_schema_4_sort_keys_are_rebuilt_for_the_marked_sort_form(tmp_path):
-    # Schema 4 joined the sort form with `/` and leaned on `!` sorting below
-    # every character a segment could begin with. Schema 5 marks every segment
-    # and joins below every legal segment character instead. Only `sort_key`
-    # changes: the keys themselves are already right.
-    def schema_4_sort_form(key):
-        def pad(segment):
-            if segment.startswith("!"):
-                return "!" + pad(segment[1:])
-            return segment.zfill(16) if segment.isdigit() else segment
-
-        return "/".join(pad(part) for part in key.split("/"))
-
-    written = ["a", "a-x", "a/b", "a/2", "a/10", "a/!title", "a-x/!title"]
-    con = sqlite3.connect(tmp_path / "store.sqlite")
-    con.executescript(store_module._TABLE.format(name="documents") + store_module._INDEXES)
-    con.executemany(
-        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, "
-        "updated_at, sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        [
-            (
-                keys.parse(k).key,
-                keys.parse(k).doc_key,
-                keys.parse(k).meta_name,
-                keys.parse(k).parent,
-                "body",
-                "markdown",
-                "2026-01-01T00:00:00+00:00",
-                schema_4_sort_form(k),
-            )
-            for k in written
-        ],
-    )
-    con.execute("PRAGMA user_version=4")
-    con.commit()
-    con.close()
-
-    opened = Store(tmp_path)
-
-    assert opened.connection.execute("PRAGMA user_version").fetchone()[0] == 5
-    rows = dict(opened.connection.execute("SELECT key, sort_key FROM documents"))
-    assert set(rows) == set(written)
-    for key, sort_key in rows.items():
-        assert sort_key == keys.sort_form(key), key
-
-    # The inversion schema 4 recorded as unfixed, gone: `a` sorts before `a-x`
-    # as documents, and now so does their metadata.
-    assert rows["a"] < rows["a-x"]
-    assert rows["a/!title"] < rows["a-x/!title"]
-    opened.connection.close()
 
 
 def test_a_document_and_its_metadata_survive_the_rebuild_in_order(store):
@@ -1776,25 +1532,6 @@ def test_level_entry_agrees_with_the_listing_it_describes(ranged):
 # it. See `project/reference/planned/concurrency`.
 
 
-def _in_threads(work, threads=6):
-    """Run ``work(i)`` in parallel, re-raising whatever any thread raised."""
-    failures = []
-
-    def run(i):
-        try:
-            work(i)
-        except BaseException as exc:  # noqa: BLE001 - reported below
-            failures.append(exc)
-
-    workers = [threading.Thread(target=run, args=(i,)) for i in range(threads)]
-    for t in workers:
-        t.start()
-    for t in workers:
-        t.join()
-    if failures:
-        raise failures[0]
-
-
 def test_concurrent_reads_are_neither_corrupt_nor_silently_empty(store):
     for i in range(20):
         store.store_document(f"a/doc{i}", "body", title=f"title {i}")
@@ -1808,7 +1545,7 @@ def test_concurrent_reads_are_neither_corrupt_nor_silently_empty(store):
             assert page.total == 20
             assert page.items
 
-    _in_threads(read)
+    in_threads(read)
 
 
 def test_concurrent_writes_do_not_hand_out_a_number_twice(store):
@@ -1826,25 +1563,10 @@ def test_concurrent_writes_do_not_hand_out_a_number_twice(store):
         with lock:
             allocated.extend(mine)
 
-    _in_threads(allocate, threads=5)
+    in_threads(allocate, threads=5)
 
     assert len(allocated) == 100
     assert len(set(allocated)) == 100
-
-
-def test_a_connection_does_not_escape_its_thread(store):
-    """Each thread gets its own, so the objects differ and nothing is shared."""
-    seen = {}
-    lock = threading.Lock()
-
-    def note(i):
-        store.list_keys()  # opens this thread's connection
-        with lock:
-            seen[i] = id(store._conn)
-
-    _in_threads(note, threads=4)
-
-    assert len(set(seen.values())) == 4
 
 
 # -- the root ------------------------------------------------------------
@@ -1994,3 +1716,58 @@ def test_a_title_on_the_root_with_no_document_is_named_in_a_check(store, tmp_pat
     report = maintenance.check(store)
     notes = [p for p in report.problems if p.summary == "some metadata has no document"]
     assert notes and notes[0].detail == "/"
+
+
+# -- the interface -------------------------------------------------------
+#
+# `Store` is abstract, and these are the two things that fact has to buy: that
+# a backend cannot half-implement it and be instantiated anyway, and that every
+# operation a caller reaches for is named on the interface rather than only on
+# the backend that happens to be in front of them.
+
+
+def test_the_store_interface_cannot_be_instantiated():
+    with pytest.raises(TypeError, match="abstract"):
+        Store()
+
+
+def test_every_operation_a_caller_uses_is_declared_abstract():
+    """A method a backend may silently not implement is not a contract.
+
+    Named one by one rather than derived from the class, so that dropping
+    ``@abstractmethod`` from one of them fails here instead of quietly making
+    it optional for the next backend.
+    """
+    assert Store.__abstractmethods__ == frozenset(
+        {
+            "store_document",
+            "delete",
+            "descendant_count",
+            "exists",
+            "level_entry",
+            "retrieve_document",
+            "list_keys",
+            "get_documents",
+            "missing_meta_stats",
+            "keys_missing_meta",
+            "backup",
+            "close",
+        }
+    )
+
+
+def test_what_the_interface_settles_is_settled_once(tmp_path):
+    """Where the file is, and the directory around it, come from the base.
+
+    A backend that re-answered either would be free to disagree with
+    ``store_file`` about what ``--dir`` and a mount spec mean, which is the one
+    rule ``context/24/decisions`` exists to keep in one place.
+    """
+    s = SqliteStore(tmp_path / ".rage", filename="ref.sqlite")
+    try:
+        assert s.directory == tmp_path / ".rage"
+        assert s.path == tmp_path / ".rage" / "ref.sqlite"
+        assert type(s).__init__ is not Store.__init__
+        assert s.backup_path.__func__ is Store.backup_path
+    finally:
+        s.close()
