@@ -2,9 +2,10 @@
 
 ## Currently implemented
 
-Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4. Package
-installed in editable mode with `pip install -e ".[dev]"`. 638 tests and 11
-doctests passing, `ruff check` clean, as of 2026-08-20. Doctests are not in
+Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4, pyarrow
+25.0.1. Package installed in editable mode with `pip install -e ".[dev]"`; the
+parquet backend needs `.[parquet]` as well. 898 tests and 17 doctests passing,
+`ruff check` clean, as of 2026-08-21. Doctests are not in
 `testpaths` and need a second run: `pytest --doctest-modules src/rage`.
 `ruff format --check` reports six files it would reformat and has done for
 some time; the project lints and does not enforce the formatter.
@@ -53,6 +54,41 @@ backup. Two things moved with it rather than staying on the value types:
 `KeyRange.clauses` and `BoundedSubtree.clauses` are now `_range_clauses` and
 `_subtree_clauses` there, because what a bound *means* is the namespace's
 business and what it compiles to is a backend's.
+
+### 2a. Parquet backend — `src/rage/store_parquet.py` — done
+
+A second implementation of `Store`, read-only, for the reference-base case:
+tens of thousands of small documents built once and read many times. One
+columnar file, one row per key, sorted by `sort_key`, holding the SQLite
+columns plus a precomputed `chars`. Documents get in through
+`ParquetStore.build` and `rage pack`, which sources from a directory tree or
+from an existing store of any backend.
+
+pyarrow is an optional extra (`pip install 'rage[parquet]'`), imported inside
+the module, so a base install is untouched until something names a `.parquet`
+file. Which backend a store file uses follows from its extension —
+`store._backend_for` — so `--mount-ro ref=python.parquet` needs no new grammar.
+Read-only is a property of the backend (`Store.writable`) rather than of a
+mount configuration, so a parquet mount refuses writes whether or not
+`--mount-ro` named it, and cannot be the root mount at all.
+
+Measured at 40,000 rows against the same corpus in SQLite: the file is **11×
+smaller** (2.4 MB against 27.6 MB) and builds 4× faster; a survey of the whole
+corpus is 9× faster because `chars` answers `total_chars` without opening the
+content column; and a bounded range or a subtree read is a *bisect* rather than
+a scan — 14 ms to 0.04 ms. That last one only arrived once the subtree was
+bisected as well as the key range: a subtree is a contiguous stretch of the
+sort order too, and testing it per row against `doc_key` made a deep survey
+slower than SQLite's.
+
+The two backends are checked against each other rather than by re-running
+`test_store.py`, which half writes: one corpus in both, ~4,000 calls, every
+answer asserted equal.
+
+Two things this turned into defects, both now fixed: `rage check` and `rage
+repair` reached for a SQLite connection and gave a traceback, and
+`test_messages.py` kept a hand-written list of error classes that made two new
+ones invisible to three tests at once. Both are recorded in `context/35`.
 
 Where the file lives stays on the base — `store_file`, the directory, the
 `mkdir` — because it is the same question for every backend and the one rule

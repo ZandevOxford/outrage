@@ -34,7 +34,7 @@ from pathlib import Path
 
 from . import keys
 from .errors import RageError
-from .store import store_file
+from .store import Store, store_file
 from .store_sqlite import SCHEMA_VERSION, SqliteStore
 
 
@@ -105,7 +105,32 @@ _REPAIRS = frozenset({_WAL_UNCHECKPOINTED})
 WAL_RATIO = 1.0
 
 
-def check(store: SqliteStore) -> Report:
+def _sqlite_only(store: Store, action: str) -> SqliteStore:
+    """Refuse a store this module cannot ask its questions of.
+
+    ``check`` and ``repair`` are about a *backend*: integrity, the schema
+    version and the WAL are things SQLite knows and a parquet file has no
+    answer for. They were generic-sounding names over one backend, which
+    ``planned/backends`` recorded as an open question rather than a defect --
+    and a second backend is what turns it into one, because a caller can now
+    reach it and get a traceback where the rule says one line.
+
+    A refusal rather than a silent success. "Nothing to check" would read as a
+    clean bill of health for a store nothing looked at, which is the failure
+    this codebase keeps finding. What a backend-agnostic report would hold is
+    still open, and is now askable: see ``planned/storage``.
+    """
+    if not isinstance(store, SqliteStore):
+        raise CheckError(
+            "check-wrong-backend",
+            path=str(store.path),
+            backend=type(store).__name__,
+            action=action,
+        )
+    return store
+
+
+def check(store: Store) -> Report:
     """Ask SQLite and the schema whether the store is what it should be.
 
     Read-only. It runs against an open store rather than a path because the
@@ -113,7 +138,7 @@ def check(store: SqliteStore) -> Report:
     writes rows under, and opening through it is also what proves the file opens
     at all.
     """
-    connection = store.connection
+    connection = _sqlite_only(store, "check").connection
     report = Report(path=store.path)
 
     try:
@@ -293,13 +318,14 @@ class Repaired:
     after: int
 
 
-def repair(store: SqliteStore) -> list[Repaired]:
+def repair(store: Store) -> list[Repaired]:
     """Fold the write-ahead log back and compact the database.
 
     Both steps are safe to run on a healthy store and safe to run twice. Sizes
     are measured either side rather than reported from the action's own return
     value, because the question being asked is what the file looks like now.
     """
+    _sqlite_only(store, "repair")
     done = []
 
     before = _sizes(store)

@@ -20,16 +20,26 @@ written in these terms.
 Storage
 -------
 
-What a store is, the SQLite implementation of it, and the routing that makes
-several stores look like one namespace. :mod:`rage.store` is the contract and
-:mod:`rage.store_sqlite` is the only backend this build has; a caller that
-does not care which reads the first and never names the second.
+What a store is, the two implementations of it, and the routing that makes
+several stores look like one namespace. :mod:`rage.store` is the contract; a
+caller that does not care which storage it is reading stops there and never
+names a backend.
+
+The two backends answer the same twelve operations and are for different
+things. :mod:`rage.store_sqlite` is the one a store is opened as by default:
+read-write, accumulated a document at a time, and what session context and
+notes on a codebase live in. :mod:`rage.store_parquet` is one file, written
+whole and read many times, for a reference base of tens of thousands of
+documents; it refuses writes, and ``rage pack`` is how documents get into one.
+Which of the two a store file is kept in follows from its extension --
+:func:`rage.store._backend_for`.
 
 .. toctree::
    :maxdepth: 1
 
    store
    store_sqlite
+   store_parquet
    mounts
 
 Front ends

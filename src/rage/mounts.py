@@ -295,8 +295,23 @@ class Mounts:
                 raise MountError("mount-point-is-metadata", mount=parsed.key)
             if parsed.key in by_prefix:
                 raise MountError("mount-duplicate", mount=parsed.key)
+            # A backend that cannot be written is read-only here whether or not
+            # a flag said so. The flag records a *decision* about a store that
+            # could be written; this records what the storage is, and a mount
+            # that reported itself writable because nobody passed --mount-ro
+            # would be telling every caller something no write could make true.
+            storage = not type(store).writable
+            if storage and parsed.key == keys.ROOT:
+                # Same reason the flag is refused at the root, one layer down:
+                # the root owns every key no mount claims, so a root that
+                # cannot be written is a namespace with nowhere to put
+                # anything. Mount it at a prefix instead -- or, to simply read
+                # one, open it directly, which is what the command line does.
+                raise MountError("mount-root-not-writable", backend=type(store).__name__)
             by_prefix[parsed.key] = Mount(
-                prefix=parsed.key, store=store, read_only=parsed.key in refusing
+                prefix=parsed.key,
+                store=store,
+                read_only=storage or parsed.key in refusing,
             )
 
         # A read-only flag naming a mount point nothing is mounted at is a

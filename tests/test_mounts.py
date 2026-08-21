@@ -20,11 +20,12 @@ from rage.mounts import (
     READ_ONLY_MOUNT_KIND,
     MountError,
     Mounts,
+    ReadOnlyMountError,
     open_mounts,
     parse_spec,
 )
 from rage.server import build_server, parse_args
-from rage.store import StoreFileError
+from rage.store import BackendError, StoreFileError
 from rage.store_sqlite import SqliteStore
 
 
@@ -1141,3 +1142,100 @@ def test_the_server_reports_a_missing_read_only_store_as_one_line(tmp_path, caps
     assert main(["--dir", str(tmp_path / "base"), "--mount-ro", "ref=not-there.sqlite"]) == 1
     assert "read-only mount" in capsys.readouterr().err
     assert not missing.exists()
+
+
+# -- a mount whose backend cannot be written -------------------------------
+
+
+def a_packed_store(directory: Path, name: str = "ref.parquet") -> Path:
+    from rage.store_parquet import ParquetStore
+
+    ParquetStore.build(
+        directory / name,
+        [
+            ("python/os/path/join", "Join one or more path components.", None, None),
+            ("python/os/path/join/!title", "os.path.join", None, None),
+            ("python/os/getcwd", "Return the current working directory.", None, None),
+        ],
+    )
+    return directory / name
+
+
+def test_a_parquet_mount_is_read_only_without_anyone_saying_so(tmp_path):
+    """The flag records a decision about a store that could be written.
+
+    This records what the storage *is*. A mount that reported itself writable
+    because nobody passed --mount-ro would be telling every caller something no
+    write could make true, so the backend decides and the flag only adds.
+    """
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    a_packed_store(tmp_path / "base")
+
+    with open_mounts(tmp_path / "base", ["ref=ref.parquet"]) as table:
+        mount = table.resolve("ref/python/os/getcwd")
+        assert mount.read_only
+        assert [m.prefix for m in table.read_only] == ["ref"]
+        assert [m.kind for m in table.read_only] == [READ_ONLY_MOUNT_KIND]
+
+
+def test_a_parquet_mount_refuses_a_write_without_offering_a_flag(tmp_path):
+    """Unlike --mount-ro, there is no way of opening it that would succeed."""
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    a_packed_store(tmp_path / "base")
+
+    with open_mounts(tmp_path / "base", ["ref=ref.parquet"]) as table:
+        with raises_rendered(ReadOnlyMountError, "read-only") as raised:
+            table.resolve("ref/python/new").writable()
+        assert raised.value.code == "mount-read-only"
+
+
+def test_a_parquet_mount_reads_through_the_server(tmp_path):
+    """The point of the whole piece: a reference base behind a prefix."""
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    a_packed_store(tmp_path / "base")
+    SqliteStore(tmp_path / "base", filename="store.sqlite").close()
+
+    with open_mounts(tmp_path / "base", ["ref=ref.parquet"]) as table:
+        server = build_server(table)
+        read = call(server, "retrieve_document", key="ref/python/os/getcwd")
+        assert read["content"] == "Return the current working directory."
+
+        survey = call(server, "get_documents", key="ref", meta_name=["title"])
+        assert [d["key"] for d in survey["documents"]] == ["ref/python/os/path/join/!title"]
+
+        listed = call(server, "list_keys", key="ref/python/os")
+        assert [e["key"] for e in listed["entries"]] == [
+            "ref/python/os/getcwd",
+            "ref/python/os/path",
+        ]
+
+        refused = call_expecting_error(
+            server, "store_document", key="ref/python/new", content="x"
+        )
+        assert "read-only" in refused
+
+
+def test_a_parquet_store_cannot_be_the_root_mount(tmp_path):
+    """The root owns every key no mount claims, so nothing would have anywhere
+    to go. Reading one directly is a different question, and the command line's.
+    """
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    a_packed_store(tmp_path / "base", "root.parquet")
+
+    with raises_rendered(MountError, "nothing would have anywhere to go") as raised:
+        open_mounts(tmp_path / "base", root_mount="root.parquet")
+    assert raised.value.code == "mount-root-not-writable"
+
+
+def test_a_missing_parquet_mount_is_refused_rather_than_created(tmp_path):
+    """A SQLite mount that is not there is created empty; this one is not.
+
+    The same protection --mount-ro gets from `mount-read-only-missing`, and it
+    holds here without the flag: an empty reference base is one no read could
+    ever contradict.
+    """
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+
+    with raises_rendered(BackendError, "no parquet store at"):
+        open_mounts(tmp_path / "base", ["ref=absent.parquet"])
+    assert not (tmp_path / "base" / "absent.parquet").exists()

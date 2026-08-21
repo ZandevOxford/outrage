@@ -1,18 +1,24 @@
 """The SQLite backend: one database file, one row per key.
 
-The implementation behind :class:`rage.store.Store`, and the only backend this
-build has. Everything specific to SQLite lives here -- the schema and its
+The read-write implementation of :class:`rage.store.Store`, and the one a store
+is opened as when its file says nothing else. Everything specific to SQLite
+lives here -- the schema and its
 migrations, the connection handling, and the SQL that every read and write is
 expressed as -- so that :mod:`rage.store` says what a store *is* without saying
 how this one is kept.
 
-The split is not speculative tidiness. A second backend is planned
-(``project/reference/planned/parquet``), and the parts of this module that
-would not survive it are exactly the parts that are here: a row-per-key table
-with secondary indexes, ``NOT EXISTS`` against a self-join, and a connection
-per thread. What stays above, in :mod:`rage.store`, is the vocabulary a caller
-speaks -- keys, ranges, subtrees, pages and excerpts -- which is backend
-independent because it is about the namespace rather than about storage.
+The split was not speculative tidiness, and :mod:`rage.store_parquet` is the
+evidence: the parts of this module that did not survive a second backend are
+exactly the parts that are here -- a row-per-key table with secondary indexes,
+``NOT EXISTS`` against a self-join, and a connection per thread -- while every
+word of the vocabulary above was inherited unchanged. That vocabulary is keys,
+ranges, subtrees, pages and excerpts, and it is backend independent because it
+is about the namespace rather than about storage.
+
+Read this one against :mod:`rage.store_parquet` where the two answer the same
+question differently. ``_range_clauses`` compiles a range to a predicate
+because a row-per-key table evaluates one; the parquet backend bisects a sorted
+file instead, and the two are written to be read side by side.
 
 Nothing here is imported by a caller that only wants to read and write
 documents: :func:`rage.store.default_store` is what chooses this class, and it
@@ -56,7 +62,7 @@ from .store import (
 )
 
 #: What a SQLite store's file is called when a caller names none. The name a
-#: second backend's default would sit beside, each in its own module, neither
+#: parquet backend's default sits beside, each in its own module, neither
 #: needing a qualifier to say which storage it is for. That a store *is* a file
 #: inside a directory is not decided here -- see :func:`rage.store.store_file`;
 #: only what this backend calls one.
@@ -101,6 +107,11 @@ class SqliteStore(Store):
     """A document store held in a single SQLite database."""
 
     default_filename = DEFAULT_STORE_FILE
+    #: Stated rather than inherited. The default is True, so a backend that
+    #: forgets reports itself writable -- which is the wrong way round for a
+    #: mistake to fall, and `test_every_backend_states_whether_it_can_be_written`
+    #: is why this is here rather than left to the base.
+    writable = True
 
     def __init__(
         self,

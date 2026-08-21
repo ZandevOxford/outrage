@@ -23,23 +23,38 @@ from rage.store import KeyNotFoundError
 from rage.store_sqlite import SqliteStore
 
 SOURCE = pathlib.Path(messages.__file__).parent
-RAGE_ERRORS = {
-    "RageError",
-    "BackupError",
-    "CheckError",
-    "ConfigError",
-    "ConflictingSourceError",
-    "InstallError",
-    "InvalidKeyError",
-    "KeyNotFoundError",
-    "LogError",
-    "MountError",
-    "PatternNotFoundError",
-    "ReadOnlyMountError",
-    "SourceMissingError",
-    "StoreFileError",
-    "UnmappableError",
-}
+
+
+def _rage_errors() -> set[str]:
+    """Every exception class in the package that ends up a ``RageError``.
+
+    Derived from the source rather than listed here. A hand-kept list is a
+    second place to remember a new error, and the way it fails is silent: a
+    class missing from it makes every raise site invisible to the three tests
+    below, so a code with no template, a message composed at the raise site,
+    and a template nothing raises all pass. That happened when the parquet
+    backend added two.
+
+    Resolved transitively, so a class inheriting one of the others is counted
+    however deep the chain goes, and read from ``ast`` rather than by importing
+    because the raise sites are read that way too and the two must agree about
+    which files they are looking at.
+    """
+    bases: dict[str, set[str]] = {}
+    for path in sorted(SOURCE.glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ClassDef):
+                bases[node.name] = {b.id for b in node.bases if isinstance(b, ast.Name)}
+
+    errors = {"RageError"}
+    while True:
+        found = {name for name, parents in bases.items() if parents & errors}
+        if found <= errors:
+            return errors
+        errors |= found
+
+
+RAGE_ERRORS = _rage_errors()
 
 
 def _raises() -> list[tuple[str, int, ast.Call]]:

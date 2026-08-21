@@ -1,13 +1,15 @@
-"""What a store does, asked of the only backend there is.
+"""What a store does, asked of the backend that can be written.
 
 Every test here is about the contract :class:`rage.store.Store` states -- keys,
 ranges, subtrees, pages, excerpts, the event log -- rather than about how
 SQLite keeps any of it. It runs against
-:class:`~rage.store_sqlite.SqliteStore` because that is the one implementation
-this build has, and a second backend should be able to pass this file
-unchanged but for the fixtures at the top. What is genuinely SQLite's own --
-the schema, its migrations, the connection per thread -- is in
-``test_store_sqlite.py``.
+:class:`~rage.store_sqlite.SqliteStore`, and half of it writes -- so the
+read-only parquet backend cannot pass this file, whatever the fixtures say.
+That is checked the other way round, by putting one corpus into both backends
+and comparing every answer: see ``test_store_parquet.py``. A future backend
+that *can* be written should pass this file unchanged but for the fixtures at
+the top. What is genuinely SQLite's own -- the schema, its migrations, the
+connection per thread -- is in ``test_store_sqlite.py``.
 """
 
 import ast
