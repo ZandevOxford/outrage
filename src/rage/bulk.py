@@ -45,14 +45,20 @@ from .errors import RageError
 #: level, small enough that a huge one is never held whole.
 PAGE = 200
 
-#: The extension a document is written with, by stored format.
-EXTENSIONS = {"markdown": ".md", "json": ".json"}
+#: The extension a document is written with, by stored format. Named for the
+#: direction it maps in, because the inverse is right below it and a reader
+#: reaching for one of the two should not have to check which is which.
+EXTENSION_BY_FORMAT = {"markdown": ".md", "json": ".json"}
 
-#: The format a file name declares. Deliberately the inverse of ``EXTENSIONS``
-#: and nothing more: the two extensions an export writes are the two an import
-#: strips, so a file named `myfile.py` keeps its name and becomes the key
-#: `myfile.py` rather than losing a suffix nothing here put there.
-FORMATS = {extension: format for format, extension in EXTENSIONS.items()}
+#: The format a file name declares. Deliberately the inverse of
+#: :data:`EXTENSION_BY_FORMAT` and nothing more: the two extensions an export
+#: writes are the two an import strips, so a file named `myfile.py` keeps its
+#: name and becomes the key `myfile.py` rather than losing a suffix nothing
+#: here put there. Not to be confused with :data:`rage.store.FORMATS`, which is
+#: what a document may be *stored* as; this is what a file name says it is.
+FORMAT_BY_EXTENSION = {
+    extension: format for format, extension in EXTENSION_BY_FORMAT.items()
+}
 
 #: Segments that are legal keys and impossible file names. `.` and `..` became
 #: legal segments when the grammar widened to mirror a filesystem; a path
@@ -89,7 +95,7 @@ FAILED = "failed"
 STOPPED = "stopped"
 
 
-class Unmappable(RageError, ValueError):
+class UnmappableError(RageError, ValueError):
     """Raised when a key has no file it can be written to, or a file no key."""
 
 
@@ -168,12 +174,12 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
         # it. Refused until the naming is settled -- see `planned/root-key` in
         # the rage store, which has the two ways out. The root's *metadata*
         # maps normally, as `!title.md`, so only the document itself is stuck.
-        raise Unmappable("root-has-no-filename")
+        raise UnmappableError("root-has-no-filename")
     segments = parsed.split(keys.DELIMITER)
     for segment in segments:
         if segment in TRAVERSAL:
-            raise Unmappable("key-segment-is-traversal", key=key, segment=segment)
-    extension = EXTENSIONS.get(format or "markdown", EXTENSIONS["markdown"])
+            raise UnmappableError("key-segment-is-traversal", key=key, segment=segment)
+    extension = EXTENSION_BY_FORMAT.get(format or "markdown", EXTENSION_BY_FORMAT["markdown"])
     return PurePosixPath(*segments[:-1], segments[-1] + extension)
 
 
@@ -195,7 +201,7 @@ def key_for_path(
     """
     relative = PurePosixPath(relative)
     stem, extension = os.path.splitext(relative.name)
-    format = FORMATS.get(extension)
+    format = FORMAT_BY_EXTENSION.get(extension)
     name = stem if format is not None else relative.name
 
     parts = [*relative.parts[:-1], name]
@@ -237,7 +243,7 @@ def export_tree(
     for stored, format in _exported(opened, key):
         try:
             path = target / path_for_key(stored, format)
-        except Unmappable as exc:
+        except UnmappableError as exc:
             # `reason` is report text, like "already there" beside it, so it is
             # rendered here. The default namer is the right one: bulk transfer
             # is a command line operation over one store directory, and there
@@ -324,7 +330,7 @@ def _write_file(path: Path, content: str) -> None:
 # -- into the store ------------------------------------------------------
 
 
-class SourceMissing(RageError, FileNotFoundError):
+class SourceMissingError(RageError, FileNotFoundError):
     """Raised when the directory to import from is not there."""
 
 
@@ -351,7 +357,7 @@ def import_tree(
     _check_conflict(on_conflict)
     source = Path(source).expanduser()
     if not source.is_dir():
-        raise SourceMissing("import-source-missing", source=str(source))
+        raise SourceMissingError("import-source-missing", source=str(source))
     seen: set[str] = set()
 
     for path, kind in _entries(source, hidden=hidden):
@@ -416,9 +422,9 @@ def _check_conflict(on_conflict: str) -> None:
 
 __all__ = [
     "CONFLICTS",
-    "EXTENSIONS",
+    "EXTENSION_BY_FORMAT",
     "FAILED",
-    "FORMATS",
+    "FORMAT_BY_EXTENSION",
     "OVERWRITE",
     "PAGE",
     "SKIP",
@@ -427,9 +433,9 @@ __all__ = [
     "STOPPED",
     "TRAVERSAL",
     "WROTE",
-    "SourceMissing",
+    "SourceMissingError",
     "Transfer",
-    "Unmappable",
+    "UnmappableError",
     "export_tree",
     "import_tree",
     "key_for_path",

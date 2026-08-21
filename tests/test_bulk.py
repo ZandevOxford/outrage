@@ -77,7 +77,7 @@ def test_a_traversing_segment_has_no_path():
     # filesystem. As path components they climb out of the directory being
     # written, so the key is refused rather than followed.
     for key in ("a/../b", "a/./b", ".."):
-        with pytest.raises(bulk.Unmappable):
+        with pytest.raises(bulk.UnmappableError):
             bulk.path_for_key(key, "markdown")
 
 
@@ -378,7 +378,7 @@ def test_import_treats_two_files_landing_on_one_key_as_a_conflict(store, tmp_pat
 
 
 def test_import_refuses_a_source_that_is_not_there(store, tmp_path):
-    with pytest.raises(bulk.SourceMissing):
+    with pytest.raises(bulk.SourceMissingError):
         list(bulk.import_tree(store, tmp_path / "nowhere"))
 
 
@@ -408,7 +408,7 @@ def test_the_root_document_has_no_path_yet(store):
     # Parked, not decided: the empty stem gives `.md`, which is hidden, which
     # an import skips by default -- so a round trip would drop the root
     # document rather than relocate it. Refused loudly until that is settled.
-    with raises_rendered(bulk.Unmappable, "no file name"):
+    with raises_rendered(bulk.UnmappableError, "no file name"):
         bulk.path_for_key("")
 
 

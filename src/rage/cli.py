@@ -6,7 +6,7 @@ can be tested without going through argparse and used by whichever of the two
 front ends needs it.
 
 What this module *offers* is three names: :func:`main`, :func:`parse_args`,
-and :class:`ConflictingSource` as something to catch. The subcommand handlers
+and :class:`ConflictingSourceError` as something to catch. The subcommand handlers
 are argparse wiring reached through ``handler``, one per subcommand and never
 from outside, so they are private -- which also keeps this page from being a
 list of twelve near-identical ``(args, out) -> int`` entries in place of an
@@ -806,7 +806,7 @@ def _set_command(args: argparse.Namespace, out: TextIO) -> int:
 def _content(args: argparse.Namespace) -> str:
     """Content from --content, --file, or standard input, in that order."""
     if args.content is not None and args.file is not None:
-        raise ConflictingSource("content-two-sources")
+        raise ConflictingSourceError("content-two-sources")
     if args.content is not None:
         return args.content
     if args.file is not None:
@@ -814,15 +814,17 @@ def _content(args: argparse.Namespace) -> str:
         try:
             return path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise ConflictingSource("content-unreadable", path=str(path), reason=str(exc)) from exc
+            raise ConflictingSourceError(
+                "content-unreadable", path=str(path), reason=str(exc)
+            ) from exc
     if sys.stdin.isatty():
         # Otherwise the command hangs on an empty terminal looking like it
         # worked, and the store ends up with an empty document at a good key.
-        raise ConflictingSource("content-missing")
+        raise ConflictingSourceError("content-missing")
     return sys.stdin.read()
 
 
-class ConflictingSource(RageError):
+class ConflictingSourceError(RageError):
     """Raised when the content to store cannot be determined from the arguments."""
 
 
@@ -1210,7 +1212,7 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
 
 
 __all__ = [
-    "ConflictingSource",
+    "ConflictingSourceError",
     "main",
     "parse_args",
 ]
