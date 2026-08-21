@@ -562,11 +562,12 @@ def instructions(store: Store | Mounts) -> str:
     told the size can decide to go and read the rest.
 
     The **root** store's readme, when there is a mount table. A mounted
-    store's own readme is not carried: the budget is spent to nine
-    characters -- see `project/reference/planned/instructions-budget` -- and
-    a second one would push the first over the client's cut, which is the
-    exact failure that ordering exists to prevent. A mount announces itself
-    in a listing instead, where it costs nothing until somebody looks.
+    store's own readme is not carried: the budget is spent to within a few
+    dozen characters -- see `project/reference/planned/instructions-budget`
+    for what the margin is today -- and a second readme is hundreds, so it
+    would push the first over the client's cut, which is the exact failure
+    that ordering exists to prevent. A mount announces itself in a listing
+    instead, where it costs nothing until somebody looks.
     """
     root = store.root.store if isinstance(store, Mounts) else store
     try:
