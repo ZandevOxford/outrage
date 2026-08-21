@@ -16,6 +16,7 @@ from conftest import raises_rendered
 
 from rage import bulk
 from rage.keys import InvalidKeyError
+from rage.store import FORMATS
 from rage.store_sqlite import SqliteStore
 
 
@@ -46,6 +47,8 @@ def actions(transfers) -> list[tuple[str, str | None]]:
         ("a", "markdown", "a.md"),
         ("a/b", "markdown", "a/b.md"),
         ("a/b", "json", "a/b.json"),
+        ("a/b", "text", "a/b.txt"),
+        ("a/b", "html", "a/b.html"),
         ("a/b/!title", "markdown", "a/b/!title.md"),
         ("notes/src/myfile.py", "markdown", "notes/src/myfile.py.md"),
     ],
@@ -65,6 +68,19 @@ def test_a_document_and_its_container_are_a_file_beside_a_directory(populated):
 def test_a_name_carrying_no_known_extension_is_kept_whole():
     assert bulk.key_for_path("src/myfile.py") == ("src/myfile.py", None)
     assert bulk.key_for_path("plain") == ("plain", None)
+    # `.htm` and `.text` are near misses on purpose: an export never writes
+    # either, so an import reads them as part of the name rather than
+    # stripping a suffix nothing here put there.
+    assert bulk.key_for_path("page.htm") == ("page.htm", None)
+    assert bulk.key_for_path("notes.text") == ("notes.text", None)
+
+
+def test_every_stored_format_has_an_extension():
+    # The mapping is what an export names a file by, so a format the store
+    # accepts and this does not know would be exported as markdown and import
+    # back as something else.
+    assert set(bulk.EXTENSION_BY_FORMAT) == set(FORMATS)
+    assert len(set(bulk.EXTENSION_BY_FORMAT.values())) == len(FORMATS)
 
 
 def test_a_prefix_grafts_the_tree_somewhere_else():

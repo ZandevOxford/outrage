@@ -125,6 +125,47 @@ def test_format_is_detected_but_can_be_overridden(store):
     assert store.retrieve_document("a/forced").format == "markdown"
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "<!DOCTYPE html>\n<html><body>hi</body></html>",
+        "<!doctype HTML>",
+        "<html lang=\"en\">",
+        "\n\n  <html>",
+    ],
+)
+def test_html_is_detected_when_it_announces_itself(store, content):
+    store.store_document("a", content)
+    assert store.retrieve_document("a").format == "html"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # Markdown carries inline HTML, and a document opening with a tag is
+        # the ordinary case rather than the HTML one. Only a doctype or the
+        # root element counts.
+        "<div class='note'>\n\n# Heading",
+        "<img src='x.png'>",
+        "<htmlish>",
+        "Prose about <html> elements.",
+    ],
+)
+def test_inline_html_is_still_markdown(store, content):
+    store.store_document("a", content)
+    assert store.retrieve_document("a").format == "markdown"
+
+
+def test_plain_text_is_never_detected_only_asked_for(store):
+    # There is no signal to detect: the same characters are valid markdown, so
+    # a caller who means plain text is the only one who knows.
+    store.store_document("a/detected", "Just some prose, no markup at all.")
+    store.store_document("a/asked", "Just some prose, no markup at all.", format="text")
+
+    assert store.retrieve_document("a/detected").format == "markdown"
+    assert store.retrieve_document("a/asked").format == "text"
+
+
 def test_format_must_be_known(store):
     with pytest.raises(ValueError, match="format"):
         store.store_document("a", "x", format="yaml")
