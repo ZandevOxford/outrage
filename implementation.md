@@ -4,7 +4,7 @@
 
 Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4, pyarrow
 25.0.1. Package installed in editable mode with `pip install -e ".[dev]"`; the
-parquet backend needs `.[parquet]` as well. 898 tests and 17 doctests passing,
+parquet backend needs `.[parquet]` as well. 902 tests and 17 doctests passing,
 `ruff check` clean, as of 2026-08-21. Doctests are not in
 `testpaths` and need a second run: `pytest --doctest-modules src/rage`.
 `ruff format --check` reports six files it would reformat and has done for
