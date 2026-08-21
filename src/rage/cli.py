@@ -4,6 +4,14 @@ A thin wrapper, like the server: argument shaping and printing only. Anything
 with behaviour belongs in :mod:`rage.store` or :mod:`rage.config`, so that it
 can be tested without going through argparse and used by whichever of the two
 front ends needs it.
+
+What this module *offers* is three names: :func:`main`, :func:`parse_args`,
+and :class:`ConflictingSource` as something to catch. The subcommand handlers
+are argparse wiring reached through ``handler``, one per subcommand and never
+from outside, so they are private -- which also keeps this page from being a
+list of twelve near-identical ``(args, out) -> int`` entries in place of an
+orientation. The interface people actually use here is the command line, and
+``rage --help`` is what states it.
 """
 
 from __future__ import annotations
@@ -74,7 +82,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Report what would change without writing anything.",
     )
-    init.set_defaults(handler=init_command)
+    init.set_defaults(handler=_init_command)
 
     config = subcommands.add_parser(
         "config",
@@ -132,7 +140,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Report what would change without writing anything.",
     )
-    config.set_defaults(handler=config_command)
+    config.set_defaults(handler=_config_command)
 
     backup = subcommands.add_parser(
         "backup",
@@ -171,7 +179,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Report where the backup would go without writing it.",
     )
-    backup.set_defaults(handler=backup_command)
+    backup.set_defaults(handler=_backup_command)
 
     log = subcommands.add_parser(
         "log",
@@ -239,7 +247,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="N",
         help="Show at most the last N matching events. 0 for all. Default 50.",
     )
-    log.set_defaults(handler=log_command)
+    log.set_defaults(handler=_log_command)
 
     get = subcommands.add_parser(
         "get",
@@ -276,7 +284,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             f"the end. Matches the tool's own cap at {store.DEFAULT_MAX_CHARS}."
         ),
     )
-    get.set_defaults(handler=get_command)
+    get.set_defaults(handler=_get_command)
 
     set_ = subcommands.add_parser(
         "set",
@@ -308,7 +316,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Detected from the content when omitted.",
     )
-    set_.set_defaults(handler=set_command)
+    set_.set_defaults(handler=_set_command)
 
     ls = subcommands.add_parser(
         "ls",
@@ -329,7 +337,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Descend the whole subtree rather than one level.",
     )
     _limit_option(ls, "keys")
-    ls.set_defaults(handler=ls_command)
+    ls.set_defaults(handler=_ls_command)
 
     dump = subcommands.add_parser(
         "dump",
@@ -368,7 +376,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _limit_option(dump, "documents")
-    dump.set_defaults(handler=dump_command)
+    dump.set_defaults(handler=_dump_command)
 
     export = subcommands.add_parser(
         "export",
@@ -398,7 +406,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Report what would be written without writing it.",
     )
-    export.set_defaults(handler=export_command)
+    export.set_defaults(handler=_export_command)
 
     import_ = subcommands.add_parser(
         "import",
@@ -434,7 +442,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     import_.add_argument(
         "--dry-run", action="store_true", help="Report what would be stored without storing it."
     )
-    import_.set_defaults(handler=import_command)
+    import_.set_defaults(handler=_import_command)
 
     rm = subcommands.add_parser(
         "rm",
@@ -454,7 +462,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dry-run", action="store_true", help="Report what would go without deleting it."
     )
     _limit_option(rm, "keys previewed by --dry-run")
-    rm.set_defaults(handler=rm_command)
+    rm.set_defaults(handler=_rm_command)
 
     check = subcommands.add_parser(
         "check",
@@ -476,7 +484,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Neither step changes a document."
         ),
     )
-    check.set_defaults(handler=check_command)
+    check.set_defaults(handler=_check_command)
 
     return parser.parse_args(argv)
 
@@ -616,7 +624,7 @@ def _store_option(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def init_command(args: argparse.Namespace, out: TextIO) -> int:
+def _init_command(args: argparse.Namespace, out: TextIO) -> int:
     """Set a project up, or say what setting it up would change."""
     project = Path(args.project_dir).expanduser() if args.project_dir else Path.cwd()
     done = install.init(
@@ -641,7 +649,7 @@ def init_command(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def config_command(args: argparse.Namespace, out: TextIO) -> int:
+def _config_command(args: argparse.Namespace, out: TextIO) -> int:
     """Write, or report, the MCP server configuration."""
     project_dir = Path(args.project_dir).expanduser() if args.project_dir else None
     path = (
@@ -667,7 +675,7 @@ def config_command(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def backup_command(args: argparse.Namespace, out: TextIO) -> int:
+def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
     """Snapshot the store, or say where the snapshot would go."""
     directory = store.resolve_directory(args.directory)
     database = store.store_file(directory, args.filename)
@@ -692,7 +700,7 @@ def backup_command(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def log_command(args: argparse.Namespace, out: TextIO) -> int:
+def _log_command(args: argparse.Namespace, out: TextIO) -> int:
     """Show the event log, or the numbers over it."""
     log = logread.read_log(_log_path(args))
     selected = logread.Filter(
@@ -751,7 +759,7 @@ def _limited(events: list[logread.Event], limit: int) -> tuple[list[logread.Even
     return events[-limit:], len(events) - limit
 
 
-def get_command(args: argparse.Namespace, out: TextIO) -> int:
+def _get_command(args: argparse.Namespace, out: TextIO) -> int:
     """Print a document, whole unless a slice was asked for."""
     with _open_existing(args) as opened:
         slicing = {
@@ -778,7 +786,7 @@ def get_command(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def set_command(args: argparse.Namespace, out: TextIO) -> int:
+def _set_command(args: argparse.Namespace, out: TextIO) -> int:
     """Write a document from an argument, a file, or standard input."""
     content = _content(args)
     directory = store.resolve_directory(args.directory)
@@ -818,7 +826,7 @@ class ConflictingSource(RageError):
     """Raised when the content to store cannot be determined from the arguments."""
 
 
-def ls_command(args: argparse.Namespace, out: TextIO) -> int:
+def _ls_command(args: argparse.Namespace, out: TextIO) -> int:
     """List one level, or the whole subtree, printing as it goes."""
     shown = 0
     with _open_existing(args) as opened:
@@ -840,7 +848,7 @@ def ls_command(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def dump_command(args: argparse.Namespace, out: TextIO) -> int:
+def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
     """Print a subtree, one document at a time, as each one arrives."""
     shown = 0
     with _open_existing(args) as opened:
@@ -894,7 +902,7 @@ def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.
         cursor = page.next_cursor
 
 
-def export_command(args: argparse.Namespace, out: TextIO) -> int:
+def _export_command(args: argparse.Namespace, out: TextIO) -> int:
     """Write a subtree out as files, reporting each document as it lands."""
     with _open_existing(args) as opened:
         transfers = bulk.export_tree(
@@ -907,7 +915,7 @@ def export_command(args: argparse.Namespace, out: TextIO) -> int:
         return _report_transfers(transfers, args, out, source_first=False)
 
 
-def import_command(args: argparse.Namespace, out: TextIO) -> int:
+def _import_command(args: argparse.Namespace, out: TextIO) -> int:
     """Store a directory of files, reporting each file as it goes in."""
     # Creating rather than refusing, for the reason `set` does: a first write
     # has to be able to make the store it writes to, and seeding an empty one
@@ -961,7 +969,7 @@ def _report_transfers(
     if not counted:
         print("nothing to transfer", file=out)
     else:
-        counts = ", ".join(f"{count} {NOUNS[action]}" for action, count in counted.items())
+        counts = ", ".join(f"{count} {_NOUNS[action]}" for action, count in counted.items())
         prefix = "dry run, nothing changed: " if args.dry_run else ""
         print(f"rage: {prefix}{counts}", file=sys.stderr)
     # A run that stopped or failed is not a run that worked, and the exit
@@ -971,7 +979,7 @@ def _report_transfers(
 
 #: What to call each action when counting them up, as against when reporting
 #: one as it happens: "5 written" rather than "5 wrote".
-NOUNS = {
+_NOUNS = {
     bulk.WROTE: "written",
     bulk.SKIPPED: "skipped",
     bulk.FAILED: "failed",
@@ -988,7 +996,7 @@ def _verb(action: str, dry_run: bool) -> str:
     )
 
 
-def rm_command(args: argparse.Namespace, out: TextIO) -> int:
+def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
     """Delete a key, saying what went and what stayed."""
     with _open_existing(args) as opened:
         beneath = opened.descendant_count(args.key)
@@ -1038,7 +1046,7 @@ def _report_remainder(
     )
 
 
-def check_command(args: argparse.Namespace, out: TextIO) -> int:
+def _check_command(args: argparse.Namespace, out: TextIO) -> int:
     """Report on the store file, and optionally fold its sidecar back in.
 
     The one pair of subcommands that is about a *backend* rather than about
@@ -1202,20 +1210,7 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
 
 
 __all__ = [
-    "NOUNS",
     "ConflictingSource",
-    "backup_command",
-    "check_command",
-    "config_command",
-    "dump_command",
-    "export_command",
-    "get_command",
-    "import_command",
-    "init_command",
-    "log_command",
-    "ls_command",
     "main",
     "parse_args",
-    "rm_command",
-    "set_command",
 ]
