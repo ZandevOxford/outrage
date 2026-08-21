@@ -12,6 +12,7 @@ dependencies = ["mcp>=1.2"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
+docs = ["sphinx>=8", "furo"]
 
 [project.scripts]
 rage = "rage.cli:main"

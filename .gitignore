@@ -16,3 +16,6 @@ dist/
 .claude/harness-canary/
 .claude/settings.json
 .rage-*/
+
+# Sphinx build output
+docs/_build/
