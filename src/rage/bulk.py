@@ -36,7 +36,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from . import keys, store
+from . import keys, messages, store
 from .errors import RageError
 
 #: How much of a collection one internal query asks for. The command line reads
@@ -151,19 +151,11 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
         # it. Refused until the naming is settled -- see `planned/root-key` in
         # the rage store, which has the two ways out. The root's *metadata*
         # maps normally, as `!title.md`, so only the document itself is stuck.
-        raise Unmappable(
-            "the root has no file name: a path is made of segments and the "
-            "root has none. Its metadata exports as `!title.md`; the document "
-            "at the root itself has nowhere to go yet."
-        )
+        raise Unmappable("root-has-no-filename")
     segments = parsed.split(keys.DELIMITER)
     for segment in segments:
         if segment in TRAVERSAL:
-            raise Unmappable(
-                f"key {key!r} has a segment of {segment!r}, which is a legal "
-                f"segment and not a path component: it would name a file "
-                f"outside the directory being written"
-            )
+            raise Unmappable("key-segment-is-traversal", key=key, segment=segment)
     extension = EXTENSIONS.get(format or "markdown", EXTENSIONS["markdown"])
     return PurePosixPath(*segments[:-1], segments[-1] + extension)
 
@@ -229,7 +221,11 @@ def export_tree(
         try:
             path = target / path_for_key(stored, format)
         except Unmappable as exc:
-            yield Transfer(FAILED, stored, None, str(exc))
+            # `reason` is report text, like "already there" beside it, so it is
+            # rendered here. The default namer is the right one: bulk transfer
+            # is a command line operation over one store directory, and there
+            # is no mount table for a key to be named against.
+            yield Transfer(FAILED, stored, None, messages.render(exc))
             continue
 
         if path in written or path.exists() or path.is_symlink():
@@ -246,7 +242,7 @@ def export_tree(
         except RageError as exc:
             # A key can go between the listing and the read; the walk is not a
             # snapshot and nothing here pretends it is.
-            yield Transfer(FAILED, stored, path, str(exc))
+            yield Transfer(FAILED, stored, path, messages.render(exc))
             continue
 
         if not dry_run:
@@ -338,7 +334,7 @@ def import_tree(
     _check_conflict(on_conflict)
     source = Path(source).expanduser()
     if not source.is_dir():
-        raise SourceMissing(f"no directory at {source}")
+        raise SourceMissing("import-source-missing", source=str(source))
     seen: set[str] = set()
 
     for path, kind in _entries(source, hidden=hidden):
@@ -352,7 +348,7 @@ def import_tree(
         try:
             stored, format = key_for_path(relative, key)
         except keys.InvalidKeyError as exc:
-            yield Transfer(FAILED, None, path, str(exc))
+            yield Transfer(FAILED, None, path, messages.render(exc))
             continue
         try:
             content = path.read_text(encoding="utf-8")

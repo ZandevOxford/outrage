@@ -122,16 +122,16 @@ def template_entry() -> dict[str, Any]:
     try:
         loaded = json.loads(TEMPLATE.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:  # pragma: no cover - a broken install
-        raise InstallError(f"packaged template missing at {TEMPLATE}") from exc
+        raise InstallError("template-missing", path=str(TEMPLATE)) from exc
     except json.JSONDecodeError as exc:  # pragma: no cover - a broken install
-        raise InstallError(f"packaged template at {TEMPLATE} is not valid JSON") from exc
+        raise InstallError("template-not-json", path=str(TEMPLATE)) from exc
 
     entries = loaded.get(HOOKS_FIELD, {}).get(HOOK_EVENT)
     if not isinstance(entries, list) or len(entries) != 1:
-        raise InstallError(f"packaged template must hold exactly one {HOOK_EVENT} entry")
+        raise InstallError("template-hook-count", event=HOOK_EVENT)
     entry = entries[0]
     if not is_ours(entry):
-        raise InstallError(f"packaged template's command does not carry the {MARKER!r} marker")
+        raise InstallError("template-unmarked", marker=MARKER)
     return entry
 
 
@@ -163,11 +163,11 @@ def plan(
 
     hooks = settings.get(HOOKS_FIELD, {})
     if not isinstance(hooks, dict):
-        raise InstallError(f"{path} has a {HOOKS_FIELD!r} that is not an object; leaving it alone")
+        raise InstallError("config-field-not-an-object", path=str(path), field=HOOKS_FIELD)
 
     existing = hooks.get(HOOK_EVENT, [])
     if not isinstance(existing, list):
-        raise InstallError(f"{path} has a {HOOK_EVENT!r} that is not a list; leaving it alone")
+        raise InstallError("config-field-not-a-list", path=str(path), field=HOOK_EVENT)
 
     ours = [i for i, e in enumerate(existing) if is_ours(e)]
     previous = existing[ours[0]] if ours else None
@@ -242,12 +242,14 @@ def asset_sources() -> list[tuple[Path, Path]]:
     for name in ASSET_DIRS:
         root = Path(__file__).parent / name
         if not root.is_dir():  # pragma: no cover - a broken install
-            raise InstallError(f"packaged {name} missing at {root}")
+            raise InstallError("assets-missing", asset=name, path=str(root))
         for source in sorted(root.rglob("*")):
             if source.is_file() and not source.name.startswith("."):
                 found.append((source, Path(name) / source.relative_to(root)))
     if not found:  # pragma: no cover - a broken install
-        raise InstallError(f"packaged {CLAUDE_DIR} content is empty at {Path(__file__).parent}")
+        raise InstallError(
+            "assets-empty", asset=CLAUDE_DIR, path=str(Path(__file__).parent)
+        )
     return found
 
 

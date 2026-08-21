@@ -369,17 +369,11 @@ def store_file(
     """
     relative = Path(filename)
     if not str(relative) or relative == Path("."):
-        raise StoreFileError("a store file needs a name")
+        raise StoreFileError("store-file-unnamed")
     if relative.is_absolute():
-        raise StoreFileError(
-            f"store file {str(relative)!r} is an absolute path; it names a file "
-            f"relative to the store directory, so pass the directory as --dir "
-            f"and the file alone here"
-        )
+        raise StoreFileError("store-file-absolute", filename=str(relative))
     if ".." in relative.parts:
-        raise StoreFileError(
-            f"store file {str(relative)!r} climbs out of the store directory with '..'"
-        )
+        raise StoreFileError("store-file-escapes", filename=str(relative))
     return Path(directory) / relative
 
 
@@ -837,29 +831,52 @@ class Store:
         return names
 
     @_logged("delete")
-    def delete(self, key: str, recursive: bool = False) -> list[str]:
+    def delete(
+        self, key: str, recursive: bool = False, *, key_range: KeyRange = UNBOUNDED
+    ) -> list[str]:
         """Delete ``key``, returning the keys actually removed.
 
         A document key takes its metadata with it. Descendants are removed only
         when ``recursive`` is set, so a mistyped key cannot silently discard a
         whole subtree. Note that storing an empty document is not a deletion.
+
+        ``key_range`` bounds which rows are in scope, exactly as it does for a
+        read: a delete that steps over a mounted store's stretch of the order
+        needs to say so in the same vocabulary a traversal does, or it removes
+        rows the mount has made unreachable and reports them as deleted. Those
+        rows read back fine from the mount on the very next call, which is the
+        defect this argument exists for -- see
+        ``project/reference/planned/mounts/crossing``.
+
+        It bounds *both* halves. The key's own row and its metadata are as
+        capable of lying inside a shadowed stretch as any descendant is.
         """
         parsed = keys.parse(key)
+        bounds, params = key_range.clauses()
+        within = "".join(f" AND {clause}" for clause in bounds)
         if parsed.is_metadata:
-            targets = [parsed.key]
+            targets = [
+                row["key"]
+                for row in self._conn.execute(
+                    f"SELECT key FROM documents WHERE key = ?{within}",
+                    [parsed.key, *params],
+                )
+            ]
         else:
             targets = [
                 row["key"]
                 for row in self._conn.execute(
-                    "SELECT key FROM documents WHERE doc_key = ?", (parsed.doc_key,)
+                    f"SELECT key FROM documents WHERE doc_key = ?{within}",
+                    [parsed.doc_key, *params],
                 )
             ]
             if recursive:
-                below, bounds = _below("doc_key", parsed.doc_key)
+                below, below_params = _below("doc_key", parsed.doc_key)
                 targets += [
                     row["key"]
                     for row in self._conn.execute(
-                        f"SELECT key FROM documents WHERE {below}", bounds
+                        f"SELECT key FROM documents WHERE {below}{within}",
+                        [*below_params, *params],
                     )
                 ]
 
@@ -868,16 +885,23 @@ class Store:
         return sorted(targets, key=keys.sort_form)
 
     @_logged("descendant_count")
-    def descendant_count(self, key: str) -> int:
+    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
         """How many stored rows lie strictly below ``key``.
 
         Exists so a caller can report what a non-recursive delete left behind:
         without it, deleting a key that holds nothing itself is indistinguishable
         from deleting a key that does not exist.
+
+        ``key_range`` bounds it for the reason it bounds ``delete``: a count
+        that includes rows a mount has made unreachable tells a caller to pass
+        ``recursive`` to remove keys that are not there to remove.
         """
         below, bounds = _below("doc_key", keys.parse(key).doc_key)
+        clauses, params = key_range.clauses()
+        within = "".join(f" AND {clause}" for clause in clauses)
         row = self._conn.execute(
-            f"SELECT count(*) AS n FROM documents WHERE {below}", bounds
+            f"SELECT count(*) AS n FROM documents WHERE {below}{within}",
+            [*bounds, *params],
         ).fetchone()
         return row["n"]
 
@@ -959,11 +983,8 @@ class Store:
             parsed = keys.parse(key)
             beneath = 0 if parsed.is_metadata else self.descendant_count(key)
             if beneath:
-                raise KeyNotFoundError(
-                    f"no content stored at {key!r}, but {beneath} key(s) lie beneath it; "
-                    f"use list_keys or get_documents to see them"
-                )
-            raise KeyNotFoundError(f"nothing is stored at or below {key!r}")
+                raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
+            raise KeyNotFoundError("key-not-found", key=key)
 
         content = row["content"]
         if offset < 0:
@@ -978,8 +999,11 @@ class Store:
             start = _find_occurrence(content, pattern, occurrence, offset)
             if start is None:
                 raise PatternNotFoundError(
-                    f"{pattern!r} does not occur {occurrence + 1} time(s) in {key!r} "
-                    f"at or after offset {offset}"
+                    "pattern-not-found",
+                    key=key,
+                    pattern=pattern,
+                    occurrence=occurrence,
+                    offset=offset,
                 )
 
         return _excerpt(row, start, length, max_chars)
@@ -1432,7 +1456,7 @@ class Store:
         except sqlite3.Error as exc:
             copy.close()
             target.unlink(missing_ok=True)
-            raise BackupError(f"could not write {target}: {exc}") from exc
+            raise BackupError("backup-unwritable", target=str(target), reason=str(exc)) from exc
         copy.close()
 
         return self._verify_backup(target)
@@ -1453,9 +1477,9 @@ class Store:
 
         target = target.resolve()
         if target == self.path.resolve():
-            raise BackupError(f"{target} is the store itself, not a backup of it")
+            raise BackupError("backup-is-the-store", target=str(target))
         if target.exists() and not overwrite:
-            raise BackupError(f"{target} already exists; pass overwrite to replace it")
+            raise BackupError("backup-exists", target=str(target))
         return target
 
     def _verify_backup(self, target: Path) -> Backup:
@@ -1476,15 +1500,17 @@ class Store:
             copy.close()
 
         if integrity != "ok":
-            raise BackupError(f"{target} failed its integrity check: {integrity}")
+            raise BackupError("backup-corrupt", target=str(target), integrity=str(integrity))
         if version != SCHEMA_VERSION:
             raise BackupError(
-                f"{target} came out at schema {version}, but the store is at {SCHEMA_VERSION}"
+                "backup-schema-mismatch",
+                target=str(target),
+                found=version,
+                expected=SCHEMA_VERSION,
             )
         if documents != expected:
             raise BackupError(
-                f"{target} holds {documents} documents but the store holds {expected}; "
-                "a concurrent write can cause this, so try again before suspecting the copy"
+                "backup-short", target=str(target), found=documents, expected=expected
             )
         return Backup(
             path=target,

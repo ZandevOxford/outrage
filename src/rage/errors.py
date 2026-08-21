@@ -14,13 +14,50 @@ the correct output for a bug.
 
 Each subclass keeps the builtin it already inherited, so ``except LookupError``
 around a store read goes on working and no existing caller has to change.
+
+**An error carries facts, not prose.** A message is written by the front end,
+from a ``code`` and whatever ``details`` that code needs -- see
+:mod:`rage.messages`. The library layers have no business composing a sentence
+for a person to read: they do not know who is reading it, and in the one case
+that matters they cannot know. A key inside a mounted store is called
+``python/nope`` there and ``ref/python/nope`` to anyone outside, so a sentence
+built in :mod:`rage.store` is wrong for the MCP server or wrong for the command
+line, and there is no third choice. That was a live defect --
+``project/reference/planned/error-naming`` -- and this is the fix.
+
+``__str__`` is therefore a **developer** rendering, not a message. It names the
+class, the code and the details, which is what a traceback or a log wants and
+is deliberately not what a user wants: anything that prints an error straight
+at somebody now looks wrong when it is read, rather than looking fine and
+naming a key that does not exist.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from typing import Any
+
 
 class RageError(Exception):
-    """A failure a caller asked for and should be told about in a sentence."""
+    """A failure a caller asked for and should be told about in a sentence.
+
+    ``code`` names *which* failure, uniquely across the whole codebase, and is
+    what :mod:`rage.messages` renders. ``details`` are the facts that message
+    needs, by name.
+    """
+
+    def __init__(self, code: str, **details: Any) -> None:
+        # Passed to Exception too, so `raise ... from` chains, pickling and
+        # anything reading `args` keep working.
+        super().__init__(code, details)
+        self.code = code
+        self.details: Mapping[str, Any] = details
+
+    def __str__(self) -> str:
+        inside = ", ".join(f"{name}={value!r}" for name, value in self.details.items())
+        return f"{type(self).__name__}({self.code!r}{', ' if inside else ''}{inside})"
+
+    __repr__ = __str__
 
 
 __all__ = ["RageError"]

@@ -15,7 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__, bulk, eventlog, install, keys, logread, maintenance, store
+from . import __version__, bulk, eventlog, install, keys, logread, maintenance, messages, store
 from . import config as config_module
 from .errors import RageError
 
@@ -667,7 +667,7 @@ def backup_command(args: argparse.Namespace, out: TextIO) -> int:
     if not database.exists():
         # Opening one would create it, and backing up a store the caller never
         # had is a success that answers the wrong question.
-        raise store.BackupError(f"no store at {database}")
+        raise store.BackupError("check-no-store", path=str(database))
 
     with store.open_store(directory, filename=args.filename) as opened:
         if args.dry_run:
@@ -791,7 +791,7 @@ def set_command(args: argparse.Namespace, out: TextIO) -> int:
 def _content(args: argparse.Namespace) -> str:
     """Content from --content, --file, or standard input, in that order."""
     if args.content is not None and args.file is not None:
-        raise ConflictingSource("give --content or --file, not both")
+        raise ConflictingSource("content-two-sources")
     if args.content is not None:
         return args.content
     if args.file is not None:
@@ -799,11 +799,11 @@ def _content(args: argparse.Namespace) -> str:
         try:
             return path.read_text(encoding="utf-8")
         except OSError as exc:
-            raise ConflictingSource(f"cannot read {path}: {exc}") from exc
+            raise ConflictingSource("content-unreadable", path=str(path), reason=str(exc)) from exc
     if sys.stdin.isatty():
         # Otherwise the command hangs on an empty terminal looking like it
         # worked, and the store ends up with an empty document at a good key.
-        raise ConflictingSource("nothing to store: pass --content, --file, or pipe it in")
+        raise ConflictingSource("content-missing")
     return sys.stdin.read()
 
 
@@ -1166,7 +1166,12 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
         # One base rather than a tuple that grows with each command. A failure
         # that is not a RageError is a bug in rage, and a traceback is the right
         # output for a bug.
-        print(f"rage: {exc}", file=sys.stderr)
+        #
+        # Rendered here, because this is a front end and the error is not. The
+        # command line opens one store directory and knows nothing about a
+        # mount table, so a key names itself: the default namer is the correct
+        # one here and the mount-aware one would be wrong. See `messages`.
+        print(f"rage: {messages.render(exc)}", file=sys.stderr)
         return 1
 
 

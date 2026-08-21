@@ -4,6 +4,7 @@ import threading
 from pathlib import Path
 
 import pytest
+from conftest import raises_rendered
 
 from rage import keys
 from rage import store as store_module
@@ -393,17 +394,17 @@ def test_a_failed_write_leaves_no_allocation_behind(store):
 
 
 def test_retrieve_missing_key(store):
-    with pytest.raises(KeyNotFoundError, match="nothing is stored at or below"):
+    with raises_rendered(KeyNotFoundError, "nothing is stored at or below"):
         store.retrieve_document("a/b")
 
 
 def test_retrieve_says_when_a_key_is_a_container(populated):
-    with pytest.raises(KeyNotFoundError, match="4 key\\(s\\) lie beneath it"):
+    with raises_rendered(KeyNotFoundError, "4 key\\(s\\) lie beneath it"):
         populated.retrieve_document("context/a1b2")
 
 
 def test_retrieve_missing_metadata_does_not_count_the_documents_descendants(populated):
-    with pytest.raises(KeyNotFoundError, match="nothing is stored at or below"):
+    with raises_rendered(KeyNotFoundError, "nothing is stored at or below"):
         populated.retrieve_document("context/a1b2/!summary")
 
 
@@ -895,7 +896,7 @@ def test_an_existing_destination_is_refused(populated, tmp_path):
     target = tmp_path / "taken.sqlite"
     target.write_text("not a database")
 
-    with pytest.raises(store_module.BackupError, match="already exists"):
+    with raises_rendered(store_module.BackupError, "already exists"):
         populated.backup(target)
 
     assert target.read_text() == "not a database"
@@ -911,7 +912,7 @@ def test_an_existing_destination_can_be_replaced_on_purpose(populated, tmp_path)
 
 
 def test_the_store_itself_is_refused_as_a_destination(populated):
-    with pytest.raises(store_module.BackupError, match="the store itself"):
+    with raises_rendered(store_module.BackupError, "the store itself"):
         populated.backup(populated.path)
 
     # The refusal has to come before anything is unlinked, or the check that
@@ -925,11 +926,11 @@ def test_a_short_backup_is_refused_rather_than_returned(populated, monkeypatch):
         store_module.Store,
         "_verify_backup",
         lambda self, target: (_ for _ in ()).throw(
-            store_module.BackupError("holds 0 documents but the store holds 7")
+            store_module.BackupError("backup-short", target=str(target), found=0, expected=7)
         ),
     )
 
-    with pytest.raises(store_module.BackupError, match="holds 0 documents"):
+    with raises_rendered(store_module.BackupError, "holds 0 documents"):
         populated.backup()
 
 

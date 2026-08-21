@@ -104,7 +104,7 @@ def check(store: Store) -> Report:
         report.integrity = str(connection.execute("PRAGMA integrity_check").fetchone()[0])
         report.schema = int(connection.execute("PRAGMA user_version").fetchone()[0])
     except sqlite3.DatabaseError as exc:
-        raise CheckError(f"cannot read {store.path}: {exc}") from exc
+        raise CheckError("check-unreadable", path=str(store.path), reason=str(exc)) from exc
 
     if report.integrity != "ok":
         report.problems.append(
@@ -327,7 +327,7 @@ def require_store(directory: Path, filename: str = DB_FILENAME) -> Path:
     the right one.
     """
     if not store_file(directory, filename).exists():
-        raise CheckError(f"no store at {store_file(directory, filename)}")
+        raise CheckError("check-no-store", path=str(store_file(directory, filename)))
     return directory
 
 

@@ -11,9 +11,10 @@ from typing import Any
 
 import anyio
 import pytest
+from conftest import raises_rendered
 from mcp.server.mcpserver.exceptions import ToolError
 
-from rage import keys
+from rage import keys, messages
 from rage.mounts import (
     MOUNT_KIND,
     READ_ONLY_MOUNT_KIND,
@@ -98,12 +99,12 @@ def test_the_longest_prefix_owns_a_key(table):
 
 
 def test_a_table_needs_a_root(tmp_path):
-    with Store(tmp_path) as store, pytest.raises(MountError, match="at the root"):
+    with Store(tmp_path) as store, raises_rendered(MountError, "at the root"):
         Mounts({"ref": store})
 
 
 def test_a_mount_point_may_not_be_metadata(tmp_path):
-    with Store(tmp_path) as store, pytest.raises(MountError, match="may not be metadata"):
+    with Store(tmp_path) as store, raises_rendered(MountError, "may not be metadata"):
         Mounts({"": store, "!title": store})
 
 
@@ -198,14 +199,17 @@ def test_a_cursor_from_another_mount_is_refused(server):
     assert "not below" in message
 
 
-# -- what stops at a boundary, and says so ---------------------------------
+# -- what crosses a boundary -----------------------------------------------
 
 
-def test_a_survey_says_which_mounts_it_did_not_read(server):
+def test_a_survey_crosses_every_mount_below_it(server):
+    # It used to stop at the first boundary and name what it had skipped. The
+    # scope that made it do so was about staging the work, not about what a
+    # survey should mean -- see `planned/mounts/crossing`.
     result = call(server, "get_documents", meta_name=["title"])
-    assert result["mounts_not_searched"] == ["lib/deep", "ref"]
-    assert "were not read" in result["note"]
-    assert all(not key["key"].startswith("ref/") for key in result["documents"])
+    assert "mounts_not_searched" not in result
+    assert "were not read" not in (result.get("note") or "")
+    assert any(d["key"].startswith("ref/") for d in result["documents"])
 
 
 def test_a_survey_inside_a_mount_has_nothing_to_warn_about(server):
@@ -218,18 +222,152 @@ def test_a_survey_inside_a_mount_has_nothing_to_warn_about(server):
     ]
 
 
-def test_keys_missing_meta_is_named_from_outside_and_says_what_it_skipped(server, table):
+def test_keys_missing_meta_is_named_from_outside(server, table):
     table.resolve("ref").store.store_document("python/untitled", "No title.")
     result = call(server, "keys_missing_meta", key="ref")
     assert result["keys"] == ["ref/python/untitled"]
     assert "mounts_not_searched" not in result
 
 
-def test_a_recursive_delete_stops_at_a_mount_and_says_so(server, table):
+def test_a_recursive_delete_crosses_a_mount_below_the_key(server, table):
+    # The dangerous half of consistency, and taken deliberately: a delete that
+    # stopped at a boundary while every other tool crossed it would leave the
+    # caller to find the rule out from what survived.
     result = call(server, "delete_keys", key="lib", recursive=True)
-    assert result["mounts_kept"] == ["lib/deep"]
-    assert "stops at a mount boundary" in result["note"]
-    assert table.resolve("lib/deep").store.exists("a")
+    assert "mounts_kept" not in result
+    assert "lib/deep/a" in result["deleted"]
+    assert not table.resolve("lib/deep").store.exists("a")
+
+
+def test_a_recursive_delete_does_not_report_shadowed_keys_as_deleted(shadowing):
+    # The defect crossing started from, and the reason it is a defect rather
+    # than a limitation: the delete removed the outer store's shadowed rows and
+    # reported them under outer names, and reading `project` straight after
+    # returned content. A report a caller can disprove in the next call.
+    server = build_server(shadowing)
+    result = call(server, "delete_keys", key="", recursive=True)
+
+    for key in result["deleted"]:
+        assert call_expecting_error(server, "retrieve_document", key=key)
+
+    # `project` is deleted because the *mount's* root document was deleted, not
+    # because the shadowed one underneath it was.
+    assert "project" in result["deleted"]
+    assert "project/shown" in result["deleted"]
+    assert "project/untitled" not in result["deleted"]
+
+
+def test_a_recursive_delete_skips_a_read_only_mount_and_says_so(tmp_path):
+    # One read-only mount below the key does not veto the whole delete: what
+    # can go, goes, and what stayed is named rather than left to be noticed.
+    root = Store(tmp_path / "root")
+    writable = Store(tmp_path / "writable")
+    frozen = Store(tmp_path / "frozen")
+    root.store_document("lib/own", "Outer.", title="Outer")
+    writable.store_document("a", "Writable.", title="A")
+    frozen.store_document("b", "Frozen.", title="B")
+
+    with Mounts(
+        {"": root, "lib/soft": writable, "lib/hard": frozen}, read_only=["lib/hard"]
+    ) as table:
+        server = build_server(table)
+        result = call(server, "delete_keys", key="lib", recursive=True)
+
+        assert result["mounts_kept"] == ["lib/hard"]
+        assert "refuse a delete" in result["note"]
+        assert sorted(result["deleted"]) == [
+            "lib/own",
+            "lib/own/!title",
+            "lib/soft/a",
+            "lib/soft/a/!title",
+        ]
+        assert frozen.exists("b")
+        assert not writable.exists("a")
+
+
+def test_a_cursor_is_recomputed_at_every_boundary(tmp_path):
+    # Paging one document at a time across three stores. A cursor names a key
+    # in the one namespace and means something different to each store it
+    # crosses, so a page that carried it inward once would either repeat a
+    # store's first rows or skip past them.
+    root = Store(tmp_path / "root")
+    outer = Store(tmp_path / "outer")
+    nested = Store(tmp_path / "nested")
+    root.store_document("aaa", "Root, before.", title="A")
+    root.store_document("zzz", "Root, after.", title="Z")
+    outer.store_document("m", "Outer.", title="M")
+    nested.store_document("n", "Nested.", title="N")
+
+    with Mounts({"": root, "lib": outer, "lib/deep": nested}) as table:
+        server = build_server(table)
+        after, seen = None, []
+        while True:
+            page = call(server, "get_documents", limit=1, after=after)
+            seen += [d["key"] for d in page["documents"]]
+            if page["next_cursor"] is None:
+                break
+            after = page["next_cursor"]
+            assert len(seen) < 10, "cursor is not advancing"
+
+    assert seen == ["aaa", "lib/deep/n", "lib/m", "zzz"]
+    assert len(seen) == len(set(seen)), "a segment was read twice"
+
+
+def test_a_depth_budget_is_translated_into_a_mounted_store(tmp_path):
+    # Depth is counted from the key that was asked about, so a store mounted
+    # further down gets the part of the budget the descent did not spend.
+    root = Store(tmp_path / "root")
+    ref = Store(tmp_path / "ref")
+    root.store_document("top", "Root.", title="Top")
+    ref.store_document("", "The mount point.", title="Mount")
+    ref.store_document("one", "One down.", title="One")
+    ref.store_document("one/two", "Two down.", title="Two")
+
+    with Mounts({"": root, "ref": ref}) as table:
+        server = build_server(table)
+        assert survey(server, depth=1) == ["ref", "top"]
+        assert survey(server, depth=2) == ["ref", "ref/one", "top"]
+        assert survey(server, depth=3) == ["ref", "ref/one", "ref/one/two", "top"]
+        # Past the budget the mount is stepped over but not entered, and the
+        # rows it shadows do not reappear in its place.
+        assert survey(server, depth=0) == []
+
+
+def test_a_failed_read_names_the_key_the_caller_asked_for(server):
+    """The defect in `planned/error-naming`, through the real dispatch.
+
+    The store raised about `python/nope`, which is not a key in this namespace
+    at all: used as written it addresses the root store. What comes back has to
+    be the key the caller could send again.
+    """
+    message = call_expecting_error(server, "retrieve_document", key="ref/python/nope")
+    assert "nothing is stored at or below 'ref/python/nope'" in message
+
+
+def test_a_container_inside_a_mount_gives_advice_that_works(server):
+    """The worst of the three faults, and the one a caller cannot detect.
+
+    `list_keys('python')` asks the store *above* the mount, which holds nothing
+    there -- so following the advice returns an empty listing rather than an
+    error, and the caller concludes the keys do not exist.
+    """
+    message = call_expecting_error(server, "retrieve_document", key="ref/python")
+    assert "no content stored at 'ref/python'" in message
+    named = message[message.index("no content") :]
+    assert "'python'" not in named.replace("'ref/python'", "")
+
+    # And the advice, followed literally, answers.
+    listed = call(server, "list_keys", key="ref/python")
+    assert [e["key"] for e in listed["entries"]] == ["ref/python/asyncio", "ref/python/typing"]
+
+
+def test_an_empty_mounted_store_is_not_reported_as_a_blank_key(tmp_path):
+    """`planned/root-key/impact` finding 7: a blank key is invisible in a report."""
+    root, empty = Store(tmp_path / "root"), Store(tmp_path / "empty")
+    with Mounts({"": root, "blank": empty}) as table:
+        message = call_expecting_error(build_server(table), "retrieve_document", key="blank")
+    assert "at or below 'blank'" in message
+    assert "at or below ''" not in message
 
 
 def test_a_single_store_result_says_nothing_about_mounts(tmp_path):
@@ -257,16 +395,16 @@ def test_the_joined_bound_is_two_halves_of_the_store_bound():
 def test_a_store_key_may_not_exceed_half_the_namespace(tmp_path):
     with Store(tmp_path) as store:
         store.store_document(_deep_key(keys.MAX_SEGMENTS), "at the limit")
-        with pytest.raises(keys.InvalidKeyError, match="at most 64 are allowed"):
+        with raises_rendered(keys.InvalidKeyError, "at most 64 are allowed"):
             store.store_document(_deep_key(keys.MAX_SEGMENTS + 1), "over it")
 
 
 def test_a_mount_point_may_not_exceed_half_the_namespace(tmp_path):
     with Store(tmp_path) as store:
         Mounts({"": store, _deep_key(keys.MAX_SEGMENTS): store})
-        with pytest.raises(keys.InvalidKeyError, match="at most 64 are allowed"):
+        with raises_rendered(keys.InvalidKeyError, "at most 64 are allowed"):
             Mounts({"": store, _deep_key(keys.MAX_SEGMENTS + 1): store})
-        with pytest.raises(keys.InvalidKeyError, match="at most 64 are allowed"):
+        with raises_rendered(keys.InvalidKeyError, "at most 64 are allowed"):
             parse_spec(f"{_deep_key(keys.MAX_SEGMENTS + 1)}=/srv/x")
 
 
@@ -341,7 +479,7 @@ def test_a_key_predating_the_bound_fails_loudly_rather_than_silently(tmp_path):
 
     with Mounts({"": root, "old": inner}) as table:
         mount = table.resolve("old").mount
-        with pytest.raises(MountError, match="has no name in this namespace"):
+        with raises_rendered(MountError, "has no name in this namespace"):
             mount.outer(legacy)
 
 
@@ -402,18 +540,26 @@ def test_a_survey_does_not_report_what_reading_by_key_would_refuse(shadowed_serv
     # store still holds every row and nothing removed them -- so it listed 44
     # keys that reading them then refused. `list_keys` upheld the invariant and
     # the traversals did not.
-    assert survey(shadowed_server, meta_name=["title"]) == ["readme/!title", "zzz/!title"]
-    assert survey(shadowed_server, depth=1) == ["readme", "zzz"]
+    #
+    # The subtree is now read as segments rather than windows, so the shadowed
+    # stretch is not merely stepped over: the mount standing in front of it is
+    # read in its place. `project/!title` is the *mount's* title, and the
+    # documents the mount shadows are still absent.
+    assert survey(shadowed_server, meta_name=["title"]) == [
+        "project/!title",
+        "project/shown/!title",
+        "readme/!title",
+        "zzz/!title",
+    ]
+    assert survey(shadowed_server, depth=1) == ["project", "readme", "zzz"]
 
     # And the titles the survey shows are the ones a read can reach.
     for key in survey(shadowed_server, meta_name=["title"]):
         assert call(shadowed_server, "retrieve_document", key=key)["content"]
 
-    # The mount's own documents are not in it either, and the answer says so
-    # rather than letting a total that looks whole imply otherwise. A listing
-    # crosses the boundary; a query does not.
+    # Nothing was skipped, so there is nothing to warn about.
     result = call(shadowed_server, "get_documents", meta_name=["title"])
-    assert result["mounts_not_searched"] == ["project"]
+    assert "mounts_not_searched" not in result
 
 
 def test_a_shadowed_key_is_not_named_as_missing_metadata(shadowed_server):
@@ -427,11 +573,15 @@ def test_without_meta_does_not_count_what_it_cannot_show(shadowed_server):
     assert result["without_meta"] == {"total": 0, "total_chars": 0, "sample": []}
 
 
-def test_a_survey_counts_the_windows_it_actually_read(shadowed_server):
+def test_a_survey_counts_the_segments_it_actually_read(shadowed_server):
     result = call(shadowed_server, "get_documents", meta_name=["title"])
-    assert result["total"] == 2 == result["returned"]
-    # `Project`, the title of the document the mount shadows, is not among them.
-    assert result["total_chars"] == len("Readme") + len("Last")
+    assert result["total"] == 4 == result["returned"]
+    # The mount's own titles are counted and the shadowed `Project` is not,
+    # which is the same rule stated from both sides: a total counts what the
+    # answer could show.
+    assert result["total_chars"] == len("Readme") + len("Last") + len("Mounted root") + len(
+        "Shown"
+    )
 
 
 def test_the_mounts_own_title_is_what_the_survey_shows_at_the_mount_point(shadowed_server):
@@ -463,33 +613,41 @@ def test_paging_a_survey_across_a_mount_tiles_without_gap_or_overlap(shadowing):
         after = page["next_cursor"]
         assert len(seen) < 10, "cursor is not advancing"
 
-    assert seen == ["readme/!title", "zzz/!title"]
+    assert seen == [
+        "project/!title",
+        "project/shown/!title",
+        "readme/!title",
+        "zzz/!title",
+    ]
     assert counted == 2
     assert sampled == ["aaa", "yyy"]
-    assert len(sampled) == len(set(sampled)), "double counted across windows"
+    assert len(sampled) == len(set(sampled)), "double counted across segments"
     assert call(server, "keys_missing_meta")["keys"] == sampled
 
 
-def test_a_page_ending_on_a_window_edge_still_says_there_is_more(shadowing):
-    # The case that would truncate the collection silently. The window in
+def test_a_page_ending_on_a_segment_edge_still_says_there_is_more(shadowing):
+    # The case that would truncate the collection silently. The stretch in
     # front of the mount holds exactly one document, so the store fills the
-    # page and reaches the window's end at the same moment and has no cursor of
-    # its own to give. Whether there is another page is a question only the
-    # windows behind it can answer.
+    # page and reaches that stretch's end at the same moment and has no cursor
+    # of its own to give. Whether there is another page is a question only the
+    # segments behind it can answer -- and they are now in other stores, which
+    # cannot even be asked with the same cursor.
+    shadowing.root.store.store_document("aaa", "Before the mount.", title="First")
     server = build_server(shadowing)
     page = call(server, "get_documents", meta_name=["title"], limit=1)
 
-    assert [d["key"] for d in page["documents"]] == ["readme/!title"]
-    assert page["next_cursor"] == "readme/!title"
+    assert [d["key"] for d in page["documents"]] == ["aaa/!title"]
+    assert page["next_cursor"] == "aaa/!title"
 
     rest = call(server, "get_documents", meta_name=["title"], limit=1, after=page["next_cursor"])
-    assert [d["key"] for d in rest["documents"]] == ["zzz/!title"]
-    assert rest["next_cursor"] is None
+    assert [d["key"] for d in rest["documents"]] == ["project/!title"]
+    assert rest["next_cursor"] == "project/!title"
 
 
-def test_a_character_budget_is_spent_across_the_windows_not_per_window(shadowing):
-    # One budget for the page, however many windows it is read in. Spent per
-    # window instead, a page would return one budget's worth for each mount.
+def test_a_character_budget_is_spent_across_the_segments_not_per_segment(shadowing):
+    # One budget for the page, however many segments it is read in, and however
+    # many stores those segments belong to. Spent per segment instead, a page
+    # would return one budget's worth for each mount.
     root = shadowing.root.store
     root.store_document("aaa", "x" * 400, title="Before")
     root.store_document("yyy", "y" * 400, title="After")
@@ -511,7 +669,7 @@ def test_a_character_budget_is_spent_across_the_windows_not_per_window(shadowing
         seen += [d["key"] for d in page["documents"]]
         assert len(seen) < 20, "cursor is not advancing"
 
-    assert seen == ["aaa", "readme", "yyy", "zzz"]
+    assert seen == ["aaa", "project", "project/shown", "readme", "yyy", "zzz"]
 
 
 def test_paging_keys_missing_meta_across_a_mount_reaches_both_sides(shadowing):
@@ -559,9 +717,10 @@ def test_a_listing_counts_a_mount_point_the_store_holds_only_metadata_for(tmp_pa
         assert listing["total_chars"] == len("Mounted.")
 
 
-def test_a_nested_mount_leaves_no_empty_window(tmp_path):
-    # Two mounts, one inside the other. The outer one's range already covers
-    # the inner, and a window drawn between them would be empty.
+def test_a_nested_mount_is_read_in_its_place(tmp_path):
+    # Two mounts, one inside the other. Nesting needs no case of its own: the
+    # inner mount is not reached from the root at all, it is reached from the
+    # store containing it, which is what makes the segment list recursive.
     root = Store(tmp_path / "root")
     outer = Store(tmp_path / "outer")
     nested = Store(tmp_path / "nested")
@@ -574,13 +733,21 @@ def test_a_nested_mount_leaves_no_empty_window(tmp_path):
 
     with Mounts({"": root, "lib": outer, "lib/deep": nested}) as table:
         server = build_server(table)
-        assert survey(server, meta_name=["title"]) == ["a/!title", "z/!title"]
-        assert call(server, "get_documents", meta_name=["title"])["total"] == 2
+        # Both mounts read, both shadowed documents absent, and all four in the
+        # order the one namespace puts them rather than the order the stores
+        # were reached in.
+        assert survey(server, meta_name=["title"]) == [
+            "a/!title",
+            "lib/deep/deeper/!title",
+            "lib/shown/!title",
+            "z/!title",
+        ]
+        assert call(server, "get_documents", meta_name=["title"])["total"] == 4
 
 
-def test_a_survey_inside_a_mount_still_stops_at_a_mount_below_it(tmp_path):
-    # The windows are named as the *answering* store names them, so a mount
-    # nested inside another is stepped over in that store's own key space.
+def test_a_survey_inside_a_mount_crosses_a_mount_below_it(tmp_path):
+    # The segments are named as the *answering* store names them, so a mount
+    # nested inside another is entered from that store's own key space.
     root = Store(tmp_path / "root")
     outer = Store(tmp_path / "outer")
     nested = Store(tmp_path / "nested")
@@ -591,8 +758,11 @@ def test_a_survey_inside_a_mount_still_stops_at_a_mount_below_it(tmp_path):
     with Mounts({"": root, "lib": outer, "lib/deep": nested}) as table:
         server = build_server(table)
         result = call(server, "get_documents", key="lib", meta_name=["title"])
-        assert [d["key"] for d in result["documents"]] == ["lib/a/!title"]
-        assert result["mounts_not_searched"] == ["lib/deep"]
+        assert [d["key"] for d in result["documents"]] == [
+            "lib/a/!title",
+            "lib/deep/shown/!title",
+        ]
+        assert "mounts_not_searched" not in result
 
 
 def test_nothing_changes_for_a_key_with_no_mount_below_it(table):
@@ -617,18 +787,18 @@ def test_a_mount_spec_is_a_key_and_a_store_file():
 def test_a_mount_file_is_relative_to_the_store_directory(tmp_path):
     # An absolute path would make --dir a lie and a configuration unmovable;
     # `..` would reach outside the directory an operator named.
-    with pytest.raises(StoreFileError, match="absolute path"):
+    with raises_rendered(StoreFileError, "absolute path"):
         open_mounts(tmp_path / "root", ["ref=/srv/reference.sqlite"])
-    with pytest.raises(StoreFileError, match=r"climbs out"):
+    with raises_rendered(StoreFileError, r"climbs out"):
         open_mounts(tmp_path / "root", ["ref=../elsewhere.sqlite"])
 
 
 def test_a_malformed_mount_spec_is_refused_before_anything_is_opened(tmp_path):
-    with pytest.raises(MountError, match="KEY=FILE form"):
+    with raises_rendered(MountError, "KEY=FILE form"):
         parse_spec("ref")
-    with pytest.raises(MountError, match="names no store file"):
+    with raises_rendered(MountError, "names no store file"):
         parse_spec("ref=")
-    with pytest.raises(MountError, match="no mount point"):
+    with raises_rendered(MountError, "no mount point"):
         parse_spec("=/srv/x")
     # And nothing was created for the mount that could not be described.
     with pytest.raises(MountError):
@@ -734,13 +904,16 @@ def test_two_things_worth_saying_are_both_said(tmp_path):
     root.store_document("lib/keep/below", "kept")
     inner.store_document("a", "x")
 
-    with Mounts({"": root, "lib/deep": inner}) as table:
+    with Mounts({"": root, "lib/deep": inner}, read_only=["lib/deep"]) as table:
         server = build_server(table)
         result = call(server, "delete_keys", key="lib")
-        assert result["remaining"] == 1
+        # `remaining` crosses, so it counts the read-only mount's row too --
+        # and then has to say that `recursive` would not reach it, or the
+        # advice it gives is wrong about part of the number it just gave.
+        assert result["remaining"] == 2
         assert result["mounts_kept"] == ["lib/deep"]
         assert "pass recursive=true" in result["note"]
-        assert "stops at a mount boundary" in result["note"]
+        assert "refuse a delete" in result["note"]
 
 
 def test_rage_check_finds_a_key_that_predates_the_bound(tmp_path):
@@ -895,7 +1068,7 @@ def test_a_read_only_flag_naming_nothing_mounted_is_refused(tmp_path):
     try:
         with pytest.raises(MountError) as raised:
             Mounts({"": root, "ref": ref}, read_only=["reference"])
-        assert "nothing is mounted at 'reference'" in str(raised.value)
+        assert "nothing is mounted at 'reference'" in messages.render(raised.value)
     finally:
         root.close()
         ref.close()
@@ -916,7 +1089,7 @@ def test_a_read_only_mount_is_not_created_when_it_does_not_exist(tmp_path):
     missing = tmp_path / "base" / "not-there.sqlite"
     with pytest.raises(MountError) as raised:
         open_mounts(tmp_path / "base", (), ["ref=not-there.sqlite"])
-    assert "read-only mount" in str(raised.value)
+    assert "read-only mount" in messages.render(raised.value)
     assert not missing.exists()
 
 
@@ -936,7 +1109,7 @@ def test_the_same_mount_point_cannot_be_both(tmp_path):
     Store(tmp_path / "base", filename="ref.sqlite").close()
     with pytest.raises(MountError) as raised:
         open_mounts(tmp_path / "base", ["ref=ref.sqlite"], ["ref=ref.sqlite"])
-    assert "more than one store is mounted" in str(raised.value)
+    assert "more than one store is mounted" in messages.render(raised.value)
 
 
 def test_the_server_takes_mount_ro_from_the_command_line():
