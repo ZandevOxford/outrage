@@ -101,8 +101,10 @@ import to avoid a cycle. Every caller — the server, the CLI, the mount table �
 goes through it or `open_store` rather than naming a class.
 
 Formats are detected: content that parses as a JSON object or array is recorded
-as `json`, everything else as `markdown`, and an explicit argument overrides
-both.
+as `json`, content opening with a doctype or an `<html>` element as `html`,
+everything else as `markdown`, and an explicit argument overrides all three.
+The fourth format, `text`, is never detected — plain text and markdown are the
+same characters — so it is stored only when asked for.
 
 A null key means the root wherever a call takes a subtree, resolved once on the
 way in so nothing below carries a second spelling of "everywhere". Three shared

@@ -544,7 +544,11 @@ either problem alone.
 
 ## Values
 
-Values are strings which should either be markdown or json.
+Values are strings. A document records which of four formats its text is —
+markdown, json, text or html — detected from the content when the caller does
+not say, except that plain text is never detected: it is indistinguishable from
+markdown, so it has to be asked for. The format is what the store knows about
+the text and nothing more; nothing parses or renders on it.
 
 ## Tools
 

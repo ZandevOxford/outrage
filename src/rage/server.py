@@ -715,7 +715,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         annotations=ToolAnnotations(idempotent_hint=True),
         description=(
             "Store a document or a metadata value at a key, overwriting whatever "
-            "is there. Content should be markdown or JSON. A whole segment given "
+            "is there. Content is markdown, JSON, plain text or HTML. A whole segment given "
             "as `?` is replaced by a number the store allocates, so `tmp/?` "
             "writes to `tmp/1` in an empty store; the returned `key` is the one "
             "actually written, and is what to use for related keys afterwards. "
@@ -738,7 +738,12 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         content: Annotated[str, Field(description="Document content")],
         format: Annotated[
             str | None,
-            Field(description="'markdown' or 'json'; detected from the content when omitted"),
+            Field(
+                description=(
+                    "'markdown', 'json', 'text' or 'html'; detected from the content "
+                    "when omitted, though detection never chooses 'text'"
+                )
+            ),
         ] = None,
         title: Annotated[
             str | None,

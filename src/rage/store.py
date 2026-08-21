@@ -44,6 +44,7 @@ import importlib
 import inspect
 import json
 import os
+import re
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Sequence
@@ -83,9 +84,13 @@ DEFAULT_MAX_CHARS = 8000
 #: listing rather than a read.
 DEFAULT_BULK_MAX_CHARS = 2000
 
-#: What a document may be stored as. Detected from the content when a caller
-#: names neither, and the only thing the store knows about a document's text.
-FORMATS = ("markdown", "json")
+#: What a document may be stored as, and the only thing the store knows about
+#: a document's text. Detected from the content when a caller names none, but
+#: only two of the four can be: JSON and HTML each open with something no other
+#: format plausibly opens with, while 'text' and 'markdown' are the same
+#: characters and only the caller knows which was meant. So plain text is asked
+#: for, never inferred. See :func:`_detect_format`.
+FORMATS = ("markdown", "json", "text", "html")
 
 #: Encodings a caller may use for the content and title it passes in. These
 #: describe the argument in transit, not the stored document, which is always
@@ -515,8 +520,10 @@ class Store(ABC):
         an empty store. Returns the key actually written, which is the only way
         the caller learns an allocated number.
 
-        ``format`` defaults to 'json' when the content parses as a JSON object
-        or array, and 'markdown' otherwise.
+        ``format`` is one of :data:`FORMATS`. Left out, it defaults to 'json'
+        when the content parses as a JSON object or array, 'html' when it opens
+        with a doctype or an ``<html>`` element, and 'markdown' otherwise --
+        'text' is never detected and has to be asked for.
 
         ``title`` writes the ``!title`` metadata alongside the document in the
         same transaction. It saves a second call, but it exists mainly because
@@ -1154,7 +1161,21 @@ def _decode(value: str, encoding: str, what: str) -> str:
     return decoded
 
 
+#: An HTML document announcing itself in its first characters: a doctype, or
+#: the root element. Deliberately narrow -- markdown carries inline HTML, so a
+#: document opening with `<div>` or `<img>` is still markdown and a looser test
+#: would relabel a great deal of ordinary prose.
+_HTML_OPENING = re.compile(r"<(?:!doctype\s+html\b|html[\s>])", re.IGNORECASE)
+
+
 def _detect_format(content: str) -> str:
+    """The format ``content`` declares about itself, or markdown.
+
+    Only a declaration at the very start counts, and only one that no markdown
+    document plausibly makes: JSON that actually parses, or an HTML doctype or
+    root element. Everything else is markdown, which is the honest answer for
+    prose and the unavoidable one for plain text -- see :data:`FORMATS`.
+    """
     stripped = content.lstrip()
     if stripped[:1] in ("{", "["):
         try:
@@ -1162,6 +1183,8 @@ def _detect_format(content: str) -> str:
         except ValueError:
             return "markdown"
         return "json"
+    if _HTML_OPENING.match(stripped):
+        return "html"
     return "markdown"
 
 

@@ -47,15 +47,24 @@ PAGE = 200
 
 #: The extension a document is written with, by stored format. Named for the
 #: direction it maps in, because the inverse is right below it and a reader
-#: reaching for one of the two should not have to check which is which.
-EXTENSION_BY_FORMAT = {"markdown": ".md", "json": ".json"}
+#: reaching for one of the two should not have to check which is which. One
+#: entry per member of :data:`rage.store.FORMATS`, so nothing can be stored
+#: that an export cannot name.
+EXTENSION_BY_FORMAT = {
+    "markdown": ".md",
+    "json": ".json",
+    "text": ".txt",
+    "html": ".html",
+}
 
 #: The format a file name declares. Deliberately the inverse of
-#: :data:`EXTENSION_BY_FORMAT` and nothing more: the two extensions an export
-#: writes are the two an import strips, so a file named `myfile.py` keeps its
-#: name and becomes the key `myfile.py` rather than losing a suffix nothing
-#: here put there. Not to be confused with :data:`rage.store.FORMATS`, which is
-#: what a document may be *stored* as; this is what a file name says it is.
+#: :data:`EXTENSION_BY_FORMAT` and nothing more: the extensions an export
+#: writes are the extensions an import strips, so a file named `myfile.py`
+#: keeps its name and becomes the key `myfile.py` rather than losing a suffix
+#: nothing here put there. That is why there is no `.htm` and no `.text`, close
+#: as they are -- an export never writes one, so an import reads it as part of
+#: the name. Not to be confused with :data:`rage.store.FORMATS`, which is what
+#: a document may be *stored* as; this is what a file name says it is.
 FORMAT_BY_EXTENSION = {
     extension: format for format, extension in EXTENSION_BY_FORMAT.items()
 }
@@ -182,6 +191,8 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
 
     >>> path_for_key("a/b", "markdown"), path_for_key("a/b", "json")
     (PurePosixPath('a/b.md'), PurePosixPath('a/b.json'))
+    >>> path_for_key("a/b", "text"), path_for_key("a/b", "html")
+    (PurePosixPath('a/b.txt'), PurePosixPath('a/b.html'))
     >>> path_for_key("a/b/!title")
     PurePosixPath('a/b/!title.md')
     """
@@ -215,6 +226,8 @@ def key_for_path(
     ('a/b', 'markdown')
     >>> key_for_path("b.json", "a")
     ('a/b', 'json')
+    >>> key_for_path("notes.txt"), key_for_path("page.html")
+    (('notes', 'text'), ('page', 'html'))
     >>> key_for_path("src/myfile.py")
     ('src/myfile.py', None)
     """
