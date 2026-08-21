@@ -354,7 +354,7 @@ def test_the_root_mount_is_recorded_only_when_it_is_not_the_default(tmp_path):
     assert "--root-mount" not in plain["args"]
 
     same = config_module.server_entry(
-        tmp_path / "base", command=["rage-server"], root_mount=store.DB_FILENAME
+        tmp_path / "base", command=["rage-server"], root_mount=store.default_store_file()
     )
     assert same["args"] == plain["args"]
 

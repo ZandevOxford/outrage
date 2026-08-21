@@ -1264,13 +1264,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--root-mount",
         dest="root_mount",
-        default=store_module.DB_FILENAME,
+        default=store_module.default_store_file(),
         metavar="FILE",
         help=(
             "The store answering for every key no mount claims, as a file "
-            f"inside --dir (default: {store_module.DB_FILENAME}). A file rather "
-            "than a directory, so that one directory holds several stores and "
-            "so that a backend other than SQLite is named by the file it keeps."
+            f"inside --dir (default: {store_module.default_store_file()}). A "
+            "file rather than a directory, so that one directory holds several "
+            "stores and so that a backend other than SQLite is named by the "
+            "file it keeps."
         ),
     )
     parser.add_argument(

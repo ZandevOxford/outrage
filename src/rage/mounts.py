@@ -45,7 +45,6 @@ from . import store as store_module
 from .errors import RageError
 from .eventlog import EventLog
 from .store import (
-    DB_FILENAME,
     BoundedSubtree,
     Entry,
     KeyNotFoundError,
@@ -604,7 +603,7 @@ def open_mounts(
     specs: Sequence[str] = (),
     read_only_specs: Sequence[str] = (),
     *,
-    root_mount: str | os.PathLike[str] = DB_FILENAME,
+    root_mount: str | os.PathLike[str] | None = None,
     log: EventLog | None = None,
 ) -> Mounts:
     """Open every store in ``directory``, as one table.

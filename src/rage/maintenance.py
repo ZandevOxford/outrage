@@ -34,7 +34,7 @@ from pathlib import Path
 
 from . import keys
 from .errors import RageError
-from .store import DB_FILENAME, store_file
+from .store import store_file
 from .store_sqlite import SCHEMA_VERSION, SqliteStore
 
 
@@ -330,7 +330,7 @@ def _sizes(store: SqliteStore) -> tuple[int, int]:
     )
 
 
-def require_store(directory: Path, filename: str = DB_FILENAME) -> Path:
+def require_store(directory: Path, filename: str | None = None) -> Path:
     """Refuse a store file that is not there, rather than creating one.
 
     ``Store.__init__`` creates what is missing, so every command that means to

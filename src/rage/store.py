@@ -44,7 +44,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Self, TypeVar
+from typing import Any, ClassVar, Self, TypeVar
 
 from . import eventlog, keys
 from .errors import RageError
@@ -53,13 +53,6 @@ from .eventlog import EventLog
 #: Default directory name, relative to the working directory, when neither
 #: --dir nor RAGE_DIR is given.
 DEFAULT_DIR_NAME = ".rage"
-
-#: Default database file inside the store directory: the root mount, when
-#: ``--root-mount`` names nothing else. A store is addressed as a *file* within
-#: a directory rather than as a directory of its own, so that one directory can
-#: hold several stores side by side and so that a backend which is not SQLite
-#: can be named by the file it keeps.
-DB_FILENAME = "store.sqlite"
 
 #: Where backups go when no destination is given, relative to the store
 #: directory.
@@ -304,9 +297,9 @@ UNBOUNDED = KeyRange()
 
 def store_file(
     directory: str | os.PathLike[str],
-    filename: str | os.PathLike[str] = DB_FILENAME,
+    filename: str | os.PathLike[str] | None = None,
 ) -> Path:
-    """The database a store keeps, from a name relative to its directory.
+    """The file a store keeps, from a name relative to its directory.
 
     One rule, in one place, for every store this process opens: the root mount
     and each ``--mount`` alike. The directory is shared infrastructure -- the
@@ -318,12 +311,17 @@ def store_file(
     lie and a configuration file unmovable; ``..`` would reach outside the
     directory an operator named. Both are refused rather than resolved.
 
+    ``filename`` of None is whatever the default backend calls its store file
+    -- see :func:`default_store_file`. A store that already knows its backend
+    passes that backend's name instead, so a store is never opened under a
+    name a different backend chose.
+
     >>> store_file("/srv/project/.rage").name
     'store.sqlite'
     >>> store_file("/srv/project/.rage", "ref.sqlite").name
     'ref.sqlite'
     """
-    relative = Path(filename)
+    relative = Path(default_store_file() if filename is None else filename)
     if not str(relative) or relative == Path("."):
         raise StoreFileError("store-file-unnamed")
     if relative.is_absolute():
@@ -416,11 +414,18 @@ class Store(ABC):
     naming a backend.
     """
 
+    #: What this backend calls its store file when a caller names none. Set by
+    #: every concrete backend, and the only thing about the file a backend
+    #: decides: that it *is* a file inside a directory is settled above, by
+    #: :func:`store_file`. :func:`default_store_file` is how the rest of the
+    #: package asks for it without naming a backend to ask.
+    default_filename: ClassVar[str]
+
     def __init__(
         self,
         directory: str | os.PathLike[str] | None = None,
         *,
-        filename: str | os.PathLike[str] = DB_FILENAME,
+        filename: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
     ) -> None:
         # A null log rather than None, so nothing below has to ask whether
@@ -431,8 +436,13 @@ class Store(ABC):
         self.directory = resolve_directory(directory)
         # The file this store keeps its documents in, inside that directory.
         # Settled before the directory is made, so a store file that will be
-        # refused leaves nothing behind to explain.
-        self.path = store_file(self.directory, filename)
+        # refused leaves nothing behind to explain. A caller who named no file
+        # gets *this* backend's default rather than the package's, so a store
+        # constructed directly is never opened under another backend's name.
+        self.path = store_file(
+            self.directory,
+            type(self).default_filename if filename is None else filename,
+        )
         self.directory.mkdir(parents=True, exist_ok=True)
         # A store file may name a subdirectory, and nothing else creates it.
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -742,17 +752,13 @@ class Store(ABC):
         return target
 
 
-def default_store(
-    directory: str | os.PathLike[str] | None = None,
-    *,
-    filename: str | os.PathLike[str] = DB_FILENAME,
-    log: EventLog | None = None,
-) -> Store:
-    """A store of the backend this build opens when nobody names one.
+def _backend() -> type[Store]:
+    """The backend class this build uses when nobody names one.
 
     The **single place** the package decides that a store is SQLite. Everything
-    else -- the server, the command line, the mount table -- asks for a store
-    and is handed one, so a second backend arrives here and nowhere else.
+    else -- the server, the command line, the mount table -- asks for a store,
+    or for what a store file is called, and is handed the answer; so a second
+    backend arrives here and nowhere else.
 
     The import is deferred rather than made at module scope, because the
     backend is written in terms of this module and importing it back at the top
@@ -762,14 +768,43 @@ def default_store(
     """
     from .store_sqlite import SqliteStore
 
-    return SqliteStore(directory, filename=filename, log=log)
+    return SqliteStore
+
+
+def default_store_file() -> str:
+    """What the default backend calls its store file.
+
+    A store is addressed as a *file* within a directory rather than as a
+    directory of its own, so that one directory can hold several stores side by
+    side and so that a backend which is not SQLite can be named by the file it
+    keeps. That rule is this module's and does not vary; *which* name is the
+    backend's, and asking for it through here is what keeps the front ends from
+    having to name one to print a default.
+
+    It is the root mount when ``--root-mount`` names nothing else, and the file
+    a bare ``--dir`` opens.
+    """
+    return _backend().default_filename
+
+
+def default_store(
+    directory: str | os.PathLike[str] | None = None,
+    *,
+    filename: str | os.PathLike[str] | None = None,
+    log: EventLog | None = None,
+) -> Store:
+    """A store of the backend this build opens when nobody names one.
+
+    ``filename`` of None means whatever that backend calls its store file.
+    """
+    return _backend()(directory, filename=filename, log=log)
 
 
 @contextmanager
 def open_store(
     directory: str | os.PathLike[str] | None = None,
     *,
-    filename: str | os.PathLike[str] = DB_FILENAME,
+    filename: str | os.PathLike[str] | None = None,
     log: EventLog | None = None,
 ) -> Iterator[Store]:
     """Open a store, closing it on exit."""
@@ -1039,7 +1074,6 @@ def _excerpt(
 __all__ = [
     "BACKUP_DIR_NAME",
     "BACKUP_STAMP",
-    "DB_FILENAME",
     "DEFAULT_BULK_MAX_CHARS",
     "DEFAULT_DIR_NAME",
     "DEFAULT_MAX_CHARS",
@@ -1061,6 +1095,7 @@ __all__ = [
     "Store",
     "StoreFileError",
     "default_store",
+    "default_store_file",
     "open_store",
     "read_all",
     "resolve_directory",
