@@ -21,6 +21,13 @@ from .errors import RageError
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """The whole command line, and the handler each subcommand dispatches to.
+
+    Every subcommand sets ``handler``, so :func:`main` dispatches without a
+    branch per command and this function is the only place the shape of the
+    command line is written down. Separate from :func:`main` so that a test can
+    ask what an argument list parses to without running anything.
+    """
     parser = argparse.ArgumentParser(
         prog="rage", description="Command line tool for the Rage document store"
     )
@@ -1167,6 +1174,17 @@ def _print_command(label: str, entry: dict[str, object], out: TextIO) -> None:
 
 
 def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
+    """Run one command and return its exit status.
+
+    The console script ``rage``, and the whole of what this front end does:
+    parse, dispatch, and turn a :class:`~rage.errors.RageError` into a sentence
+    on stderr. ``out`` is where a command's own output goes, and defaults to
+    stdout; a test passes its own and reads what a person would have seen.
+
+    Returns rather than exits, so that a caller in the same process -- which is
+    every test of this module -- gets the status without the interpreter
+    stopping.
+    """
     args = parse_args(argv)
     try:
         return args.handler(args, out or sys.stdout)

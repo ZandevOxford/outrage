@@ -178,6 +178,13 @@ class Segment:
 
     @property
     def store(self) -> Store:
+        """The store to ask for this segment, which is not necessarily the one
+        the caller's key named.
+
+        A segment is a stretch of *one* store, and a traversal crossing a mount
+        boundary produces several. ``subtree`` and ``key_range`` beside it are
+        in this store's own namespace, never the outer one.
+        """
         return self.mount.store
 
     def resume_from(self, after: str | None) -> tuple[str | None, bool]:
@@ -228,10 +235,19 @@ class Resolved:
 
     @property
     def store(self) -> Store:
+        """The store that owns the key: the longest mount prefix matching it.
+
+        Not "the root store unless something is mounted" -- the root is itself
+        a mount, so a lone store is a table of one and takes the same path. Ask
+        this store for :attr:`key`, which is the inner spelling; asking it for
+        the key the caller passed would be asking for a key it has never heard
+        of.
+        """
         return self.mount.store
 
     @property
     def read_only(self) -> bool:
+        """Whether the mount that owns the key refuses writes."""
         return self.mount.read_only
 
     def writable(self, action: str = "write") -> Resolved:
@@ -312,6 +328,13 @@ class Mounts:
 
     @property
     def root(self) -> Mount:
+        """The mount at the empty prefix, which every table is required to have.
+
+        The store a key falls to when nothing longer claims it, and so the only
+        one whose ``readme`` is delivered and the only one a caller can reach
+        without naming a mount. Its prefix being empty is what makes
+        :meth:`resolve` total: there is always a longest match.
+        """
         return self._by_prefix[keys.ROOT]
 
     @property

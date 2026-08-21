@@ -1235,6 +1235,17 @@ def _error_text(result: Any) -> str | None:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """The server's command line: which stores to serve, and what to record.
+
+    Three groups of arguments, and the first two are the interesting pair.
+    ``--dir`` says which *directory* holds the stores, ``--root-mount`` and the
+    repeatable ``--mount``/``--mount-ro`` say which *files* inside it are
+    mounted where -- see ``project/reference/planned/mounts``. ``--log`` and
+    ``--log-content`` say what is recorded about the calls that arrive.
+
+    Separate from :func:`main` so that a test can ask what an argument list
+    parses to without opening a store or starting a server.
+    """
     parser = argparse.ArgumentParser(
         prog="rage-server", description="MCP server for the Rage document store"
     )
@@ -1320,6 +1331,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Open the configured stores and serve them over stdio until the client
+    stops.
+
+    The console script ``rage-server``, and the entry point an MCP client
+    launches. It resolves the store directory once -- the event log defaults to
+    a file beside it and needs the same answer -- opens the mount table, warns
+    on stderr about any mount that shadows keys already held, and hands the
+    table to :func:`build_server`.
+
+    Returns rather than exits, for the same reason :func:`rage.cli.main` does.
+    """
     args = parse_args(argv)
     # Resolved here rather than left to the store, because the log defaults to
     # a file beside the database and so needs the same answer.

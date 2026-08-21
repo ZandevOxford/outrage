@@ -82,6 +82,14 @@ class Report:
 
     @property
     def repairable(self) -> list[Problem]:
+        """The problems ``--repair`` would actually act on, in the order found.
+
+        A subset of :attr:`problems`, and usually a strict one. Exactly one
+        summary is repairable today -- an uncheckpointed WAL -- because the two
+        repairs move where the bytes live and nothing else; a damaged file or a
+        schema from a newer build is reported and left alone. An empty list is
+        what stops ``rage check`` offering ``--repair``.
+        """
         return [problem for problem in self.problems if problem.repairable]
 
 
