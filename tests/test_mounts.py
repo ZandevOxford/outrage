@@ -25,7 +25,7 @@ from rage.mounts import (
     parse_spec,
 )
 from rage.server import build_server, parse_args
-from rage.store import BackendError, StoreFileError
+from rage.store import BackendError, ReadOnlyStoreError, StoreFileError
 from rage.store_sqlite import SqliteStore
 
 
@@ -1179,13 +1179,28 @@ def test_a_parquet_mount_is_read_only_without_anyone_saying_so(tmp_path):
 
 
 def test_a_parquet_mount_refuses_a_write_without_offering_a_flag(tmp_path):
-    """Unlike --mount-ro, there is no way of opening it that would succeed."""
+    """Which of the two refusals it is matters, and the store is what knows.
+
+    A read-only *mount* tells the caller which flag to drop. A read-only
+    *backend* must not, because no way of starting the server makes the write
+    succeed — and the mount layer refuses first, so without this it would give
+    advice that costs someone a restart to find out is wrong. Found by
+    mounting a real one and writing to it.
+    """
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
     a_packed_store(tmp_path / "base")
+    SqliteStore(tmp_path / "base", filename="flagged.sqlite").close()
 
-    with open_mounts(tmp_path / "base", ["ref=ref.parquet"]) as table:
-        with raises_rendered(ReadOnlyMountError, "read-only") as raised:
+    with open_mounts(
+        tmp_path / "base", ["ref=ref.parquet"], ["ro=flagged.sqlite"]
+    ) as table:
+        with raises_rendered(ReadOnlyStoreError, "No way of starting the server") as raised:
             table.resolve("ref/python/new").writable()
+        assert raised.value.code == "store-read-only"
+
+        # And a store that *could* be written still says which flag did it.
+        with raises_rendered(ReadOnlyMountError, "--mount instead") as raised:
+            table.resolve("ro/anything").writable()
         assert raised.value.code == "mount-read-only"
 
 
@@ -1212,7 +1227,9 @@ def test_a_parquet_mount_reads_through_the_server(tmp_path):
         refused = call_expecting_error(
             server, "store_document", key="ref/python/new", content="x"
         )
-        assert "read-only" in refused
+        assert "written whole rather than updated in place" in refused
+        # The key is named as the *caller* sees it, through the mount prefix.
+        assert "'ref/python/new'" in refused
 
 
 def test_a_parquet_store_cannot_be_the_root_mount(tmp_path):

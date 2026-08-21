@@ -473,10 +473,15 @@ def _assets_empty(name: Namer, /, *, asset: str, path: str, **_: Any) -> str:
 def _store_read_only(name: Namer, /, *, key: str, path: str, action: str, **_: Any) -> str:
     # Deliberately does *not* offer a flag to drop, which is what separates
     # this from `mount-read-only`: no way of opening a parquet file makes a
-    # write to it succeed, and advice that cannot work is worse than none.
+    # write to it succeed, and advice that cannot work is worse than none. It
+    # reaches a caller through a mount as well as through a bare store --
+    # `Resolved.writable` picks between the two refusals by asking the store
+    # rather than the configuration.
     return (
-        f"cannot {action} {name(key)!r}: {path} is a parquet store, which is "
-        f"written whole rather than updated. Build a new one with `rage pack`."
+        f"cannot {action} {name(key)!r}: it is in a parquet store, which is "
+        f"written whole rather than updated in place. No way of starting the "
+        f"server allows a write here; build a new one with `rage pack`. "
+        f"({path})"
     )
 
 

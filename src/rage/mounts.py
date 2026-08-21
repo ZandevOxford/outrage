@@ -49,6 +49,7 @@ from .store import (
     Entry,
     KeyNotFoundError,
     KeyRange,
+    ReadOnlyStoreError,
     Store,
     store_file,
 )
@@ -265,9 +266,27 @@ class Resolved:
         The message names the mount rather than only the key, because the key
         looks perfectly ordinary and the reason it was refused is somewhere the
         caller cannot see: the command line the server was started with.
+
+        **Which of the two refusals this is matters, and the store is what
+        knows.** A mount refuses because of how it was started, and the message
+        says so and tells the caller which flag to drop. A *backend* refuses
+        because a parquet file is not updated in place, and no flag would make
+        the same call succeed -- so the mount's advice would be wrong, and
+        wrong in the way that costs someone a restart to find out. The two are
+        both real and they compose: a SQLite store is read-write or read-only
+        according to how it was mounted, and a parquet store is read-only
+        either way. Found by mounting one and writing to it, which is what a
+        live test is for.
         """
         if not self.read_only:
             return self
+        if not type(self.mount.store).writable:
+            raise ReadOnlyStoreError(
+                "store-read-only",
+                key=self.outer,
+                path=str(self.mount.store.path),
+                action=action,
+            )
         raise ReadOnlyMountError(
             "mount-read-only", key=self.outer, mount=self.mount.prefix, action=action
         )
