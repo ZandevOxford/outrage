@@ -25,9 +25,10 @@ from __future__ import annotations
 import ast
 import itertools
 import pathlib
+import threading
 
 import pytest
-from conftest import raises_rendered
+from conftest import in_threads, raises_rendered
 
 from rage import bulk, keys
 from rage import store as store_module
@@ -718,3 +719,100 @@ def test_check_and_repair_refuse_a_backend_they_cannot_ask(tmp_path, packed):
 
     with raises_rendered(maintenance.CheckError, "cannot repair"):
         maintenance.repair(packed)
+
+
+def test_a_file_handle_and_its_row_group_cache_do_not_escape_their_thread(tmp_path):
+    """Each thread gets its own of both, mirroring the SQLite connection.
+
+    Asserted on the objects rather than by racing readers, and deliberately.
+    Two threads sharing the cache genuinely can return a different document's
+    text -- the check on the group and the read of the content are two
+    operations -- but the window is a bytecode or two wide, so a test that
+    hammers it passes with the bug in place. That was tried, and it did.
+    Pinning the design that removes the window is the test that fails when
+    somebody undoes it.
+
+    The handle matters more than the cache. A ``ParquetFile`` holds a file
+    object with a seek position and a reader with buffered state, so two
+    threads reading row groups through one is the same mistake
+    ``planned/concurrency`` records, and this one is in C.
+    """
+    ParquetStore.build(
+        tmp_path / "many.parquet",
+        [(f"k/{n:03d}", f"document {n}", None, None) for n in range(60)],
+    )
+    # The objects, not their ids. A thread's locals are freed when it ends, so
+    # `id()` of a dead thread's cache is reused by a live one's and the test
+    # reports sharing that is not there -- which it did, first time.
+    handles: dict[int, object] = {}
+    caches: dict[int, object] = {}
+    lock = threading.Lock()
+
+    with ParquetStore(tmp_path, filename="many.parquet") as store:
+
+        def note(worker):
+            # Reads a document, which opens this thread's handle and fills its
+            # cache, and checks it got the right one while it is here.
+            assert store.retrieve_document("k/030").content == "document 30"
+            with lock:
+                handles[worker] = store._parquet
+                caches[worker] = store._local.cache
+
+        in_threads(note, threads=4)
+
+    assert len({id(handle) for handle in handles.values()}) == 4
+    assert len({id(cache) for cache in caches.values()}) == 4
+
+
+def test_parallel_readers_all_get_the_document_they_asked_for(tmp_path, monkeypatch):
+    """A smoke test over the design above, at a row-group size that crosses.
+
+    It does not reliably catch a shared cache -- see the test above for why --
+    but it does catch a handle that cannot serve two threads at once, which is
+    the failure that raises rather than lies.
+    """
+    from rage import store_parquet
+
+    monkeypatch.setattr(store_parquet, "ROW_GROUP_SIZE", 4)
+    ParquetStore.build(
+        tmp_path / "many.parquet",
+        [(f"k/{n:03d}", f"document {n}", None, None) for n in range(60)],
+    )
+
+    with ParquetStore(tmp_path, filename="many.parquet") as store:
+
+        def read(worker):
+            for n in range(60):
+                found = store.retrieve_document(f"k/{n:03d}").content
+                assert found == f"document {n}", f"worker {worker} read {found!r}"
+
+        in_threads(read)
+
+
+def test_read_only_is_the_backend_and_the_mount_together(tmp_path):
+    """Both, and they compose: neither one replaces the other.
+
+    A SQLite store is read-write or read-only according to how it was mounted.
+    A parquet store is read-only either way -- the flag can say so and adds
+    nothing, and leaving the flag off takes nothing away.
+    """
+    from rage.mounts import open_mounts
+
+    ParquetStore.build(tmp_path / "base" / "ref.parquet", [("a", "body", None, None)])
+    SqliteStore(tmp_path / "base", filename="rw.sqlite").close()
+    SqliteStore(tmp_path / "base", filename="ro.sqlite").close()
+
+    with open_mounts(
+        tmp_path / "base",
+        ["rw=rw.sqlite", "pq=ref.parquet"],
+        ["ro=ro.sqlite"],
+    ) as table:
+        assert not table.resolve("rw/x").read_only
+        assert table.resolve("ro/x").read_only
+        assert table.resolve("pq/x").read_only
+
+    # And naming the parquet mount read-only as well is neither an error nor a
+    # change: the flag is redundant against storage that already refuses.
+    with open_mounts(tmp_path / "base", ["rw=rw.sqlite"], ["pq=ref.parquet"]) as table:
+        assert table.resolve("pq/x").read_only
+        assert not table.resolve("rw/x").read_only

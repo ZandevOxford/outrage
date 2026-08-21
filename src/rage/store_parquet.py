@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -210,6 +211,13 @@ class _Index:
     #: bounded read bisects it at least twice.
     order: list[str]
 
+    #: The first row position of each row group, cumulative, so a row's
+    #: position tells you which group to open for its content. Here rather than
+    #: lazily on the store because it is one more fact read off the file, and
+    #: a second piece of lazily built shared state is a second thing to get
+    #: right under threads for no gain.
+    group_starts: list[int]
+
 
 class ParquetStore(Store):
     """A document store held in a single parquet file, read only."""
@@ -236,10 +244,19 @@ class ParquetStore(Store):
             # ``open_mounts`` makes for a read-only mount, one step further
             # along, and here it holds however the store was opened.
             raise BackendError("parquet-store-missing", path=str(self.path))
-        self._file: Any | None = None
-        self._cache: tuple[int, list[str]] | None = None
-        self._starts: list[int] | None = None
+        # One open file per thread, and one decoded row group per thread, for
+        # the reason `SqliteStore` keeps one connection per thread: the server
+        # runs its sync tool handlers in a worker pool, and a reader whose
+        # state is shared between them returns another thread's answer. That
+        # was a live defect once already -- `planned/concurrency` -- and it was
+        # silent about a third of the time, which is what makes it worth
+        # paying for here before anyone hits it.
+        self._local = threading.local()
+        # The index *is* shared, because it is immutable once built and there
+        # is no reason to hold one copy per thread of something that can be
+        # tens of megabytes. The lock is only around building it.
         self._built: _Index | None = None
+        self._lock = threading.Lock()
         self._check_version()
 
     # -- the file --------------------------------------------------------
@@ -267,24 +284,33 @@ class ParquetStore(Store):
     def _parquet(self) -> Any:
         """The open file, opened on first use.
 
-        One handle for the store rather than one per thread, which is the
-        difference from SQLite worth noticing: nothing here is a transaction
-        and nothing here writes, so there is no connection state to keep on the
-        thread that made it. Reads are ``read_row_group`` calls against an
-        immutable file, and pyarrow serves them from any thread.
+        One per thread, for the reason ``SqliteStore`` opens one connection per
+        thread. A ``ParquetFile`` holds a file object with a seek position and
+        a reader with buffered state, so two threads reading row groups through
+        one handle is the same shape of mistake -- and the file is read-only
+        and immutable, so a handle per thread costs a footer read and buys the
+        whole problem away.
+
+        **Never hand one of these to another thread**, which is the constraint
+        ``planned/concurrency`` records for SQLite and which holds here for the
+        same reason.
         """
-        if self._file is None:
+        opened: Any | None = getattr(self._local, "file", None)
+        if opened is None:
             _, pq = _arrow()
-            self._file = pq.ParquetFile(self.path)
-        return self._file
+            opened = self._local.file = pq.ParquetFile(self.path)
+        return opened
 
     @property
     def _index(self) -> _Index:
         """The small columns, read whole on first use.
 
-        Lazy because opening a mount should cost nothing until it is read: a
-        server holding a reference base beside a session store must not pay for
-        the reference base to answer a question about the session.
+        Lazy because mounting a reference base should cost nothing until it is
+        read: a server holding one beside a session store must not pay for the
+        reference base to answer a question about the session. Opening the
+        store reads the file's footer, to check the version while somebody is
+        still looking at the command that named it; the columns wait until
+        something asks.
 
         Read whole because the contract asks for totals. ``Page.total`` and
         ``Page.total_chars`` describe the selection rather than the page, and
@@ -293,9 +319,17 @@ class ParquetStore(Store):
         ``context/35/findings``: that field is what decides how much of a
         columnar file a read has to open.
         """
-        if self._built is None:
-            self._built = self._read_index()
-        return self._built
+        built = self._built
+        if built is None:
+            with self._lock:
+                # Re-checked inside the lock: two threads can both find it
+                # missing, and the second would otherwise build a second copy
+                # and hand back a different object from the one the first
+                # published.
+                if self._built is None:
+                    self._built = self._read_index()
+                built = self._built
+        return built
 
     def _read_index(self) -> _Index:
         """Every column but ``content``, as rows and the three lookups over them.
@@ -331,12 +365,22 @@ class ParquetStore(Store):
                 meta_names.setdefault(row.doc_key, set()).add(row.meta_name)
             _record_ancestry(children, row.key)
 
+        metadata = self._parquet.metadata
+        starts = [0]
+        for group in range(metadata.num_row_groups):
+            starts.append(starts[-1] + metadata.row_group(group).num_rows)
+
         return _Index(
             rows=rows,
             by_key=by_key,
             children=children,
             meta_names=meta_names,
             order=[row.sort_key for row in rows],
+            # The running total has one entry per group plus a tail past the
+            # last, and the tail is dropped: a bisect over the starts alone
+            # lands on the group a position is in, and an empty file keeps one
+            # entry so the arithmetic needs no special case.
+            group_starts=starts[:-1] or [0],
         )
 
     def _content(self, row: _Row) -> str:
@@ -347,36 +391,29 @@ class ParquetStore(Store):
         actually returning -- which, because the file is in ``sort_key`` order
         and a page is a contiguous run of it, fall in one or two groups.
 
-        The last group read is kept, which is what makes a page of twenty
-        documents one decompression rather than twenty. One group rather than a
-        cache of several: a read that walks the file in order never looks back,
-        and holding more would grow with the corpus for no reader that exists.
+        The last group read is kept -- per thread, like the handle -- which is
+        what makes a page of twenty documents one decompression rather than
+        twenty. One group rather than a cache of several: a read that walks the
+        file in order never looks back, and holding more would grow with the
+        corpus for no reader that exists.
         """
         group, offset = self._locate(row.position)
-        if self._cache is None or self._cache[0] != group:
+        # Read into a local before it is used, not tested on the attribute and
+        # then read from it again. Even per-thread that is the habit worth
+        # keeping: the two reads are what let a swapped cache return content
+        # from a different row group, and it would return it silently.
+        cached: tuple[int, list[str]] | None = getattr(self._local, "cache", None)
+        if cached is None or cached[0] != group:
             table = self._parquet.read_row_group(group, columns=["content"])
-            self._cache = (group, table.column("content").to_pylist())
-        return self._cache[1][offset]
+            cached = (group, table.column("content").to_pylist())
+            self._local.cache = cached
+        return cached[1][offset]
 
     def _locate(self, position: int) -> tuple[int, int]:
         """Which row group a row is in, and where within it."""
-        starts = self._group_starts()
+        starts = self._index.group_starts
         group = bisect_right(starts, position) - 1
         return group, position - starts[group]
-
-    def _group_starts(self) -> list[int]:
-        """The first row position of each row group, cumulative."""
-        if self._starts is None:
-            metadata = self._parquet.metadata
-            starts = [0]
-            for group in range(metadata.num_row_groups):
-                starts.append(starts[-1] + metadata.row_group(group).num_rows)
-            # The running total has one entry per group plus a tail past the
-            # last, and the tail is dropped: `bisect_right` over the starts
-            # alone lands on the group a position is in, and an empty file
-            # keeps one entry so that arithmetic needs no special case.
-            self._starts = starts[:-1] or [0]
-        return self._starts
 
     def close(self) -> None:
         """Drop the file handle and the index built over it.
@@ -384,13 +421,22 @@ class ParquetStore(Store):
         Safe more than once, which the contract requires and a store held by a
         mount table relies on: the table closes everything it opened when a
         single failure part way through means unwinding.
+
+        Only this thread's handle, for the reason :meth:`_parquet` gives. The
+        rest are released when their thread ends or the process exits.
         """
-        if self._file is not None:
-            self._file.close()
-            self._file = None
-        self._built = None
-        self._cache = None
-        self._starts = None
+        opened: Any | None = getattr(self._local, "file", None)
+        if opened is not None:
+            opened.close()
+            self._local.file = None
+        self._local.cache = None
+        # The index is the memory this store holds, and a caller saying it has
+        # finished means to have it back. Another thread still reading rebuilds
+        # it from its own handle, which costs work and breaks nothing --
+        # unlike a file handle, which is why that one is only ever this
+        # thread's to close.
+        with self._lock:
+            self._built = None
 
     # -- writing, which this backend does not do -------------------------
 
