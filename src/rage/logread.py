@@ -684,6 +684,7 @@ def _clock(ts: str) -> str:
 
 
 __all__ = [
+    "MESSAGE_CHARS",
     "Event",
     "Filter",
     "Log",

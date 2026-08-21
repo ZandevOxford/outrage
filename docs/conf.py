@@ -37,6 +37,15 @@ autodoc_typehints_format = "short"
 autodoc_default_options = {
     "members": True,
     "show-inheritance": True,
+    # Dataclass fields and the few methods carrying no docstring of their own.
+    # A frozen result type is mostly its fields, so hiding them would leave
+    # `Entry` and `Excerpt` documented as a sentence and nothing else.
+    #
+    # This does not reach module constants: autodoc needs a `#:` comment for
+    # those, whatever this says. `__all__` is the statement of what is public,
+    # so nothing in it should be missing here -- tests/test_public_api.py keeps
+    # that list honest, and a name it admits still needs its own `#:` line.
+    "undoc-members": True,
 }
 
 # `from __future__ import annotations` makes every annotation a string; this

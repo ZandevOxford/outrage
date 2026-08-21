@@ -33,6 +33,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+#: Environment variable naming the log file. Consulted after ``--log`` and
+#: before giving up: there is no default location, because the default is not
+#: to log at all.
 ENV_LOG = "RAGE_LOG"
 
 #: Filename used when ``--log`` is given without a path, alongside the database
@@ -44,6 +47,9 @@ DEFAULT_LOG_NAME = "log.jsonl"
 #: ``content_field`` for why it keeps both ends.
 CONTENT_POLICIES = ("none", "excerpt", "full")
 
+#: How much of a document the ``excerpt`` policy keeps, split between its two
+#: ends. Enough to recognise what was written without the log becoming a second
+#: copy of the store.
 DEFAULT_EXCERPT_CHARS = 200
 
 #: Argument names whose values are document text rather than metadata about it,
@@ -66,6 +72,8 @@ class _BesideTheStore:
         return "<beside the store>"
 
 
+#: ``--log`` given with no path: log beside the store, once the store
+#: directory is known. Pass it where a path would go.
 DEFAULT = _BesideTheStore()
 
 #: The request currently being served, so that store accesses can be attributed

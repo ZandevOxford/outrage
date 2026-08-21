@@ -632,3 +632,36 @@ def fits(key: str) -> bool:
     True
     """
     return is_valid(key, max_segments=MAX_JOINED_SEGMENTS)
+
+
+__all__ = [
+    "DELIMITER",
+    "LEGACY_META",
+    "MAX_JOINED_SEGMENTS",
+    "MAX_SEGMENTS",
+    "MAX_SEGMENT_CHARS",
+    "META_PREFIX",
+    "MIN_SEGMENT_CHAR",
+    "NUMERIC_RE",
+    "ROOT",
+    "WILDCARD",
+    "InvalidKeyError",
+    "Key",
+    "ancestors",
+    "depth",
+    "displayed",
+    "fits",
+    "is_valid",
+    "meta_sort_suffix",
+    "migrate_legacy",
+    "normalise_key",
+    "normalise_segment",
+    "parse",
+    "remaining_depth",
+    "sort_form",
+    "sort_subtree_end",
+    "strip_prefix",
+    "substitute_wildcard",
+    "subtree_range",
+    "with_prefix",
+]

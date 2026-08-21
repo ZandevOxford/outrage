@@ -1176,6 +1176,8 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
 
 
 __all__ = [
+    "NOUNS",
+    "ConflictingSource",
     "backup_command",
     "check_command",
     "config_command",
