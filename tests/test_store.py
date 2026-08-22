@@ -79,7 +79,7 @@ def test_reopening_keeps_content(tmp_path):
 def test_resolve_directory_prefers_explicit_then_env_then_cwd(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv(store_module.ENV_DIR, raising=False)
-    assert store_module.resolve_directory() == tmp_path / ".rage"
+    assert store_module.resolve_directory() == tmp_path / ".outrage"
 
     monkeypatch.setenv(store_module.ENV_DIR, str(tmp_path / "from-env"))
     assert store_module.resolve_directory() == tmp_path / "from-env"
@@ -1865,7 +1865,7 @@ def test_a_store_named_no_file_takes_its_own_backend_s_default(tmp_path):
     :func:`~outrage.store.default_store_file` instead, which is what keeps the
     command line and the server from naming a backend to print a default.
     """
-    s = SqliteStore(tmp_path / ".rage")
+    s = SqliteStore(tmp_path / ".outrage")
     try:
         assert s.path.name == SqliteStore.default_filename
     finally:
@@ -1880,10 +1880,10 @@ def test_what_the_interface_settles_is_settled_once(tmp_path):
     ``store_file`` about what ``--dir`` and a mount spec mean, which is the one
     rule ``context/24/decisions`` exists to keep in one place.
     """
-    s = SqliteStore(tmp_path / ".rage", filename="ref.sqlite")
+    s = SqliteStore(tmp_path / ".outrage", filename="ref.sqlite")
     try:
-        assert s.directory == tmp_path / ".rage"
-        assert s.path == tmp_path / ".rage" / "ref.sqlite"
+        assert s.directory == tmp_path / ".outrage"
+        assert s.path == tmp_path / ".outrage" / "ref.sqlite"
         assert type(s).__init__ is not Store.__init__
         assert s.backup_path.__func__ is Store.backup_path
     finally:

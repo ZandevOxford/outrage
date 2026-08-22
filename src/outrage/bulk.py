@@ -347,7 +347,7 @@ def _write_file(path: Path, content: str) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, prefix=".rage-", suffix=".tmp", delete=False
+        "w", encoding="utf-8", dir=path.parent, prefix=".outrage-", suffix=".tmp", delete=False
     )
     temporary = Path(handle.name)
     try:

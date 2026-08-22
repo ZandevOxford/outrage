@@ -91,7 +91,7 @@ ruff check . && ruff format --check .
 ```
 
 The stores live in a directory given to the server by `--dir` or `RAGE_DIR`,
-defaulting to `./.rage/` in the working directory, each as a file inside it:
+defaulting to `./.outrage/` in the working directory, each as a file inside it:
 `--root-mount FILE` names the one answering for everything (default
 `store.sqlite`) and `--mount KEY=FILE` mounts another under a key. A store file
 is always relative to the directory, so only `--dir` is a path. See

@@ -316,7 +316,7 @@ def require_store(directory: Path, filename: str | None = None) -> Path:
     delivered as a clean bill of health.
 
     Names the file, not just the directory: since a directory holds several
-    stores, "no store in .rage" would be the wrong sentence as often as it was
+    stores, "no store in .outrage" would be the wrong sentence as often as it was
     the right one.
     """
     if not store_file(directory, filename).exists():

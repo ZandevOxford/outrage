@@ -67,7 +67,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="PATH",
         default=None,
         help=(
-            "Store directory to record. Defaults to .rage in the project "
+            "Store directory to record. Defaults to .outrage in the project "
             "directory. Written absolute, since the server cannot be relied on "
             "to start in the project directory."
         ),
@@ -116,7 +116,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="PATH",
         default=None,
         help=(
-            "Store directory to record. Defaults to .rage in the project "
+            "Store directory to record. Defaults to .outrage in the project "
             "directory. Written absolute, since the server cannot be relied on "
             "to start in the project directory."
         ),

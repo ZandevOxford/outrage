@@ -79,13 +79,13 @@ def test_the_real_interpreter_yields_an_absolute_command():
 
 def test_store_directory_is_recorded_absolute(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    entry = server_entry(".rage", command=["/env/bin/outrage-server"])
+    entry = server_entry(".outrage", command=["/env/bin/outrage-server"])
 
     recorded = Path(entry["args"][entry["args"].index("--dir") + 1])
     assert recorded.is_absolute()
     # A relative --dir would resolve against wherever the client happened to
     # launch the server, creating a second empty store instead of failing.
-    assert recorded == (tmp_path / ".rage").resolve()
+    assert recorded == (tmp_path / ".outrage").resolve()
 
 
 def test_entry_keeps_extra_command_arguments(tmp_path):
