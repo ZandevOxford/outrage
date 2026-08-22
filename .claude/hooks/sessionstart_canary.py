@@ -9,20 +9,78 @@ wrong in a way nothing downstream could detect.
 The whole stdin payload is recorded rather than the fields we believe matter.
 A harness that renames or adds one is then visible in the log, instead of
 being read as absent by a parser that was written against an older shape.
+
+The read of stdin is bounded, because `sys.stdin.read()` returns only at EOF
+and nothing here controls when the client closes it. Unbounded, this hook can
+hold up a session start until the harness kills it at its own timeout, which
+is the failure the guard at the bottom of this file already refuses to allow -
+and worse than the bug being watched for, because it stalls every session
+rather than losing one string. On expiry the token is still minted and still
+emitted: a canary that stays silent proves the wrong half.
 """
 
 from __future__ import annotations
 
 import datetime
 import json
+import os
 import secrets
+import signal
 import sys
 from pathlib import Path
+
+#: How long to wait for the client to close stdin. Generous against a slow
+#: client and still short enough that a session start does not read as hung.
+STDIN_TIMEOUT_SECONDS = 5
+
+
+class _StdinNeverClosed(Exception):
+    """Raised from the alarm handler to break out of a blocked read."""
+
+
+def read_stdin(timeout: int = STDIN_TIMEOUT_SECONDS) -> tuple[str, bool]:
+    """Read stdin to EOF, giving up after `timeout` seconds.
+
+    Returns the text read and whether the wait expired. `SIGALRM` rather than a
+    `select` on the file descriptor: select reports the first byte, not the
+    close, so a client that writes its payload and then holds the pipe open --
+    the case actually seen -- passes select and blocks in the read regardless.
+
+    Whatever arrived before the alarm is kept, so that case still logs its
+    `source` and `session_id` rather than an empty record; a payload that is
+    genuinely half-written fails the parse and lands in `raw`, which is where
+    an unparseable payload already goes. Hence `os.read` on the descriptor
+    instead of `sys.stdin.read()`: the latter returns only at EOF, so a bound
+    around it could report nothing but the fact that it expired.
+    """
+    if not hasattr(signal, "SIGALRM"):
+        # Not POSIX. Nothing this project runs on, and an unbounded read is
+        # still better than refusing to mint a token at all.
+        return sys.stdin.read(), False
+
+    def expire(signum: int, frame: object) -> None:
+        raise _StdinNeverClosed
+
+    chunks: list[bytes] = []
+    previous = signal.signal(signal.SIGALRM, expire)
+    signal.alarm(timeout)
+    try:
+        while chunk := os.read(sys.stdin.fileno(), 65536):
+            chunks.append(chunk)
+        timed_out = False
+    except _StdinNeverClosed:
+        timed_out = True
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+    # `replace` rather than a raised decode error: this is a diagnostic, and a
+    # record of undecodable bytes is worth more than no record of them.
+    return b"".join(chunks).decode("utf-8", "replace"), timed_out
 
 
 def main() -> int:
     project = Path(sys.argv[1] if len(sys.argv) > 1 else ".")
-    raw = sys.stdin.read()
+    raw, stdin_timed_out = read_stdin()
     try:
         payload = json.loads(raw)
     except ValueError:
@@ -46,6 +104,11 @@ def main() -> int:
         # every log line for no gain, and losing it would hide the one case
         # where the parse is what failed.
         "raw": None if payload is not None else raw[:4000],
+        # Separates "the client sent nothing parseable" from "the client never
+        # closed stdin". Both leave `payload` null, and only this tells them
+        # apart -- which matters, because the second is a harness fault that
+        # would otherwise be read as a malformed payload.
+        "stdin_timed_out": stdin_timed_out,
     }
     with (log_dir / "sessionstart.jsonl").open("a") as fh:
         fh.write(json.dumps(record) + "\n")
