@@ -1,4 +1,4 @@
-rage.mounts
-===========
+outrage.mounts
+==============
 
-.. automodule:: rage.mounts
+.. automodule:: outrage.mounts

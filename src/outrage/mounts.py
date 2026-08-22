@@ -1,6 +1,6 @@
 """Routing one key namespace across more than one backing store.
 
-A mount table maps a key prefix to a :class:`~rage.store.Store`. The longest
+A mount table maps a key prefix to a :class:`~outrage.store.Store`. The longest
 prefix matching a key owns it, exactly the way a filesystem mount table works,
 and the root mount owns everything no other mount claims -- so every key
 resolves, and the single store case is just a table with one entry.
@@ -68,7 +68,7 @@ SPEC_DELIMITER = "="
 MOUNT_KIND = "mount"
 
 #: The ``kind`` for a mount point whose store refuses writes. A separate kind
-#: rather than a ``read_only`` field on :class:`~rage.store.Entry`, because a
+#: rather than a ``read_only`` field on :class:`~outrage.store.Entry`, because a
 #: field would appear on *every* entry in every listing as a null -- and a
 #: result grows a field only when there is something to say, which is decision
 #: 5 in ``context/20/decisions``. The kind is already the field that says what
@@ -148,7 +148,7 @@ class Mount:
         and a store written before the bound was halved can still hold a key
         too deep for it. Raising names the mount and the key; returning a
         string that will not parse would fail one layer away, which is the
-        failure this project keeps finding. ``rage check`` reports such keys
+        failure this project keeps finding. ``outrage check`` reports such keys
         before anything mounts the store.
         """
         name = keys.with_prefix(self.prefix, key)

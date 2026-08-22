@@ -1,20 +1,20 @@
 """Setting a project up: the MCP entry, the hook, and the skill and agents.
 
-``init`` is the whole of ``rage init`` and the three parts are separable: the
-server entry is :mod:`rage.config`'s and is called rather than repeated, the
+``init`` is the whole of ``outrage init`` and the three parts are separable: the
+server entry is :mod:`outrage.config`'s and is called rather than repeated, the
 hook is written into ``.claude/settings.json`` here, and the packaged skill and
 agents are copied into ``.claude/``. Most of what follows is about the hook,
 because it is the part with something to say.
 
-The settings file belongs to the user, not to rage. It holds their model, their
+The settings file belongs to the user, not to outrage. It holds their model, their
 permissions and their own hooks, so this writes the one entry it owns and
-leaves everything else exactly as it found it — the rule :mod:`rage.config`
+leaves everything else exactly as it found it — the rule :mod:`outrage.config`
 already follows for ``.mcp.json``, and the reason its ``read_config`` and
 ``write_config`` are reused here rather than reimplemented.
 
 ## Why the marker exists
 
-``mcpServers`` is an object, so :mod:`rage.config` can key on a name and
+``mcpServers`` is an object, so :mod:`outrage.config` can key on a name and
 replace one entry. ``hooks.SessionStart`` is a **list**, and nothing in it says
 who wrote what. An installer that cannot recognise its own entry has only bad
 options: append every run and accumulate duplicates, or replace the lot and
@@ -42,7 +42,7 @@ replace the moment the version changes, which is how one hook becomes two.
 ## The bridge this is
 
 The marker is needed because the command is an inlined ``echo`` whose text
-changes between releases. If the hook ever becomes ``<abs>/bin/rage hook
+changes between releases. If the hook ever becomes ``<abs>/bin/outrage hook
 session-start``, the command is stable and is its own marker — no comment, no
 version, and it works on Windows, where ``#`` does not begin a comment. Expect
 to retire this.
@@ -61,7 +61,7 @@ from typing import Any
 from . import config
 from .config import ConfigError, read_config, write_config
 
-#: The hook event rage installs into. One today; the marker names which hook an
+#: The hook event outrage installs into. One today; the marker names which hook an
 #: entry is, so a second one would not be ambiguous.
 HOOK_EVENT = "SessionStart"
 
@@ -145,7 +145,7 @@ def template_entry() -> dict[str, Any]:
 
 
 def is_ours(entry: Any) -> bool:
-    """Whether this ``SessionStart`` entry is one rage wrote.
+    """Whether this ``SessionStart`` entry is one outrage wrote.
 
     Prefix match. See the module docstring on why the version is excluded.
     """
@@ -334,7 +334,7 @@ def _mode_for(path: Path) -> int:
 
 @dataclass(frozen=True, slots=True)
 class Installation:
-    """Everything ``rage init`` does to a project, or would do."""
+    """Everything ``outrage init`` does to a project, or would do."""
 
     project_dir: Path
     server: config.Change
@@ -365,7 +365,7 @@ def init(
     after the same planning the real run does, so it cannot preview something a
     write would disagree with.
 
-    ``rage config`` writes the server entry alone and this calls it rather than
+    ``outrage config`` writes the server entry alone and this calls it rather than
     repeating it, which is also why ``log``, ``log_content``, ``root_mount``
     and the two mount lists are passed through: without them a re-run of
     ``init`` would quietly switch off logging somebody had turned on, or drop

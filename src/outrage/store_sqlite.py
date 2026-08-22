@@ -1,13 +1,13 @@
 """The SQLite backend: one database file, one row per key.
 
-The read-write implementation of :class:`rage.store.Store`, and the one a store
+The read-write implementation of :class:`outrage.store.Store`, and the one a store
 is opened as when its file says nothing else. Everything specific to SQLite
 lives here -- the schema and its
 migrations, the connection handling, and the SQL that every read and write is
-expressed as -- so that :mod:`rage.store` says what a store *is* without saying
+expressed as -- so that :mod:`outrage.store` says what a store *is* without saying
 how this one is kept.
 
-The split was not speculative tidiness, and :mod:`rage.store_parquet` is the
+The split was not speculative tidiness, and :mod:`outrage.store_parquet` is the
 evidence: the parts of this module that did not survive a second backend are
 exactly the parts that are here -- a row-per-key table with secondary indexes,
 ``NOT EXISTS`` against a self-join, and a connection per thread -- while every
@@ -15,13 +15,13 @@ word of the vocabulary above was inherited unchanged. That vocabulary is keys,
 ranges, subtrees, pages and excerpts, and it is backend independent because it
 is about the namespace rather than about storage.
 
-Read this one against :mod:`rage.store_parquet` where the two answer the same
+Read this one against :mod:`outrage.store_parquet` where the two answer the same
 question differently. ``_range_clauses`` compiles a range to a predicate
 because a row-per-key table evaluates one; the parquet backend bisects a sorted
 file instead, and the two are written to be read side by side.
 
 Nothing here is imported by a caller that only wants to read and write
-documents: :func:`rage.store.default_store` is what chooses this class, and it
+documents: :func:`outrage.store.default_store` is what chooses this class, and it
 is the one place in the package that names a backend.
 """
 
@@ -66,7 +66,7 @@ from .store import (
 #: What a SQLite store's file is called when a caller names none. The name a
 #: parquet backend's default sits beside, each in its own module, neither
 #: needing a qualifier to say which storage it is for. That a store *is* a file
-#: inside a directory is not decided here -- see :func:`rage.store.store_file`;
+#: inside a directory is not decided here -- see :func:`outrage.store.store_file`;
 #: only what this backend calls one.
 DEFAULT_STORE_FILE = "store.sqlite"
 
@@ -188,7 +188,7 @@ class SqliteStore(Store):
             version = self._conn.execute("PRAGMA user_version").fetchone()[0]
             if version > SCHEMA_VERSION:
                 raise RuntimeError(
-                    f"{self.path} was written by a newer version of rage "
+                    f"{self.path} was written by a newer version of outrage "
                     f"(schema {version}, this build understands {SCHEMA_VERSION})"
                 )
             if version == 0:
@@ -340,7 +340,7 @@ class SqliteStore(Store):
         """The open database, for asking questions about the file itself.
 
         **Nothing inside the package reaches through this any more.** It was
-        exposed for :mod:`rage.maintenance`, which asked SQLite about integrity
+        exposed for :mod:`outrage.maintenance`, which asked SQLite about integrity
         and the write-ahead log from outside; those are now answered by
         :meth:`check_file` here, off ``_conn`` directly, because they are
         questions about *this* storage and have no meaning for any other.
@@ -1094,7 +1094,7 @@ class SqliteStore(Store):
     def check_file(self, report: Report) -> None:
         """What SQLite knows about the database and its sidecar.
 
-        Both questions here are the storage's and have no meaning above it:
+        Both questions here are the stooutrage's and have no meaning above it:
         whether SQLite still considers its own pages sound, and how much of the
         store is in the write-ahead log rather than the database.
         """
@@ -1173,7 +1173,7 @@ class SqliteStore(Store):
 
 # -- turning the store's vocabulary into SQL --------------------------------
 #
-# A :class:`~rage.store.KeyRange` and a :class:`~rage.store.BoundedSubtree` say
+# A :class:`~outrage.store.KeyRange` and a :class:`~outrage.store.BoundedSubtree` say
 # which stretch of the order and which part of the hierarchy a call is about.
 # What they mean is the namespace's business and lives with them; what they
 # compile to is this backend's, and lives here. A backend that answers a range
@@ -1215,7 +1215,7 @@ def _subtree_clauses(subtree: BoundedSubtree) -> tuple[list[str], list[object]]:
     """``subtree`` as SQL predicates on ``doc_key``, with their parameters.
 
     On ``doc_key`` rather than on ``sort_key``, which is where a
-    :class:`~rage.store.KeyRange` is measured: metadata shares its document's
+    :class:`~outrage.store.KeyRange` is measured: metadata shares its document's
     ``doc_key``, so one range predicate takes a document and its metadata
     together, and the depth of a metadata key is the depth of the document it
     belongs to.
@@ -1249,7 +1249,7 @@ def _subtree_clauses(subtree: BoundedSubtree) -> tuple[list[str], list[object]]:
 
 
 def _stored(row: sqlite3.Row) -> tuple[str, str, str | None, str]:
-    """The four stored fields :func:`~rage.store._excerpt` slices, from a row.
+    """The four stored fields :func:`~outrage.store._excerpt` slices, from a row.
 
     Named apart from the slicing itself so that the policy stays above, shared,
     and only the shape of a row is this backend's business.

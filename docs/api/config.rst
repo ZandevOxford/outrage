@@ -1,4 +1,4 @@
-rage.config
-===========
+outrage.config
+==============
 
-.. automodule:: rage.config
+.. automodule:: outrage.config

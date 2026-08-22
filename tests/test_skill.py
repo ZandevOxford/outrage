@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import rage
+import outrage
 
-SKILL = Path(rage.__file__).parent / "skills" / "rage" / "SKILL.md"
+SKILL = Path(outrage.__file__).parent / "skills" / "rage" / "SKILL.md"
 REPO = Path(__file__).resolve().parents[1]
 DOGFOOD = REPO / ".claude" / "skills" / "rage" / "SKILL.md"
 
@@ -30,7 +30,7 @@ def _frontmatter(text: str) -> dict[str, str]:
 
 def test_skill_is_packaged():
     # Shipped inside the package rather than only in the repository, so that
-    # installing rage anywhere carries the skill it is meant to be used with.
+    # installing outrage anywhere carries the skill it is meant to be used with.
     assert SKILL.is_file()
 
 

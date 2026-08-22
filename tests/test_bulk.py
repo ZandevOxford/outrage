@@ -14,10 +14,10 @@ from pathlib import Path, PurePosixPath
 import pytest
 from conftest import raises_rendered
 
-from rage import bulk
-from rage.keys import InvalidKeyError
-from rage.store import FORMATS
-from rage.store_sqlite import SqliteStore
+from outrage import bulk
+from outrage.keys import InvalidKeyError
+from outrage.store import FORMATS
+from outrage.store_sqlite import SqliteStore
 
 
 @pytest.fixture

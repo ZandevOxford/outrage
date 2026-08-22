@@ -30,9 +30,9 @@ import threading
 import pytest
 from conftest import in_threads, raises_rendered
 
-from rage import bulk, keys
-from rage import store as store_module
-from rage.store import (
+from outrage import bulk, keys
+from outrage import store as store_module
+from outrage.store import (
     EVERYTHING,
     UNBOUNDED,
     BackendError,
@@ -42,8 +42,8 @@ from rage.store import (
     KeyRange,
     ReadOnlyStoreError,
 )
-from rage.store_parquet import ParquetStore
-from rage.store_sqlite import SqliteStore
+from outrage.store_parquet import ParquetStore
+from outrage.store_sqlite import SqliteStore
 
 pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
 
@@ -120,7 +120,7 @@ def packed(tmp_path):
 #: and the numeric and adversarial ones.
 _KEYS = ["", "a", "a/b", "a/10", "context", "context/10", "notes", "z", "a-x", "nope", "a/b/c"]
 
-#: One of each bound :class:`~rage.store.KeyRange` can carry, then the pairs
+#: One of each bound :class:`~outrage.store.KeyRange` can carry, then the pairs
 #: that matter: a stretch either side of an excluded subtree, and a bound
 #: naming a key that does not exist.
 _RANGES = [
@@ -249,7 +249,7 @@ def test_the_two_backends_agree_under_every_combination_of_caps(sqlite, parquet)
 def test_the_two_backends_slice_a_document_identically(sqlite, parquet):
     """Offsets, lengths, patterns and occurrences, over the same three documents.
 
-    :func:`rage.store._excerpt` is shared, so this is really asking whether the
+    :func:`outrage.store._excerpt` is shared, so this is really asking whether the
     parquet backend hands it the same four fields SQLite does -- and whether a
     pattern that does not occur fails the same way.
     """
@@ -350,7 +350,7 @@ def test_a_refused_write_is_recorded_in_the_event_log(tmp_path):
     """
     import json
 
-    from rage.eventlog import EventLog
+    from outrage.eventlog import EventLog
 
     ParquetStore.build(tmp_path / "ref.parquet", [("a", "body", None, None)])
     log = EventLog(tmp_path / "log.jsonl")
@@ -384,7 +384,7 @@ def test_a_parquet_file_that_is_not_a_store_is_refused(tmp_path):
     pq = pytest.importorskip("pyarrow.parquet")
     pq.write_table(pa.table({"key": ["a"], "content": ["b"]}), tmp_path / "other.parquet")
 
-    with raises_rendered(BackendError, "not a rage store"):
+    with raises_rendered(BackendError, "not an outrage store"):
         ParquetStore(tmp_path, filename="other.parquet")
 
 
@@ -395,13 +395,13 @@ def test_a_file_from_a_later_build_is_refused_rather_than_read(tmp_path, monkeyp
     read, so a mount table naming an unreadable file fails while somebody is
     still looking at the command that named it.
     """
-    from rage import store_parquet
+    from outrage import store_parquet
 
     monkeypatch.setattr(store_parquet, "FORMAT_VERSION", store_parquet.FORMAT_VERSION + 1)
     ParquetStore.build(tmp_path / "future.parquet", [("a", "body", None, None)])
     monkeypatch.undo()
 
-    with raises_rendered(BackendError, "repack it or upgrade rage") as raised:
+    with raises_rendered(BackendError, "repack it or upgrade outrage") as raised:
         ParquetStore(tmp_path, filename="future.parquet")
     assert raised.value.code == "parquet-format-newer"
 
@@ -502,7 +502,7 @@ def test_a_page_of_documents_reads_each_row_group_once(tmp_path, monkeypatch):
     Twenty documents in one group is one decompression rather than twenty,
     which is the whole reason the last group read is kept.
     """
-    from rage import store_parquet
+    from outrage import store_parquet
 
     monkeypatch.setattr(store_parquet, "ROW_GROUP_SIZE", 8)
     ParquetStore.build(
@@ -710,7 +710,7 @@ def test_check_answers_for_a_parquet_store_in_its_own_terms(packed):
     real answer is that most of what a check asks is not SQLite's -- so a
     parquet store gets a real report rather than an apology.
     """
-    from rage import maintenance
+    from outrage import maintenance
 
     report = maintenance.check(packed)
 
@@ -733,7 +733,7 @@ def test_repair_of_a_parquet_store_does_nothing_and_says_it_did_nothing(packed):
     storage could reach that moving bytes would fix, which is provable for one
     immutable file with no sidecar and no free pages.
     """
-    from rage import maintenance
+    from outrage import maintenance
 
     assert maintenance.repair(packed) == []
 
@@ -750,7 +750,7 @@ def test_the_row_checks_are_not_sqlites_and_fire_for_parquet_too(tmp_path):
     """
     import pyarrow.parquet as pq
 
-    from rage import maintenance
+    from outrage import maintenance
 
     path = tmp_path / "p" / "ref.parquet"
     ParquetStore.build(path, [("a", "one", None, None), ("a/b", "two", None, None)])
@@ -781,7 +781,7 @@ def test_check_finds_a_parquet_file_that_is_not_in_sort_order(tmp_path):
     """
     import pyarrow.parquet as pq
 
-    from rage import maintenance
+    from outrage import maintenance
 
     path = tmp_path / "p" / "ref.parquet"
     ParquetStore.build(path, [("a", "one", None, None), ("b", "two", None, None)])
@@ -799,7 +799,7 @@ def test_check_finds_a_parquet_file_that_is_not_in_sort_order(tmp_path):
     assert not report.sound
     problem = next(p for p in report.problems if p.summary == "the file is not in sort order")
     assert problem.severity == "error"
-    assert "rage pack" in problem.detail
+    assert "outrage pack" in problem.detail
     # Reported, and left alone: rebuilding is not moving bytes about.
     assert not report.repairable
 
@@ -854,7 +854,7 @@ def test_parallel_readers_all_get_the_document_they_asked_for(tmp_path, monkeypa
     but it does catch a handle that cannot serve two threads at once, which is
     the failure that raises rather than lies.
     """
-    from rage import store_parquet
+    from outrage import store_parquet
 
     monkeypatch.setattr(store_parquet, "ROW_GROUP_SIZE", 4)
     ParquetStore.build(
@@ -879,7 +879,7 @@ def test_read_only_is_the_backend_and_the_mount_together(tmp_path):
     A parquet store is read-only either way -- the flag can say so and adds
     nothing, and leaving the flag off takes nothing away.
     """
-    from rage.mounts import open_mounts
+    from outrage.mounts import open_mounts
 
     ParquetStore.build(tmp_path / "base" / "ref.parquet", [("a", "body", None, None)])
     SqliteStore(tmp_path / "base", filename="rw.sqlite").close()

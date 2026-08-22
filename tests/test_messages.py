@@ -16,11 +16,11 @@ import pathlib
 
 import pytest
 
-from rage import keys, messages
-from rage.errors import RageError
-from rage.mounts import Mount, Mounts, ReadOnlyMountError
-from rage.store import KeyNotFoundError
-from rage.store_sqlite import SqliteStore
+from outrage import keys, messages
+from outrage.errors import RageError
+from outrage.mounts import Mount, Mounts, ReadOnlyMountError
+from outrage.store import KeyNotFoundError
+from outrage.store_sqlite import SqliteStore
 
 SOURCE = pathlib.Path(messages.__file__).parent
 

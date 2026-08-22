@@ -1,4 +1,4 @@
-# Rage requirements
+# Outrage requirements
 
 Why this exists and what has to hold true of it.
 
@@ -6,7 +6,7 @@ Why this exists and what has to hold true of it.
 `project/reference/`, holds the build discussion decision by decision. This
 file is the short human-readable version that should outlive both.
 
-## What rage is for
+## What outrage is for
 
 Four uses. They pull in different directions, and most of the tension in the
 design comes from that.

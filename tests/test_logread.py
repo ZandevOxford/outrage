@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from rage import logread
-from rage.logread import Event, Filter, LogError, read_log, sessions, summarise
+from outrage import logread
+from outrage.logread import Event, Filter, LogError, read_log, sessions, summarise
 
 
 def write(path: Path, *records: dict) -> Path:

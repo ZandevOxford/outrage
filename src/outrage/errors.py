@@ -9,7 +9,7 @@ The distinction being drawn is not severity. It is whether the failure is
 *about the request* — a key that holds nothing, a pattern that does not occur,
 a configuration file that will not parse, a store that is not there. Those are
 answers, and a front end should render them as one line rather than a
-traceback. Anything else reaching the top is a bug in rage, and a traceback is
+traceback. Anything else reaching the top is a bug in outrage, and a traceback is
 the correct output for a bug.
 
 Each subclass keeps the builtin it already inherited, so ``except LookupError``
@@ -17,11 +17,11 @@ around a store read goes on working and no existing caller has to change.
 
 **An error carries facts, not prose.** A message is written by the front end,
 from a ``code`` and whatever ``details`` that code needs -- see
-:mod:`rage.messages`. The library layers have no business composing a sentence
+:mod:`outrage.messages`. The library layers have no business composing a sentence
 for a person to read: they do not know who is reading it, and in the one case
 that matters they cannot know. A key inside a mounted store is called
 ``python/nope`` there and ``ref/python/nope`` to anyone outside, so a sentence
-built in :mod:`rage.store` is wrong for the MCP server or wrong for the command
+built in :mod:`outrage.store` is wrong for the MCP server or wrong for the command
 line, and there is no third choice. That was a live defect --
 ``project/reference/planned/error-naming`` -- and this is the fix.
 
@@ -42,7 +42,7 @@ class RageError(Exception):
     """A failure a caller asked for and should be told about in a sentence.
 
     ``code`` names *which* failure, uniquely across the whole codebase, and is
-    what :mod:`rage.messages` renders. ``details`` are the facts that message
+    what :mod:`outrage.messages` renders. ``details`` are the facts that message
     needs, by name.
     """
 

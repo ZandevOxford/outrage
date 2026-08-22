@@ -1,7 +1,7 @@
 """MCP server exposing the document store.
 
 A thin wrapper: argument shaping and result shaping only. All behaviour lives
-in :mod:`rage.store`, so it can be exercised without a protocol harness.
+in :mod:`outrage.store`, so it can be exercised without a protocol harness.
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ def _scope(key: str | None) -> str:
 def _reported[**P, T](function: Callable[P, T]) -> Callable[P, T]:
     """Render a :class:`RageError` from a tool into the sentence a caller reads.
 
-    The boundary the whole of :mod:`rage.messages` exists for. Below here an
+    The boundary the whole of :mod:`outrage.messages` exists for. Below here an
     error carries facts and a code; a caller gets one line, and gets it with
     keys named the way *this* front end names them -- which for a server with a
     mount table is not what the store that raised it would have said.
@@ -1253,7 +1253,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parses to without opening a store or starting a server.
     """
     parser = argparse.ArgumentParser(
-        prog="rage-server", description="MCP server for the Rage document store"
+        prog="outrage-server", description="MCP server for the Outrage document store"
     )
     parser.add_argument(
         "--dir",
@@ -1341,13 +1341,13 @@ def main(argv: list[str] | None = None) -> int:
     """Open the configured stores and serve them over stdio until the client
     stops.
 
-    The console script ``rage-server``, and the entry point an MCP client
+    The console script ``outrage-server``, and the entry point an MCP client
     launches. It resolves the store directory once -- the event log defaults to
     a file beside it and needs the same answer -- opens the mount table, warns
     on stderr about any mount that shadows keys already held, and hands the
     table to :func:`build_server`.
 
-    Returns rather than exits, for the same reason :func:`rage.cli.main` does.
+    Returns rather than exits, for the same reason :func:`outrage.cli.main` does.
     """
     args = parse_args(argv)
     # Resolved here rather than left to the store, because the log defaults to
@@ -1371,7 +1371,7 @@ def main(argv: list[str] | None = None) -> int:
                 # keys that vanish are in a store the operator can still reach.
                 # Refusing to start over a stray key would be worse.
                 print(
-                    f"rage: warning: the store at {mount.name!r} shadows keys already "
+                    f"outrage: warning: the store at {mount.name!r} shadows keys already "
                     f"held there; they are unreachable while it is mounted",
                     file=sys.stderr,
                 )
@@ -1381,12 +1381,12 @@ def main(argv: list[str] | None = None) -> int:
         # table that cannot be built is an answer about the configuration, not
         # a bug, and a traceback in a client's stderr is where an operator is
         # least able to read one. Anything that is not a RageError still
-        # tracebacks, because that is a bug in rage.
+        # tracebacks, because that is a bug in outrage.
         #
         # The default namer: nothing has been mounted yet when a table refuses
         # to build, and every key one of these names is a mount point, which is
         # already a name in the whole namespace.
-        print(f"rage: {messages.render(exc)}", file=sys.stderr)
+        print(f"outrage: {messages.render(exc)}", file=sys.stderr)
         return 1
     finally:
         # A process that is killed writes no stop event, which is itself worth

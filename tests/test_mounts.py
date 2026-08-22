@@ -14,8 +14,8 @@ import pytest
 from conftest import raises_rendered
 from mcp.server.mcpserver.exceptions import ToolError
 
-from rage import keys, messages
-from rage.mounts import (
+from outrage import keys, messages
+from outrage.mounts import (
     MOUNT_KIND,
     READ_ONLY_MOUNT_KIND,
     MountError,
@@ -24,9 +24,9 @@ from rage.mounts import (
     open_mounts,
     parse_spec,
 )
-from rage.server import build_server, parse_args
-from rage.store import BackendError, ReadOnlyStoreError, StoreFileError
-from rage.store_sqlite import SqliteStore
+from outrage.server import build_server, parse_args
+from outrage.store import BackendError, ReadOnlyStoreError, StoreFileError
+from outrage.store_sqlite import SqliteStore
 
 
 def call(server, name: str, **arguments: Any) -> Any:
@@ -474,7 +474,7 @@ def test_a_key_predating_the_bound_fails_loudly_rather_than_silently(tmp_path):
             legacy,
             keys.parse(legacy, max_segments=keys.MAX_JOINED_SEGMENTS).parent,
             keys.sort_form(legacy),
-            "from an older rage",
+            "from an older outrage",
         ),
     )
     inner.connection.commit()
@@ -817,7 +817,7 @@ def test_the_server_takes_repeated_mount_arguments():
 
 
 def test_the_root_mount_defaults_to_the_usual_store_file():
-    from rage.store import default_store_file
+    from outrage.store import default_store_file
 
     assert parse_args([]).root_mount == default_store_file()
     assert parse_args(["--root-mount", "main.sqlite"]).root_mount == "main.sqlite"
@@ -847,7 +847,7 @@ def test_a_mount_file_may_sit_in_a_subdirectory(tmp_path):
 
 
 def test_the_instructions_carry_the_root_readme(tmp_path):
-    from rage.server import instructions
+    from outrage.server import instructions
 
     root = SqliteStore(tmp_path / "root")
     inner = SqliteStore(tmp_path / "inner")
@@ -924,7 +924,7 @@ def test_rage_check_finds_a_key_that_predates_the_bound(tmp_path):
     `Mount.outer` raises when it meets such a key, which is correct and late.
     This is what looks before anything tries.
     """
-    from rage import maintenance
+    from outrage import maintenance
 
     with SqliteStore(tmp_path) as store:
         store.store_document("ordinary", "fine")
@@ -938,7 +938,7 @@ def test_rage_check_finds_a_key_that_predates_the_bound(tmp_path):
                 legacy,
                 keys.parse(legacy, max_segments=keys.MAX_JOINED_SEGMENTS).parent,
                 keys.sort_form(legacy),
-                "from an older rage",
+                "from an older outrage",
             ),
         )
         store.connection.commit()
@@ -1127,16 +1127,16 @@ def test_nothing_is_read_only_by_default(table):
 
 def test_the_server_reports_a_bad_mount_table_as_one_line(tmp_path, capsys):
     """`errors.py`'s rule, which the server did not follow: an answer, not a traceback."""
-    from rage.server import main
+    from outrage.server import main
 
     assert main(["--dir", str(tmp_path / "root"), "--mount", "no-delimiter"]) == 1
     err = capsys.readouterr().err
-    assert err.startswith("rage: ")
+    assert err.startswith("outrage: ")
     assert "KEY=FILE" in err
 
 
 def test_the_server_reports_a_missing_read_only_store_as_one_line(tmp_path, capsys):
-    from rage.server import main
+    from outrage.server import main
 
     missing = tmp_path / "base" / "not-there.sqlite"
     assert main(["--dir", str(tmp_path / "base"), "--mount-ro", "ref=not-there.sqlite"]) == 1
@@ -1148,7 +1148,7 @@ def test_the_server_reports_a_missing_read_only_store_as_one_line(tmp_path, caps
 
 
 def a_packed_store(directory: Path, name: str = "ref.parquet") -> Path:
-    from rage.store_parquet import ParquetStore
+    from outrage.store_parquet import ParquetStore
 
     ParquetStore.build(
         directory / name,

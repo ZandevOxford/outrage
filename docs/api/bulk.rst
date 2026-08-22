@@ -1,4 +1,4 @@
-rage.bulk
-=========
+outrage.bulk
+============
 
-.. automodule:: rage.bulk
+.. automodule:: outrage.bulk

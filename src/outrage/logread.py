@@ -1,4 +1,4 @@
-"""Reading back what :mod:`rage.eventlog` wrote.
+"""Reading back what :mod:`outrage.eventlog` wrote.
 
 The writer half exists because evidence was not being kept. This half is what
 turns the file it produces into answers, and the questions are already known —
@@ -427,7 +427,7 @@ class Summary:
         """The call that touched the store most, as ``(accesses, session, call)``.
 
         Named rather than just counted, so that the number is somewhere to go:
-        ``rage log --session … --call …`` shows what it was doing.
+        ``outrage log --session … --call …`` shows what it was doing.
         """
         if not self.accesses_per_call:
             return None
@@ -517,7 +517,8 @@ def format_event(event: Event, *, content: bool = False) -> Iterator[str]:
     parts = [f"{event.seq:>5}", _clock(event.ts), f"{call:<8}", f"{event.event:<7}"]
 
     if event.event == "start":
-        parts.append(f"rage {event.record.get('version', '?')} pid {event.record.get('pid', '?')}")
+        version = event.record.get("version", "?")
+        parts.append(f"outrage {version} pid {event.record.get('pid', '?')}")
     else:
         parts.append(_what(event))
         if arguments := _args_gist(event):
@@ -592,7 +593,7 @@ def format_session(session: Session) -> str:
     if session.pid is not None:
         identity.append(f"pid {session.pid}")
     if session.version is not None:
-        identity.append(f"rage {session.version}")
+        identity.append(f"outrage {session.version}")
     span = _clock(session.first_ts)
     if session.last_ts != session.first_ts:
         span += f" … {_clock(session.last_ts)}"

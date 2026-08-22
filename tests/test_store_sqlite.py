@@ -1,6 +1,6 @@
 """The SQLite backend: the file, its schema, and how the schema moves forward.
 
-What :mod:`rage.store_sqlite` is answerable for on its own, as opposed to what
+What :mod:`outrage.store_sqlite` is answerable for on its own, as opposed to what
 any store has to do. ``test_store.py`` holds the second, and exercises it
 through this backend because it is the only one there is; here are the tests
 that would have nothing to say about a store kept some other way.
@@ -12,7 +12,7 @@ connection belongs to the thread that opened it.
 The migrations are the reason this file is worth having separately. Each one
 builds a database the way the *old* build wrote it -- not out of the current
 schema, which would be testing the migration against a store that never
-existed -- and then opens it through :class:`~rage.store_sqlite.SqliteStore`
+existed -- and then opens it through :class:`~outrage.store_sqlite.SqliteStore`
 and asks what came out.
 """
 
@@ -23,11 +23,11 @@ from pathlib import Path
 import pytest
 from conftest import in_threads
 
-from rage import keys
-from rage import store as store_module
-from rage import store_sqlite as sqlite_module
-from rage.store import BoundedSubtree
-from rage.store_sqlite import SqliteStore
+from outrage import keys
+from outrage import store as store_module
+from outrage import store_sqlite as sqlite_module
+from outrage.store import BoundedSubtree
+from outrage.store_sqlite import SqliteStore
 
 
 @pytest.fixture
@@ -350,7 +350,7 @@ def test_the_connection_is_the_backend_s_own(store):
     ``check_file`` uses it to ask SQLite about the file itself. That question
     has no meaning for a store kept some other way, which is why the answering
     is on the backend and only the *asking* is on
-    :class:`rage.store.Store` -- and why the attribute itself must not appear
+    :class:`outrage.store.Store` -- and why the attribute itself must not appear
     there.
     """
     assert isinstance(store.connection, sqlite3.Connection)

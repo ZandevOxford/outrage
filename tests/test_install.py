@@ -1,7 +1,7 @@
 """Tests for installing the hook into a project's settings.
 
 Two risks, and almost everything below guards one of them. The first is damage
-to a file rage does not own: the settings hold the user's model, permissions
+to a file outrage does not own: the settings hold the user's model, permissions
 and their own hooks, and losing any of those to an installer is far worse than
 the installer refusing to run. The second is the marker failing to identify our
 own entry, which does not look like a failure at all — it looks like a hook
@@ -20,8 +20,8 @@ from pathlib import Path
 import pytest
 from conftest import raises_rendered
 
-from rage.config import ConfigError
-from rage.install import (
+from outrage.config import ConfigError
+from outrage.install import (
     CLAUDE_DIR,
     HOOK_EVENT,
     MARKER,
@@ -215,7 +215,7 @@ def test_a_broken_template_is_refused_rather_than_installed(tmp_path, monkeypatc
     """A template without the marker would install an entry no run can find again."""
     broken = tmp_path / "broken.json"
     write_json(broken, {"hooks": {HOOK_EVENT: [FOREIGN]}})
-    monkeypatch.setattr("rage.install.TEMPLATE", broken)
+    monkeypatch.setattr("outrage.install.TEMPLATE", broken)
 
     with raises_rendered(InstallError, "marker"):
         template_entry()

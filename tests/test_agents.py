@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-import rage
+import outrage
 
-AGENTS = Path(rage.__file__).parent / "agents"
+AGENTS = Path(outrage.__file__).parent / "agents"
 REPO = Path(__file__).resolve().parents[1]
 DOGFOOD = REPO / ".claude" / "agents"
 
@@ -45,7 +45,7 @@ def _tools(name: str) -> set[str]:
 @pytest.mark.parametrize("name", NAMES)
 def test_agent_is_packaged(name):
     # Shipped inside the package rather than only in the repository, so that
-    # installing rage anywhere carries the agents it is meant to be used with.
+    # installing outrage anywhere carries the agents it is meant to be used with.
     assert (AGENTS / f"{name}.md").is_file()
 
 

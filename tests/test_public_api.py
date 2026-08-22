@@ -26,9 +26,9 @@ import pathlib
 
 import pytest
 
-import rage
+import outrage
 
-PACKAGE = pathlib.Path(rage.__file__).parent
+PACKAGE = pathlib.Path(outrage.__file__).parent
 MODULES = sorted(p.stem for p in PACKAGE.glob("*.py") if not p.stem.startswith("_"))
 
 
@@ -53,18 +53,18 @@ def _defined(module: str) -> list[str]:
 
 @pytest.mark.parametrize("module", MODULES)
 def test_module_declares_an_all(module: str) -> None:
-    assert hasattr(importlib.import_module(f"rage.{module}"), "__all__"), (
-        f"rage.{module} declares no __all__, so what it offers is whatever "
+    assert hasattr(importlib.import_module(f"outrage.{module}"), "__all__"), (
+        f"outrage.{module} declares no __all__, so what it offers is whatever "
         f"happens not to start with an underscore"
     )
 
 
 @pytest.mark.parametrize("module", MODULES)
 def test_every_public_name_is_declared(module: str) -> None:
-    declared = set(importlib.import_module(f"rage.{module}").__all__)
+    declared = set(importlib.import_module(f"outrage.{module}").__all__)
     undeclared = [n for n in _defined(module) if n not in declared]
     assert not undeclared, (
-        f"rage.{module} defines {undeclared} without declaring them in "
+        f"outrage.{module} defines {undeclared} without declaring them in "
         f"__all__; add them, or give them a leading underscore if they are "
         f"not meant to be public. Undeclared names are absent from the "
         f"generated documentation as well"
@@ -74,9 +74,9 @@ def test_every_public_name_is_declared(module: str) -> None:
 @pytest.mark.parametrize("module", MODULES)
 def test_everything_declared_is_defined_here(module: str) -> None:
     defined = set(_defined(module))
-    stale = [n for n in importlib.import_module(f"rage.{module}").__all__ if n not in defined]
+    stale = [n for n in importlib.import_module(f"outrage.{module}").__all__ if n not in defined]
     assert not stale, (
-        f"rage.{module} declares {stale} in __all__ but does not define them. "
+        f"outrage.{module} declares {stale} in __all__ but does not define them. "
         f"A re-exported name is documented where it is defined; declaring it "
         f"again here documents a second copy under a module that does not "
         f"define it"
@@ -85,9 +85,9 @@ def test_everything_declared_is_defined_here(module: str) -> None:
 
 @pytest.mark.parametrize("module", MODULES)
 def test_nothing_is_declared_twice(module: str) -> None:
-    names = importlib.import_module(f"rage.{module}").__all__
+    names = importlib.import_module(f"outrage.{module}").__all__
     duplicated = sorted({n for n in names if names.count(n) > 1})
-    assert not duplicated, f"rage.{module} lists {duplicated} in __all__ more than once"
+    assert not duplicated, f"outrage.{module} lists {duplicated} in __all__ more than once"
 
 
 def _documented_data(module: str) -> tuple[set[str], set[str]]:
@@ -131,10 +131,10 @@ def test_every_declared_constant_is_documented(module: str) -> None:
     ``store.SCHEMA_VERSION`` and to every second name of a shared comment run.
     """
     data, documented = _documented_data(module)
-    declared = set(importlib.import_module(f"rage.{module}").__all__)
+    declared = set(importlib.import_module(f"outrage.{module}").__all__)
     undocumented = sorted((data & declared) - documented)
     assert not undocumented, (
-        f"rage.{module} declares {undocumented} in __all__ with no `#:` "
+        f"outrage.{module} declares {undocumented} in __all__ with no `#:` "
         f"comment, so they are missing from the generated reference. A comment "
         f"written for the name above does not carry down to the next one"
     )
@@ -146,6 +146,6 @@ def test_nothing_is_defined_twice(module: str) -> None:
     names = _defined(module)
     duplicated = sorted({n for n in names if names.count(n) > 1})
     assert not duplicated, (
-        f"rage.{module} defines {duplicated} more than once at the top level; "
+        f"outrage.{module} defines {duplicated} more than once at the top level; "
         f"the later definition wins and the earlier one is dead"
     )

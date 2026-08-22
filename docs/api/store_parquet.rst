@@ -1,4 +1,4 @@
-rage.store_parquet
-==================
+outrage.store_parquet
+=====================
 
-.. automodule:: rage.store_parquet
+.. automodule:: outrage.store_parquet

@@ -1,4 +1,4 @@
-rage.store
-==========
+outrage.store
+=============
 
-.. automodule:: rage.store
+.. automodule:: outrage.store

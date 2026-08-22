@@ -1,9 +1,9 @@
 """What a store does, asked of the backend that can be written.
 
-Every test here is about the contract :class:`rage.store.Store` states -- keys,
+Every test here is about the contract :class:`outrage.store.Store` states -- keys,
 ranges, subtrees, pages, excerpts, the event log -- rather than about how
 SQLite keeps any of it. It runs against
-:class:`~rage.store_sqlite.SqliteStore`, and half of it writes -- so the
+:class:`~outrage.store_sqlite.SqliteStore`, and half of it writes -- so the
 read-only parquet backend cannot pass this file, whatever the fixtures say.
 That is checked the other way round, by putting one corpus into both backends
 and comparing every answer: see ``test_store_parquet.py``. A future backend
@@ -21,18 +21,18 @@ import threading
 import pytest
 from conftest import in_threads, raises_rendered
 
-from rage import keys
-from rage import store as store_module
-from rage.eventlog import EventLog
-from rage.keys import InvalidKeyError
-from rage.store import (
+from outrage import keys
+from outrage import store as store_module
+from outrage.eventlog import EventLog
+from outrage.keys import InvalidKeyError
+from outrage.store import (
     BoundedSubtree,
     KeyNotFoundError,
     KeyRange,
     PatternNotFoundError,
     Store,
 )
-from rage.store_sqlite import SqliteStore
+from outrage.store_sqlite import SqliteStore
 
 
 @pytest.fixture
@@ -1752,7 +1752,7 @@ def test_autonumbering_allocates_at_the_top_level(store):
 
 
 def test_a_title_on_the_root_with_no_document_is_named_in_a_check(store, tmp_path):
-    from rage import maintenance
+    from outrage import maintenance
 
     # Legal, and easy to reach: titling a store is not the same as writing a
     # document at its root. The report has to be able to name the root, or the
@@ -1862,7 +1862,7 @@ def test_a_store_named_no_file_takes_its_own_backend_s_default(tmp_path):
     The two agree while there is one backend, and are still asked separately:
     a store constructed directly names its own class, so it can never be
     opened under a file name some other backend chose. Every front end asks
-    :func:`~rage.store.default_store_file` instead, which is what keeps the
+    :func:`~outrage.store.default_store_file` instead, which is what keeps the
     command line and the server from naming a backend to print a default.
     """
     s = SqliteStore(tmp_path / ".rage")

@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from rage import eventlog
-from rage.eventlog import EventLog
+from outrage import eventlog
+from outrage.eventlog import EventLog
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ def test_an_event_appends_rather_than_replacing(tmp_path):
 def test_two_processes_appending_do_not_damage_each_other_s_lines(tmp_path):
     path = tmp_path / "log.jsonl"
     script = (
-        "from rage.eventlog import EventLog;"
+        "from outrage.eventlog import EventLog;"
         f"log = EventLog({str(path)!r});"
         "[log.emit('store', op='list_keys', filler='x' * 200) for _ in range(100)];"
         "log.close()"

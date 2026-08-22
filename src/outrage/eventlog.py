@@ -196,7 +196,7 @@ class EventLog:
         """
         if not self._disabled:
             self._disabled = True
-            print(f"rage: event log disabled: {message}", file=sys.stderr, flush=True)
+            print(f"outrage: event log disabled: {message}", file=sys.stderr, flush=True)
 
     # -- content ---------------------------------------------------------
 

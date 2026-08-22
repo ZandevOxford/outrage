@@ -1,4 +1,4 @@
-# Rage design
+# Outrage design
 
 ## Components
 
@@ -38,15 +38,15 @@ Data is stored in an SQLite database local to the current project.
 The store is kept independent of the MCP server: it has no knowledge of MCP and
 can be tested and reused on its own.
 
-**The interface and the backend are separate modules.** `rage.store` says what
-a store is — the operations, the value types every answer comes back as, and
-the two ways a call bounds what it is asking about — as an abstract `Store`.
-There are two implementations. `rage.store_sqlite` is the read-write one — the
-schema, its migrations, the connection handling, and the SQL — and is what a
-store is opened as when its file says nothing else. `rage.store_parquet` is one
-columnar file, written whole and read many times, for a reference base of tens
-of thousands of documents; it refuses writes, and `rage pack` is how documents
-get into one.
+**The interface and the backend are separate modules.** `outrage.store` says
+what a store is — the operations, the value types every answer comes back as,
+and the two ways a call bounds what it is asking about — as an abstract `Store`.
+There are two implementations. `outrage.store_sqlite` is the read-write one —
+the schema, its migrations, the connection handling, and the SQL — and is what a
+store is opened as when its file says nothing else. `outrage.store_parquet` is
+one columnar file, written whole and read many times, for a reference base of
+tens of thousands of documents; it refuses writes, and `outrage pack` is how
+documents get into one.
 
 `store._backend_for` is the single place the package chooses between them, and
 it chooses **by the store file's extension**: `.sqlite` and `.parquet`. So a
@@ -195,7 +195,7 @@ invalid key at the same time.
 
 The only way the join can still fail is a store written before the bound was
 halved. `Mount.outer` raises and names the store and the key rather than
-handing back a string that would fail to parse a call later, and `rage check`
+handing back a string that would fail to parse a call later, and `outrage check`
 reports such keys before anything mounts the store.
 
 ### Event log
@@ -240,7 +240,7 @@ uses one.
 
 ### Command line tool
 
-Implemented, all five pieces, as of 2026-08-19: `rage get`, `set`, `ls`,
+Implemented, all five pieces, as of 2026-08-19: `outrage get`, `set`, `ls`,
 `dump`, `rm`, `check`, `export`, `import`, `config`, `backup`, `log` and
 `init` — the last of which writes the MCP entry, installs the `SessionStart`
 hook and copies the packaged skill and agents into a project.
@@ -257,17 +257,17 @@ plus the operations that only make sense from a shell:
   reason: the skill ships inside the package, and the CLI is the thing that
   knows where the package is.
 
-**Documents as files.** `rage export` and `rage import` map the key namespace
-onto a directory by one rule: a segment is a path component, and a document
-gains an extension naming its format — `.md` or `.json`. `a/b` is the file
-`a/b.md`, and anything below `a/b` is in the directory `a/b/`. The extension is
-what makes that possible at all, since a key is a document and a container at
-once and a path cannot be both a file and a directory. Metadata is a segment
-like any other, so a title is the file `a/b/!title.md`. Nothing is escaped,
-which is what the widened character set bought: what a filename can hold, a
-segment can hold. The two exceptions are the two segments a filesystem reads as
-navigation — `.` and `..` are legal keys with no path, and an export refuses
-them rather than climbing out of the directory it was given.
+**Documents as files.** `outrage export` and `outrage import` map the key
+namespace onto a directory by one rule: a segment is a path component, and a
+document gains an extension naming its format — `.md` or `.json`. `a/b` is the
+file `a/b.md`, and anything below `a/b` is in the directory `a/b/`. The
+extension is what makes that possible at all, since a key is a document and a
+container at once and a path cannot be both a file and a directory. Metadata is
+a segment like any other, so a title is the file `a/b/!title.md`. Nothing is
+escaped, which is what the widened character set bought: what a filename can
+hold, a segment can hold. The two exceptions are the two segments a filesystem
+reads as navigation — `.` and `..` are legal keys with no path, and an export
+refuses them rather than climbing out of the directory it was given.
 
 Paths are written from the top of the namespace rather than from the key being
 exported, so an exported subtree imports back to where it came from and the
@@ -304,8 +304,8 @@ argument for that split — a session that had just read the `instructions`
 asking for a title on every document stored one without.
 
 The skill ships inside the package rather than only in this repository, so that
-installing rage anywhere carries the skill it is meant to be used with, and the
-CLI has something to install. This project uses it through a symlink under
+installing outrage anywhere carries the skill it is meant to be used with, and
+the CLI has something to install. This project uses it through a symlink under
 `.claude/skills`, so the copy being iterated on is the copy in use.
 
 #### The trigger problem
