@@ -1,4 +1,4 @@
-rage.install
-============
+outrage.install
+===============
 
-.. automodule:: rage.install
+.. automodule:: outrage.install

@@ -1,4 +1,4 @@
-rage.messages
-=============
+outrage.messages
+================
 
-.. automodule:: rage.messages
+.. automodule:: outrage.messages

@@ -4,7 +4,7 @@
 ``pytest.raises(cls, match=...)`` matches against ``str(exc)``, which is now a
 developer rendering — the class, the code and the details — so a test that
 wants to assert what a *person* reads has to render it the way a front end
-does. See :mod:`rage.messages`.
+does. See :mod:`outrage.messages`.
 
 Same call shape as ``pytest.raises`` so a test reads the way it did, and it
 still yields the ``ExceptionInfo``, so a test that also wants the code or the
@@ -21,7 +21,7 @@ from typing import Any
 
 import pytest
 
-from rage import messages
+from outrage import messages
 
 
 @contextlib.contextmanager
@@ -30,7 +30,7 @@ def raises_rendered(
 ) -> Iterator[pytest.ExceptionInfo[Any]]:
     """Assert ``error`` is raised, and that its **rendered** message matches.
 
-    ``name`` is passed through to :func:`rage.messages.render`, for the tests
+    ``name`` is passed through to :func:`outrage.messages.render`, for the tests
     that care which front end is doing the naming.
     """
     with pytest.raises(error) as raised:

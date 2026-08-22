@@ -1,4 +1,4 @@
-"""Parsing and validation for the Rage key namespace.
+"""Parsing and validation for the Outrage key namespace.
 
 A key is zero or more segments joined by ``/``, and ``/`` is the only separator
 there is. A segment may hold almost any text: the intent is that a key can

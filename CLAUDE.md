@@ -1,4 +1,4 @@
-# Rage
+# Outrage
 
 This project keeps its working knowledge — decisions, findings, and where the
 work got to — in its own rage document store, reached through the `rage` MCP
@@ -16,7 +16,7 @@ applies*, and it routes to everything else. A survey by title
 
 Read `project/reference/snapshots` first. Copying `.rage/store.sqlite` with `cp`
 succeeds and produces a **silently stale** store, potentially a whole schema
-version behind. Use `rage backup`.
+version behind. Use `outrage backup`.
 
 ## Conventions
 

@@ -1,4 +1,4 @@
-# Rage
+# Outrage
 
 A simple retrieval system for coding agents: an MCP server, a data store, and
 skills that let an agent keep notes, designs and task context in a store local
@@ -18,20 +18,20 @@ the store reports the key it chose.
 
 ## Status
 
-The store, the MCP server, the key handling, the skill and the command line
-tool are implemented. The tool covers the store operations (`rage get`, `set`,
-`ls`, `dump`, `rm`), bulk export and import to a directory of files (`rage
-export`, `rage import`), building a read-only parquet store (`rage pack`), the
-MCP configuration (`rage config`), a verified backup (`rage backup`), the event
-log (`rage log`), and setting a project up (`rage init`). See [implementation.md](implementation.md) for what is done and
-what is next.
+The store, the MCP server, the key handling, the skill and the command line tool
+are implemented. The tool covers the store operations (`outrage get`, `set`,
+`ls`, `dump`, `rm`), bulk export and import to a directory of files (`outrage
+export`, `outrage import`), building a read-only parquet store (`outrage pack`),
+the MCP configuration (`outrage config`), a verified backup (`outrage backup`),
+the event log (`outrage log`), and setting a project up (`outrage init`). See
+[implementation.md](implementation.md) for what is done and what is next.
 
-`rage init` is the way in: run it in a project and it registers the MCP server,
-installs the `SessionStart` hook, and copies the skill and the agents into
-`.claude/`. It writes only the entries rage owns, leaves the rest of those files
-alone, and is safe to re-run — which is how a project is repaired after an
-upgrade or after the environment moves. `--dry-run` reports what it would
-change without writing.
+`outrage init` is the way in: run it in a project and it registers the MCP
+server, installs the `SessionStart` hook, and copies the skill and the agents
+into `.claude/`. It writes only the entries outrage owns, leaves the rest of
+those files alone, and is safe to re-run — which is how a project is repaired
+after an upgrade or after the environment moves. `--dry-run` reports what it
+would change without writing.
 
 ## Documentation
 
@@ -44,28 +44,28 @@ change without writing.
 ## Components
 
 * **MCP server** — Python, stdio, for local use. Exposes the store as tools.
-* **Data store** — a Python library, independent of MCP so that it can be
-  tested and reused on its own. One interface with two backends behind it, and
-  which one a store uses follows from its file's extension. **SQLite** is the
+* **Data store** — a Python library, independent of MCP so that it can be tested
+  and reused on its own. One interface with two backends behind it, and which
+  one a store uses follows from its file's extension. **SQLite** is the
   read-write default: a store accumulated a document at a time, which is what
-  session context and notes on a codebase are. **Parquet** is one columnar
-  file, written whole by `rage pack` and read many times, for a reference base
-  of tens of thousands of documents — 11× smaller than the same corpus in
-  SQLite, and it seeks a range rather than scanning one. It refuses writes,
-  which is the storage rather than a setting.
-* **Skill** — `src/rage/skills/rage/SKILL.md`, initially for Claude Code,
+  session context and notes on a codebase are. **Parquet** is one columnar file,
+  written whole by `outrage pack` and read many times, for a reference base of
+  tens of thousands of documents — 11× smaller than the same corpus in SQLite,
+  and it seeks a range rather than scanning one. It refuses writes, which is the
+  storage rather than a setting.
+* **Skill** — `src/outrage/skills/rage/SKILL.md`, initially for Claude Code,
   covering when to store and retrieve and what key conventions to follow. It
-  ships inside the package so that an install carries it, and `rage init`
+  ships inside the package so that an install carries it, and `outrage init`
   copies it into a project. A `SessionStart` hook in `.claude/settings.json`,
   installed by the same command, covers the moment a skill would not be reached
   for on its own.
 * **Event log** — an optional JSON lines record of the requests made and the
   store accesses beneath them, for answering afterwards what a session actually
-  did. Off unless `rage config --log` or `rage-server --log` asks for it.
-* **Backup** — `rage backup` copies the database through SQLite and checks what
-  it wrote. In the library rather than the tool, because a store in WAL mode
-  keeps recent writes in a sidecar file and copying the `.sqlite` alone yields a
-  near-empty database that still opens cleanly.
+  did. Off unless `outrage config --log` or `outrage-server --log` asks for it.
+* **Backup** — `outrage backup` copies the database through SQLite and checks
+  what it wrote. In the library rather than the tool, because a store in WAL
+  mode keeps recent writes in a sidecar file and copying the `.sqlite` alone
+  yields a near-empty database that still opens cleanly.
 
 ## Development
 
@@ -84,7 +84,7 @@ defaulting to `./.rage/` in the working directory, each as a file inside it:
 is always relative to the directory, so only `--dir` is a path. See
 [design.md](design.md#store-location).
 
-`rage-server --log` records requests and store accesses as JSON lines, by
+`outrage-server --log` records requests and store accesses as JSON lines, by
 default in `log.jsonl` beside the store. It is off otherwise, since it records
 document text. `--log-content none|excerpt|full` controls how much of that text
 it keeps.

@@ -1,1 +1,1 @@
-../../src/rage/agents/rage-annotate.md
+../../src/outrage/agents/rage-annotate.md

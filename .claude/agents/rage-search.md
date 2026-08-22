@@ -1,1 +1,1 @@
-../../src/rage/agents/rage-search.md
+../../src/outrage/agents/rage-search.md

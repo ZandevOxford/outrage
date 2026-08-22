@@ -1,4 +1,4 @@
-rage.store_sqlite
-=================
+outrage.store_sqlite
+====================
 
-.. automodule:: rage.store_sqlite
+.. automodule:: outrage.store_sqlite

@@ -1,8 +1,8 @@
 import pytest
 from conftest import raises_rendered
 
-from rage import keys
-from rage.keys import InvalidKeyError
+from outrage import keys
+from outrage.keys import InvalidKeyError
 
 
 @pytest.mark.parametrize(

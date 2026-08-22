@@ -1,4 +1,4 @@
-rage.eventlog
-=============
+outrage.eventlog
+================
 
-.. automodule:: rage.eventlog
+.. automodule:: outrage.eventlog

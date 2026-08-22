@@ -19,7 +19,7 @@ transformed, which is the arrangement the key grammar was widened for: the
 characters a filename can hold are the characters a segment can hold.
 
 A tree is written from the root of the key namespace, not from the key that was
-exported, so `rage export out context/10` writes `out/context/10/...` and
+exported, so `outrage export out context/10` writes `out/context/10/...` and
 re-imports to where it came from. Grafting it somewhere else is what the
 import's key prefix is for.
 
@@ -48,7 +48,7 @@ PAGE = 200
 #: The extension a document is written with, by stored format. Named for the
 #: direction it maps in, because the inverse is right below it and a reader
 #: reaching for one of the two should not have to check which is which. One
-#: entry per member of :data:`rage.store.FORMATS`, so nothing can be stored
+#: entry per member of :data:`outrage.store.FORMATS`, so nothing can be stored
 #: that an export cannot name.
 EXTENSION_BY_FORMAT = {
     "markdown": ".md",
@@ -63,7 +63,7 @@ EXTENSION_BY_FORMAT = {
 #: keeps its name and becomes the key `myfile.py` rather than losing a suffix
 #: nothing here put there. That is why there is no `.htm` and no `.text`, close
 #: as they are -- an export never writes one, so an import reads it as part of
-#: the name. Not to be confused with :data:`rage.store.FORMATS`, which is what
+#: the name. Not to be confused with :data:`outrage.store.FORMATS`, which is what
 #: a document may be *stored* as; this is what a file name says it is.
 FORMAT_BY_EXTENSION = {
     extension: format for format, extension in EXTENSION_BY_FORMAT.items()
@@ -132,7 +132,7 @@ class Transfer:
     characters: int = 0
 
 
-#: One document as :meth:`rage.store_parquet.ParquetStore.build` takes it:
+#: One document as :meth:`outrage.store_parquet.ParquetStore.build` takes it:
 #: key, content, the format or None to detect it, and the timestamp or None
 #: for now. A tuple rather than a class because it is what a build consumes
 #: and nothing holds one for longer than that.
@@ -468,7 +468,7 @@ def documents_from_tree(
     row second, or None when there is nothing to pack. ``updated_at`` is None:
     a file's modification time is not the store's timestamp for the document,
     and inventing one at build time is the honest answer -- see
-    :meth:`rage.store_parquet.ParquetStore.build`.
+    :meth:`outrage.store_parquet.ParquetStore.build`.
     """
     source = Path(source).expanduser()
     if not source.is_dir():

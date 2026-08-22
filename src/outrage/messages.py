@@ -1,7 +1,7 @@
-"""Turning a :class:`~rage.errors.RageError` into a sentence for a person.
+"""Turning a :class:`~outrage.errors.RageError` into a sentence for a person.
 
 The one place wording lives. The layers that *raise* carry facts and a code
-(see :mod:`rage.errors`); this renders them, and the front end says how a key
+(see :mod:`outrage.errors`); this renders them, and the front end says how a key
 should be named.
 
 **Why the naming is a parameter.** There are two front ends and the right name
@@ -15,7 +15,7 @@ answer, which is the defect recorded in
 ``project/reference/planned/error-naming``.
 
 So ``name`` is a function from the key the raising layer used to the key the
-reader should see. It defaults to :func:`rage.keys.displayed`, which is the
+reader should see. It defaults to :func:`outrage.keys.displayed`, which is the
 right answer for a single store and spells the root ``/`` rather than as the
 empty string that reads like a missing value.
 
@@ -281,7 +281,7 @@ def _mount_key_too_deep(name: Namer, /, *, key: str, mount: str, **_: Any) -> st
         f"{keys.displayed(key)!r} in the store mounted at {keys.displayed(mount)!r} has no "
         f"name in this namespace: joined it exceeds "
         f"{keys.MAX_JOINED_SEGMENTS} segments. The store holds a key deeper "
-        f"than {keys.MAX_SEGMENTS} segments, which `rage check` reports; it "
+        f"than {keys.MAX_SEGMENTS} segments, which `outrage check` reports; it "
         f"predates that bound and has to be moved before the store can be "
         f"mounted here."
     )
@@ -469,7 +469,7 @@ def _store_read_only(name: Namer, /, *, key: str, path: str, action: str, **_: A
     return (
         f"cannot {action} {name(key)!r}: it is in a parquet store, which is "
         f"written whole rather than updated in place. No way of starting the "
-        f"server allows a write here; build a new one with `rage pack`. "
+        f"server allows a write here; build a new one with `outrage pack`. "
         f"({path})"
     )
 
@@ -485,7 +485,7 @@ def _backend_unavailable(
 def _parquet_needs_pyarrow(name: Namer, /, *, reason: str, **_: Any) -> str:
     return (
         f"a parquet store needs pyarrow, which is not installed: {reason}. "
-        f"Install it with `pip install 'rage[parquet]'`."
+        f"Install it with `pip install 'outrage[parquet]'`."
     )
 
 
@@ -494,14 +494,14 @@ def _parquet_store_missing(name: Namer, /, *, path: str, **_: Any) -> str:
     return (
         f"there is no parquet store at {path}. Unlike a SQLite store this one "
         f"is not created empty: it has no write that would fill it, so an "
-        f"empty one could only ever read back empty. Build it with `rage pack`."
+        f"empty one could only ever read back empty. Build it with `outrage pack`."
     )
 
 
 @template("parquet-not-a-store")
 def _parquet_not_a_store(name: Namer, /, *, path: str, **_: Any) -> str:
     return (
-        f"{path} is a parquet file but not a rage store: it carries no format "
+        f"{path} is a parquet file but not an outrage store: it carries no format "
         f"version, so its columns are somebody else's and mean something else"
     )
 
@@ -511,7 +511,7 @@ def _parquet_format_newer(name: Namer, /, *, path: str, found: int, expected: in
     return (
         f"{path} is written in parquet store format {found} and this build "
         f"reads {expected}; it is not migrated in place, so repack it or "
-        f"upgrade rage"
+        f"upgrade outrage"
     )
 
 

@@ -6,17 +6,17 @@ Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4, pyarrow
 25.0.1. Package installed in editable mode with `pip install -e ".[dev]"`; the
 parquet backend needs `.[parquet]` as well. 902 tests and 17 doctests passing,
 `ruff check` clean, as of 2026-08-21. Doctests are not in
-`testpaths` and need a second run: `pytest --doctest-modules src/rage`.
+`testpaths` and need a second run: `pytest --doctest-modules src/outrage`.
 `ruff format --check` reports six files it would reformat and has done for
 some time; the project lints and does not enforce the formatter.
 
 ### 0. Project scaffolding — done
 
-`pyproject.toml` with a hatchling build, package under `src/rage/`, a
-`rage-server` console script, and `pytest` and `ruff` as development
+`pyproject.toml` with a hatchling build, package under `src/outrage/`, a
+`outrage-server` console script, and `pytest` and `ruff` as development
 dependencies.
 
-### 1. Key handling — `src/rage/keys.py` — done
+### 1. Key handling — `src/outrage/keys.py` — done
 
 Parses and validates keys against the grammar, splits off the metadata segment, and
 derives `doc_key`, `meta_name` and `parent`. Also `ancestors`, `depth`,
@@ -38,7 +38,7 @@ have read as a confident zero out of a full store. Callers select with no range
 predicate instead. `depth` is 0 for it, and `displayed` spells it `/`, because
 `""` in a report reads as a missing name rather than as a key.
 
-### 2. Data store — `src/rage/store.py`, `src/rage/store_sqlite.py` — done
+### 2. Data store — `src/outrage/store.py`, `src/outrage/store_sqlite.py` — done
 
 Directory resolution, schema creation and migration under `PRAGMA user_version`,
 WAL mode, and all five operations with the semantics recorded in design.md. No
@@ -55,16 +55,16 @@ backup. Two things moved with it rather than staying on the value types:
 `_subtree_clauses` there, because what a bound *means* is the namespace's
 business and what it compiles to is a backend's.
 
-### 2a. Parquet backend — `src/rage/store_parquet.py` — done
+### 2a. Parquet backend — `src/outrage/store_parquet.py` — done
 
 A second implementation of `Store`, read-only, for the reference-base case:
 tens of thousands of small documents built once and read many times. One
 columnar file, one row per key, sorted by `sort_key`, holding the SQLite
 columns plus a precomputed `chars`. Documents get in through
-`ParquetStore.build` and `rage pack`, which sources from a directory tree or
+`ParquetStore.build` and `outrage pack`, which sources from a directory tree or
 from an existing store of any backend.
 
-pyarrow is an optional extra (`pip install 'rage[parquet]'`), imported inside
+pyarrow is an optional extra (`pip install 'outrage[parquet]'`), imported inside
 the module, so a base install is untouched until something names a `.parquet`
 file. Which backend a store file uses follows from its extension —
 `store._backend_for` — so `--mount-ro ref=python.parquet` needs no new grammar.
@@ -85,8 +85,8 @@ The two backends are checked against each other rather than by re-running
 `test_store.py`, which half writes: one corpus in both, ~4,000 calls, every
 answer asserted equal.
 
-Two things this turned into defects, both now fixed: `rage check` and `rage
-repair` reached for a SQLite connection and gave a traceback, and
+Two things this turned into defects, both now fixed: `outrage check` and
+`outrage repair` reached for a SQLite connection and gave a traceback, and
 `test_messages.py` kept a hand-written list of error classes that made two new
 ones invisible to three tests at once. Both are recorded in `context/35`.
 
@@ -96,7 +96,7 @@ and keys, not about SQLite.** The counts, the key depth against
 `keys.MAX_SEGMENTS`, each row's denormalised `parent` agreeing with the key it
 came from, metadata with no document, and the format version against what this
 build writes are all asked once in `maintenance`, over a new
-`Store.audit_rows`. What is genuinely the storage's is asked through
+`Store.audit_rows`. What is genuinely the stooutrage's is asked through
 `Store.check_file`: SQLite's `integrity_check` and its write-ahead log,
 parquet's sort order — which is that backend's `integrity_check`, since a file
 out of order is bisected to a confident wrong answer rather than failing to
@@ -155,7 +155,7 @@ integrity check, so the row count is the only check that catches it. The count
 is taken after the copy, which means a concurrent write can fail a good backup;
 that is preferred to trusting a count nobody took.
 
-### 3. MCP server — `src/rage/server.py` — done
+### 3. MCP server — `src/outrage/server.py` — done
 
 Stdio server built on `MCPServer` from the MCP Python SDK, exposing
 `retrieve_document`, `store_document`, `list_keys`, `get_documents`,
@@ -174,7 +174,7 @@ Note the SDK in use is **mcp 2.0**, where `FastMCP` has become
 `structured_content`, `input_schema`), and a failing tool raises `ToolError`
 rather than returning a result with an error flag.
 
-### 3a. Mounted stores — `src/rage/mounts.py` — done
+### 3a. Mounted stores — `src/outrage/mounts.py` — done
 
 More than one database behind the one key namespace, configured at startup with
 a repeatable `--mount KEY=FILE`. `Mounts` is a prefix to `Store` table; the
@@ -193,7 +193,7 @@ and any later index live in it — and the file is which store within it. That
 split is what a backend other than SQLite would slot into, and it is why only
 `--dir` is absolute in a configuration: `config.server_entry` records every
 mount exactly as written, so moving a project is one line to fix rather than
-one per store. `rage`'s own subcommands take the same pair, `--dir` and
+one per store. `outrage`'s own subcommands take the same pair, `--dir` and
 `--store`.
 
 The two translations are `keys.with_prefix` and `keys.strip_prefix`, in
@@ -249,7 +249,7 @@ a key inside a store and a mount point. That is what makes the join total:
 path. `keys.parse` defaults to the store bound and takes `max_segments`; the
 only callers passing the joined bound are `Mounts.resolve`/`below`/`children`
 and the `title_key` the server reports, which are the only places a key
-spanning a mount point is seen whole. `rage check` gained `_check_depth` for
+spanning a mount point is seen whole. `outrage check` gained `_check_depth` for
 keys written before the bound was halved.
 
 The routing lives in the server, which is where the argument and result shaping
@@ -267,7 +267,7 @@ mount below the key there is a single unbounded window, which is the query it
 always was. Results grow a field only when there is something to say, so a
 single store answer is the shape it was before mounts existed.
 
-**Read-only mounts** — `--mount-ro KEY=FILE`, and `rage config --mount-ro` to
+**Read-only mounts** — `--mount-ro KEY=FILE`, and `outrage config --mount-ro` to
 record one. `Mount.read_only` carries it, `Resolved.writable(action)` raises
 `ReadOnlyMountError`, and the two write tools resolve through
 `_resolve_for_write` rather than `_resolve` so a write path names itself and
@@ -283,9 +283,9 @@ followed.
 Deliberately not done, and recorded in `project/reference/planned/mounts`:
 aggregation across a boundary. The range bounds are the primitive it now needs:
 reading a subtree as ordered windows is what a merge across two stores would
-interleave. The CLI half is narrower than it was — `rage check`, `rage backup`
-and the rest take `--store`, so each store in a directory can be reached by
-name — but each command still acts on one store at a time rather than on a
+interleave. The CLI half is narrower than it was — `outrage check`, `outrage
+backup` and the rest take `--store`, so each store in a directory can be reached
+by name — but each command still acts on one store at a time rather than on a
 mount table.
 
 ### 4. Integration with Claude Code — done
@@ -383,7 +383,7 @@ Expected to be the hardest part and the one that determines whether the system
 is actually used in practice; deliberately last, so it could be written against
 tools whose behaviour was already known.
 
-* `src/rage/skills/rage/SKILL.md` — the skill. Inside the package rather than
+* `src/outrage/skills/rage/SKILL.md` — the skill. Inside the package rather than
   only in the repository, so an install carries it and the CLI has something to
   install.
 * `.claude/skills/rage` — a relative symlink to it, so this project uses the
@@ -428,7 +428,7 @@ the store. It is worth re-running after a client upgrade: a pipe test cannot
 see past the process boundary, and this project has now been wrong about that
 boundary three times.
 
-### 8. Event log — `src/rage/eventlog.py` — done
+### 8. Event log — `src/outrage/eventlog.py` — done
 
 Steps 6 and 7 — the CLI and the packaged agents — are recorded in the rage
 store under `project/reference/implementation` rather than here.
@@ -438,18 +438,18 @@ reasoning in design.md; what it is *for* is that every open question in this
 project turned out to need evidence about what an agent actually did, and none
 of it was being kept.
 
-* `src/rage/eventlog.py` — the sink. One JSON object per line, written with a
+* `src/outrage/eventlog.py` — the sink. One JSON object per line, written with a
   single `os.write` to an `O_APPEND` descriptor so that two processes sharing a
   log cannot interleave. Content is bounded by a policy, which is also what
   keeps a line short enough for that to hold.
-* `src/rage/store.py` — a `_logged` decorator, and a `log` argument defaulting
-  to a null object. Method bodies are untouched, so the change that added
-  logging could not have altered behaviour. The decorator stays here, shared,
-  and the backend applies it to the methods it implements.
-* `src/rage/server.py` — `RequestLog`, a `ServerMiddleware`. Registered only
+* `src/outrage/store.py` — a `_logged` decorator, and a `log` argument
+  defaulting to a null object. Method bodies are untouched, so the change that
+  added logging could not have altered behaviour. The decorator stays here,
+  shared, and the backend applies it to the methods it implements.
+* `src/outrage/server.py` — `RequestLog`, a `ServerMiddleware`. Registered only
   when there is somewhere to write.
-* `--log`, `--log-content` on the server; the same two on `rage config`, which
-  writes them into `.mcp.json`.
+* `--log`, `--log-content` on the server; the same two on `outrage config`,
+  which writes them into `.mcp.json`.
 * `tests/test_eventlog.py`, plus additions to the store, server, config and CLI
   suites.
 

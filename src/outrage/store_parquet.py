@@ -1,26 +1,26 @@
 """The parquet backend: one columnar file, written once and read many times.
 
-The second implementation of :class:`rage.store.Store`, and the one the
+The second implementation of :class:`outrage.store.Store`, and the one the
 reference-base case is for -- use 2 of ``project/reference/scale``: tens of
 thousands of small documents, built in one pass rather than accumulated, and
 reached by survey and search. It answers the same twelve operations
-:class:`~rage.store_sqlite.SqliteStore` does, in the same vocabulary, and
+:class:`~outrage.store_sqlite.SqliteStore` does, in the same vocabulary, and
 shares none of the storage.
 
 **It does not write.** A parquet file is not updated in place, so
 :meth:`~ParquetStore.store_document` and :meth:`~ParquetStore.delete` refuse
 rather than pretend. Documents get in through :meth:`ParquetStore.build`,
-which writes the whole file in one pass, and through ``rage pack``, which is
+which writes the whole file in one pass, and through ``outrage pack``, which is
 the command line over it. That refusal is the backend's own and not a mount's:
-see :class:`rage.store.ReadOnlyStoreError` for the difference, which is that
+see :class:`outrage.store.ReadOnlyStoreError` for the difference, which is that
 no flag exists to take this one off.
 
 The file is one row per key, carrying the columns
-:class:`~rage.store_sqlite.SqliteStore` keeps plus ``chars``, sorted by
+:class:`~outrage.store_sqlite.SqliteStore` keeps plus ``chars``, sorted by
 ``sort_key``. Two of those are the whole design:
 
 * **Sorted by ``sort_key``** means every stretch of the key order this store's
-  vocabulary can name -- a :class:`~rage.store.KeyRange`, a page cursor, a
+  vocabulary can name -- a :class:`~outrage.store.KeyRange`, a page cursor, a
   subtree -- is a *contiguous run of rows*. So a bound is found by bisecting
   rather than by testing every row, and the content of a page comes out of the
   one or two row groups it falls in. ``planned/parquet`` predicted this would
@@ -41,16 +41,16 @@ The file is one row per key, carrying the columns
   which half is which.
 
 What that buys is bounded by one thing worth knowing before reading further.
-A :class:`~rage.store.Page` reports ``total`` and ``total_chars`` over the
+A :class:`~outrage.store.Page` reports ``total`` and ``total_chars`` over the
 whole *selection*, and a total over an arbitrary predicate cannot come from
 row-group statistics -- it needs every row the predicate selects. So the
 contract obliges this backend to hold the small columns whole, in memory, and
 only ``content`` is read lazily. That is why :meth:`ParquetStore._index` is
 built once per file and ``content`` never joins it.
 
-pyarrow is an optional dependency: ``pip install rage[parquet]``. It is
+pyarrow is an optional dependency: ``pip install outrage[parquet]``. It is
 imported inside this module and this module is imported only by
-:func:`rage.store._backend_for`, so an install without it is unaffected until
+:func:`outrage.store._backend_for`, so an install without it is unaffected until
 something names a ``.parquet`` file.
 """
 
@@ -97,14 +97,14 @@ from .store import (
 )
 
 #: What a parquet store's file is called when a caller names none. Beside
-#: :data:`rage.store_sqlite.DEFAULT_STORE_FILE`, each in its own module, and
-#: it is the extension of this one that :func:`rage.store._backend_for` reads
+#: :data:`outrage.store_sqlite.DEFAULT_STORE_FILE`, each in its own module, and
+#: it is the extension of this one that :func:`outrage.store._backend_for` reads
 #: to know which backend a file wants.
 DEFAULT_STORE_FILE = "store.parquet"
 
 #: The layout this build writes, recorded in the file's own key-value metadata
 #: so a file from a later build is refused rather than read with the wrong
-#: shape assumed. The same rule as :data:`rage.store_sqlite.SCHEMA_VERSION`
+#: shape assumed. The same rule as :data:`outrage.store_sqlite.SCHEMA_VERSION`
 #: without the migrations: nothing here is ever updated in place, so an old
 #: file is repacked rather than upgraded.
 FORMAT_VERSION = 1
@@ -469,7 +469,7 @@ class ParquetStore(Store):
         one of the more interesting things anyone asks. ``_logged`` records the
         refusal beside the arguments and re-raises.
 
-        :meth:`build` is the way in, and ``rage pack`` is the command line
+        :meth:`build` is the way in, and ``outrage pack`` is the command line
         over it.
         """
         self._validated(key, content, format, title=title, encoding=encoding)
@@ -541,7 +541,7 @@ class ParquetStore(Store):
     ) -> Excerpt:
         """One index lookup, one row group, and the shared slicing.
 
-        The slicing is :func:`rage.store._excerpt`, unchanged and unwrapped:
+        The slicing is :func:`outrage.store._excerpt`, unchanged and unwrapped:
         how ``length`` and ``max_chars`` combine is the store's policy and not
         this backend's, and two backends that sliced differently would return
         different documents for the same call.
@@ -768,7 +768,7 @@ class ParquetStore(Store):
         """The rows inside ``key_range``, as a slice of the file's own order.
 
         The bisect, and the reason the file is sorted. Every bound a
-        :class:`~rage.store.KeyRange` can carry is a comparison against a row's
+        :class:`~outrage.store.KeyRange` can carry is a comparison against a row's
         position in the order the rows are already in, so the answer is a
         contiguous run found by two searches rather than a predicate evaluated
         against every row.
@@ -960,7 +960,7 @@ class ParquetStore(Store):
                     "the file is not in sort order",
                     f"{_listed(out_of_order)}; every read bisects this column, so a file "
                     f"out of order answers wrongly rather than failing. Rebuild it with "
-                    f"rage pack.",
+                    f"outrage pack.",
                 )
             )
 
@@ -975,7 +975,7 @@ class ParquetStore(Store):
         read as a clean bill of health for a store nothing looked at.
 
         A file that fails :meth:`check_file` is not repaired but rebuilt, by
-        ``rage pack``, from a source that is still right.
+        ``outrage pack``, from a source that is still right.
         """
         return []
 
@@ -1013,7 +1013,7 @@ class ParquetStore(Store):
         of None is detected from the content and an ``updated_at`` of None is
         now, so a caller with a directory of files supplies neither and a
         caller copying an existing store supplies both -- which is what lets
-        ``rage pack`` keep timestamps when packing a store and invent them when
+        ``outrage pack`` keep timestamps when packing a store and invent them when
         packing a tree.
 
         Every key goes through :meth:`Store._validated`, the same check a
@@ -1138,7 +1138,7 @@ def _span(marks: list[str], key_range: KeyRange) -> tuple[int, int]:
     ordering: the lower ones to the latest cut from below, the upper ones to
     the earliest from above. What differs between them is only which key the
     cut is taken at and whether it is inclusive -- the distinction
-    :class:`~rage.store.KeyRange` documents -- and that survives here as the
+    :class:`~outrage.store.KeyRange` documents -- and that survives here as the
     choice between ``bisect_left`` and ``bisect_right``. The table below is the
     same six rows as ``store_sqlite._range_clauses``, and the two are meant to
     be read against each other.
@@ -1169,7 +1169,7 @@ def _span(marks: list[str], key_range: KeyRange) -> tuple[int, int]:
 
 
 def _subtree_range(key: str | None) -> KeyRange:
-    """A :class:`~rage.store.KeyRange` selecting exactly the subtree at ``key``.
+    """A :class:`~outrage.store.KeyRange` selecting exactly the subtree at ``key``.
 
     **A subtree is a stretch of the order as well as a part of the hierarchy**,
     and the two coincide exactly: ``sort_form(k) <= sort_key <

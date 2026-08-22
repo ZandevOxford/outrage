@@ -1,4 +1,4 @@
-rage.logread
-============
+outrage.logread
+===============
 
-.. automodule:: rage.logread
+.. automodule:: outrage.logread

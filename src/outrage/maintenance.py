@@ -9,15 +9,15 @@ is sound.
 That last one is the only part a backend has to answer for itself, and the
 split is the point of this module. Five of the questions a check asks are
 about **rows and keys**: how many there are, whether any key is deeper than
-:data:`rage.keys.MAX_SEGMENTS`, whether each row's stored ``parent`` still
+:data:`outrage.keys.MAX_SEGMENTS`, whether each row's stored ``parent`` still
 agrees with the key it was derived from, whether any metadata has no document,
-and whether the file was written by a newer rage than this. None of those is
+and whether the file was written by a newer outrage than this. None of those is
 SQLite's, and a backend keeping its rows some other way has the same
 invariants to break. They are asked here, once, over
-:meth:`~rage.store.Store.audit_rows`.
+:meth:`~outrage.store.Store.audit_rows`.
 
 What is left really is the backend's, and is asked through
-:meth:`~rage.store.Store.check_file`: SQLite's own integrity check and the
+:meth:`~outrage.store.Store.check_file`: SQLite's own integrity check and the
 size of its write-ahead log, a parquet file's sort order. Neither has any
 meaning for the other, which is why neither is here.
 
@@ -57,8 +57,8 @@ class Problem:
 
     ``repairable`` is set by whoever raises the problem, because that is the
     only place the answer is known: a backend appending this from
-    :meth:`~rage.store.Store.check_file` knows whether its own
-    :meth:`~rage.store.Store.repair` acts on it, and nothing above can. It
+    :meth:`~outrage.store.Store.check_file` knows whether its own
+    :meth:`~outrage.store.Store.repair` acts on it, and nothing above can. It
     defaults to False so that a problem nobody thought about cannot claim to
     be fixable.
     """
@@ -85,7 +85,7 @@ class Report:
     details: dict[str, str] = field(default_factory=dict)
     """What this backend says about its own storage, label to value, in the
     order it is worth printing. Filled by
-    :meth:`~rage.store.Store.check_file`. A mapping rather than fields, so
+    :meth:`~outrage.store.Store.check_file`. A mapping rather than fields, so
     that the numbers SQLite has and parquet does not are absent rather than
     zero -- a report reading ``0 bytes in the log`` for a store that has no log
     is a wrong answer delivered as a clean bill of health."""
@@ -103,7 +103,7 @@ class Report:
         A subset of :attr:`problems`, and usually a strict one. A damaged file
         or a schema from a newer build is reported and left alone, because the
         repairs move where the bytes live and nothing else. An empty list is
-        what stops ``rage check`` offering ``--repair``.
+        what stops ``outrage check`` offering ``--repair``.
         """
         return [problem for problem in self.problems if problem.repairable]
 
@@ -143,7 +143,7 @@ def repair(store: Store) -> list[Repaired]:
     that a caller doing maintenance reaches for one vocabulary throughout.
     Returns what was done, which is an empty list for a backend whose storage
     cannot get into a repairable state -- see
-    :meth:`~rage.store.Store.repair`.
+    :meth:`~outrage.store.Store.repair`.
     """
     return store.repair()
 
@@ -152,7 +152,7 @@ def _check_format_version(store: Store, report: Report) -> None:
     """Compare the version in the file with the one this build writes.
 
     Written once rather than per backend: each records the number somewhere
-    different, and :attr:`~rage.store.Store.stored_format_version` is the name
+    different, and :attr:`~outrage.store.Store.stored_format_version` is the name
     that difference does not reach. "Written by something newer than this" is
     the same fault whatever wrote it.
 
@@ -167,7 +167,7 @@ def _check_format_version(store: Store, report: Report) -> None:
         report.problems.append(
             Problem(
                 "error",
-                "the store was written by a newer version of rage",
+                "the store was written by a newer version of outrage",
                 f"format {report.format_version}, this build understands {writes}",
             )
         )
@@ -231,7 +231,7 @@ def _report_depth(over_deep: list[str], report: Report) -> None:
     ``keys.MAX_SEGMENTS`` was halved to 64 on 2026-08-20, so that a mount point
     and a key inside a store — each bounded by it — always join into a valid
     key in the namespace a mount table presents. Nothing writes such a key any
-    more; a store written by an earlier rage can still hold one.
+    more; a store written by an earlier outrage can still hold one.
 
     It is only a fault if the store is ever *mounted*, where the key would have
     no name from outside — so this is a warning naming the keys, not an error.

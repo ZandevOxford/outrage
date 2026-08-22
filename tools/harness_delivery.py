@@ -1,6 +1,6 @@
 """Did the harness deliver what the server and the hooks sent?
 
-Rage depends on three channels that all run from the client into the model, and
+Outrage depends on three channels that all run from the client into the model, and
 this project has now been bitten by three of them:
 
 * **`PreCompact` hooks** cannot deliver text at all -- see
@@ -524,7 +524,7 @@ def server_constants() -> Any | None:
     """
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
     try:
-        from rage import server
+        from outrage import server
     except Exception:
         return None
     return server

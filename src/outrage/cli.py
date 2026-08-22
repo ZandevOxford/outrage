@@ -1,7 +1,7 @@
 """Command line tool over the store library.
 
 A thin wrapper, like the server: argument shaping and printing only. Anything
-with behaviour belongs in :mod:`rage.store` or :mod:`rage.config`, so that it
+with behaviour belongs in :mod:`outrage.store` or :mod:`outrage.config`, so that it
 can be tested without going through argparse and used by whichever of the two
 front ends needs it.
 
@@ -11,7 +11,7 @@ are argparse wiring reached through ``handler``, one per subcommand and never
 from outside, so they are private -- which also keeps this page from being a
 list of twelve near-identical ``(args, out) -> int`` entries in place of an
 orientation. The interface people actually use here is the command line, and
-``rage --help`` is what states it.
+``outrage --help`` is what states it.
 """
 
 from __future__ import annotations
@@ -37,22 +37,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ask what an argument list parses to without running anything.
     """
     parser = argparse.ArgumentParser(
-        prog="rage", description="Command line tool for the Rage document store"
+        prog="outrage", description="Command line tool for the Outrage document store"
     )
-    parser.add_argument("--version", action="version", version=f"rage {__version__}")
+    parser.add_argument("--version", action="version", version=f"outrage {__version__}")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     init = subcommands.add_parser(
         "init",
         help="set a project up: MCP server, session hook, skill and agents",
         description=(
-            "Arrange everything a project needs to use rage: the MCP server "
+            "Arrange everything a project needs to use outrage: the MCP server "
             "entry in .mcp.json, the SessionStart hook in .claude/settings.json, "
             "and the packaged skill and agents in .claude/. Only the entries "
-            "rage owns are written; anything else in those files is left as it "
+            "outrage owns are written; anything else in those files is left as it "
             "was, and a file already holding the current content is not "
             "rewritten. Safe to re-run, which is how a project is repaired "
-            "after rage is upgraded or the environment moves."
+            "after outrage is upgraded or the environment moves."
         ),
     )
     init.add_argument(
@@ -254,7 +254,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="print the document stored at a key",
         description=(
             "Read a key and print its content. Metadata is a key like any "
-            "other, so `rage get notes/x/!title` prints the title. The whole "
+            "other, so `outrage get notes/x/!title` prints the title. The whole "
             "document is printed by default: the tool's own read truncates at "
             "a cap and hands back a continuation offset, which is right for an "
             "agent's context window and wrong for a person redirecting a "
@@ -346,8 +346,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Read a subtree. With --meta the result holds that metadata "
             "instead of the documents, which is how the titles of everything "
             "under a key are surveyed in one pass. Every document is printed "
-            "whole by default, as `rage get` does and for the same reason: "
-            "`rage dump > file` is an export, and an export that quietly holds "
+            "whole by default, as `outrage get` does and for the same reason: "
+            "`outrage dump > file` is an export, and an export that quietly holds "
             "back part of a document is one nothing downstream can tell from a "
             "complete one. Pass --max-chars to cap each document for a skim; a "
             "capped one is then marked with what it held."
@@ -391,7 +391,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Paths are written from the top of the key namespace rather than "
             "from the key asked for, so an export of a subtree imports back to "
             "where it came from. This is not a backup: it carries the "
-            "documents and nothing the database holds about them, and `rage "
+            "documents and nothing the database holds about them, and `outrage "
             "backup` is the copy that keeps the rest."
         ),
     )
@@ -412,7 +412,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "import",
         help="store a directory of files as documents",
         description=(
-            "Import files as documents, inverting `rage export`: a path "
+            "Import files as documents, inverting `outrage export`: a path "
             "becomes a key, and a .md or .json extension is stripped and read "
             "as the format. Any other name is kept whole, so a file at "
             "src/myfile.py is stored at the key src/myfile.py. Nothing already "
@@ -452,7 +452,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "corpus. Parquet is read-only here -- it is not updated in place, "
             "so there is no import that adds to one -- and this is the way "
             "documents get in. The source is either a directory of files, "
-            "mapped to keys exactly as `rage import` maps them, or an existing "
+            "mapped to keys exactly as `outrage import` maps them, or an existing "
             "store, whose documents, metadata and timestamps all come across; "
             "the second is how a reference base is usually made, by "
             "accumulating into a SQLite store and compacting it afterwards. "
@@ -717,7 +717,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
     if args.dry_run and done.writes:
         # Where the report is long enough to scroll, one line on stderr is what
         # says the run did nothing after the reader has stopped reading.
-        print("rage: dry run, nothing changed", file=sys.stderr)
+        print("outrage: dry run, nothing changed", file=sys.stderr)
     return 0
 
 
@@ -846,7 +846,7 @@ def _get_command(args: argparse.Namespace, out: TextIO) -> int:
             excerpt = opened.retrieve_document(args.key, max_chars=args.max_chars, **slicing)
 
     # No trailing newline of our own: the content is the output, and a document
-    # round-tripped through `rage get > f` and `rage set < f` has to come back
+    # round-tripped through `outrage get > f` and `outrage set < f` has to come back
     # the same length it went in.
     out.write(excerpt.content)
     if excerpt.truncated:
@@ -909,7 +909,7 @@ def _ls_command(args: argparse.Namespace, out: TextIO) -> int:
             if args.limit is not None and shown >= args.limit:
                 # On stderr, so a listing piped into something else is not
                 # corrupted by a note about itself.
-                print(f"rage: stopped at --limit {args.limit}", file=sys.stderr)
+                print(f"outrage: stopped at --limit {args.limit}", file=sys.stderr)
                 break
             size = "-" if entry.size is None else str(entry.size)
             print(
@@ -928,7 +928,7 @@ def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
     with _open_existing(args) as opened:
         for excerpt in _documents(opened, args):
             if args.limit is not None and shown >= args.limit:
-                print(f"rage: stopped at --limit {args.limit}", file=sys.stderr)
+                print(f"outrage: stopped at --limit {args.limit}", file=sys.stderr)
                 break
             header = f"=== {keys.displayed(excerpt.key)}"
             if excerpt.truncated:
@@ -1007,7 +1007,7 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
             hidden=args.hidden,
         )
         status = _report_transfers(transfers, args, out, source_first=True)
-    print(f"rage: into {store.store_file(directory, args.filename)}", file=sys.stderr)
+    print(f"outrage: into {store.store_file(directory, args.filename)}", file=sys.stderr)
     return status
 
 
@@ -1045,7 +1045,7 @@ def _report_transfers(
     else:
         counts = ", ".join(f"{count} {_NOUNS[action]}" for action, count in counted.items())
         prefix = "dry run, nothing changed: " if args.dry_run else ""
-        print(f"rage: {prefix}{counts}", file=sys.stderr)
+        print(f"outrage: {prefix}{counts}", file=sys.stderr)
     # A run that stopped or failed is not a run that worked, and the exit
     # status is the only part of that a script can see.
     return 1 if counted.get(bulk.FAILED) or counted.get(bulk.STOPPED) else 0
@@ -1117,7 +1117,7 @@ def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
         # The one line that says the file exists, since every line above it
         # said only that a document was read. To stderr with the counts, so a
         # report piped onward is still just the documents.
-        print(f"rage: packed into {target}", file=sys.stderr)
+        print(f"outrage: packed into {target}", file=sys.stderr)
     return status
 
 
@@ -1175,7 +1175,7 @@ def _check_command(args: argparse.Namespace, out: TextIO) -> int:
     """Report on the store, and optionally repair what can be repaired.
 
     The one pair of subcommands about the *store* rather than about documents,
-    and it works for any backend. :mod:`rage.maintenance` asks the questions
+    and it works for any backend. :mod:`outrage.maintenance` asks the questions
     every backend can answer -- the row invariants, the format version -- and
     the backend answers for its own storage through ``check_file``.
     ``_open_existing`` hands back whichever backend the store file names, so
@@ -1287,7 +1287,7 @@ def _report(change: config_module.Change, out: TextIO, *, dry_run: bool) -> None
 def _report_hook(change: install.HookChange, out: TextIO, *, dry_run: bool) -> None:
     """Say what the hook entry did, and name any duplicates cleared out.
 
-    The duplicates line matters more than it looks: an entry rage could not
+    The duplicates line matters more than it looks: an entry outrage could not
     recognise is a hook that fired twice, and the only moment anybody finds out
     is the run that finally removes it.
     """
@@ -1326,8 +1326,8 @@ def _print_command(label: str, entry: dict[str, object], out: TextIO) -> None:
 def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     """Run one command and return its exit status.
 
-    The console script ``rage``, and the whole of what this front end does:
-    parse, dispatch, and turn a :class:`~rage.errors.RageError` into a sentence
+    The console script ``outrage``, and the whole of what this front end does:
+    parse, dispatch, and turn a :class:`~outrage.errors.RageError` into a sentence
     on stderr. ``out`` is where a command's own output goes, and defaults to
     stdout; a test passes its own and reads what a person would have seen.
 
@@ -1340,14 +1340,14 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
         return args.handler(args, out or sys.stdout)
     except RageError as exc:
         # One base rather than a tuple that grows with each command. A failure
-        # that is not a RageError is a bug in rage, and a traceback is the right
+        # that is not a RageError is a bug in outrage, and a traceback is the right
         # output for a bug.
         #
         # Rendered here, because this is a front end and the error is not. The
         # command line opens one store directory and knows nothing about a
         # mount table, so a key names itself: the default namer is the correct
         # one here and the mount-aware one would be wrong. See `messages`.
-        print(f"rage: {messages.render(exc)}", file=sys.stderr)
+        print(f"outrage: {messages.render(exc)}", file=sys.stderr)
         return 1
 
 

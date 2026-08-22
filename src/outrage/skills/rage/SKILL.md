@@ -76,7 +76,7 @@ to no single thread: the environment, conventions, current status. Updated in
 place as they change.
 
 `notes/<path>` — notes about one file, keyed to mirror its path, as in
-`notes/src/rage/store.py`.
+`notes/src/outrage/store.py`.
 
 Pass `title` on every document. It is what the survey above can see, and a
 document without one is findable only by someone who already knows its key.

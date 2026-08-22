@@ -1,12 +1,12 @@
 """Writing the MCP server configuration for a project or a user.
 
-Separate from :mod:`rage.cli` for the same reason the store is separate from
+Separate from :mod:`outrage.cli` for the same reason the store is separate from
 the server: the CLI should shape arguments and print, nothing else. Everything
 here is callable and testable without going through argparse.
 
 The problem this solves is that an MCP client launches the server as a
 subprocess, so it needs an absolute path to an entry point inside whichever
-environment rage was installed in. That path is only reliably known from
+environment outrage was installed in. That path is only reliably known from
 inside that environment — which is where this code runs, and is why writing
 the configuration is a command rather than something a user does by hand. The
 ``.mcp.json`` originally written by hand in this repository is the illustration:
@@ -50,9 +50,9 @@ SERVERS_FIELD = "mcpServers"
 SCOPES = ("project", "user")
 
 #: Console script installed by this package, and the fallback for when it is
-#: absent. ``python -m rage`` is equivalent, and works in an environment the
+#: absent. ``python -m outrage`` is equivalent, and works in an environment the
 #: scripts directory of which is not where sys.executable lives.
-SCRIPT_NAME = "rage-server"
+SCRIPT_NAME = "outrage-server"
 
 _DEFAULT_INDENT = 2
 
@@ -84,7 +84,7 @@ def launch_command(executable: str | os.PathLike[str] | None = None) -> list[str
 
     Prefers the console script beside the running interpreter, because it is
     what an install provides and it names the environment unambiguously. Falls
-    back to ``<python> -m rage``, which is equivalent and cannot be missing: it
+    back to ``<python> -m outrage``, which is equivalent and cannot be missing: it
     needs only the interpreter that is already running and the package that is
     already imported.
     """
@@ -92,7 +92,7 @@ def launch_command(executable: str | os.PathLike[str] | None = None) -> list[str
     for candidate in (python.parent / SCRIPT_NAME, python.parent / f"{SCRIPT_NAME}.exe"):
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return [str(candidate)]
-    return [str(python), "-m", "rage"]
+    return [str(python), "-m", "outrage"]
 
 
 def server_entry(

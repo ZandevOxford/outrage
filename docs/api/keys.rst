@@ -1,4 +1,4 @@
-rage.keys
-=========
+outrage.keys
+============
 
-.. automodule:: rage.keys
+.. automodule:: outrage.keys

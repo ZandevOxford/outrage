@@ -1,4 +1,4 @@
-rage.maintenance
-================
+outrage.maintenance
+===================
 
-.. automodule:: rage.maintenance
+.. automodule:: outrage.maintenance

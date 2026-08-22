@@ -1,4 +1,4 @@
-rage.cli
-========
+outrage.cli
+===========
 
-.. automodule:: rage.cli
+.. automodule:: outrage.cli

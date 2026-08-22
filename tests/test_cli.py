@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from rage.cli import main, parse_args
+from outrage.cli import main, parse_args
 
 
 def run(*argv: str) -> tuple[int, str]:
@@ -81,13 +81,13 @@ def test_report_names_both_paths_it_guessed(tmp_path):
 def test_an_update_shows_what_it_replaced(tmp_path):
     path = tmp_path / ".mcp.json"
     path.write_text(
-        json.dumps({"mcpServers": {"rage": {"command": "/old/bin/rage-server", "args": []}}}),
+        json.dumps({"mcpServers": {"rage": {"command": "/old/bin/outrage-server", "args": []}}}),
         encoding="utf-8",
     )
 
     _, output = run("config", "--project-dir", str(tmp_path))
 
-    assert "was: /old/bin/rage-server" in output
+    assert "was: /old/bin/outrage-server" in output
     assert "now:" in output
 
 
@@ -167,7 +167,7 @@ def test_config_records_mounts_as_files_inside_the_store_directory(tmp_path):
 
 
 def test_a_command_reaches_a_second_store_in_the_same_directory(tmp_path):
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(tmp_path / ".rage", filename="ref.sqlite") as other:
         other.store_document("only/here", "in the second store")
@@ -196,7 +196,7 @@ def test_a_command_is_required():
 
 
 def a_store(directory: Path) -> None:
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(directory) as store:
         store.store_document("context/1/task", "Build the backup command.", title="Task")
@@ -414,7 +414,7 @@ def test_a_filter_matching_nothing_says_so(tmp_path):
 
 def a_long_store(directory: Path, size: int = 5000) -> str:
     """A store holding one document longer than the bulk cap, and its content."""
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     content = "start\n" + "filler line\n" * size + "end of the document\n"
     with SqliteStore(directory) as store:
@@ -448,7 +448,7 @@ def test_dump_caps_each_document_when_asked(tmp_path):
 
 
 def test_dump_reads_long_metadata_to_the_end_too(tmp_path):
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     value = "a very long summary. " * 400
     with SqliteStore(tmp_path / ".rage") as store:
@@ -463,7 +463,7 @@ def test_dump_reads_long_metadata_to_the_end_too(tmp_path):
 
 
 def test_dump_exports_a_subtree_at_full_length(tmp_path):
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(tmp_path / ".rage") as store:
         for name in ("one", "two"):
@@ -488,7 +488,7 @@ def test_get_prints_a_long_document_whole(tmp_path):
 
 
 def test_get_writes_no_newline_of_its_own(tmp_path, capsys):
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(tmp_path / ".rage") as store:
         store.store_document("notes/one", "no trailing newline here")
@@ -589,7 +589,7 @@ def test_reading_a_store_that_is_not_there_is_refused(tmp_path, capsys):
 
 def a_tree(directory: Path) -> None:
     """A store with a container, documents beneath it, and metadata."""
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(directory) as store:
         for number in (1, 2, 10):
@@ -810,7 +810,7 @@ def test_check_reports_a_row_stored_under_the_wrong_parent(tmp_path):
 
 
 def test_check_repairs_the_write_ahead_log(tmp_path):
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     directory = tmp_path / ".rage"
     with SqliteStore(directory) as store:
@@ -841,7 +841,7 @@ def test_check_repairs_the_write_ahead_log(tmp_path):
 
 
 def a_wide_store(directory: Path, count: int, content: str = "body") -> None:
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(directory) as store:
         for number in range(1, count + 1):
@@ -863,10 +863,10 @@ def test_ls_lists_a_level_larger_than_one_page(tmp_path):
 
 
 def test_ls_pages_rather_than_asking_for_everything(tmp_path, monkeypatch):
-    import rage.bulk
+    import outrage.bulk
 
     a_wide_store(tmp_path / ".rage", 20)
-    monkeypatch.setattr(rage.bulk, "PAGE", 3)
+    monkeypatch.setattr(outrage.bulk, "PAGE", 3)
 
     _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
 
@@ -874,13 +874,13 @@ def test_ls_pages_rather_than_asking_for_everything(tmp_path, monkeypatch):
 
 
 def test_ls_recursive_pages_at_every_level(tmp_path, monkeypatch):
-    import rage.bulk
-    from rage.store_sqlite import SqliteStore
+    import outrage.bulk
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(tmp_path / ".rage") as store:
         for number in range(1, 8):
             store.store_document(f"deep/{number}/leaf", "content")
-    monkeypatch.setattr(rage.bulk, "PAGE", 2)
+    monkeypatch.setattr(outrage.bulk, "PAGE", 2)
 
     _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive", "deep")
 
@@ -900,10 +900,10 @@ def test_ls_limit_shows_less_and_says_so(tmp_path, capsys):
 
 
 def test_dump_exports_more_than_one_page_whole(tmp_path, monkeypatch):
-    import rage.bulk
+    import outrage.bulk
 
     a_wide_store(tmp_path / ".rage", 10, content="x" * 3000)
-    monkeypatch.setattr(rage.bulk, "PAGE", 2)
+    monkeypatch.setattr(outrage.bulk, "PAGE", 2)
 
     _, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes")
 
@@ -926,12 +926,12 @@ def test_dump_limit_shows_less_and_says_so(tmp_path, capsys):
 def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
     import argparse
 
-    import rage.bulk
-    import rage.cli
-    from rage.store_sqlite import SqliteStore
+    import outrage.bulk
+    import outrage.cli
+    from outrage.store_sqlite import SqliteStore
 
     a_wide_store(tmp_path / ".rage", 10)
-    monkeypatch.setattr(rage.bulk, "PAGE", 2)
+    monkeypatch.setattr(outrage.bulk, "PAGE", 2)
 
     calls = 0
     original = SqliteStore.get_documents
@@ -945,7 +945,7 @@ def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
 
     with SqliteStore(tmp_path / ".rage") as opened:
         arguments = argparse.Namespace(key="notes", meta_name=None, depth=None, max_chars=None)
-        first = next(rage.cli._documents(opened, arguments))
+        first = next(outrage.cli._documents(opened, arguments))
 
     # Lazy, not merely paged: an export that reads the whole subtree before
     # writing its first line is the shape that fails at the size it matters.
@@ -954,7 +954,7 @@ def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
 
 
 def test_rm_dry_run_previews_the_whole_subtree_not_one_level(tmp_path):
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(tmp_path / ".rage") as store:
         store.store_document("tree/one", "content")
@@ -1000,7 +1000,7 @@ def test_a_malformed_key_is_one_line_and_not_a_traceback(tmp_path, capsys):
 
 
 def an_exportable_store(directory: Path) -> Path:
-    from rage.store_sqlite import SqliteStore
+    from outrage.store_sqlite import SqliteStore
 
     with SqliteStore(directory) as store:
         store.store_document("project", "# Project", title="The project")
@@ -1039,7 +1039,7 @@ def test_export_refuses_a_store_that_is_not_there(tmp_path, capsys):
     status, _ = run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
 
     assert status == 1
-    assert "rage:" in capsys.readouterr().err
+    assert "outrage:" in capsys.readouterr().err
 
 
 def test_import_stores_a_directory_and_says_where(tmp_path, capsys):
@@ -1050,7 +1050,7 @@ def test_import_stores_a_directory_and_says_where(tmp_path, capsys):
 
     assert status == 0
     assert "wrote" in output
-    # A first write may create the store, as `rage set` may: seeding an empty
+    # A first write may create the store, as `outrage set` may: seeding an empty
     # one from a directory is that write in bulk. Saying where it went is then
     # the only thing that makes a mistyped --dir visible.
     assert str(tmp_path / "fresh" / "store.sqlite") in capsys.readouterr().err
@@ -1338,4 +1338,4 @@ def test_writing_to_a_parquet_store_is_refused_as_a_message(tmp_path, capsys):
     assert status == 1
     reported = capsys.readouterr().err
     assert "written whole rather than updated" in reported
-    assert "rage pack" in reported
+    assert "outrage pack" in reported

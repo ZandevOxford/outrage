@@ -20,8 +20,8 @@ The vocabulary is the interesting part, and it is worth reading in this order:
 
 :class:`Store` itself is abstract, and there are two implementations. The
 operations carry the contract both answer:
-:class:`rage.store_sqlite.SqliteStore` is a read-write database accumulated a
-document at a time, and :class:`rage.store_parquet.ParquetStore` is one
+:class:`outrage.store_sqlite.SqliteStore` is a read-write database accumulated a
+document at a time, and :class:`outrage.store_parquet.ParquetStore` is one
 columnar file written whole and read many times, for a reference base of tens
 of thousands of documents. They share none of the storage and every word of
 the vocabulary below, which is the point of the split.
@@ -32,7 +32,7 @@ not the server, not the command line, not the mount table -- names a backend
 to open one.
 
 Independent of MCP: everything here is callable and testable on its own. Read
-:mod:`rage.keys` first for what a key is, which everything below is written in
+:mod:`outrage.keys` first for what a key is, which everything below is written in
 terms of; the key namespace and the tool semantics are argued in ``design.md``
 **at the root of the repository**, which is not part of this reference.
 """
@@ -60,7 +60,7 @@ from .eventlog import EventLog
 
 if TYPE_CHECKING:
     # Only in the signatures of the maintenance methods below. A runtime
-    # import would be a cycle: rage.maintenance is written in terms of Store,
+    # import would be a cycle: outrage.maintenance is written in terms of Store,
     # and each backend imports the vocabulary from it to fill a report in.
     from .maintenance import Repaired, Report
 
@@ -130,7 +130,7 @@ class BackupError(RageError, RuntimeError):
 class ReadOnlyStoreError(RageError, PermissionError):
     """Raised when a store is asked to write and its backend cannot.
 
-    Distinct from :class:`rage.mounts.ReadOnlyMountError`, which is about a
+    Distinct from :class:`outrage.mounts.ReadOnlyMountError`, which is about a
     *configuration*: a store that could be written was mounted with
     ``--mount-ro``, and starting the server without that flag would let the
     write through. This one is about the storage. A parquet file is not
@@ -245,7 +245,7 @@ class AuditRow:
     The reading surface deliberately does not expose ``parent``: it is a
     denormalisation, kept so that listing a level is a lookup rather than a
     scan, and a caller reading documents has no business knowing a store keeps
-    one. :func:`rage.maintenance.check` does, because a denormalisation that
+    one. :func:`outrage.maintenance.check` does, because a denormalisation that
     can disagree with what it was derived from is exactly what a check is for.
 
     So this is the audit surface and not a second way to read. It yields every
@@ -261,7 +261,7 @@ class AuditRow:
     """None for a document, the metadata name otherwise."""
     parent: str
     """The parent this row is *stored* under, which is the value being checked
-    and not the one :func:`rage.keys.parse` would derive."""
+    and not the one :func:`outrage.keys.parse` would derive."""
     chars: int
 
 
@@ -498,9 +498,9 @@ class Store(ABC):
     backend_name: ClassVar[str]
 
     #: The version of its own on-disk format this build writes. Compared
-    #: against :attr:`stored_format_version` by :func:`rage.maintenance.check`,
+    #: against :attr:`stored_format_version` by :func:`outrage.maintenance.check`,
     #: which is why the comparison is written once rather than per backend --
-    #: "written by a newer rage than this" is the same fault whatever wrote it,
+    #: "written by a newer outrage than this" is the same fault whatever wrote it,
     #: even though each backend records the number somewhere different.
     format_version: ClassVar[int]
 
@@ -609,7 +609,7 @@ class Store(ABC):
         is, while making it impossible for a backend to validate differently
         without visibly not calling this — two stores that disagreed about what
         a key or a format is would be two namespaces, which is the thing the
-        split of :mod:`rage.store` from a backend exists to prevent.
+        split of :mod:`outrage.store` from a backend exists to prevent.
 
         **Call it inside the logged method.** ``_logged`` binds the caller's
         arguments before the body runs, so validation lifted out in front of
@@ -916,7 +916,7 @@ class Store(ABC):
     def audit_rows(self) -> Iterator[AuditRow]:
         """Every row this store holds, bookkeeping included, in one pass.
 
-        For :func:`rage.maintenance.check` and nothing else -- see
+        For :func:`outrage.maintenance.check` and nothing else -- see
         :class:`AuditRow` for why the reading surface does not offer this. One
         pass rather than a query per check, because the checks that use it want
         the same rows for different questions and a store large enough to be
@@ -930,13 +930,13 @@ class Store(ABC):
     def check_file(self, report: Report) -> None:
         """Add what only this backend can say about its own file.
 
-        Called by :func:`rage.maintenance.check` once the checks that any
+        Called by :func:`outrage.maintenance.check` once the checks that any
         backend can answer have run. Those are about rows and keys; this is
         about *storage* -- whether SQLite still considers the database sound,
         how much of it is sitting in the write-ahead log, whether a parquet
         file is still in the sort order every read of it bisects.
 
-        Fills in :attr:`~rage.maintenance.Report.details` with the numbers
+        Fills in :attr:`~outrage.maintenance.Report.details` with the numbers
         worth printing whether or not anything is wrong, and appends to
         ``problems`` for anything that is.
         """

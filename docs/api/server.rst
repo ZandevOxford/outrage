@@ -1,4 +1,4 @@
-rage.server
-===========
+outrage.server
+==============
 
-.. automodule:: rage.server
+.. automodule:: outrage.server

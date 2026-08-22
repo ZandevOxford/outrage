@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rage"
+name = "outrage"
 version = "0.1.0"
 description = "A key-addressed retrieval system for coding agents"
 readme = "README.md"
@@ -24,19 +24,19 @@ Issues = "https://github.com/ZandevOxford/outrage/issues"
 [project.optional-dependencies]
 # Optional on purpose: the parquet backend is for the reference-base case, and
 # a base install that only ever holds session context should not pay 36 MB of
-# wheel for it. `rage.store_parquet` imports pyarrow inside the module, and
-# `rage.store._backend_for` imports that module only when a `.parquet` file is
+# wheel for it. `outrage.store_parquet` imports pyarrow inside the module, and
+# `outrage.store._backend_for` imports that module only when a `.parquet` file is
 # named, so nothing here is touched until something asks for one.
 parquet = ["pyarrow>=18"]
 dev = ["pytest>=8", "ruff>=0.6"]
 docs = ["sphinx>=8", "furo"]
 
 [project.scripts]
-rage = "rage.cli:main"
-rage-server = "rage.server:main"
+outrage = "outrage.cli:main"
+outrage-server = "outrage.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rage"]
+packages = ["src/outrage"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

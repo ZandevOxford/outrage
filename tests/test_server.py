@@ -9,11 +9,11 @@ from mcp.client.session import ClientSession
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
-from rage import eventlog
-from rage import server as server_module
-from rage.eventlog import EventLog
-from rage.server import RequestLog, build_server, parse_args
-from rage.store_sqlite import SqliteStore
+from outrage import eventlog
+from outrage import server as server_module
+from outrage.eventlog import EventLog
+from outrage.server import RequestLog, build_server, parse_args
+from outrage.store_sqlite import SqliteStore
 
 
 @pytest.fixture
@@ -524,7 +524,7 @@ def test_the_caps_are_written_where_a_caller_can_read_them(server):
 
 
 def test_the_instructions_say_a_listing_is_a_page(server):
-    from rage.server import INSTRUCTIONS
+    from outrage.server import INSTRUCTIONS
 
     assert "next_cursor" in INSTRUCTIONS
     assert "`after`" in INSTRUCTIONS

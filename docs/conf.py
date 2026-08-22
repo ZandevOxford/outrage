@@ -1,6 +1,6 @@
-"""Sphinx configuration for the Rage API documentation.
+"""Sphinx configuration for the Outrage API documentation.
 
-The docstrings in ``src/rage`` are already written as reStructuredText, with
+The docstrings in ``src/outrage`` are already written as reStructuredText, with
 ``:class:`` and ``:mod:`` roles and ``#:`` comments on module constants, so
 autodoc renders them without a translation layer and no docstring-style
 extension is needed.
@@ -15,9 +15,9 @@ from pathlib import Path
 # but keep a working build in a bare checkout too.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from rage import __version__  # noqa: E402
+from outrage import __version__  # noqa: E402
 
-project = "Rage"
+project = "Outrage"
 author = "John Reynolds"
 copyright = "2026, John Reynolds"
 version = __version__
@@ -62,4 +62,4 @@ nitpicky = False
 exclude_patterns = ["_build"]
 
 html_theme = "furo"
-html_title = f"Rage {version}"
+html_title = f"Outrage {version}"
