@@ -5,9 +5,16 @@ build-backend = "hatchling.build"
 [project]
 name = "outrage"
 version = "0.1.0"
+authors = [
+    { name="John M Reynolds", email="zandev@gmail.com" },
+]
 description = "A key-addressed retrieval system for coding agents"
 readme = "README.md"
 requires-python = ">=3.14"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
 # PEP 639: an SPDX expression rather than a classifier, and the file named so
 # that it is carried in the wheel and the sdist rather than only in the repo.
 license = "MIT"
