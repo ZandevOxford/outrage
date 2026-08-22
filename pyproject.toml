@@ -8,7 +8,18 @@ version = "0.1.0"
 description = "A key-addressed retrieval system for coding agents"
 readme = "README.md"
 requires-python = ">=3.14"
+# PEP 639: an SPDX expression rather than a classifier, and the file named so
+# that it is carried in the wheel and the sdist rather than only in the repo.
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = ["mcp>=1.2"]
+
+[project.urls]
+# Homepage and Issues are the same repository; both are named because they are
+# separate rows in a package index's sidebar, and "where do I report this" is
+# not a question a reader should have to answer by editing a URL.
+Homepage = "https://github.com/ZandevOxford/outrage"
+Issues = "https://github.com/ZandevOxford/outrage/issues"
 
 [project.optional-dependencies]
 # Optional on purpose: the parquet backend is for the reference-base case, and
