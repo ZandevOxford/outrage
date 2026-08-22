@@ -60,18 +60,20 @@ import os
 import shutil
 import threading
 from bisect import bisect_left, bisect_right
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from . import keys
 from .eventlog import EventLog
+from .maintenance import Problem, Repaired, Report, _listed
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
     EVERYTHING,
     UNBOUNDED,
+    AuditRow,
     BackendError,
     Backup,
     BackupError,
@@ -223,6 +225,8 @@ class ParquetStore(Store):
     """A document store held in a single parquet file, read only."""
 
     default_filename = DEFAULT_STORE_FILE
+    backend_name = "parquet"
+    format_version = FORMAT_VERSION
     writable = False
 
     def __init__(
@@ -892,6 +896,88 @@ class ParquetStore(Store):
             # 'ok' here means exactly that the file reads as a parquet store.
             integrity="ok",
         )
+
+    @property
+    def stored_format_version(self) -> int:
+        """From the file's own key-value metadata, where ``build`` wrote it.
+
+        ``_check_version`` has already refused anything newer than this build
+        by the time a check can run, so the error branch of
+        ``maintenance._check_format_version`` is unreachable here -- see the
+        note there. A file older than this build still opens, and still says
+        so.
+        """
+        return int((self._parquet.schema_arrow.metadata or {})[VERSION_KEY])
+
+    def audit_rows(self) -> Iterator[AuditRow]:
+        """Every row, from the index, without opening the content column.
+
+        The index is exactly the columns a check wants and it is resident
+        already -- ``chars`` most of all, which is the column this backend has
+        and SQLite does not, precisely so that counting characters never costs
+        a read of the text.
+        """
+        for row in self._index.rows:
+            yield AuditRow(
+                key=row.key,
+                doc_key=row.doc_key,
+                meta_name=row.meta_name,
+                parent=row.parent,
+                chars=row.chars,
+            )
+
+    def check_file(self, report: Report) -> None:
+        """Whether the file is still in the order every read of it assumes.
+
+        This is parquet's ``integrity_check``, and it exists for the same
+        reason: a file that fails it reads *wrongly* rather than failing to
+        read. Every lookup here bisects ``sort_key`` -- that is what makes a
+        bounded range 0.04 ms rather than 14 -- and bisection over rows that
+        are not sorted returns a confidently wrong answer with nothing
+        anywhere to contradict it.
+
+        Cheap enough to do unconditionally: one pass over a column that is
+        resident already, against a file that promised to be sorted when it
+        was written.
+        """
+        index = self._index
+        report.details["rows"] = str(len(index.rows))
+        report.details["row groups"] = str(self._parquet.metadata.num_row_groups)
+
+        # ``order`` is the sort_key column in the order the file holds it,
+        # never re-sorted on the way in -- which is what makes comparing it
+        # with itself a check rather than a tautology.
+        out_of_order = [
+            index.rows[position].key
+            for position in range(1, len(index.order))
+            if index.order[position] < index.order[position - 1]
+        ]
+        report.details["order"] = "sorted" if not out_of_order else "not sorted"
+        if out_of_order:
+            report.problems.append(
+                Problem(
+                    "error",
+                    "the file is not in sort order",
+                    f"{_listed(out_of_order)}; every read bisects this column, so a file "
+                    f"out of order answers wrongly rather than failing. Rebuild it with "
+                    f"rage pack.",
+                )
+            )
+
+    def repair(self) -> list[Repaired]:
+        """Nothing, and that is the honest answer rather than a silence.
+
+        A repair moves bytes about inside a mutable file: a checkpoint folds a
+        sidecar back, a vacuum compacts free pages. A parquet store is one
+        immutable file with no sidecar and no free pages, so there is no state
+        it can reach that moving bytes would fix -- which is *provable* here,
+        and so different in kind from "nothing to check", a sentence that would
+        read as a clean bill of health for a store nothing looked at.
+
+        A file that fails :meth:`check_file` is not repaired but rebuilt, by
+        ``rage pack``, from a source that is still right.
+        """
+        return []
 
     # -- building --------------------------------------------------------
 

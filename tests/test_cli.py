@@ -724,8 +724,64 @@ def test_check_reports_a_sound_store(tmp_path):
     status, output = run("check", "--dir", str(tmp_path / ".rage"))
 
     assert status == 0
+    assert "(sqlite)" in output
     assert "integrity ok" in output
     assert "nothing wrong" in output
+
+
+def test_check_reports_a_parquet_store_without_sqlites_vocabulary(tmp_path):
+    """The same subcommand, in the second backend's own terms.
+
+    The line that matters is the third: printed from the report's ``details``
+    rather than from fields, so a store with no write-ahead log says nothing
+    about one instead of reporting it as zero bytes -- which would read as a
+    fact somebody had checked.
+    """
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+
+    a_tree(tmp_path / ".rage")
+    run(
+        "pack",
+        str(tmp_path / "ref.parquet"),
+        "--dir",
+        str(tmp_path / ".rage"),
+        "--from-store",
+        "store.sqlite",
+    )
+
+    status, output = run("check", "--dir", str(tmp_path), "--store", "ref.parquet")
+
+    assert status == 0
+    assert "(parquet)" in output
+    assert "order sorted" in output
+    assert "integrity" not in output
+    assert "log" not in output
+    assert "nothing wrong" in output
+
+
+def test_repair_of_a_store_with_nothing_to_move_says_so(tmp_path):
+    """Not a blank, and not a claim to have acted.
+
+    A backend returning no repairs is saying there is nothing its storage
+    could need, which the user has to be able to tell from a repair that ran
+    and did nothing.
+    """
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+
+    a_tree(tmp_path / ".rage")
+    run(
+        "pack",
+        str(tmp_path / "ref.parquet"),
+        "--dir",
+        str(tmp_path / ".rage"),
+        "--from-store",
+        "store.sqlite",
+    )
+
+    status, output = run("check", "--repair", "--dir", str(tmp_path), "--store", "ref.parquet")
+
+    assert status == 0
+    assert "nothing to repair: a parquet store has no state a repair could move" in output
 
 
 def test_check_refuses_a_directory_with_no_store(tmp_path, capsys):

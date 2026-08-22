@@ -347,9 +347,11 @@ def test_default_store_is_the_one_place_a_backend_is_chosen(tmp_path):
 def test_the_connection_is_the_backend_s_own(store):
     """``connection`` is on the backend, not on the interface.
 
-    :mod:`rage.maintenance` reaches through it to ask SQLite about the file
-    itself. That question has no meaning for a store kept some other way, so
-    the attribute must not appear on :class:`rage.store.Store`.
+    ``check_file`` uses it to ask SQLite about the file itself. That question
+    has no meaning for a store kept some other way, which is why the answering
+    is on the backend and only the *asking* is on
+    :class:`rage.store.Store` -- and why the attribute itself must not appear
+    there.
     """
     assert isinstance(store.connection, sqlite3.Connection)
     assert not hasattr(store_module.Store, "connection")

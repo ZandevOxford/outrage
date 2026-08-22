@@ -52,11 +52,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, ClassVar, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
 from . import eventlog, keys
 from .errors import RageError
 from .eventlog import EventLog
+
+if TYPE_CHECKING:
+    # Only in the signatures of the maintenance methods below. A runtime
+    # import would be a cycle: rage.maintenance is written in terms of Store,
+    # and each backend imports the vocabulary from it to fill a report in.
+    from .maintenance import Repaired, Report
 
 #: Default directory name, relative to the working directory, when neither
 #: --dir nor RAGE_DIR is given.
@@ -230,6 +236,33 @@ class Backup:
     """Rows copied, checked against the source rather than assumed."""
     integrity: str
     """What SQLite's own integrity_check said. 'ok' when sound."""
+
+
+@dataclass(frozen=True, slots=True)
+class AuditRow:
+    """One stored row as its backend actually holds it, bookkeeping included.
+
+    The reading surface deliberately does not expose ``parent``: it is a
+    denormalisation, kept so that listing a level is a lookup rather than a
+    scan, and a caller reading documents has no business knowing a store keeps
+    one. :func:`rage.maintenance.check` does, because a denormalisation that
+    can disagree with what it was derived from is exactly what a check is for.
+
+    So this is the audit surface and not a second way to read. It yields every
+    row, metadata included, in one pass and in no promised order, and it is the
+    only place a backend's own bookkeeping is named outside the backend.
+    """
+
+    key: str
+    doc_key: str
+    """The document this row belongs to: itself, or the document its metadata
+    is attached to."""
+    meta_name: str | None
+    """None for a document, the metadata name otherwise."""
+    parent: str
+    """The parent this row is *stored* under, which is the value being checked
+    and not the one :func:`rage.keys.parse` would derive."""
+    chars: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -458,6 +491,18 @@ class Store(ABC):
     #: var nobody consulted must not be the only thing standing between a
     #: corpus and a half-written file.
     writable: ClassVar[bool] = True
+
+    #: What this backend is called where a report or a refusal has to name it.
+    #: A short lowercase word, matching the store file's extension, so that a
+    #: sentence about a store and the name of its file agree.
+    backend_name: ClassVar[str]
+
+    #: The version of its own on-disk format this build writes. Compared
+    #: against :attr:`stored_format_version` by :func:`rage.maintenance.check`,
+    #: which is why the comparison is written once rather than per backend --
+    #: "written by a newer rage than this" is the same fault whatever wrote it,
+    #: even though each backend records the number somewhere different.
+    format_version: ClassVar[int]
 
     def __init__(
         self,
@@ -854,6 +899,63 @@ class Store(ABC):
             raise BackupError("backup-exists", target=str(target))
         return target
 
+    @property
+    @abstractmethod
+    def stored_format_version(self) -> int:
+        """The format version recorded *in the file this store opened*.
+
+        Not :attr:`format_version`, which is what this build writes. The two
+        differing is the whole question: below, and the file predates this
+        build; above, and something newer wrote it. Each backend records the
+        number its own way -- SQLite in ``PRAGMA user_version``, parquet in the
+        file's key-value metadata -- and this is the one name the difference
+        does not reach.
+        """
+
+    @abstractmethod
+    def audit_rows(self) -> Iterator[AuditRow]:
+        """Every row this store holds, bookkeeping included, in one pass.
+
+        For :func:`rage.maintenance.check` and nothing else -- see
+        :class:`AuditRow` for why the reading surface does not offer this. One
+        pass rather than a query per check, because the checks that use it want
+        the same rows for different questions and a store large enough to be
+        worth checking is large enough for a second pass to be felt.
+
+        Order is not promised. Nothing auditing rows one at a time depends on
+        it, and a backend held in key order should not have to pay to prove it.
+        """
+
+    @abstractmethod
+    def check_file(self, report: Report) -> None:
+        """Add what only this backend can say about its own file.
+
+        Called by :func:`rage.maintenance.check` once the checks that any
+        backend can answer have run. Those are about rows and keys; this is
+        about *storage* -- whether SQLite still considers the database sound,
+        how much of it is sitting in the write-ahead log, whether a parquet
+        file is still in the sort order every read of it bisects.
+
+        Fills in :attr:`~rage.maintenance.Report.details` with the numbers
+        worth printing whether or not anything is wrong, and appends to
+        ``problems`` for anything that is.
+        """
+
+    @abstractmethod
+    def repair(self) -> list[Repaired]:
+        """Fix what :meth:`check_file` found and this backend can act on.
+
+        Returns what was actually done, which may be nothing: a backend whose
+        storage cannot get into a repairable state returns an empty list, and
+        that is an honest answer rather than a silence. It is not the same
+        answer as :meth:`check_file` finding nothing -- one says there is
+        nothing that *could* need repairing, the other that nothing does.
+
+        Nothing here may lose a document. A repair moves bytes about; one that
+        could discard content would need a backup taken first, and no backend
+        offers such a repair.
+        """
+
 
 #: The extension each backend claims, and the class behind it. The **single
 #: place** the package decides which storage a store file is kept in.
@@ -1248,6 +1350,7 @@ __all__ = [
     "EVERYTHING",
     "FORMATS",
     "UNBOUNDED",
+    "AuditRow",
     "Backup",
     "BackendError",
     "BackupError",

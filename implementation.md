@@ -90,6 +90,21 @@ repair` reached for a SQLite connection and gave a traceback, and
 `test_messages.py` kept a hand-written list of error classes that made two new
 ones invisible to three tests at once. Both are recorded in `context/35`.
 
+The first of those was only the minimum — a refusal in a sentence. The split
+behind it followed: **five of the seven questions a check asks are about rows
+and keys, not about SQLite.** The counts, the key depth against
+`keys.MAX_SEGMENTS`, each row's denormalised `parent` agreeing with the key it
+came from, metadata with no document, and the format version against what this
+build writes are all asked once in `maintenance`, over a new
+`Store.audit_rows`. What is genuinely the storage's is asked through
+`Store.check_file`: SQLite's `integrity_check` and its write-ahead log,
+parquet's sort order — which is that backend's `integrity_check`, since a file
+out of order is bisected to a confident wrong answer rather than failing to
+read. `Report` carries the shared numbers as fields and the backend's as a
+`details` mapping, so a store with no log says nothing about one instead of
+reporting zero bytes. `Store.repair` is likewise the backend's, and returns an
+empty list for a store whose storage has no state a repair could move.
+
 Where the file lives stays on the base — `store_file`, the directory, the
 `mkdir` — because it is the same question for every backend and the one rule
 `--dir` and a mount spec both go through. So does `backup_path`, whose point is

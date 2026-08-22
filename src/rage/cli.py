@@ -533,13 +533,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     check = subcommands.add_parser(
         "check",
-        help="check the store file, and optionally repair it",
+        help="check the store, and optionally repair it",
         description=(
-            "Ask whether the file is sound: SQLite's own integrity check, the "
-            "schema version, the row invariants, and how much of the store is "
-            "sitting in the write-ahead log rather than in the database. That "
-            "last one is invisible in normal use and is what makes a copy of "
-            "the database file alone lose recent writes."
+            "Ask whether the store is sound: the row invariants and the format "
+            "version, which every backend answers, and then whatever the "
+            "backend under it can say about its own storage. For SQLite that "
+            "is its own integrity check and how much of the store is sitting "
+            "in the write-ahead log rather than in the database -- invisible "
+            "in normal use, and what makes a copy of the database file alone "
+            "lose recent writes. For parquet it is whether the file is still "
+            "in the sort order every read of it bisects."
         ),
     )
     _store_option(check)
@@ -547,8 +550,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--repair",
         action="store_true",
         help=(
-            "Fold the write-ahead log back into the database and compact it. "
-            "Neither step changes a document."
+            "Fix what the check found and the backend can act on: for SQLite, "
+            "fold the write-ahead log back into the database and compact it. "
+            "No repair changes a document, and a backend with nothing a repair "
+            "could move says so rather than claiming to have acted."
         ),
     )
     check.set_defaults(handler=_check_command)
@@ -1167,16 +1172,15 @@ def _report_remainder(
 
 
 def _check_command(args: argparse.Namespace, out: TextIO) -> int:
-    """Report on the store file, and optionally fold its sidecar back in.
+    """Report on the store, and optionally repair what can be repaired.
 
-    The one pair of subcommands that is about a *backend* rather than about
-    documents: :mod:`rage.maintenance` asks SQLite about integrity, the schema
-    version and the WAL, and takes a
-    :class:`~rage.store_sqlite.SqliteStore` for it. ``_open_existing`` hands
-    back whichever backend the store file names, so pointing this at a parquet
-    store is something a caller can now do -- and ``maintenance`` refuses it in
-    a sentence rather than reaching for a connection that is not there. What a
-    backend-agnostic report would hold is still open; see ``planned/storage``.
+    The one pair of subcommands about the *store* rather than about documents,
+    and it works for any backend. :mod:`rage.maintenance` asks the questions
+    every backend can answer -- the row invariants, the format version -- and
+    the backend answers for its own storage through ``check_file``.
+    ``_open_existing`` hands back whichever backend the store file names, so
+    pointing this at a parquet store gives a parquet report rather than a
+    refusal or a SQLite report full of zeroes.
     """
     with _open_existing(args) as opened:
         report = maintenance.check(opened)
@@ -1190,8 +1194,15 @@ def _check_command(args: argparse.Namespace, out: TextIO) -> int:
             return 0 if report.sound else 1
 
         print("\nrepairing", file=out)
-        for done in maintenance.repair(opened):
-            print(f"  {done.action}: {done.before} -> {done.after} bytes", file=out)
+        done = maintenance.repair(opened)
+        for action in done:
+            print(f"  {action.action}: {action.before} -> {action.after} bytes", file=out)
+        if not done:
+            # An empty list is a backend saying there is nothing its storage
+            # could need, which is not the same as finding nothing wrong. Said
+            # rather than left as a blank, so the difference reaches the user.
+            print(f"  nothing to repair: a {report.backend} store has no state a "
+                  f"repair could move", file=out)
 
     # Re-opened deliberately: the point of the second check is what the file
     # looks like now, and reusing the first report would be reporting the claim
@@ -1204,14 +1215,23 @@ def _check_command(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def _print_report(report: maintenance.Report, out: TextIO) -> None:
-    print(f"{report.path}", file=out)
+    """Two lines and then the problems: what any store says, then what this one does.
+
+    The second line is the backend's own, printed from ``details`` rather than
+    from fields, which is what lets a parquet store report its row groups and
+    its sort order where SQLite reports its integrity and its log — instead of
+    both being made to answer the other's questions with a zero.
+    """
+    print(f"{report.path} ({report.backend})", file=out)
     print(
-        f"  schema {report.schema}, integrity {report.integrity}, "
+        f"  format {report.format_version}, "
         f"{report.documents} documents, {report.metadata} metadata, "
         f"{report.characters} characters",
         file=out,
     )
-    print(f"  {report.main_bytes} bytes in the database, {report.wal_bytes} in its log", file=out)
+    if report.details:
+        print("  " + ", ".join(f"{label} {value}" for label, value in report.details.items()),
+              file=out)
     for problem in report.problems:
         print(f"  {problem.severity}: {problem.summary}", file=out)
         if problem.detail:
