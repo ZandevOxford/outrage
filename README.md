@@ -83,8 +83,8 @@ would change without writing.
 ## Development
 
 ```sh
-conda env create -f environment.yml   # or: conda create -n rage -c conda-forge python=3.14
-conda activate rage
+conda env create -f environment.yml   # or: conda create -n outrage -c conda-forge python=3.14
+conda activate outrage
 pip install -e ".[dev]"
 pytest
 ruff check . && ruff format --check .
