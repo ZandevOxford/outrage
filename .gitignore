@@ -15,6 +15,12 @@ dist/
 .DS_Store
 .claude/settings.local.json
 .claude/harness-canary/
+
+# The SessionStart canary probes the client, not this project: it is
+# registered in the untracked settings.local.json, its log above is ignored,
+# and it ships nowhere. It stays on the machine that runs it.
+.claude/hooks/sessionstart_canary.py
+.claude/hooks/sessionstart-canary.sh
 .claude/settings.json
 .outrage-*/
 .rage-*/
