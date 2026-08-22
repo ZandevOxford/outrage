@@ -4,7 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "outrage"
-version = "0.1.1"
+# One source for the version: `src/outrage/__init__.py`, which is what the
+# server, the CLI and the docs already read. Carrying it here as well gave two
+# strings that nothing checked against each other.
+dynamic = ["version"]
 authors = [
     { name="John M Reynolds", email="zandev@gmail.com" },
 ]
@@ -35,12 +38,18 @@ Issues = "https://github.com/ZandevOxford/outrage/issues"
 # `outrage.store._backend_for` imports that module only when a `.parquet` file is
 # named, so nothing here is touched until something asks for one.
 parquet = ["pyarrow>=18"]
-dev = ["pytest>=8", "ruff>=0.6"]
+# hatchling and build are here because the suite builds the sdist and the wheel
+# and asserts what is in them - tests/test_packaging.py. Without them that
+# check skips, and a release can drop a file the way 0.1.0 did.
+dev = ["pytest>=8", "ruff>=0.6", "hatchling", "build>=1"]
 docs = ["sphinx>=8", "furo"]
 
 [project.scripts]
 outrage = "outrage.cli:main"
 outrage-server = "outrage.server:main"
+
+[tool.hatch.version]
+path = "src/outrage/__init__.py"
 
 [tool.hatch.build.targets.sdist]
 # Both lines exist for one bug, which shipped as 0.1.0: the sdist, and so the

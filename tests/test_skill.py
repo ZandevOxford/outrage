@@ -15,6 +15,10 @@ import outrage
 SKILL = Path(outrage.__file__).parent / "skills" / "rage" / "SKILL.md"
 REPO = Path(__file__).resolve().parents[1]
 DOGFOOD = REPO / ".claude" / "skills" / "rage" / "SKILL.md"
+# Where the symlink is meant to land. Not ``SKILL``: that is whichever copy is
+# under test, and under ``OUTRAGE_TEST_INSTALLED`` it is an installed one,
+# which this project's own configuration has no reason to point at.
+IN_CHECKOUT = REPO / "src" / "outrage" / "skills" / "rage" / "SKILL.md"
 
 
 def _frontmatter(text: str) -> dict[str, str]:
@@ -46,4 +50,4 @@ def test_dogfood_symlink_resolves_to_the_packaged_skill():
     # This project uses its own skill through a symlink. A broken link would
     # leave the skill quietly unloaded, which is the failure mode this whole
     # store exists to avoid, so it fails the suite instead.
-    assert DOGFOOD.resolve() == SKILL.resolve()
+    assert DOGFOOD.resolve() == IN_CHECKOUT.resolve()

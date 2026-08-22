@@ -19,6 +19,10 @@ import outrage
 AGENTS = Path(outrage.__file__).parent / "agents"
 REPO = Path(__file__).resolve().parents[1]
 DOGFOOD = REPO / ".claude" / "agents"
+# Where the symlinks are meant to land. Not ``AGENTS``: that is whichever copy
+# is under test, and under ``OUTRAGE_TEST_INSTALLED`` it is an installed one,
+# which this project's own configuration has no reason to point at.
+IN_CHECKOUT = REPO / "src" / "outrage" / "agents"
 
 NAMES = ["rage-annotate", "rage-backfill", "rage-search"]
 
@@ -68,7 +72,7 @@ def test_description_is_substantial(name):
 def test_dogfood_symlink_resolves_to_the_packaged_agent(name):
     # This project uses its own agents through symlinks, as it does the skill.
     # A broken link leaves the agent quietly absent rather than failing.
-    assert (DOGFOOD / f"{name}.md").resolve() == (AGENTS / f"{name}.md").resolve()
+    assert (DOGFOOD / f"{name}.md").resolve() == (IN_CHECKOUT / f"{name}.md").resolve()
 
 
 def test_annotate_can_read_and_write_but_nothing_else():
