@@ -36,11 +36,13 @@ from pathlib import Path
 
 from . import keys
 from .eventlog import EventLog
+from .maintenance import CheckError, Problem, Repaired, Report
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
     EVERYTHING,
     UNBOUNDED,
+    AuditRow,
     Backup,
     BackupError,
     BoundedSubtree,
@@ -102,11 +104,22 @@ _SCHEMA = _TABLE.format(name="documents") + _INDEXES
 #: every write here is small and the alternative to waiting is an error.
 BUSY_TIMEOUT_MS = 5000
 
+#: When the sidecar is worth reporting. A WAL always holds something between
+#: checkpoints; it is only interesting once it holds more than the database it
+#: belongs to, which is the state that makes a file copy lose real content.
+WAL_RATIO = 1.0
+
+#: The one problem ``repair`` acts on, named so that the test asserting a
+#: repaired store stops reporting it does not have to spell it again.
+WAL_UNCHECKPOINTED = "most of the store is in the write-ahead log"
+
 
 class SqliteStore(Store):
     """A document store held in a single SQLite database."""
 
     default_filename = DEFAULT_STORE_FILE
+    backend_name = "sqlite"
+    format_version = SCHEMA_VERSION
     #: Stated rather than inherited. The default is True, so a backend that
     #: forgets reports itself writable -- which is the wrong way round for a
     #: mistake to fall, and `test_every_backend_states_whether_it_can_be_written`
@@ -326,10 +339,16 @@ class SqliteStore(Store):
     def connection(self) -> sqlite3.Connection:
         """The open database, for asking questions about the file itself.
 
-        Exposed for :mod:`rage.maintenance`, which checks integrity, the schema
-        version and the row invariants — none of which are questions about
-        documents, so none of them belong on this class. Reaching through it to
-        read or write documents defeats every guarantee the methods above make.
+        **Nothing inside the package reaches through this any more.** It was
+        exposed for :mod:`rage.maintenance`, which asked SQLite about integrity
+        and the write-ahead log from outside; those are now answered by
+        :meth:`check_file` here, off ``_conn`` directly, because they are
+        questions about *this* storage and have no meaning for any other.
+
+        Kept public for a caller outside the package with a question about the
+        database that no method answers, and because the tests ask them. It is
+        not a way in: reaching through it to read or write documents defeats
+        every guarantee the methods above make.
         """
         return self._conn
 
@@ -1049,6 +1068,108 @@ class SqliteStore(Store):
             integrity=integrity,
         )
 
+    @property
+    def stored_format_version(self) -> int:
+        """SQLite keeps it in the header, as ``PRAGMA user_version``."""
+        return int(self._conn.execute("PRAGMA user_version").fetchone()[0])
+
+    def audit_rows(self) -> Iterator[AuditRow]:
+        """Every row, in one query, streamed rather than fetched whole.
+
+        ``LENGTH(content)`` rather than the content itself: a check counts
+        characters and never reads a document, and a store worth checking is
+        one it would be foolish to pull into memory to count.
+        """
+        for row in self._conn.execute(
+            "SELECT key, doc_key, meta_name, parent, LENGTH(content) AS chars FROM documents"
+        ):
+            yield AuditRow(
+                key=row["key"],
+                doc_key=row["doc_key"],
+                meta_name=row["meta_name"],
+                parent=row["parent"],
+                chars=row["chars"] or 0,
+            )
+
+    def check_file(self, report: Report) -> None:
+        """What SQLite knows about the database and its sidecar.
+
+        Both questions here are the storage's and have no meaning above it:
+        whether SQLite still considers its own pages sound, and how much of the
+        store is in the write-ahead log rather than the database.
+        """
+        try:
+            integrity = str(self._conn.execute("PRAGMA integrity_check").fetchone()[0])
+        except sqlite3.DatabaseError as exc:
+            raise CheckError("check-unreadable", path=str(self.path), reason=str(exc)) from exc
+
+        report.details["integrity"] = integrity
+        if integrity != "ok":
+            report.problems.append(
+                Problem("error", "SQLite reports the database as damaged", integrity)
+            )
+
+        self._check_wal(report)
+
+    def _check_wal(self, report: Report) -> None:
+        """Compare the database with its write-ahead log."""
+        main_bytes, wal_bytes = self._sizes()
+        report.details["database"] = f"{main_bytes} bytes"
+        report.details["log"] = f"{wal_bytes} bytes"
+
+        if main_bytes and wal_bytes > main_bytes * WAL_RATIO:
+            wal = self._wal_path()
+            report.problems.append(
+                Problem(
+                    "warning",
+                    WAL_UNCHECKPOINTED,
+                    f"{wal_bytes} bytes in {wal.name} against {main_bytes} in "
+                    f"{self.path.name}. The store reads correctly, but anything copying the "
+                    f"database file alone gets one missing those writes.",
+                    repairable=True,
+                )
+            )
+
+    def repair(self) -> list[Repaired]:
+        """Fold the write-ahead log back and compact the database.
+
+        Both steps are safe to run on a healthy store and safe to run twice.
+        Sizes are measured either side rather than reported from the action's
+        own return value, because the question being asked is what the file
+        looks like now.
+        """
+        done = []
+
+        before = self._sizes()
+        self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        after = self._sizes()
+        done.append(Repaired("checkpoint the write-ahead log", before[1], after[1]))
+
+        # VACUUM cannot run inside a transaction, and sqlite3 opens one
+        # implicitly for anything it thinks is a write. Committing first is
+        # what lets it run.
+        self._conn.commit()
+        self._conn.execute("VACUUM")
+        # VACUUM rewrites the whole database, and in WAL mode it writes through
+        # the log like anything else. Without this second checkpoint the repair
+        # ends holding a log the size of the file it just compacted, and the
+        # check that runs afterwards reports the same warning it was called to
+        # clear -- a repair that worked, reporting itself as a failure.
+        self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        done.append(Repaired("compact the database", after[0], self._sizes()[0]))
+        return done
+
+    def _wal_path(self) -> Path:
+        return self.path.with_name(self.path.name + "-wal")
+
+    def _sizes(self) -> tuple[int, int]:
+        """Bytes in the database and in its write-ahead log, in that order."""
+        wal = self._wal_path()
+        return (
+            self.path.stat().st_size if self.path.exists() else 0,
+            wal.stat().st_size if wal.exists() else 0,
+        )
+
 
 # -- turning the store's vocabulary into SQL --------------------------------
 #
@@ -1186,5 +1307,7 @@ __all__ = [
     "BUSY_TIMEOUT_MS",
     "DEFAULT_STORE_FILE",
     "SCHEMA_VERSION",
+    "WAL_RATIO",
+    "WAL_UNCHECKPOINTED",
     "SqliteStore",
 ]

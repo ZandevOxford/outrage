@@ -702,23 +702,106 @@ def test_packing_a_tree_reports_what_it_could_not_map(tmp_path):
     assert [row for _, row in reported if row is not None] == [("good", "fine", "markdown", None)]
 
 
-def test_check_and_repair_refuse_a_backend_they_cannot_ask(tmp_path, packed):
-    """They are SQLite subcommands wearing generic names, and now say so.
+def test_check_answers_for_a_parquet_store_in_its_own_terms(packed):
+    """The five row questions any backend answers, and the one that is its own.
 
-    ``planned/backends`` recorded this as an open question rather than a
-    defect, on the grounds that nobody could reach it with one backend. A
-    second backend is what turns it into one, and the refusal is a message
-    because a traceback is for a bug in rage rather than for a request rage
-    cannot answer.
+    This used to be a refusal: ``check`` reached for ``store.connection`` and
+    was made to say so in a sentence. The refusal was the minimum, and the
+    real answer is that most of what a check asks is not SQLite's -- so a
+    parquet store gets a real report rather than an apology.
     """
     from rage import maintenance
 
-    with raises_rendered(maintenance.CheckError, "only SQLite has") as raised:
-        maintenance.check(packed)
-    assert raised.value.code == "check-wrong-backend"
+    report = maintenance.check(packed)
 
-    with raises_rendered(maintenance.CheckError, "cannot repair"):
-        maintenance.repair(packed)
+    assert report.backend == "parquet"
+    assert (report.documents, report.metadata) == (2, 1)
+    assert report.characters == len("a body") + len("A") + len("below")
+    # Its own storage, in vocabulary SQLite has no answer for -- and with no
+    # integrity or write-ahead log reported as a zero.
+    assert report.details["order"] == "sorted"
+    assert report.details["rows"] == "3"
+    assert "integrity" not in report.details
+    assert "log" not in report.details
+    assert report.sound and not report.problems
+
+
+def test_repair_of_a_parquet_store_does_nothing_and_says_it_did_nothing(packed):
+    """An empty list, not a refusal and not a claim to have acted.
+
+    Different from ``check`` finding nothing: this says there is no state the
+    storage could reach that moving bytes would fix, which is provable for one
+    immutable file with no sidecar and no free pages.
+    """
+    from rage import maintenance
+
+    assert maintenance.repair(packed) == []
+
+
+def test_the_row_checks_are_not_sqlites_and_fire_for_parquet_too(tmp_path):
+    """The evidence that five of the seven checks belong above the backend.
+
+    ``parent`` is a denormalisation -- it exists so listing a level is a lookup
+    rather than a scan -- and **both** backends keep one, for the same reason.
+    So both can be handed a file where it disagrees with the key it was derived
+    from, which makes a document unlistable while it is still readable by key.
+    That was checked in SQL until this split, which read as SQLite's question
+    and never was.
+    """
+    import pyarrow.parquet as pq
+
+    from rage import maintenance
+
+    path = tmp_path / "p" / "ref.parquet"
+    ParquetStore.build(path, [("a", "one", None, None), ("a/b", "two", None, None)])
+
+    table = pq.read_table(path)
+    parents = table.column("parent").to_pylist()
+    parents[table.column("key").to_pylist().index("a/b")] = "elsewhere"
+    column = table.schema.get_field_index("parent")
+    pq.write_table(table.set_column(column, "parent", [parents]), path)
+
+    with ParquetStore(path.parent, filename=path.name) as store:
+        report = maintenance.check(store)
+
+    assert not report.sound
+    disagree = "some rows disagree with the key they are stored under"
+    problem = next(p for p in report.problems if p.summary == disagree)
+    assert problem.severity == "warning"
+    assert "a/b claims parent 'elsewhere', implies 'a'" in problem.detail
+
+
+def test_check_finds_a_parquet_file_that_is_not_in_sort_order(tmp_path):
+    """Parquet's ``integrity_check``: a file that reads wrongly rather than failing.
+
+    Every lookup bisects ``sort_key``. Rows out of order do not raise -- they
+    return a confident wrong answer, with nothing anywhere to contradict it --
+    so this is the one thing about the file worth checking, and it is an error
+    rather than a warning.
+    """
+    import pyarrow.parquet as pq
+
+    from rage import maintenance
+
+    path = tmp_path / "p" / "ref.parquet"
+    ParquetStore.build(path, [("a", "one", None, None), ("b", "two", None, None)])
+
+    # Rewrite the same rows in the wrong order, keeping the schema and its
+    # metadata, which is what a file assembled by something other than `build`
+    # could plausibly look like.
+    table = pq.read_table(path)
+    pq.write_table(table.take([1, 0]), path)
+
+    with ParquetStore(path.parent, filename=path.name) as store:
+        report = maintenance.check(store)
+
+    assert report.details["order"] == "not sorted"
+    assert not report.sound
+    problem = next(p for p in report.problems if p.summary == "the file is not in sort order")
+    assert problem.severity == "error"
+    assert "rage pack" in problem.detail
+    # Reported, and left alone: rebuilding is not moving bytes about.
+    assert not report.repairable
 
 
 def test_a_file_handle_and_its_row_group_cache_do_not_escape_their_thread(tmp_path):

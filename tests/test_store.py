@@ -1797,6 +1797,13 @@ def test_every_operation_a_caller_uses_is_declared_abstract():
             "keys_missing_meta",
             "backup",
             "close",
+            # Maintenance. A backend quietly not implementing these would let
+            # a store be reported sound without anything having looked at the
+            # storage, which is the answer this codebase keeps refusing.
+            "stored_format_version",
+            "audit_rows",
+            "check_file",
+            "repair",
         }
     )
 

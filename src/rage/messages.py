@@ -382,17 +382,6 @@ def _check_unreadable(name: Namer, /, *, path: str, reason: str, **_: Any) -> st
     return f"cannot read {path}: {reason}"
 
 
-@template("check-wrong-backend")
-def _check_wrong_backend(name: Namer, /, *, path: str, backend: str, action: str, **_: Any) -> str:
-    return (
-        f"cannot {action} {path}: it is a {backend}, and this asks SQLite "
-        f"about integrity, the schema version and the write-ahead log, which "
-        f"only SQLite has. Nothing needs checking here -- a parquet store is "
-        f"one file with no sidecar -- but saying so is not the same as having "
-        f"looked."
-    )
-
-
 @template("check-no-store")
 def _check_no_store(name: Namer, /, *, path: str, **_: Any) -> str:
     return f"no store at {path}"
