@@ -66,7 +66,7 @@ The directory is resolved in this order:
 
 1. `--dir PATH` command line argument
 2. `RAGE_DIR` environment variable
-3. `./.rage/` relative to the server's working directory
+3. `./.outrage/` relative to the server's working directory
 
 The file is `--root-mount FILE`, defaulting to `store.sqlite`, and it is
 **always relative to the directory**. An absolute path, or one climbing out

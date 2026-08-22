@@ -367,7 +367,7 @@ def test_init_writes_the_three_things(tmp_path):
 
     entry = servers(tmp_path / ".mcp.json")["rage"]
     assert Path(entry["command"]).is_absolute()
-    assert entry["args"][-1] == str(tmp_path / ".rage"), "the store defaults beside the project"
+    assert entry["args"][-1] == str(tmp_path / ".outrage"), "the store defaults beside the project"
     assert is_ours(entries(settings_path(tmp_path))[-1])
     assert installed(tmp_path, "skills/rage/SKILL.md").is_file()
     assert done.writes

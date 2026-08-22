@@ -1263,7 +1263,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Store directory: the one directory holding every store this "
             "server serves, and the event log and backups beside them. "
-            "Defaults to the RAGE_DIR environment variable, then ./.rage in "
+            "Defaults to the RAGE_DIR environment variable, then ./.outrage in "
             "the working directory."
         ),
     )

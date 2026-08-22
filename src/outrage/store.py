@@ -66,7 +66,7 @@ if TYPE_CHECKING:
 
 #: Default directory name, relative to the working directory, when neither
 #: --dir nor RAGE_DIR is given.
-DEFAULT_DIR_NAME = ".rage"
+DEFAULT_DIR_NAME = ".outrage"
 
 #: Where backups go when no destination is given, relative to the store
 #: directory.
@@ -378,9 +378,9 @@ def store_file(
     passes that backend's name instead, so a store is never opened under a
     name a different backend chose.
 
-    >>> store_file("/srv/project/.rage").name
+    >>> store_file("/srv/project/.outrage").name
     'store.sqlite'
-    >>> store_file("/srv/project/.rage", "ref.sqlite").name
+    >>> store_file("/srv/project/.outrage", "ref.sqlite").name
     'ref.sqlite'
     """
     relative = Path(default_store_file() if filename is None else filename)
@@ -394,7 +394,7 @@ def store_file(
 
 
 def resolve_directory(explicit: str | os.PathLike[str] | None = None) -> Path:
-    """Locate the store directory: explicit path, then RAGE_DIR, then ./.rage.
+    """Locate the store directory: explicit path, then RAGE_DIR, then ./.outrage.
 
     A directory rather than a file, so that other files can live beside the
     database later.

@@ -40,7 +40,7 @@ def store(tmp_path):
 
 
 def test_creates_directory_and_database(tmp_path):
-    directory = tmp_path / "nested" / ".rage"
+    directory = tmp_path / "nested" / ".outrage"
     with SqliteStore(directory) as s:
         assert s.path == directory / "store.sqlite"
     assert (directory / "store.sqlite").exists()
@@ -92,7 +92,7 @@ def an_old_store(directory: Path, version: int, rows: list[tuple]) -> None:
 
 def test_migrates_period_delimited_keys_to_slashes(tmp_path):
     """A schema 1 store was written before the delimiter changed."""
-    directory = tmp_path / ".rage"
+    directory = tmp_path / ".outrage"
     directory.mkdir()
     conn = sqlite3.connect(directory / "store.sqlite")
     conn.executescript(_SCHEMA_BEFORE_SORT_KEY)
@@ -123,7 +123,7 @@ def test_migrates_period_delimited_keys_to_slashes(tmp_path):
 
 
 def test_migrates_a_store_that_predates_the_sort_key(tmp_path):
-    directory = tmp_path / ".rage"
+    directory = tmp_path / ".outrage"
     an_old_store(
         directory,
         version=2,
@@ -143,7 +143,7 @@ def test_migrates_a_store_that_predates_the_sort_key(tmp_path):
 
 
 def test_a_store_holding_both_spellings_is_refused_rather_than_merged(tmp_path):
-    directory = tmp_path / ".rage"
+    directory = tmp_path / ".outrage"
     an_old_store(
         directory,
         version=2,
@@ -192,7 +192,7 @@ def test_a_migrated_store_has_exactly_the_schema_a_fresh_one_has(tmp_path):
 
 
 def test_the_migration_fills_in_a_sort_key_for_every_row(tmp_path):
-    directory = tmp_path / ".rage"
+    directory = tmp_path / ".outrage"
     an_old_store(
         directory,
         version=2,

@@ -14,7 +14,7 @@ applies*, and it routes to everything else. A survey by title
 
 ## Before snapshotting the store
 
-Read `project/reference/snapshots` first. Copying `.rage/store.sqlite` with `cp`
+Read `project/reference/snapshots` first. Copying `.outrage/store.sqlite` with `cp`
 succeeds and produces a **silently stale** store, potentially a whole schema
 version behind. Use `outrage backup`.
 

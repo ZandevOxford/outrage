@@ -32,7 +32,7 @@ def test_config_writes_the_project_file(tmp_path):
     assert status == 0
     entry = servers(tmp_path / ".mcp.json")["rage"]
     assert Path(entry["command"]).is_absolute()
-    assert entry["args"][-1] == str(tmp_path / ".rage")
+    assert entry["args"][-1] == str(tmp_path / ".outrage")
     assert str(tmp_path / ".mcp.json") in output
 
 
@@ -40,7 +40,7 @@ def test_store_directory_defaults_beside_the_project(tmp_path):
     run("config", "--project-dir", str(tmp_path))
 
     entry = servers(tmp_path / ".mcp.json")["rage"]
-    assert entry["args"][entry["args"].index("--dir") + 1] == str(tmp_path / ".rage")
+    assert entry["args"][entry["args"].index("--dir") + 1] == str(tmp_path / ".outrage")
 
 
 def test_explicit_store_directory_is_used(tmp_path):
@@ -75,7 +75,7 @@ def test_report_names_both_paths_it_guessed(tmp_path):
 
     entry = servers(tmp_path / ".mcp.json")["rage"]
     assert entry["command"] in output
-    assert str(tmp_path / ".rage") in output
+    assert str(tmp_path / ".outrage") in output
 
 
 def test_an_update_shows_what_it_replaced(tmp_path):
@@ -169,18 +169,18 @@ def test_config_records_mounts_as_files_inside_the_store_directory(tmp_path):
 def test_a_command_reaches_a_second_store_in_the_same_directory(tmp_path):
     from outrage.store_sqlite import SqliteStore
 
-    with SqliteStore(tmp_path / ".rage", filename="ref.sqlite") as other:
+    with SqliteStore(tmp_path / ".outrage", filename="ref.sqlite") as other:
         other.store_document("only/here", "in the second store")
 
     status, output = run(
-        "get", "--dir", str(tmp_path / ".rage"), "--store", "ref.sqlite", "only/here"
+        "get", "--dir", str(tmp_path / ".outrage"), "--store", "ref.sqlite", "only/here"
     )
     assert status == 0
     assert "in the second store" in output
 
     # And the default store in the same directory does not hold it: two stores
     # in one directory, told apart by the file and nothing else.
-    assert main(["get", "--dir", str(tmp_path / ".rage"), "only/here"], io.StringIO()) == 1
+    assert main(["get", "--dir", str(tmp_path / ".outrage"), "only/here"], io.StringIO()) == 1
 
 
 def test_scope_defaults_to_project():
@@ -203,34 +203,36 @@ def a_store(directory: Path) -> None:
 
 
 def test_backup_writes_a_snapshot_and_says_what_it_checked(tmp_path):
-    a_store(tmp_path / ".rage")
+    a_store(tmp_path / ".outrage")
 
-    status, output = run("backup", "--dir", str(tmp_path / ".rage"))
+    status, output = run("backup", "--dir", str(tmp_path / ".outrage"))
 
     assert status == 0
-    (written,) = (tmp_path / ".rage" / "backups").glob("store-*.sqlite")
+    (written,) = (tmp_path / ".outrage" / "backups").glob("store-*.sqlite")
     assert str(written) in output
     assert "2 documents" in output
     assert "integrity ok" in output
 
 
 def test_backup_takes_a_destination(tmp_path):
-    a_store(tmp_path / ".rage")
+    a_store(tmp_path / ".outrage")
 
-    status, _ = run("backup", "--dir", str(tmp_path / ".rage"), "--to", str(tmp_path / "s.sqlite"))
+    status, _ = run(
+        "backup", "--dir", str(tmp_path / ".outrage"), "--to", str(tmp_path / "s.sqlite")
+    )
 
     assert status == 0
     assert (tmp_path / "s.sqlite").exists()
 
 
 def test_backup_dry_run_names_the_destination_without_writing(tmp_path):
-    a_store(tmp_path / ".rage")
+    a_store(tmp_path / ".outrage")
 
-    status, output = run("backup", "--dir", str(tmp_path / ".rage"), "--dry-run")
+    status, output = run("backup", "--dir", str(tmp_path / ".outrage"), "--dry-run")
 
     assert status == 0
     assert "would back up" in output
-    assert not (tmp_path / ".rage" / "backups").exists()
+    assert not (tmp_path / ".outrage" / "backups").exists()
 
 
 def test_backing_up_a_store_that_is_not_there_is_refused(tmp_path, capsys):
@@ -244,11 +246,13 @@ def test_backing_up_a_store_that_is_not_there_is_refused(tmp_path, capsys):
 
 
 def test_an_existing_destination_reaches_the_user_as_a_message(tmp_path, capsys):
-    a_store(tmp_path / ".rage")
+    a_store(tmp_path / ".outrage")
     target = tmp_path / "taken.sqlite"
     target.write_text("mine")
 
-    status = main(["backup", "--dir", str(tmp_path / ".rage"), "--to", str(target)], io.StringIO())
+    status = main(
+        ["backup", "--dir", str(tmp_path / ".outrage"), "--to", str(target)], io.StringIO()
+    )
 
     assert status == 1
     assert "already exists" in capsys.readouterr().err
@@ -319,9 +323,9 @@ def a_log(directory: Path) -> Path:
 
 
 def test_log_groups_events_under_the_process_that_wrote_them(tmp_path):
-    a_log(tmp_path / ".rage")
+    a_log(tmp_path / ".outrage")
 
-    status, output = run("log", "--dir", str(tmp_path / ".rage"))
+    status, output = run("log", "--dir", str(tmp_path / ".outrage"))
 
     assert status == 0
     # The header is what says which process the sequence numbers belong to;
@@ -332,18 +336,18 @@ def test_log_groups_events_under_the_process_that_wrote_them(tmp_path):
 
 
 def test_log_filters_by_operation(tmp_path):
-    a_log(tmp_path / ".rage")
+    a_log(tmp_path / ".outrage")
 
-    status, output = run("log", "--dir", str(tmp_path / ".rage"), "--op", "retrieve_document")
+    status, output = run("log", "--dir", str(tmp_path / ".outrage"), "--op", "retrieve_document")
 
     assert status == 0
     assert "server/discover" not in output
 
 
 def test_log_summary_reports_truncation_and_whether_it_was_resumed(tmp_path):
-    a_log(tmp_path / ".rage")
+    a_log(tmp_path / ".outrage")
 
-    status, output = run("log", "--dir", str(tmp_path / ".rage"), "--summary")
+    status, output = run("log", "--dir", str(tmp_path / ".outrage"), "--summary")
 
     assert status == 0
     assert "1 document reads, 1 truncated" in output
@@ -351,19 +355,21 @@ def test_log_summary_reports_truncation_and_whether_it_was_resumed(tmp_path):
 
 
 def test_log_content_is_shown_only_when_asked_for(tmp_path):
-    a_log(tmp_path / ".rage")
+    a_log(tmp_path / ".outrage")
 
-    _, without = run("log", "--dir", str(tmp_path / ".rage"))
-    _, with_content = run("log", "--dir", str(tmp_path / ".rage"), "--content")
+    _, without = run("log", "--dir", str(tmp_path / ".outrage"))
+    _, with_content = run("log", "--dir", str(tmp_path / ".outrage"), "--content")
 
     assert "HEAD-MARK" not in without
     assert "HEAD-MARK" in with_content and "TAIL-MARK" in with_content
 
 
 def test_log_json_prints_the_records_as_they_were_written(tmp_path):
-    a_log(tmp_path / ".rage")
+    a_log(tmp_path / ".outrage")
 
-    _, output = run("log", "--dir", str(tmp_path / ".rage"), "--op", "retrieve_document", "--json")
+    _, output = run(
+        "log", "--dir", str(tmp_path / ".outrage"), "--op", "retrieve_document", "--json"
+    )
 
     (record,) = [json.loads(line) for line in output.splitlines() if line.strip()]
     # The whole record: the line summary drops an offset of 0 as noise, and
@@ -373,16 +379,16 @@ def test_log_json_prints_the_records_as_they_were_written(tmp_path):
 
 
 def test_log_limit_keeps_the_end_and_says_what_it_dropped(tmp_path):
-    a_log(tmp_path / ".rage")
+    a_log(tmp_path / ".outrage")
 
-    _, output = run("log", "--dir", str(tmp_path / ".rage"), "--limit", "1")
+    _, output = run("log", "--dir", str(tmp_path / ".outrage"), "--limit", "1")
 
     assert "4 earlier matching events not shown" in output
     assert "session bbb" in output and "session aaa" not in output
 
 
 def test_log_finds_the_file_beside_the_store_by_default(tmp_path, monkeypatch):
-    a_log(tmp_path / ".rage")
+    a_log(tmp_path / ".outrage")
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("RAGE_LOG", raising=False)
     monkeypatch.delenv("RAGE_DIR", raising=False)
@@ -401,9 +407,9 @@ def test_a_missing_log_reaches_the_user_as_a_message(tmp_path, capsys):
 
 
 def test_a_filter_matching_nothing_says_so(tmp_path):
-    a_log(tmp_path / ".rage")
+    a_log(tmp_path / ".outrage")
 
-    status, output = run("log", "--dir", str(tmp_path / ".rage"), "--op", "delete")
+    status, output = run("log", "--dir", str(tmp_path / ".outrage"), "--op", "delete")
 
     assert status == 0
     assert "no matching events" in output
@@ -423,9 +429,9 @@ def a_long_store(directory: Path, size: int = 5000) -> str:
 
 
 def test_dump_prints_a_long_document_whole(tmp_path):
-    content = a_long_store(tmp_path / ".rage")
+    content = a_long_store(tmp_path / ".outrage")
 
-    status, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes/long")
+    status, output = run("dump", "--dir", str(tmp_path / ".outrage"), "notes/long")
 
     assert status == 0
     # The end matters more than the length: a cut export reads correctly right
@@ -436,10 +442,10 @@ def test_dump_prints_a_long_document_whole(tmp_path):
 
 
 def test_dump_caps_each_document_when_asked(tmp_path):
-    a_long_store(tmp_path / ".rage")
+    a_long_store(tmp_path / ".outrage")
 
     status, output = run(
-        "dump", "--dir", str(tmp_path / ".rage"), "notes/long", "--max-chars", "100"
+        "dump", "--dir", str(tmp_path / ".outrage"), "notes/long", "--max-chars", "100"
     )
 
     assert status == 0
@@ -451,11 +457,11 @@ def test_dump_reads_long_metadata_to_the_end_too(tmp_path):
     from outrage.store_sqlite import SqliteStore
 
     value = "a very long summary. " * 400
-    with SqliteStore(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".outrage") as store:
         store.store_document("notes/long", "body", title="Short")
         store.store_document("notes/long/!summary", value)
 
-    status, output = run("dump", "--dir", str(tmp_path / ".rage"), "--meta", "summary")
+    status, output = run("dump", "--dir", str(tmp_path / ".outrage"), "--meta", "summary")
 
     assert status == 0
     assert value in output
@@ -465,11 +471,11 @@ def test_dump_reads_long_metadata_to_the_end_too(tmp_path):
 def test_dump_exports_a_subtree_at_full_length(tmp_path):
     from outrage.store_sqlite import SqliteStore
 
-    with SqliteStore(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".outrage") as store:
         for name in ("one", "two"):
             store.store_document(f"notes/{name}", "x" * 4000, title=name)
 
-    status, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes")
+    status, output = run("dump", "--dir", str(tmp_path / ".outrage"), "notes")
 
     assert status == 0
     assert output.count("x" * 4000) == 2
@@ -479,9 +485,9 @@ def test_dump_exports_a_subtree_at_full_length(tmp_path):
 
 
 def test_get_prints_a_long_document_whole(tmp_path):
-    content = a_long_store(tmp_path / ".rage")
+    content = a_long_store(tmp_path / ".outrage")
 
-    status, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/long")
+    status, output = run("get", "--dir", str(tmp_path / ".outrage"), "notes/long")
 
     assert status == 0
     assert output == content
@@ -490,22 +496,22 @@ def test_get_prints_a_long_document_whole(tmp_path):
 def test_get_writes_no_newline_of_its_own(tmp_path, capsys):
     from outrage.store_sqlite import SqliteStore
 
-    with SqliteStore(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".outrage") as store:
         store.store_document("notes/one", "no trailing newline here")
 
-    _, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/one")
+    _, output = run("get", "--dir", str(tmp_path / ".outrage"), "notes/one")
 
     assert output == "no trailing newline here"
 
 
 def test_get_and_set_round_trip_at_the_same_length(tmp_path):
-    content = a_long_store(tmp_path / ".rage")
+    content = a_long_store(tmp_path / ".outrage")
     exported = tmp_path / "exported.md"
 
-    _, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/long")
+    _, output = run("get", "--dir", str(tmp_path / ".outrage"), "notes/long")
     exported.write_text(output)
-    run("set", "--dir", str(tmp_path / ".rage"), "notes/copy", "--file", str(exported))
-    _, back = run("get", "--dir", str(tmp_path / ".rage"), "notes/copy")
+    run("set", "--dir", str(tmp_path / ".outrage"), "notes/copy", "--file", str(exported))
+    _, back = run("get", "--dir", str(tmp_path / ".outrage"), "notes/copy")
 
     # The whole point of writing no trailing newline: a document that grows a
     # character every time it is exported and re-imported is a corrupted one.
@@ -513,10 +519,10 @@ def test_get_and_set_round_trip_at_the_same_length(tmp_path):
 
 
 def test_get_caps_when_asked_and_says_where_to_resume(tmp_path, capsys):
-    a_long_store(tmp_path / ".rage")
+    a_long_store(tmp_path / ".outrage")
 
     status, output = run(
-        "get", "--dir", str(tmp_path / ".rage"), "notes/long", "--max-chars", "100"
+        "get", "--dir", str(tmp_path / ".outrage"), "notes/long", "--max-chars", "100"
     )
 
     assert status == 0
@@ -527,19 +533,19 @@ def test_get_caps_when_asked_and_says_where_to_resume(tmp_path, capsys):
 
 
 def test_get_starts_at_a_pattern_and_still_reads_to_the_end(tmp_path):
-    content = a_long_store(tmp_path / ".rage")
+    content = a_long_store(tmp_path / ".outrage")
 
     _, output = run(
-        "get", "--dir", str(tmp_path / ".rage"), "notes/long", "--pattern", "end of the document"
+        "get", "--dir", str(tmp_path / ".outrage"), "notes/long", "--pattern", "end of the document"
     )
 
     assert output == content[content.index("end of the document") :]
 
 
 def test_get_length_caps_the_whole_read_not_just_the_first_slice(tmp_path):
-    a_long_store(tmp_path / ".rage")
+    a_long_store(tmp_path / ".outrage")
 
-    _, output = run("get", "--dir", str(tmp_path / ".rage"), "notes/long", "--length", "20000")
+    _, output = run("get", "--dir", str(tmp_path / ".outrage"), "notes/long", "--length", "20000")
 
     # Longer than one slice, so it is delivered by the continuation loop. A
     # --length that stops binding once it exceeds max_chars is a bound that
@@ -548,25 +554,27 @@ def test_get_length_caps_the_whole_read_not_just_the_first_slice(tmp_path):
 
 
 def test_set_reports_where_it_wrote(tmp_path):
-    status, output = run("set", "--dir", str(tmp_path / ".rage"), "notes/one", "--content", "hello")
+    status, output = run(
+        "set", "--dir", str(tmp_path / ".outrage"), "notes/one", "--content", "hello"
+    )
 
     assert status == 0
     assert "notes/one" in output
     assert "5 characters" in output
-    assert str(tmp_path / ".rage" / "store.sqlite") in output
+    assert str(tmp_path / ".outrage" / "store.sqlite") in output
 
 
 def test_set_allocates_a_number_and_names_the_key_it_wrote(tmp_path):
-    run("set", "--dir", str(tmp_path / ".rage"), "notes/?", "--content", "first")
+    run("set", "--dir", str(tmp_path / ".outrage"), "notes/?", "--content", "first")
 
-    _, output = run("set", "--dir", str(tmp_path / ".rage"), "notes/?", "--content", "second")
+    _, output = run("set", "--dir", str(tmp_path / ".outrage"), "notes/?", "--content", "second")
 
     assert output.startswith("notes/2 ")
 
 
 def test_set_refuses_two_sources(tmp_path, capsys):
     status = main(
-        ["set", "--dir", str(tmp_path / ".rage"), "notes/one", "--content", "x", "--file", "f"],
+        ["set", "--dir", str(tmp_path / ".outrage"), "notes/one", "--content", "x", "--file", "f"],
         io.StringIO(),
     )
 
@@ -598,9 +606,9 @@ def a_tree(directory: Path) -> None:
 
 
 def test_ls_lists_one_level_with_kinds(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    status, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+    status, output = run("ls", "--dir", str(tmp_path / ".outrage"), "notes")
 
     assert status == 0
     listed = [line.split()[-1] for line in output.splitlines()]
@@ -609,17 +617,17 @@ def test_ls_lists_one_level_with_kinds(tmp_path):
 
 
 def test_ls_sorts_numeric_segments_as_numbers(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "notes")
 
     assert output.index("notes/2") < output.index("notes/10")
 
 
 def test_ls_shows_metadata_and_subkeys_under_a_document(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1")
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "notes/1")
 
     assert "notes/1/!title" in output
     assert "metadata" in output
@@ -627,18 +635,18 @@ def test_ls_shows_metadata_and_subkeys_under_a_document(tmp_path):
 
 
 def test_ls_recursive_reaches_the_bottom(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive", "notes")
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "--recursive", "notes")
 
     assert "notes/1/detail" in output
     assert "notes/10/!title" in output
 
 
 def test_ls_recursive_from_the_top_reports_the_container(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive")
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "--recursive")
 
     # Only list_keys reports a key that holds nothing itself; leaving it out is
     # how everything beneath it looks parentless.
@@ -647,9 +655,9 @@ def test_ls_recursive_from_the_top_reports_the_container(tmp_path):
 
 
 def test_ls_says_so_when_there_is_nothing(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1/detail")
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "notes/1/detail")
 
     assert "nothing below notes/1/detail" in output
 
@@ -658,9 +666,9 @@ def test_ls_says_so_when_there_is_nothing(tmp_path):
 
 
 def test_rm_takes_the_metadata_with_the_document(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    status, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/2")
+    status, output = run("rm", "--dir", str(tmp_path / ".outrage"), "notes/2")
 
     assert status == 0
     assert "deleted notes/2" in output
@@ -668,49 +676,51 @@ def test_rm_takes_the_metadata_with_the_document(tmp_path):
 
 
 def test_rm_leaves_the_subtree_and_says_it_did(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/1")
+    _, output = run("rm", "--dir", str(tmp_path / ".outrage"), "notes/1")
 
     assert "1 keys below notes/1 remain" in output
-    _, listing = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1")
+    _, listing = run("ls", "--dir", str(tmp_path / ".outrage"), "notes/1")
     assert "notes/1/detail" in listing
 
 
 def test_rm_dry_run_deletes_nothing(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/1", "--dry-run")
+    _, output = run("rm", "--dir", str(tmp_path / ".outrage"), "notes/1", "--dry-run")
 
     assert "would delete notes/1" in output
     assert "would remain" in output
-    _, listing = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+    _, listing = run("ls", "--dir", str(tmp_path / ".outrage"), "notes")
     assert "notes/1" in listing
 
 
 def test_rm_dry_run_previews_the_subtree_it_would_take(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/1", "--recursive", "--dry-run")
+    _, output = run(
+        "rm", "--dir", str(tmp_path / ".outrage"), "notes/1", "--recursive", "--dry-run"
+    )
 
     assert "and below: notes/1/detail" in output
-    _, listing = run("ls", "--dir", str(tmp_path / ".rage"), "notes/1")
+    _, listing = run("ls", "--dir", str(tmp_path / ".outrage"), "notes/1")
     assert "notes/1/detail" in listing
 
 
 def test_rm_recursive_takes_the_subtree(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/1", "--recursive")
+    _, output = run("rm", "--dir", str(tmp_path / ".outrage"), "notes/1", "--recursive")
 
     assert "deleted notes/1/detail" in output
     assert "remain" not in output
 
 
 def test_rm_says_when_there_was_nothing_there(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "notes/absent")
+    _, output = run("rm", "--dir", str(tmp_path / ".outrage"), "notes/absent")
 
     assert "nothing stored at notes/absent" in output
 
@@ -719,9 +729,9 @@ def test_rm_says_when_there_was_nothing_there(tmp_path):
 
 
 def test_check_reports_a_sound_store(tmp_path):
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
 
-    status, output = run("check", "--dir", str(tmp_path / ".rage"))
+    status, output = run("check", "--dir", str(tmp_path / ".outrage"))
 
     assert status == 0
     assert "(sqlite)" in output
@@ -739,12 +749,12 @@ def test_check_reports_a_parquet_store_without_sqlites_vocabulary(tmp_path):
     """
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
 
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
     run(
         "pack",
         str(tmp_path / "ref.parquet"),
         "--dir",
-        str(tmp_path / ".rage"),
+        str(tmp_path / ".outrage"),
         "--from-store",
         "store.sqlite",
     )
@@ -768,12 +778,12 @@ def test_repair_of_a_store_with_nothing_to_move_says_so(tmp_path):
     """
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
 
-    a_tree(tmp_path / ".rage")
+    a_tree(tmp_path / ".outrage")
     run(
         "pack",
         str(tmp_path / "ref.parquet"),
         "--dir",
-        str(tmp_path / ".rage"),
+        str(tmp_path / ".outrage"),
         "--from-store",
         "store.sqlite",
     )
@@ -794,13 +804,13 @@ def test_check_refuses_a_directory_with_no_store(tmp_path, capsys):
 def test_check_reports_a_row_stored_under_the_wrong_parent(tmp_path):
     import sqlite3
 
-    a_tree(tmp_path / ".rage")
-    connection = sqlite3.connect(tmp_path / ".rage" / "store.sqlite")
+    a_tree(tmp_path / ".outrage")
+    connection = sqlite3.connect(tmp_path / ".outrage" / "store.sqlite")
     connection.execute("UPDATE documents SET parent = 'elsewhere' WHERE key = 'notes/2'")
     connection.commit()
     connection.close()
 
-    status, output = run("check", "--dir", str(tmp_path / ".rage"))
+    status, output = run("check", "--dir", str(tmp_path / ".outrage"))
 
     # Readable by key and invisible to every listing, which is the failure this
     # check exists for: nothing in normal reading would notice.
@@ -812,7 +822,7 @@ def test_check_reports_a_row_stored_under_the_wrong_parent(tmp_path):
 def test_check_repairs_the_write_ahead_log(tmp_path):
     from outrage.store_sqlite import SqliteStore
 
-    directory = tmp_path / ".rage"
+    directory = tmp_path / ".outrage"
     with SqliteStore(directory) as store:
         store.store_document("notes/one", "x" * 200000)
 
@@ -849,9 +859,9 @@ def a_wide_store(directory: Path, count: int, content: str = "body") -> None:
 
 
 def test_ls_lists_a_level_larger_than_one_page(tmp_path):
-    a_wide_store(tmp_path / ".rage", 250)
+    a_wide_store(tmp_path / ".outrage", 250)
 
-    status, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+    status, output = run("ls", "--dir", str(tmp_path / ".outrage"), "notes")
 
     # A listing that stops at an internal page size is the silent partial
     # answer, delivered by the layer that was supposed to prevent it.
@@ -865,10 +875,10 @@ def test_ls_lists_a_level_larger_than_one_page(tmp_path):
 def test_ls_pages_rather_than_asking_for_everything(tmp_path, monkeypatch):
     import outrage.bulk
 
-    a_wide_store(tmp_path / ".rage", 20)
+    a_wide_store(tmp_path / ".outrage", 20)
     monkeypatch.setattr(outrage.bulk, "PAGE", 3)
 
-    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes")
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "notes")
 
     assert len(output.splitlines()) == 20
 
@@ -877,12 +887,12 @@ def test_ls_recursive_pages_at_every_level(tmp_path, monkeypatch):
     import outrage.bulk
     from outrage.store_sqlite import SqliteStore
 
-    with SqliteStore(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".outrage") as store:
         for number in range(1, 8):
             store.store_document(f"deep/{number}/leaf", "content")
     monkeypatch.setattr(outrage.bulk, "PAGE", 2)
 
-    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "--recursive", "deep")
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "--recursive", "deep")
 
     assert [line.split()[-1] for line in output.splitlines()] == [
         key for number in range(1, 8) for key in (f"deep/{number}", f"deep/{number}/leaf")
@@ -890,9 +900,9 @@ def test_ls_recursive_pages_at_every_level(tmp_path, monkeypatch):
 
 
 def test_ls_limit_shows_less_and_says_so(tmp_path, capsys):
-    a_wide_store(tmp_path / ".rage", 20)
+    a_wide_store(tmp_path / ".outrage", 20)
 
-    _, output = run("ls", "--dir", str(tmp_path / ".rage"), "notes", "--limit", "3")
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "notes", "--limit", "3")
 
     assert len(output.splitlines()) == 3
     # On stderr: the listing itself stays clean for whatever it is piped into.
@@ -902,10 +912,10 @@ def test_ls_limit_shows_less_and_says_so(tmp_path, capsys):
 def test_dump_exports_more_than_one_page_whole(tmp_path, monkeypatch):
     import outrage.bulk
 
-    a_wide_store(tmp_path / ".rage", 10, content="x" * 3000)
+    a_wide_store(tmp_path / ".outrage", 10, content="x" * 3000)
     monkeypatch.setattr(outrage.bulk, "PAGE", 2)
 
-    _, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes")
+    _, output = run("dump", "--dir", str(tmp_path / ".outrage"), "notes")
 
     # Complete by default, across pages and past the per-document cap: an
     # export that quietly holds back is the failure this command exists to
@@ -915,9 +925,9 @@ def test_dump_exports_more_than_one_page_whole(tmp_path, monkeypatch):
 
 
 def test_dump_limit_shows_less_and_says_so(tmp_path, capsys):
-    a_wide_store(tmp_path / ".rage", 10)
+    a_wide_store(tmp_path / ".outrage", 10)
 
-    _, output = run("dump", "--dir", str(tmp_path / ".rage"), "notes", "--limit", "2")
+    _, output = run("dump", "--dir", str(tmp_path / ".outrage"), "notes", "--limit", "2")
 
     assert output.count("=== ") == 2
     assert "stopped at --limit 2" in capsys.readouterr().err
@@ -930,7 +940,7 @@ def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
     import outrage.cli
     from outrage.store_sqlite import SqliteStore
 
-    a_wide_store(tmp_path / ".rage", 10)
+    a_wide_store(tmp_path / ".outrage", 10)
     monkeypatch.setattr(outrage.bulk, "PAGE", 2)
 
     calls = 0
@@ -943,7 +953,7 @@ def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
 
     monkeypatch.setattr(SqliteStore, "get_documents", counted)
 
-    with SqliteStore(tmp_path / ".rage") as opened:
+    with SqliteStore(tmp_path / ".outrage") as opened:
         arguments = argparse.Namespace(key="notes", meta_name=None, depth=None, max_chars=None)
         first = next(outrage.cli._documents(opened, arguments))
 
@@ -956,21 +966,22 @@ def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
 def test_rm_dry_run_previews_the_whole_subtree_not_one_level(tmp_path):
     from outrage.store_sqlite import SqliteStore
 
-    with SqliteStore(tmp_path / ".rage") as store:
+    with SqliteStore(tmp_path / ".outrage") as store:
         store.store_document("tree/one", "content")
         store.store_document("tree/one/two/three", "content")
 
-    _, output = run("rm", "--dir", str(tmp_path / ".rage"), "tree", "--recursive", "--dry-run")
+    _, output = run("rm", "--dir", str(tmp_path / ".outrage"), "tree", "--recursive", "--dry-run")
 
     # Previewing one level of a deletion that reaches three is not a preview.
     assert "and below: tree/one/two/three" in output
 
 
 def test_rm_dry_run_preview_can_be_shortened(tmp_path):
-    a_wide_store(tmp_path / ".rage", 10)
+    a_wide_store(tmp_path / ".outrage", 10)
 
     _, output = run(
-        "rm", "--dir", str(tmp_path / ".rage"), "notes", "--recursive", "--dry-run", "--limit", "3"
+        "rm", "--dir", str(tmp_path / ".outrage"), "notes",
+        "--recursive", "--dry-run", "--limit", "3",
     )
 
     assert output.count("and below:") == 3
@@ -985,9 +996,9 @@ def test_a_malformed_key_is_one_line_and_not_a_traceback(tmp_path, capsys):
     # retired from this test by the grammar widening under them: the
     # pre-schema-4 `:` spelling, and `!title`, which is the root's own title
     # now. The malformation has to be a real one.
-    a_long_store(tmp_path / ".rage")
+    a_long_store(tmp_path / ".outrage")
 
-    status, _ = run("get", "--dir", str(tmp_path / ".rage"), "context/!")
+    status, _ = run("get", "--dir", str(tmp_path / ".outrage"), "context/!")
 
     assert status != 0
     err = capsys.readouterr().err
@@ -1009,9 +1020,9 @@ def an_exportable_store(directory: Path) -> Path:
 
 
 def test_export_writes_a_file_per_document(tmp_path, capsys):
-    an_exportable_store(tmp_path / ".rage")
+    an_exportable_store(tmp_path / ".outrage")
 
-    status, output = run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    status, output = run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
     assert status == 0
     assert (tmp_path / "out/project.md").read_text() == "# Project"
@@ -1024,10 +1035,10 @@ def test_export_writes_a_file_per_document(tmp_path, capsys):
 
 
 def test_export_dry_run_writes_nothing(tmp_path):
-    an_exportable_store(tmp_path / ".rage")
+    an_exportable_store(tmp_path / ".outrage")
 
     status, output = run(
-        "export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"), "--dry-run"
+        "export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"), "--dry-run"
     )
 
     assert status == 0
@@ -1036,15 +1047,15 @@ def test_export_dry_run_writes_nothing(tmp_path):
 
 
 def test_export_refuses_a_store_that_is_not_there(tmp_path, capsys):
-    status, _ = run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    status, _ = run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
     assert status == 1
     assert "outrage:" in capsys.readouterr().err
 
 
 def test_import_stores_a_directory_and_says_where(tmp_path, capsys):
-    an_exportable_store(tmp_path / ".rage")
-    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    an_exportable_store(tmp_path / ".outrage")
+    run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
     status, output = run("import", "--dir", str(tmp_path / "fresh"), str(tmp_path / "out"))
 
@@ -1060,42 +1071,43 @@ def test_import_stores_a_directory_and_says_where(tmp_path, capsys):
 
 
 def test_import_leaves_what_is_already_stored(tmp_path):
-    an_exportable_store(tmp_path / ".rage")
-    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    an_exportable_store(tmp_path / ".outrage")
+    run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
     (tmp_path / "out/project.md").write_text("# Changed on disk")
 
-    status, output = run("import", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    status, output = run("import", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
     assert status == 0
     assert "skipped" in output
-    _, content = run("get", "--dir", str(tmp_path / ".rage"), "project")
+    _, content = run("get", "--dir", str(tmp_path / ".outrage"), "project")
     assert content == "# Project"
 
 
 def test_import_overwrites_when_asked(tmp_path):
-    an_exportable_store(tmp_path / ".rage")
-    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    an_exportable_store(tmp_path / ".outrage")
+    run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
     (tmp_path / "out/project.md").write_text("# Changed on disk")
 
     run(
         "import",
         "--dir",
-        str(tmp_path / ".rage"),
+        str(tmp_path / ".outrage"),
         str(tmp_path / "out"),
         "--on-conflict",
         "overwrite",
     )
 
-    _, content = run("get", "--dir", str(tmp_path / ".rage"), "project")
+    _, content = run("get", "--dir", str(tmp_path / ".outrage"), "project")
     assert content == "# Changed on disk"
 
 
 def test_import_stopping_at_a_conflict_is_a_failed_run(tmp_path):
-    an_exportable_store(tmp_path / ".rage")
-    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    an_exportable_store(tmp_path / ".outrage")
+    run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
     status, output = run(
-        "import", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"), "--on-conflict", "stop"
+        "import", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"),
+        "--on-conflict", "stop",
     )
 
     # The exit status is the only part of a partial run a script can see.
@@ -1104,12 +1116,12 @@ def test_import_stopping_at_a_conflict_is_a_failed_run(tmp_path):
 
 
 def test_import_under_a_key_grafts_the_tree(tmp_path):
-    an_exportable_store(tmp_path / ".rage")
-    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    an_exportable_store(tmp_path / ".outrage")
+    run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
-    run("import", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"), "archive/2026")
+    run("import", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"), "archive/2026")
 
-    _, content = run("get", "--dir", str(tmp_path / ".rage"), "archive/2026/project")
+    _, content = run("get", "--dir", str(tmp_path / ".outrage"), "archive/2026/project")
     assert content == "# Project"
 
 
@@ -1175,7 +1187,7 @@ def test_init_refuses_settings_it_cannot_parse(tmp_path):
 
 
 def test_the_root_is_written_read_and_printed_as_a_slash(tmp_path):
-    d = str(tmp_path / ".rage")
+    d = str(tmp_path / ".outrage")
     status, output = run("set", "--dir", d, "", "--content", "# This store", "--title", "Store")
     assert status == 0
     # "" is invisible in a report, so it prints as `/` -- a legal spelling of
@@ -1187,13 +1199,13 @@ def test_the_root_is_written_read_and_printed_as_a_slash(tmp_path):
 
 
 def test_a_slash_is_a_spelling_of_the_root_on_the_command_line(tmp_path):
-    d = str(tmp_path / ".rage")
+    d = str(tmp_path / ".outrage")
     run("set", "--dir", d, "/", "--content", "body")
     assert run("get", "--dir", d, "")[1] == "body"
 
 
 def test_dump_names_the_root_document(tmp_path):
-    d = str(tmp_path / ".rage")
+    d = str(tmp_path / ".outrage")
     run("set", "--dir", d, "", "--content", "root body")
     run("set", "--dir", d, "a", "--content", "a body")
 
@@ -1204,7 +1216,7 @@ def test_dump_names_the_root_document(tmp_path):
 
 
 def test_listing_the_top_level_does_not_show_the_root(tmp_path):
-    d = str(tmp_path / ".rage")
+    d = str(tmp_path / ".outrage")
     run("set", "--dir", d, "", "--content", "root body")
     run("set", "--dir", d, "a", "--content", "a body")
 
@@ -1214,7 +1226,7 @@ def test_listing_the_top_level_does_not_show_the_root(tmp_path):
 
 
 def test_export_reports_the_root_document_as_a_key_not_as_absent(tmp_path):
-    d = str(tmp_path / ".rage")
+    d = str(tmp_path / ".outrage")
     run("set", "--dir", d, "", "--content", "root body")
 
     status, output = run("export", "--dir", d, str(tmp_path / "out"))
@@ -1230,13 +1242,13 @@ def test_export_reports_the_root_document_as_a_key_not_as_absent(tmp_path):
 def test_pack_builds_a_parquet_store_from_a_store(tmp_path, capsys):
     """The compaction: accumulate into SQLite, then pack it into one file."""
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
-    an_exportable_store(tmp_path / ".rage")
+    an_exportable_store(tmp_path / ".outrage")
 
     status, output = run(
         "pack",
         str(tmp_path / "ref.parquet"),
         "--dir",
-        str(tmp_path / ".rage"),
+        str(tmp_path / ".outrage"),
         "--from-store",
         "store.sqlite",
     )
@@ -1254,8 +1266,8 @@ def test_pack_builds_a_parquet_store_from_a_store(tmp_path, capsys):
 
 def test_pack_builds_a_parquet_store_from_a_directory(tmp_path):
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
-    an_exportable_store(tmp_path / ".rage")
-    run("export", "--dir", str(tmp_path / ".rage"), str(tmp_path / "out"))
+    an_exportable_store(tmp_path / ".outrage")
+    run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
     status, _ = run("pack", str(tmp_path / "ref.parquet"), "--from-dir", str(tmp_path / "out"))
 
@@ -1274,13 +1286,13 @@ def test_pack_needs_exactly_one_source(tmp_path):
 
 def test_pack_dry_run_reports_and_writes_nothing(tmp_path, capsys):
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
-    an_exportable_store(tmp_path / ".rage")
+    an_exportable_store(tmp_path / ".outrage")
 
     status, output = run(
         "pack",
         str(tmp_path / "ref.parquet"),
         "--dir",
-        str(tmp_path / ".rage"),
+        str(tmp_path / ".outrage"),
         "--from-store",
         "store.sqlite",
         "--dry-run",
@@ -1294,12 +1306,12 @@ def test_pack_dry_run_reports_and_writes_nothing(tmp_path, capsys):
 
 def test_pack_refuses_a_target_that_is_already_there(tmp_path, capsys):
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
-    an_exportable_store(tmp_path / ".rage")
+    an_exportable_store(tmp_path / ".outrage")
     args = (
         "pack",
         str(tmp_path / "ref.parquet"),
         "--dir",
-        str(tmp_path / ".rage"),
+        str(tmp_path / ".outrage"),
         "--from-store",
         "store.sqlite",
     )
@@ -1323,12 +1335,12 @@ def test_writing_to_a_parquet_store_is_refused_as_a_message(tmp_path, capsys):
     there is none that would make the write succeed.
     """
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
-    an_exportable_store(tmp_path / ".rage")
+    an_exportable_store(tmp_path / ".outrage")
     run(
         "pack",
         str(tmp_path / "ref.parquet"),
         "--dir",
-        str(tmp_path / ".rage"),
+        str(tmp_path / ".outrage"),
         "--from-store",
         "store.sqlite",
     )
