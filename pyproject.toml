@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "outrage"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
     { name="John M Reynolds", email="zandev@gmail.com" },
 ]
@@ -41,6 +41,27 @@ docs = ["sphinx>=8", "furo"]
 [project.scripts]
 outrage = "outrage.cli:main"
 outrage-server = "outrage.server:main"
+
+[tool.hatch.build.targets.sdist]
+# Both lines exist for one bug, which shipped as 0.1.0: the sdist, and so the
+# wheel built from it, silently lost `src/outrage/skills/`.
+#
+# hatchling walks the project with `safe_walk`, which follows symlinks and
+# refuses to visit the same (st_dev, st_ino) twice. `.claude/skills/rage` is a
+# symlink to a directory inside `src/`, for dogfooding, and `.claude` sorts
+# before `src` - so the walk claimed that inode under `.claude` and then
+# skipped the real directory as already seen. `exclude` alone does not help:
+# hatchling only prunes a directory from the walk when `skip-excluded-dirs` is
+# set, so without it the walk still descends and still claims the inode.
+#
+# The wheel target never hit this because `packages` roots its walk at
+# `src/outrage`, which is why `pip wheel` produced a correct wheel from the
+# same commit that `python -m build` did not.
+#
+# Excluding the dogfooding config is right anyway: nothing installing outrage
+# wants this project's own `.claude`.
+exclude = [".claude"]
+skip-excluded-dirs = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/outrage"]
