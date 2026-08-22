@@ -8,7 +8,7 @@ because it is the part with something to say.
 
 The settings file belongs to the user, not to outrage. It holds their model, their
 permissions and their own hooks, so this writes the one entry it owns and
-leaves everything else exactly as it found it — the rule :mod:`outrage.config`
+leaves everything else exactly as it found it - the rule :mod:`outrage.config`
 already follows for ``.mcp.json``, and the reason its ``read_config`` and
 ``write_config`` are reused here rather than reimplemented.
 
@@ -27,7 +27,7 @@ So the command carries a marker as a trailing shell comment::
 Verified to produce identical output under ``sh``, ``bash`` and ``zsh``, with
 the marker absent from stdout in all three.
 
-An unknown JSON key on the entry — ``{"_rageManaged": …}`` — was tested and
+An unknown JSON key on the entry - ``{"_rageManaged": …}`` - was tested and
 works: the client tolerates it and the hook still fires. It was rejected
 anyway. It depends on that tolerance continuing, which is undocumented, and if
 it ever stops the hook is rejected and delivers nothing *silently*. A shell
@@ -43,7 +43,7 @@ replace the moment the version changes, which is how one hook becomes two.
 
 The marker is needed because the command is an inlined ``echo`` whose text
 changes between releases. If the hook ever becomes ``<abs>/bin/outrage hook
-session-start``, the command is stable and is its own marker — no comment, no
+session-start``, the command is stable and is its own marker - no comment, no
 version, and it works on Windows, where ``#`` does not begin a comment. Expect
 to retire this.
 """
@@ -163,7 +163,7 @@ def plan(
     """Work out what installing would change, without writing.
 
     Returns the change, the merged settings and the file's original text, so a
-    caller can preview and then write without reading twice — and so a dry run
+    caller can preview and then write without reading twice - and so a dry run
     goes through this same function rather than a second one that could
     disagree with it.
     """
@@ -359,8 +359,8 @@ def init(
 ) -> Installation:
     """Set a project up: the MCP server entry, the hook, and the skill and agents.
 
-    The whole of it is planned before any of it is written, so a refusal — a
-    settings file that does not parse, a ``.mcp.json`` that does not — stops
+    The whole of it is planned before any of it is written, so a refusal - a
+    settings file that does not parse, a ``.mcp.json`` that does not - stops
     the run rather than leaving a project half arranged. The dry run stops
     after the same planning the real run does, so it cannot preview something a
     write would disagree with.

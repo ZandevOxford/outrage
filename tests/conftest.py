@@ -2,7 +2,7 @@
 
 ``raises_rendered`` exists because an error no longer carries its own message.
 ``pytest.raises(cls, match=...)`` matches against ``str(exc)``, which is now a
-developer rendering — the class, the code and the details — so a test that
+developer rendering - the class, the code and the details - so a test that
 wants to assert what a *person* reads has to render it the way a front end
 does. See :mod:`outrage.messages`.
 

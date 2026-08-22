@@ -1,7 +1,7 @@
 # Outrage
 
-This project keeps its working knowledge — decisions, findings, and where the
-work got to — in its own rage document store, reached through the `rage` MCP
+This project keeps its working knowledge - decisions, findings, and where the
+work got to - in its own rage document store, reached through the `rage` MCP
 tools. That store is the record. **This file is only a pointer to it**, so that
 nothing here can go stale against what the store says.
 

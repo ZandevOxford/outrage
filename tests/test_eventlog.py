@@ -3,7 +3,7 @@
 Two properties matter more than the rest. The log must never be able to break
 the call it is recording, since a store that fails because its log failed is a
 worse trade than an unlogged store. And what it writes must be readable after
-the fact by something other than this process — one JSON object per line, from
+the fact by something other than this process - one JSON object per line, from
 however many writers.
 """
 

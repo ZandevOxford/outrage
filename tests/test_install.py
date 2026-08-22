@@ -4,7 +4,7 @@ Two risks, and almost everything below guards one of them. The first is damage
 to a file outrage does not own: the settings hold the user's model, permissions
 and their own hooks, and losing any of those to an installer is far worse than
 the installer refusing to run. The second is the marker failing to identify our
-own entry, which does not look like a failure at all — it looks like a hook
+own entry, which does not look like a failure at all - it looks like a hook
 that quietly becomes two, then three.
 """
 
@@ -81,7 +81,7 @@ def test_the_installed_command_emits_valid_json_and_hides_the_marker(shell):
     """The whole premise: a comment that the shell drops and a client never sees.
 
     Run for real rather than reasoned about, because the failure mode is a hook
-    that exits 0 while emitting something unparseable — which looks exactly
+    that exits 0 while emitting something unparseable - which looks exactly
     like a hook that was never configured.
     """
     binary = shutil.which(shell)

@@ -352,7 +352,7 @@ def _forbid_unknown_arguments() -> None:
 
     The SDK builds each tool's argument model on ``ArgModelBase``, which leaves
     pydantic's default ``extra="ignore"``, so an argument the server does not
-    know is dropped before the tool function is entered — the tool cannot even
+    know is dropped before the tool function is entered - the tool cannot even
     see that it happened. A caller then gets a success result for a call that
     did only part of what it asked, which is how a server running stale code
     comes to look like one running current code.
@@ -399,7 +399,7 @@ WITHOUT_META_SAMPLE = 10
 #: cuts them. An observation of one client, not a protocol guarantee: Claude
 #: Code truncates at 2048 characters, measured on 2026-08-19 across this
 #: project's own transcripts and again the day after. Whether the number is
-#: fixed, shared between servers, or really a token count is unestablished —
+#: fixed, shared between servers, or really a token count is unestablished -
 #: 2047 characters landing on a power of two is the argument for characters.
 #: Everything ordered before this point survives on that client; everything
 #: after it may not, and nothing may be *only* said after it.
@@ -431,16 +431,16 @@ before reading anything in full.
 Every listing is a page, not the whole store. Each one reports `returned`
 beside `total`, and a `next_cursor` when more remains: pass it back as `after`
 to continue from exactly where the page stopped. Read `total` before treating a
-result as everything there is — 20 of 22 is a listing, 20 of 40000 is a sample.
+result as everything there is - 20 of 22 is a listing, 20 of 40000 is a sample.
 """
 
 #: The half that can be lost. Not one word of it is unimportant; every part is
-#: recoverable somewhere a session reaches anyway — the tool descriptions, the
+#: recoverable somewhere a session reaches anyway - the tool descriptions, the
 #: packaged skill, or a failure that explains itself when it happens. That is
 #: the whole test for putting something here rather than in `ESSENTIALS`.
 TAIL = """\
-A segment may hold almost any text — `/` and the control characters below tab
-are the only exclusions — so a key can mirror a real name without transforming
+A segment may hold almost any text - `/` and the control characters below tab
+are the only exclusions - so a key can mirror a real name without transforming
 it. Keys are not file paths, but they read like them: notes about a file can
 live at `notes/src/myfile.py`. A path may continue below a metadata segment,
 and everything under one is metadata rather than a document.
@@ -454,7 +454,7 @@ Prefer several small documents to one large one. A document should answer one
 question and be readable in a single call, and a key can hold content *and*
 have keys beneath it, so a general document can stay where it is with the
 detail below it. When there is more to add, add a document rather than growing
-one — `?` allocates the key, so this costs no naming decision.
+one - `?` allocates the key, so this costs no naming decision.
 
 A key that holds nothing itself but has keys beneath it is a container: reading
 it fails, listing it does not.
@@ -491,7 +491,7 @@ README_HEADING = f"--- `{README_KEY}`: this store's own introduction, so you sta
 #: The second half of that pair: when the readme was read, which is the one
 #: thing about it a session cannot work out from the text itself.
 README_NOTE = (
-    f"Read once, when the server started — a `{README_KEY}` changed during a "
+    f"Read once, when the server started - a `{README_KEY}` changed during a "
     f"session reaches the next one, not this one."
 )
 
@@ -526,7 +526,7 @@ SCAFFOLDING_CHARS = len(_protected(f"{README_HEADING}\n\n\n\n{README_NOTE}"))
 
 #: How much of the readme is carried, computed rather than chosen: whatever the
 #: budget has left once the scaffolding is paid for. The old constant bounded
-#: the wrong thing — it asked how long a routing document ought to be, when the
+#: the wrong thing - it asked how long a routing document ought to be, when the
 #: question the client actually answers is how much room is left before the
 #: cut. That number was negative, so no readme of any length was ever
 #: delivered. See `project/reference/planned/instructions-budget`.
@@ -590,7 +590,7 @@ class RequestLog:
 
     Wrapping the five tool functions instead would be simpler and would miss
     the calls that matter most. An argument the server does not know is refused
-    by the tool's own argument model — see ``_forbid_unknown_arguments`` — and
+    by the tool's own argument model - see ``_forbid_unknown_arguments`` - and
     that refusal becomes a ``CallToolResult`` carrying ``is_error`` without the
     tool function ever being entered. A log wired inside those functions is
     structurally blind to it, which would leave the one failure this server
@@ -911,7 +911,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             "compare `returned` with `total`, and pass `next_cursor` back as "
             "`after` to continue from where it stopped. With `meta_name`, "
             "`without_meta` counts the documents in this same page's window "
-            "that carry none of it — what the survey structurally cannot "
+            "that carry none of it - what the survey structurally cannot "
             "show. It is always present, and describes exactly the stretch "
             "this page covers, so paging the survey tiles those windows "
             "without gap or overlap. Use keys_missing_meta to list them."
@@ -1218,7 +1218,7 @@ def _failed(result: Any) -> bool:
     ``HandlerResult`` is a model *or* a dict, and by the time a tool result
     reaches the middleware it has been serialised: the flag is the wire's
     ``isError`` rather than the model's ``is_error``. Reading only the model
-    spelling reports every rejected call as a success — which is the exact
+    spelling reports every rejected call as a success - which is the exact
     failure this log was built to catch, so it is worth being careful about
     twice. ``test_a_rejected_call_is_recorded_as_an_error`` drives a real
     session rather than a stub for the same reason.

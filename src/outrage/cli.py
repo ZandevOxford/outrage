@@ -294,7 +294,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "comes from standard input unless --file or --content is given, so "
             "a document can be piped in. A `?` segment in the key is replaced "
             "by a number the store allocates, and the key actually written is "
-            "printed — which is the only way to learn the allocated number."
+            "printed - which is the only way to learn the allocated number."
         ),
     )
     _store_option(set_)
@@ -323,7 +323,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="list the keys immediately below a key",
         description=(
             "List one level. Includes documents, metadata, and keys that exist "
-            "only because something beneath them does — a container holds "
+            "only because something beneath them does - a container holds "
             "nothing itself and cannot be read, which is why listing and "
             "reading disagree about whether it is there."
         ),
@@ -567,7 +567,7 @@ def _limit_option(parser: argparse.ArgumentParser, what: str) -> None:
     The command line pages the store internally and always reads to the end,
     so this is a display bound and nothing else: the user asks to see less and
     is told when they got it. Nobody ever gets less by accident, which is the
-    opposite default to the tools and for the opposite reason — a redirect into
+    opposite default to the tools and for the opposite reason - a redirect into
     a file is an export.
     """
     parser.add_argument(
@@ -669,7 +669,7 @@ def _store_option(parser: argparse.ArgumentParser) -> None:
     """Which store to act on, spelled the same way on every subcommand.
 
     Two arguments, because a store is a *file inside* a directory: the
-    directory is shared -- the log and the backups sit in it — and the file
+    directory is shared -- the log and the backups sit in it - and the file
     says which of the stores in it this command means. The server spells the
     same pair ``--dir`` and ``--root-mount``.
     """
@@ -994,7 +994,7 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
     # Creating rather than refusing, for the reason `set` does: a first write
     # has to be able to make the store it writes to, and seeding an empty one
     # from a directory is that write in bulk. The resolved path is printed for
-    # the same reason too — it is the only thing that makes a mistyped --dir
+    # the same reason too - it is the only thing that makes a mistyped --dir
     # visible rather than silently successful.
     directory = store.resolve_directory(args.directory)
     with store.open_store(directory, filename=args.filename) as opened:
@@ -1159,7 +1159,7 @@ def _report_remainder(
     """Say what a non-recursive delete leaves behind.
 
     Without this, deleting a key that holds nothing itself but has a subtree
-    under it looks identical to deleting nothing at all — which is exactly the
+    under it looks identical to deleting nothing at all - which is exactly the
     case where a caller most needs to know the subtree is still there.
     """
     if args.recursive or beneath <= 0:
@@ -1219,7 +1219,7 @@ def _print_report(report: maintenance.Report, out: TextIO) -> None:
 
     The second line is the backend's own, printed from ``details`` rather than
     from fields, which is what lets a parquet store report its row groups and
-    its sort order where SQLite reports its integrity and its log — instead of
+    its sort order where SQLite reports its integrity and its log - instead of
     both being made to answer the other's questions with a zero.
     """
     print(f"{report.path} ({report.backend})", file=out)
@@ -1244,7 +1244,7 @@ def _open_existing(args: argparse.Namespace):
     """Open a store that is already there, refusing to create one.
 
     ``Store.__init__`` creates what is missing, so a command acting on an
-    existing store has to check first — otherwise a mistyped --dir reports a
+    existing store has to check first - otherwise a mistyped --dir reports a
     perfectly healthy empty store, which is a wrong answer delivered as a clean
     bill of health.
     """

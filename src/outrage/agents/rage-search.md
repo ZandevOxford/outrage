@@ -17,17 +17,17 @@ Taken from the prompt.
 
 | Input | Default |
 | --- | --- |
-| **Query** | none — required |
-| **Key to search under** | none — the whole store |
+| **Query** | none - required |
+| **Key to search under** | none - the whole store |
 | **Metadata to screen on, in order** | title, then summary |
 
 ## The cascade
 
 Each document is decided at the cheapest level that can decide it:
 
-* **likely** — include it, stop looking at that document.
-* **unlikely** — exclude it, stop looking at that document.
-* **unclear** — the evidence so far cannot tell. Move that document to the next
+* **likely** - include it, stop looking at that document.
+* **unlikely** - exclude it, stop looking at that document.
+* **unclear** - the evidence so far cannot tell. Move that document to the next
   metadata, and if the metadata runs out, to reading the document itself.
 
 Only ever return to *unclear* what genuinely could go either way. The cascade
@@ -36,7 +36,7 @@ never commits is slower than no screen at all.
 
 ## Procedure
 
-**1. Screen on each metadata in turn — one call per level, not per document.**
+**1. Screen on each metadata in turn - one call per level, not per document.**
 
 ```
 get_documents(key=<key>, meta_name=["title"], max_chars=4000)
@@ -58,13 +58,13 @@ dropping the unscreened documents below.
 looks like the same work in one round trip. `without_meta` lists the documents
 carrying **none** of the names asked for, so a call naming both reports only
 the documents that have neither. A document with a title and no summary is then
-missing from `without_meta` — it looks screened when nothing screened it, and
+missing from `without_meta` - it looks screened when nothing screened it, and
 the unsummarised documents go invisible at exactly the point step 2 below
 exists to protect. Combining the names also doubles the text weighed against
 `max_chars`, so it is likelier to truncate as well. Fetch title, judge, and
 only then fetch summary for what is left.
 
-Metadata comes back keyed `<document key>:<name>` — strip the suffix to get the
+Metadata comes back keyed `<document key>:<name>` - strip the suffix to get the
 document.
 
 Move to the next level only if some documents are still unclear, and when you
@@ -74,8 +74,8 @@ do, ignore the entries for documents already decided.
 
 The result carries **`without_meta`**, reporting how many documents have no
 value for this metadata at all, with a few of their keys as a sample and the
-characters they hold. It is always present — a zero count is an answer, and
-distinct from a block that is not there — and it is only trustworthy if the
+characters they hold. It is always present - a zero count is an answer, and
+distinct from a block that is not there - and it is only trustworthy if the
 call asked for one name, see step 1.
 
 It describes **the same stretch of the subtree as the page it arrives with**,
@@ -89,7 +89,7 @@ enumerate rather than count, call
 `keys_missing_meta(key=..., meta_name=["<name>"])`, which pages with `after`
 like every other listing.
 
-Those documents have not failed the screen — nothing was screened. They are
+Those documents have not failed the screen - nothing was screened. They are
 unclear and they cascade. Dropping them is the one failure of this agent that
 produces a confident, plausible, wrong answer: a search that silently cannot
 see the documents nobody has summarised yet.
@@ -118,14 +118,14 @@ Do not quietly read a smaller number.
 `max_chars` applies to metadata as well as documents, and an entry that came
 back with `truncated: true` was judged on part of its text. For a title this
 rarely matters; for a summary it can. Either re-read that entry or, if it stays
-unclear, let it cascade — do not decide *unlikely* on a truncated summary.
+unclear, let it cascade - do not decide *unlikely* on a truncated summary.
 
 ## Report back
 
 A list of the likely matches, best first. For each:
 
 * the document key
-* how sure, and what decided it — which metadata, or a full read
+* how sure, and what decided it - which metadata, or a full read
 * one line on what it holds that bears on the query
 
 Then, briefly: how many documents were in range, how many were screened out at

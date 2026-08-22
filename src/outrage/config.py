@@ -7,7 +7,7 @@ here is callable and testable without going through argparse.
 The problem this solves is that an MCP client launches the server as a
 subprocess, so it needs an absolute path to an entry point inside whichever
 environment outrage was installed in. That path is only reliably known from
-inside that environment — which is where this code runs, and is why writing
+inside that environment - which is where this code runs, and is why writing
 the configuration is a command rather than something a user does by hand. The
 ``.mcp.json`` originally written by hand in this repository is the illustration:
 it names one machine's conda prefix and is wrong everywhere else.

@@ -6,7 +6,7 @@ a shared base, rather than catching ``Exception``. The fourth command is where
 it came due.
 
 The distinction being drawn is not severity. It is whether the failure is
-*about the request* — a key that holds nothing, a pattern that does not occur,
+*about the request* - a key that holds nothing, a pattern that does not occur,
 a configuration file that will not parse, a store that is not there. Those are
 answers, and a front end should render them as one line rather than a
 traceback. Anything else reaching the top is a bug in outrage, and a traceback is

@@ -74,7 +74,7 @@ MAX_SEGMENT_CHARS = 1024
 #: mounted store that the namespace above it cannot name.
 #:
 #: This was 128 until 2026-08-20, when it was halved to buy that property.
-#: 128 was overkill — a key is typically a handful of segments — and the
+#: 128 was overkill - a key is typically a handful of segments - and the
 #: alternative was carrying a drop path through every listing for keys that
 #: had no name from outside. See ``project/reference/planned/mounts/cursors``.
 MAX_SEGMENTS = 64

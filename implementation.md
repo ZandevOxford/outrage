@@ -10,13 +10,13 @@ parquet backend needs `.[parquet]` as well. 902 tests and 17 doctests passing,
 `ruff format --check` reports six files it would reformat and has done for
 some time; the project lints and does not enforce the formatter.
 
-### 0. Project scaffolding — done
+### 0. Project scaffolding - done
 
 `pyproject.toml` with a hatchling build, package under `src/outrage/`, a
 `outrage-server` console script, and `pytest` and `ruff` as development
 dependencies.
 
-### 1. Key handling — `src/outrage/keys.py` — done
+### 1. Key handling - `src/outrage/keys.py` - done
 
 Parses and validates keys against the grammar, splits off the metadata segment, and
 derives `doc_key`, `meta_name` and `parent`. Also `ancestors`, `depth`,
@@ -31,14 +31,14 @@ scans stay exact index range scans no matter what a segment may contain.
 
 The root, added 2026-08-20, is the key with no segments. It parses, holds a
 document, carries metadata as `!title`, and is its own parent. It has no
-subtree bounds — everything is beneath it and no string bounds every key from
-above — so `subtree_range` **raises** for it rather than returning the
+subtree bounds - everything is beneath it and no string bounds every key from
+above - so `subtree_range` **raises** for it rather than returning the
 `["/", "0")` the formula would give, which matches nothing at all and would
 have read as a confident zero out of a full store. Callers select with no range
 predicate instead. `depth` is 0 for it, and `displayed` spells it `/`, because
 `""` in a report reads as a missing name rather than as a key.
 
-### 2. Data store — `src/outrage/store.py`, `src/outrage/store_sqlite.py` — done
+### 2. Data store - `src/outrage/store.py`, `src/outrage/store_sqlite.py` - done
 
 Directory resolution, schema creation and migration under `PRAGMA user_version`,
 WAL mode, and all five operations with the semantics recorded in design.md. No
@@ -48,14 +48,14 @@ MCP dependency.
 interface: the constants, the errors, `Excerpt`, `Page`, `Entry`, `MissingMeta`,
 `Backup`, `KeyRange`, `BoundedSubtree`, and an abstract `Store` carrying the
 contract each operation states. `store_sqlite.py` holds `SqliteStore` and
-everything only SQLite can answer — the schema and its four migrations, the
+everything only SQLite can answer - the schema and its four migrations, the
 connection per thread, the SQL each operation compiles to, and the online
 backup. Two things moved with it rather than staying on the value types:
 `KeyRange.clauses` and `BoundedSubtree.clauses` are now `_range_clauses` and
 `_subtree_clauses` there, because what a bound *means* is the namespace's
 business and what it compiles to is a backend's.
 
-### 2a. Parquet backend — `src/outrage/store_parquet.py` — done
+### 2a. Parquet backend - `src/outrage/store_parquet.py` - done
 
 A second implementation of `Store`, read-only, for the reference-base case:
 tens of thousands of small documents built once and read many times. One
@@ -66,8 +66,8 @@ from an existing store of any backend.
 
 pyarrow is an optional extra (`pip install 'outrage[parquet]'`), imported inside
 the module, so a base install is untouched until something names a `.parquet`
-file. Which backend a store file uses follows from its extension —
-`store._backend_for` — so `--mount-ro ref=python.parquet` needs no new grammar.
+file. Which backend a store file uses follows from its extension -
+`store._backend_for` - so `--mount-ro ref=python.parquet` needs no new grammar.
 Read-only is a property of the backend (`Store.writable`) rather than of a
 mount configuration, so a parquet mount refuses writes whether or not
 `--mount-ro` named it, and cannot be the root mount at all.
@@ -76,7 +76,7 @@ Measured at 40,000 rows against the same corpus in SQLite: the file is **11×
 smaller** (2.4 MB against 27.6 MB) and builds 4× faster; a survey of the whole
 corpus is 9× faster because `chars` answers `total_chars` without opening the
 content column; and a bounded range or a subtree read is a *bisect* rather than
-a scan — 14 ms to 0.04 ms. That last one only arrived once the subtree was
+a scan - 14 ms to 0.04 ms. That last one only arrived once the subtree was
 bisected as well as the key range: a subtree is a contiguous stretch of the
 sort order too, and testing it per row against `doc_key` made a deep survey
 slower than SQLite's.
@@ -90,7 +90,7 @@ Two things this turned into defects, both now fixed: `outrage check` and
 `test_messages.py` kept a hand-written list of error classes that made two new
 ones invisible to three tests at once. Both are recorded in `context/35`.
 
-The first of those was only the minimum — a refusal in a sentence. The split
+The first of those was only the minimum - a refusal in a sentence. The split
 behind it followed: **five of the seven questions a check asks are about rows
 and keys, not about SQLite.** The counts, the key depth against
 `keys.MAX_SEGMENTS`, each row's denormalised `parent` agreeing with the key it
@@ -98,34 +98,34 @@ came from, metadata with no document, and the format version against what this
 build writes are all asked once in `maintenance`, over a new
 `Store.audit_rows`. What is genuinely the stooutrage's is asked through
 `Store.check_file`: SQLite's `integrity_check` and its write-ahead log,
-parquet's sort order — which is that backend's `integrity_check`, since a file
+parquet's sort order - which is that backend's `integrity_check`, since a file
 out of order is bisected to a confident wrong answer rather than failing to
 read. `Report` carries the shared numbers as fields and the backend's as a
 `details` mapping, so a store with no log says nothing about one instead of
 reporting zero bytes. `Store.repair` is likewise the backend's, and returns an
 empty list for a store whose storage has no state a repair could move.
 
-Where the file lives stays on the base — `store_file`, the directory, the
-`mkdir` — because it is the same question for every backend and the one rule
+Where the file lives stays on the base - `store_file`, the directory, the
+`mkdir` - because it is the same question for every backend and the one rule
 `--dir` and a mount spec both go through. So does `backup_path`, whose point is
 the two refusals rather than the copying, and which now takes the store file's
 own extension for a default name.
 
 `store.default_store` is the one place a backend is chosen, and it defers the
-import to avoid a cycle. Every caller — the server, the CLI, the mount table —
+import to avoid a cycle. Every caller - the server, the CLI, the mount table -
 goes through it or `open_store` rather than naming a class.
 
 Formats are detected: content that parses as a JSON object or array is recorded
 as `json`, content opening with a doctype or an `<html>` element as `html`,
 everything else as `markdown`, and an explicit argument overrides all three.
-The fourth format, `text`, is never detected — plain text and markdown are the
-same characters — so it is stored only when asked for.
+The fourth format, `text`, is never detected - plain text and markdown are the
+same characters - so it is stored only when asked for.
 
 A null key means the root wherever a call takes a subtree, resolved once on the
 way in so nothing below carries a second spelling of "everywhere". Three shared
 query fragments keep the root from needing a branch per caller: `_scope` for
-that resolution, `_children_clause` — `parent = ? AND key <> ?` against the
-same value, which is what stops the root listing as its own child — and
+that resolution, `_children_clause` - `parent = ? AND key <> ?` against the
+same value, which is what stops the root listing as its own child - and
 `_below`. Two `CASE` expressions handle the places SQL recomputes a key
 property that the root breaks: the per-row segment count, which would make the
 root depth 1, and the synthesised position in `missing_meta_stats`, which is
@@ -142,20 +142,20 @@ result does *not* contain: what a non-recursive delete kept, and what a survey
 by metadata could not see. Both were added in step 4.
 
 Schema 2 changed the delimiter from `.` to `/`. Opening a schema 1 store
-rewrites its keys in place — exact, because no schema 1 segment could contain
+rewrites its keys in place - exact, because no schema 1 segment could contain
 either character.
 
 `backup` copies the database through SQLite's own backup API and then checks
 what came out: `integrity_check`, the schema version, and a row count against
 the source. It is here rather than in the CLI because the reason it cannot be a
-file copy — WAL mode keeps recent writes in a sidecar, and the `.sqlite` file
-alone was observed at 4 KB against a 2 MB WAL — is knowledge this module
+file copy - WAL mode keeps recent writes in a sidecar, and the `.sqlite` file
+alone was observed at 4 KB against a 2 MB WAL - is knowledge this module
 already has and no caller should need. A copied file opens cleanly and passes an
 integrity check, so the row count is the only check that catches it. The count
 is taken after the copy, which means a concurrent write can fail a good backup;
 that is preferred to trusting a count nobody took.
 
-### 3. MCP server — `src/outrage/server.py` — done
+### 3. MCP server - `src/outrage/server.py` - done
 
 Stdio server built on `MCPServer` from the MCP Python SDK, exposing
 `retrieve_document`, `store_document`, `list_keys`, `get_documents`,
@@ -174,7 +174,7 @@ Note the SDK in use is **mcp 2.0**, where `FastMCP` has become
 `structured_content`, `input_schema`), and a failing tool raises `ToolError`
 rather than returning a result with an error flag.
 
-### 3a. Mounted stores — `src/outrage/mounts.py` — done
+### 3a. Mounted stores - `src/outrage/mounts.py` - done
 
 More than one database behind the one key namespace, configured at startup with
 a repeatable `--mount KEY=FILE`. `Mounts` is a prefix to `Store` table; the
@@ -184,12 +184,12 @@ at the root, so every key resolves. `build_server` wraps a lone `Store` in
 mounted.
 
 **One directory, several files.** A store is addressed as a file *inside* the
-directory `--dir` names — `--root-mount FILE` for the root, `KEY=FILE` for each
+directory `--dir` names - `--root-mount FILE` for the root, `KEY=FILE` for each
 mount, both defaulting to and named like `store.sqlite`. `store.store_file` is
 the single rule and it refuses an absolute path and a `..`, raising
 `StoreFileError`; `Store(directory, filename=...)` is the only way a database
-path is built. The directory stays what it always was — the log, the backups
-and any later index live in it — and the file is which store within it. That
+path is built. The directory stays what it always was - the log, the backups
+and any later index live in it - and the file is which store within it. That
 split is what a backend other than SQLite would slot into, and it is why only
 `--dir` is absolute in a configuration: `config.server_entry` records every
 mount exactly as written, so moving a project is one line to fix rather than
@@ -206,24 +206,24 @@ heard of it.
 The storage layer needed almost nothing: `sort_key` is derived from the key
 alone, so rows from different mounts already sort against each other, and
 `Store` holds its own `threading.local`, so N stores in one thread is N
-connections rather than one shared between them — the concurrency fix spans
+connections rather than one shared between them - the concurrency fix spans
 mounts without an addition.
 
 It needed one thing, added later: **range bounds**, so that a traversal can
 step over the stretch a mount shadows. A subtree read in `Store` is now bounded
 by three separate things, all of which must hold, and each is its own argument:
 
-* **`BoundedSubtree(key, depth)`** — which part of the hierarchy to read.
+* **`BoundedSubtree(key, depth)`** - which part of the hierarchy to read.
   Measured on `doc_key`, because metadata shares its document's `doc_key`, so
   one predicate takes a document and its metadata together and a metadata key
   has the depth of the document it belongs to. `EVERYTHING` is the default.
-* **`KeyRange`** — which stretch of the order to read, measured on `sort_key`.
+* **`KeyRange`** - which stretch of the order to read, measured on `sort_key`.
   Six one-sided bounds, all optional and all ANDed: `after_inclusive`, `after`,
-  `after_subtree`, `before`, `before_inclusive`, `final_subtree` — three cuts
+  `after_subtree`, `before`, `before_inclusive`, `final_subtree` - three cuts
   from below and three from above, which is every place a cut can fall relative
   to a key. `KeyRange.clauses(column, column_params)` renders them as SQL, with
   `column` an expression rather than a name. `UNBOUNDED` is the default.
-* **`cursor`** — where the last page stopped, on the methods that page,
+* **`cursor`** - where the last page stopped, on the methods that page,
   including `list_keys`, whose `after` was renamed to it so the store has one
   word for it.
 
@@ -231,7 +231,7 @@ by three separate things, all of which must hold, and each is its own argument:
 same key from opposite sides, so a subtree can be cut out without naming a key
 that does not exist. A range bounds the **selection**, not the page, so a count
 taken over a window counts that window and the windows either side of a mount
-add up to the whole — which is exactly why the cursor is *not* one of its
+add up to the whole - which is exactly why the cursor is *not* one of its
 bounds. `BoundedSubtree` is deliberately not expressed as a `KeyRange` either:
 a caller must be able to give both, and folding one into the other makes the
 pair inexpressible. `missing_meta_stats` therefore takes **two** ranges,
@@ -267,13 +267,13 @@ mount below the key there is a single unbounded window, which is the query it
 always was. Results grow a field only when there is something to say, so a
 single store answer is the shape it was before mounts existed.
 
-**Read-only mounts** — `--mount-ro KEY=FILE`, and `outrage config --mount-ro` to
+**Read-only mounts** - `--mount-ro KEY=FILE`, and `outrage config --mount-ro` to
 record one. `Mount.read_only` carries it, `Resolved.writable(action)` raises
 `ReadOnlyMountError`, and the two write tools resolve through
 `_resolve_for_write` rather than `_resolve` so a write path names itself and
 cannot pick up the reading one by default. The refusal happens before the store
 is called; `Store` is still untouched. A listing reports the mount point as
-`kind: "read-only mount"`, which is the only announcement — a `read_only` field
+`kind: "read-only mount"`, which is the only announcement - a `read_only` field
 on `Entry` would appear as a null on every entry of every listing. `open_mounts`
 refuses a read-only mount whose database does not exist, since `Store` would
 otherwise create one, and `server.main` now renders a `RageError` as one line
@@ -283,12 +283,12 @@ followed.
 Deliberately not done, and recorded in `project/reference/planned/mounts`:
 aggregation across a boundary. The range bounds are the primitive it now needs:
 reading a subtree as ordered windows is what a merge across two stores would
-interleave. The CLI half is narrower than it was — `outrage check`, `outrage
+interleave. The CLI half is narrower than it was - `outrage check`, `outrage
 backup` and the rest take `--store`, so each store in a directory can be reached
-by name — but each command still acts on one store at a time rather than on a
+by name - but each command still acts on one store at a time rather than on a
 mount table.
 
-### 4. Integration with Claude Code — done
+### 4. Integration with Claude Code - done
 
 * `.mcp.json` written, registering the server for this project. Its `command` is
   an absolute path into the conda environment and so is machine specific.
@@ -316,13 +316,13 @@ from inside a session:
 So a reconnect is enough while changing tools, and only a change to
 `instructions` needs the session restarted. That matters because `instructions`
 is where the key conventions live, which is exactly what step 5 will be
-iterating on — the slow loop is the one that step is stuck with.
+iterating on - the slow loop is the one that step is stuck with.
 
 #### What the session use changed
 
 1. *A non-recursive delete of a key with descendants was a silent no-op.*
-   `delete_keys(key="context/2")` returned `{"deleted": [], "count": 0}` — the
-   same shape as a successful delete of an empty key — while the whole context
+   `delete_keys(key="context/2")` returned `{"deleted": [], "count": 0}` - the
+   same shape as a successful delete of an empty key - while the whole context
    survived. Read as success, and the mistake is invisible. The result now
    carries `remaining` and a note naming the flag. New `Store.descendant_count`.
 
@@ -337,7 +337,7 @@ iterating on — the slow loop is the one that step is stuck with.
    fourth existed. The survey now reports `without_meta`. New
    `Store.keys_missing_meta`.
 
-4. *Titling a document was a second call that is easy to forget* — forgotten
+4. *Titling a document was a second call that is easy to forget* - forgotten
    once in this session despite the instructions pushing it. `store_document`
    now takes `title` and writes both rows in one transaction.
 
@@ -370,27 +370,27 @@ cannot see the store, so anything the result does not say is not merely absent,
 it is misleading.
 
 The reach into the SDK for point 6 is deliberate but load bearing, so it is
-guarded rather than trusted. Four tests in `test_server.py` — the rejection, the
+guarded rather than trusted. Four tests in `test_server.py` - the rejection, the
 named misspelling, the published `additionalProperties`, and that known
-arguments still pass — fail if a future SDK stops honouring it. Verified by
+arguments still pass - fail if a future SDK stops honouring it. Verified by
 disabling the call and confirming three of them fail; a silent return to
 permissive arguments is the one outcome that must not be possible, since it is
 the failure the change exists to prevent.
 
-### 5. Skills — done
+### 5. Skills - done
 
 Expected to be the hardest part and the one that determines whether the system
 is actually used in practice; deliberately last, so it could be written against
 tools whose behaviour was already known.
 
-* `src/outrage/skills/rage/SKILL.md` — the skill. Inside the package rather than
+* `src/outrage/skills/rage/SKILL.md` - the skill. Inside the package rather than
   only in the repository, so an install carries it and the CLI has something to
   install.
-* `.claude/skills/rage` — a relative symlink to it, so this project uses the
+* `.claude/skills/rage` - a relative symlink to it, so this project uses the
   copy it is editing.
-* `.claude/settings.json` — a `SessionStart` hook. A `PreCompact` hook was
+* `.claude/settings.json` - a `SessionStart` hook. A `PreCompact` hook was
   installed here too until 2026-08-19; see below for why it is gone.
-* `tests/test_skill.py` — the skill is packaged, its frontmatter names it, and
+* `tests/test_skill.py` - the skill is packaged, its frontmatter names it, and
   the symlink still resolves to the packaged file.
 
 The skill carries only judgment: survey before reading, what the three key
@@ -400,8 +400,8 @@ before the end. It deliberately does not restate the key grammar or the argument
 rules, which the tool descriptions carry and enforce.
 
 Two hooks were written, because a skill has to be reached for and the two
-moments that matter most — the start of a session, and just before context is
-lost — are not moments anything prompts an agent to reach. Each emits static
+moments that matter most - the start of a session, and just before context is
+lost - are not moments anything prompts an agent to reach. Each emits static
 text and depends on nothing, so neither can fail in a way that costs a session.
 
 Only the `SessionStart` half survives. The `PreCompact` hook was removed on
@@ -411,12 +411,12 @@ worth reaching, and how to reach it is `planned/checkpoint-hook`.
 #### Delivery
 
 Both hooks were pipe tested when written, so what was confirmed then was the
-output and not the delivery — neither hook can fire inside the session that
+output and not the delivery - neither hook can fire inside the session that
 wrote it, and `.claude/settings.json` did not exist when that session started.
 
 All three are now settled. A symlinked skill directory *is* discovered, through
 the link rather than its target. The `SessionStart` text *does* arrive in
-context ahead of the first turn — 14 sessions out of 14, across the `startup`
+context ahead of the first turn - 14 sessions out of 14, across the `startup`
 and `compact` sources, and a live run in which the model echoed back a token
 minted by the hook. And `PreCompact` delivers nothing at all: it produces no
 attachment of any kind in the transcript, not even the `hook_success` every
@@ -428,9 +428,9 @@ the store. It is worth re-running after a client upgrade: a pipe test cannot
 see past the process boundary, and this project has now been wrong about that
 boundary three times.
 
-### 8. Event log — `src/outrage/eventlog.py` — done
+### 8. Event log - `src/outrage/eventlog.py` - done
 
-Steps 6 and 7 — the CLI and the packaged agents — are recorded in the rage
+Steps 6 and 7 - the CLI and the packaged agents - are recorded in the rage
 store under `project/reference/implementation` rather than here.
 
 Off unless `--log` is given, since it records document text. Design and
@@ -438,15 +438,15 @@ reasoning in design.md; what it is *for* is that every open question in this
 project turned out to need evidence about what an agent actually did, and none
 of it was being kept.
 
-* `src/outrage/eventlog.py` — the sink. One JSON object per line, written with a
+* `src/outrage/eventlog.py` - the sink. One JSON object per line, written with a
   single `os.write` to an `O_APPEND` descriptor so that two processes sharing a
   log cannot interleave. Content is bounded by a policy, which is also what
   keeps a line short enough for that to hold.
-* `src/outrage/store.py` — a `_logged` decorator, and a `log` argument
+* `src/outrage/store.py` - a `_logged` decorator, and a `log` argument
   defaulting to a null object. Method bodies are untouched, so the change that
   added logging could not have altered behaviour. The decorator stays here,
   shared, and the backend applies it to the methods it implements.
-* `src/outrage/server.py` — `RequestLog`, a `ServerMiddleware`. Registered only
+* `src/outrage/server.py` - `RequestLog`, a `ServerMiddleware`. Registered only
   when there is somewhere to write.
 * `--log`, `--log-content` on the server; the same two on `outrage config`,
   which writes them into `.mcp.json`.
@@ -457,7 +457,7 @@ Two things the build found that prose would not have:
 
 * The middleware receives a tool result **already serialised to a dict**, so
   the error flag is the wire's `isError`, not the model's `is_error`. Reading
-  only the model spelling reported every rejected call as a success — the exact
+  only the model spelling reported every rejected call as a success - the exact
   failure the log exists to catch, reproduced inside the log itself. Caught by
   driving a real client session rather than a stub, which is why that test
   stays end-to-end.

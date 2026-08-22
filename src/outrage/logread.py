@@ -1,7 +1,7 @@
 """Reading back what :mod:`outrage.eventlog` wrote.
 
 The writer half exists because evidence was not being kept. This half is what
-turns the file it produces into answers, and the questions are already known —
+turns the file it produces into answers, and the questions are already known -
 they are the ones that were open long enough to motivate the log:
 
 * Which arguments did a call actually carry? Not how many calls were made, and
@@ -56,7 +56,7 @@ class Event:
     The record is kept whole rather than unpacked into fields. The writer adds
     fields as it learns what is worth recording, and a reader that mapped each
     one into a slot of its own would silently drop whatever it was not updated
-    for — which is the failure mode the log exists to catch, rebuilt in the
+    for - which is the failure mode the log exists to catch, rebuilt in the
     thing that reads it.
     """
 
@@ -116,7 +116,7 @@ class Event:
 
         A store event holds them under ``args``; a request holds them nested in
         the tool call's ``params``. Both answer the same question, so both are
-        reachable the same way — that question ("which ``meta_name`` did that
+        reachable the same way - that question ("which ``meta_name`` did that
         search screen on") is what the log settled first.
         """
         args = self.record.get("args")
@@ -143,7 +143,7 @@ class Event:
 
         The store records a raised exception under ``error``. The request layer
         records a *refused* call as a result with ``ok`` false, because a tool
-        that returns an error result never raises — reading only ``error``
+        that returns an error result never raises - reading only ``error``
         would report every rejected call as a success, which is the bug that
         the first version of the writer shipped with.
         """
@@ -227,7 +227,7 @@ class Session:
         """Whether this looks like the short-lived process a client runs first.
 
         It starts, answers a handful of catalogue methods and exits, so it
-        appears in the file as a session that did nothing — and a search that
+        appears in the file as a session that did nothing - and a search that
         mistakes it for the serving one finds an empty log.
 
         All three conditions are needed because a filtered view is also a
@@ -258,7 +258,7 @@ def read_log(path: str | os.PathLike[str]) -> Log:
     A line that will not parse is counted and skipped rather than fatal. The
     writer appends under a lock, but it appends from more than one process and
     can be killed mid-line, so a torn last line is an expected state of a live
-    log — not a reason to refuse to show the 300 good lines above it.
+    log - not a reason to refuse to show the 300 good lines above it.
     """
     path = Path(path).expanduser()
     try:
@@ -462,7 +462,7 @@ def summarise(log: Log, events: Iterable[Event] | None = None) -> Summary:
     """Compute the standing numbers over ``events``, defaulting to the whole log.
 
     Taking the events separately is what lets a summary describe a filtered
-    slice — "how did *this* session behave" — rather than only ever the file.
+    slice - "how did *this* session behave" - rather than only ever the file.
     """
     selected = list(log.events if events is None else events)
     summary = Summary(
@@ -510,8 +510,8 @@ def format_event(event: Event, *, content: bool = False) -> Iterator[str]:
     """Render one event as a line, plus the document text when asked for.
 
     The excerpt is off by default and available on request because it is the
-    only way to answer the question it was kept for — whether what was written
-    is what was sent — and much too long to put on every line.
+    only way to answer the question it was kept for - whether what was written
+    is what was sent - and much too long to put on every line.
     """
     call = f"call {event.call}" if event.call is not None else "-"
     parts = [f"{event.seq:>5}", _clock(event.ts), f"{call:<8}", f"{event.event:<7}"]

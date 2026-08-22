@@ -418,7 +418,7 @@ def test_two_full_halves_still_join(tmp_path):
     used to be dropped.
 
     Note what the deepest key cannot have: a title. Metadata is a segment, so a
-    document at the store bound has no room for one *inside its own store* —
+    document at the store bound has no room for one *inside its own store* -
     which is why the joined bound needs no allowance for it. The store refuses
     it, and the namespace above never sees a key the store could not hold.
     """
@@ -1183,7 +1183,7 @@ def test_a_parquet_mount_refuses_a_write_without_offering_a_flag(tmp_path):
 
     A read-only *mount* tells the caller which flag to drop. A read-only
     *backend* must not, because no way of starting the server makes the write
-    succeed — and the mount layer refuses first, so without this it would give
+    succeed - and the mount layer refuses first, so without this it would give
     advice that costs someone a restart to find out is wrong. Found by
     mounting a real one and writing to it.
     """

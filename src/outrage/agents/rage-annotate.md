@@ -18,13 +18,13 @@ Taken from the prompt. Only the first is required.
 
 | Input | Default |
 | --- | --- |
-| **Document key** | none — required |
+| **Document key** | none - required |
 | **Metadata name** | `summary` |
 | **Instruction** | `Write a short (up to three paragraphs) summary of this document.` |
 
 The metadata name may be given with or without its leading `!`; `!summary`
 and `summary` mean the same thing. If the prompt does not clearly give a
-document key, stop and say so rather than guessing at one — writing a summary
+document key, stop and say so rather than guessing at one - writing a summary
 onto the wrong document is worse than not writing one.
 
 ## Procedure
@@ -55,7 +55,7 @@ opening, so it earns nothing if it approaches the length of what it replaces.
 Aim for about a fifth of the document; going over sometimes is fine. A short
 document needs one sentence, not a proportional summary.
 
-Summarise what the document says — not what it is about, and not that it is a
+Summarise what the document says - not what it is about, and not that it is a
 document. Someone reading only the summary should learn the substance and be
 able to decide whether they need the document itself.
 
@@ -73,7 +73,7 @@ store_document(
 )
 ```
 
-`content` is a **JSON string literal** — surrounded by double quotes, with `"`
+`content` is a **JSON string literal** - surrounded by double quotes, with `"`
 written `\"`, backslashes `\\`, and every newline `\n` rather than an actual
 line break. The store decodes it before writing, so what ends up stored is
 ordinary text and every reader sees prose.
@@ -83,7 +83,7 @@ here, and a bare string has no shape to violate, so the damage is stored as
 though it were the summary. A JSON string literal does have a shape. If the
 write is rejected with `not a valid JSON string literal`, the value was
 damaged in transit or encoded wrongly: build the literal again from the
-summary and retry once. Do not switch to sending it unencoded — that removes
+summary and retry once. Do not switch to sending it unencoded - that removes
 the check rather than passing it.
 
 **Escape exactly once.** `"` is written `\"`, never `\\\"`. The check catches
@@ -95,7 +95,7 @@ nothing rejects it and the summary is stored subtly wrong. Observed on
 **Omit `title`.** Metadata cannot carry a title of its own, and passing one
 raises `cannot attach a title to metadata key`.
 
-This overwrites whatever was there. That is intended — the caller asked for the
+This overwrites whatever was there. That is intended - the caller asked for the
 value to be generated.
 
 Never write to the document key itself. This agent adds metadata beside a
