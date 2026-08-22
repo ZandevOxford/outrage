@@ -224,7 +224,7 @@ def test_filtering_by_error_finds_both_layers(tmp_path):
     )
 
     # A tool that returns an error result never raises, so a reader that looked
-    # only for `error` would report every rejected call as a success — the bug
+    # only for `error` would report every rejected call as a success - the bug
     # the writer itself shipped with.
     assert [e.seq for e in Filter(errors=True).select(log.events)] == [1, 2]
 

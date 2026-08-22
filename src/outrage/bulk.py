@@ -1,8 +1,8 @@
 """Whole subtrees, in and out: the streaming walkers, and the file mapping.
 
 The store's own reads are pages, and every one of them is bounded on purpose.
-This module holds the callers that legitimately want all of it — a listing of a
-level, an export of a subtree, an import of a directory — and gets there the
+This module holds the callers that legitimately want all of it - a listing of a
+level, an export of a subtree, an import of a directory - and gets there the
 only way that stays bounded: page internally, yield as each page arrives, and
 never hold the collection.
 
@@ -12,7 +12,7 @@ through argparse. ``cli`` prints what these yield and decides nothing.
 The file mapping is one rule: **a key segment is a path component, and a
 document gets an extension naming its format**. `a/b` stored as markdown is
 `a/b.md`, and anything below `a/b` is in the directory `a/b/`, which is why the
-extension exists at all — a key is both a document and a container, and a path
+extension exists at all - a key is both a document and a container, and a path
 cannot be both a file and a directory. Metadata is a segment like any other, so
 `a/b/!title` is the file `a/b/!title.md`. Nothing is escaped and nothing is
 transformed, which is the arrangement the key grammar was widened for: the
@@ -154,7 +154,7 @@ def levels(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
     The store pages and the command line does not: a person listing a key wants
     the level, and a listing that stops at an internal page size is the silent
     partial answer this project keeps finding. Streaming is what makes it both
-    complete and bounded in memory — and it fails better, since a long listing
+    complete and bounded in memory - and it fails better, since a long listing
     interrupted has already shown its first thousand lines rather than nothing.
     """
     cursor = None
@@ -170,7 +170,7 @@ def walk(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
     """Every key below ``key``, depth first.
 
     Built from repeated ``list_keys`` rather than from ``get_documents``,
-    because only ``list_keys`` reports the containers — a key holding nothing
+    because only ``list_keys`` reports the containers - a key holding nothing
     itself but with documents beneath it does not appear in a subtree read at
     all, and leaving it out of a listing is how its children look parentless.
     It is also the only walk that reports metadata beside the documents, which
@@ -314,7 +314,7 @@ def _exported(opened: store.Store, key: str | None) -> Iterator[tuple[str, str |
     """Every key an export covers: the one asked for, then everything below it.
 
     ``walk`` lists what is *below* a key, which is what a listing wants and not
-    what an export does — a key is a document and a container at once, and
+    what an export does - a key is a document and a container at once, and
     exporting `project` without the document stored at `project` is the silent
     partial answer wearing an export's clothes. Read at one character, so that
     asking whether it is there costs no more than asking.
@@ -342,7 +342,7 @@ def _write_file(path: Path, content: str) -> None:
     """Write ``content`` to ``path`` through a temporary file in the same directory.
 
     So that an export interrupted halfway leaves whole files and no half of
-    one — the same reason the configuration writer does it, for the same kind
+    one - the same reason the configuration writer does it, for the same kind
     of file: one somebody else owns.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -381,7 +381,7 @@ def import_tree(
     happens to a key that already holds something, one key at a time: ``stop``
     is the strictest available and stops at the first, having kept what it
     already wrote. There is deliberately no mode that refuses the whole import
-    unless every key is free — a directory could be walked twice to promise
+    unless every key is free - a directory could be walked twice to promise
     that, but a source that is a stream cannot be, and a guarantee that
     quietly weakens when the source changes is worse than one never offered.
     ``--dry-run`` is what answers the question that mode was reaching for.
@@ -544,7 +544,7 @@ def pack(
 
     # Before a single document is read. A pack reads its whole source before
     # writing anything, so checking at the write would refuse only after the
-    # reading was done — right answer, least useful moment.
+    # reading was done - right answer, least useful moment.
     ParquetStore.check_target(target, overwrite=overwrite)
 
     rows: list[Document] = []

@@ -419,7 +419,7 @@ def _logged(op: str) -> Callable[[_Method], _Method]:
     from a store that is meant to be usable without it.
 
     The signature is read once, at decoration, so the only per-call cost when
-    logging is on is binding the arguments — and none at all when it is off.
+    logging is on is binding the arguments - and none at all when it is off.
     """
 
     def decorate(method: _Method) -> _Method:
@@ -580,7 +580,7 @@ class Store(ABC):
         is stored: 'json-string' means each is a JSON string literal, quotes
         and all, which is decoded before it is written. The stored document is
         plain text either way, so readers are unaffected. Its purpose is to
-        make damage in transit loud — see ``_decode``.
+        make damage in transit loud - see ``_decode``.
 
         Every refusal above is :meth:`_validated`'s, which an implementation
         calls before it writes anything.
@@ -599,7 +599,7 @@ class Store(ABC):
         """What :meth:`store_document` accepts, and what it turns into.
 
         Returns the parsed key, the decoded content, the resolved format and
-        the decoded title — the arguments as they are actually written, with
+        the decoded title - the arguments as they are actually written, with
         every refusal already made. A ``?`` in the key survives this: which
         number it becomes is read from the store, inside the transaction that
         writes it, and is the one part of the call that is not decidable here.
@@ -607,14 +607,14 @@ class Store(ABC):
         A classmethod rather than a template method calling down into the
         backend. It leaves every implementation's control flow exactly where it
         is, while making it impossible for a backend to validate differently
-        without visibly not calling this — two stores that disagreed about what
+        without visibly not calling this - two stores that disagreed about what
         a key or a format is would be two namespaces, which is the thing the
         split of :mod:`outrage.store` from a backend exists to prevent.
 
         **Call it inside the logged method.** ``_logged`` binds the caller's
         arguments before the body runs, so validation lifted out in front of
         the decorated call would leave the log recording the normalised
-        arguments rather than the ones that arrived — and what the caller
+        arguments rather than the ones that arrived - and what the caller
         actually passed is the one thing that log is for.
 
         The order is guarded, not incidental: the key parses first, then the
@@ -875,7 +875,7 @@ class Store(ABC):
         """Settle where the copy goes, and refuse the destinations that destroy.
 
         Public so that a caller can report the destination, and hit the same
-        refusals, without writing anything — which is what ``--dry-run`` needs.
+        refusals, without writing anything - which is what ``--dry-run`` needs.
 
         The default name takes the store file's own extension rather than a
         fixed one, so a backup of a store is recognisably the same kind of
@@ -1071,7 +1071,7 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
 
     A function beside the store rather than a method on it, deliberately.
     Whether the *library* should stop handing out silent partial documents is
-    an open design question — the options are weighed in
+    an open design question - the options are weighed in
     ``project/reference/planned/agents`` and none has been chosen. This settles
     only what the command line does, which is a narrower question with an
     obvious answer: a person redirecting a document to a file wants the
@@ -1167,8 +1167,8 @@ def _summarise(log: EventLog, result: object) -> dict[str, object]:
     """Describe a return value in the terms an investigation later asks in.
 
     Not the value itself. The point of a summary is that the questions being
-    asked are about shape — how much was returned, whether it was cut short,
-    which keys were touched — and a log holding whole results is a second copy
+    asked are about shape - how much was returned, whether it was cut short,
+    which keys were touched - and a log holding whole results is a second copy
     of the store rather than a record of what happened to it.
     """
     match result:

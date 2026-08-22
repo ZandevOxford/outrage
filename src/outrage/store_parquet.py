@@ -990,7 +990,7 @@ class ParquetStore(Store):
         Public and separate from :meth:`build` so a caller can hit the refusal
         **before** reading its source. A pack reads the whole corpus before it
         writes anything, so leaving this to the write means a refusal that
-        arrives after forty thousand documents have been read — which is the
+        arrives after forty thousand documents have been read - which is the
         right answer delivered at the least useful moment. ``build`` calls it
         too, so the guarantee does not depend on the caller remembering.
         """

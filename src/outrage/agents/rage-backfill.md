@@ -16,7 +16,7 @@ Taken from the prompt. All optional.
 
 | Input | Default |
 | --- | --- |
-| **Key** | none — the whole store |
+| **Key** | none - the whole store |
 | **Metadata name** | `summary` |
 | **Instruction** | leave unset, so `rage-annotate` uses its own default |
 
@@ -29,7 +29,7 @@ keys_missing_meta(key=<key>, meta_name=["<metadata name>"])
 ```
 
 It returns exactly the document keys at and below `key` that carry none of the
-named metadata — which is the whole job of this step. Do not walk the tree
+named metadata - which is the whole job of this step. Do not walk the tree
 yourself, and do not survey with `get_documents`: that returns the documents
 which already have the metadata, and they are the ones to leave alone.
 
@@ -42,10 +42,10 @@ is correct whether or not the keys all fitted.
 
 **2. Stop early where there is nothing to do.**
 
-* **`total` is zero** — report that every document under the key already has
+* **`total` is zero** - report that every document under the key already has
   the metadata, and stop. Do not regenerate what is there. This agent fills
   gaps; refreshing a stale value is a different job and needs to be asked for.
-* **`total` is more than 20** — report the count and the sample of keys, and
+* **`total` is more than 20** - report the count and the sample of keys, and
   stop without generating. Each one costs a model call, and a sweep of that
   size should be the caller's decision rather than a side effect of asking. Say
   plainly that they can re-run against a narrower key or confirm the whole set.
@@ -69,7 +69,7 @@ it, and one failure does not take the rest of the sweep with it.
 
 **4. Report.**
 
-Give the caller the counts — found missing, written, failed — and name any
+Give the caller the counts - found missing, written, failed - and name any
 document that failed along with what `rage-annotate` said about it. If some
 were skipped under the limit in step 2, say which.
 

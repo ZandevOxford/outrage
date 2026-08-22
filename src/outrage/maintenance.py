@@ -1,7 +1,7 @@
 """Inspecting and repairing a store from outside an agent session.
 
 The server has no reason to offer any of this. A session asks the store
-questions about documents; these are questions about the *store* — whether the
+questions about documents; these are questions about the *store* - whether the
 rows still satisfy the invariants they were written under, whether the format
 version is one this build understands, and whether the storage underneath them
 is sound.
@@ -24,7 +24,7 @@ meaning for the other, which is why neither is here.
 The write-ahead log is worth naming because it is the same trap ``backup``
 exists for, seen from the other end. A SQLite store in WAL mode can hold
 almost nothing in ``store.sqlite`` and megabytes in ``store.sqlite-wal``, and
-it opens and reads perfectly that way — so nothing in normal use reveals it,
+it opens and reads perfectly that way - so nothing in normal use reveals it,
 and anything copying the file alone gets a store missing its recent history.
 ``check`` reports the split; ``--repair`` folds it back.
 
@@ -229,12 +229,12 @@ def _report_depth(over_deep: list[str], report: Report) -> None:
     """Keys with more segments than a store may now hold.
 
     ``keys.MAX_SEGMENTS`` was halved to 64 on 2026-08-20, so that a mount point
-    and a key inside a store — each bounded by it — always join into a valid
+    and a key inside a store - each bounded by it - always join into a valid
     key in the namespace a mount table presents. Nothing writes such a key any
     more; a store written by an earlier outrage can still hold one.
 
     It is only a fault if the store is ever *mounted*, where the key would have
-    no name from outside — so this is a warning naming the keys, not an error.
+    no name from outside - so this is a warning naming the keys, not an error.
     Reported here because this is the only place that looks before something
     tries: ``Mount.outer`` raises when it meets one, which is correct and late.
     """
@@ -253,8 +253,8 @@ def _report_depth(over_deep: list[str], report: Report) -> None:
 def _report_parents(wrong: list[str], report: Report) -> None:
     """Every row's stored ``parent`` must be the one its key implies.
 
-    The column is denormalised — it exists so that listing a level is an index
-    lookup rather than a scan — which means it can disagree with the key it was
+    The column is denormalised - it exists so that listing a level is an index
+    lookup rather than a scan - which means it can disagree with the key it was
     derived from, and nothing in normal reading would notice. A disagreement
     makes a document unlistable while it is still perfectly readable by key,
     which is a document that has effectively vanished from every survey.
@@ -279,7 +279,7 @@ def _report_orphans(orphans: list[str], report: Report) -> None:
 
     Legal, and reachable by writing ``a/b/!title`` without ever writing ``a/b``.
     Reported as a note rather than a fault because it is a real state a caller
-    can want — but it is also how a survey comes to list a title for something
+    can want - but it is also how a survey comes to list a title for something
     that cannot be read, so it is worth naming.
     """
     if not orphans:
@@ -311,7 +311,7 @@ def require_store(directory: Path, filename: str | None = None) -> Path:
     """Refuse a store file that is not there, rather than creating one.
 
     ``Store.__init__`` creates what is missing, so every command that means to
-    act on an existing store has to ask first — otherwise checking a mistyped
+    act on an existing store has to ask first - otherwise checking a mistyped
     path reports a perfectly healthy empty store, which is the wrong answer
     delivered as a clean bill of health.
 

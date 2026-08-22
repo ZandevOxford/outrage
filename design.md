@@ -9,7 +9,7 @@ Python implemented MCP server primarily for use in local mode.
 Provides access to the data store.
 
 **The store introduces itself.** The document at the key `readme` is a store's
-entry point — what it holds and what to read first — and the server carries it
+entry point - what it holds and what to read first - and the server carries it
 at the *top* of its own instructions at startup, so it reaches a session
 without a tool call and without the session knowing to ask. A line telling a
 reader to go and read a key is a line that can be read past; this is the same
@@ -18,7 +18,7 @@ document. Instructions are sent once at initialisation, so a readme written
 during a session reaches the next one.
 
 **Delivery is a budget, not a promise.** A client may cut a server's
-instructions at a length it does not announce — Claude Code cuts at
+instructions at a length it does not announce - Claude Code cuts at
 `DELIVERY_BUDGET` characters, which is an observation of one client and not a
 protocol guarantee. So the static text is ordered by what must survive:
 `ESSENTIALS` (the key grammar, allocation, and that a listing is a page) is
@@ -39,10 +39,10 @@ The store is kept independent of the MCP server: it has no knowledge of MCP and
 can be tested and reused on its own.
 
 **The interface and the backend are separate modules.** `outrage.store` says
-what a store is — the operations, the value types every answer comes back as,
-and the two ways a call bounds what it is asking about — as an abstract `Store`.
-There are two implementations. `outrage.store_sqlite` is the read-write one —
-the schema, its migrations, the connection handling, and the SQL — and is what a
+what a store is - the operations, the value types every answer comes back as,
+and the two ways a call bounds what it is asking about - as an abstract `Store`.
+There are two implementations. `outrage.store_sqlite` is the read-write one -
+the schema, its migrations, the connection handling, and the SQL - and is what a
 store is opened as when its file says nothing else. `outrage.store_parquet` is
 one columnar file, written whole and read many times, for a reference base of
 tens of thousands of documents; it refuses writes, and `outrage pack` is how
@@ -52,13 +52,13 @@ documents get into one.
 it chooses **by the store file's extension**: `.sqlite` and `.parquet`. So a
 mount spec says `ref=python.parquet` and means it, with no new grammar and no
 `--backend` flag threaded through the server, the command line and the mount
-table. An unrecognised extension is the default backend rather than an error —
+table. An unrecognised extension is the default backend rather than an error -
 a store file has always been free to be called anything.
 
 #### Store location
 
 **A directory and a file within it**, and the two answer different questions.
-The directory is the working area — it holds the stores, the event log, the
+The directory is the working area - it holds the stores, the event log, the
 backups, and whatever an index or a vector store needs later. The file is
 *which store*, and it is the half a backend other than SQLite would vary.
 
@@ -76,7 +76,7 @@ somewhere else. The directory is created on demand, and so is a subdirectory a
 store file names.
 
 That the file is separately nameable is what lets one directory hold several
-stores side by side — which is exactly what a mount table needs, and the reason
+stores side by side - which is exactly what a mount table needs, and the reason
 this is not simply a fixed name inside the directory.
 
 The intended normal usage is a per-project MCP configuration passing `--dir`
@@ -100,7 +100,7 @@ Configuration, and only at startup: `--mount KEY=FILE`, repeatable. Nothing
 adds or removes a mount on a running server.
 
 **Every mount is a file in the one directory**, named the same way the root
-mount is and by the same rule — relative to `--dir`, never absolute. So a
+mount is and by the same rule - relative to `--dir`, never absolute. So a
 server holds one directory and several stores in it, rather than a directory
 per store. Three things follow. A mount configuration survives the project
 moving, because only `--dir` is a path. The stores a server serves are visible
@@ -111,8 +111,8 @@ change.
 
 **A mount may be read-only**: `--mount-ro KEY=FILE`, and every write routed
 there is refused before the store is reached. That is the case the whole
-feature was pointed at — a shared reference base beside a local read-write
-store — and the refusal is deliberately early, because a refusal that arrives
+feature was pointed at - a shared reference base beside a local read-write
+store - and the refusal is deliberately early, because a refusal that arrives
 after the caller thought it had written is the failure class this project keeps
 finding. It is enforced in the routing, so the database file is opened no
 differently and nothing outside this server is prevented from writing to it. A
@@ -126,7 +126,7 @@ mounts it*. One namespace, two very different stores behind it.
 
 **Two translations, and nothing else.** Inward, a key loses the prefix of the
 mount that owns it, so a mounted store is asked about keys in its own namespace
-and never learns where it was mounted — the same database answers the same way
+and never learns where it was mounted - the same database answers the same way
 at `ref` as at `lib/ref`. Outward, every key it returns regains the prefix.
 That is what makes a store distributable: it is self-contained and relocatable
 because nothing inside it names its own mount point.
@@ -144,14 +144,14 @@ arbitrary. The server says so once on stderr at startup rather than refusing to
 start, since the keys are still reachable in the store that holds them.
 
 Shadowing binds a **traversal** as tightly as it binds a read. The store
-beneath a mount still holds every one of those rows — mounting hides keys, it
-does not delete them — so a survey that simply walks a subtree walks straight
+beneath a mount still holds every one of those rows - mounting hides keys, it
+does not delete them - so a survey that simply walks a subtree walks straight
 through them and reports documents that reading them by key would refuse. That
 is the failure the store exists to prevent, and it is the reason `Store` grew
 range bounds: a subtree that a mount interrupts is read as the **windows**
 either side of it. `before=k` ends the stretch in front of a mount point and
 `after_subtree=k` begins the one behind, so the mount point is named from both
-sides and neither name has to be a key that exists — there is no key "just past
+sides and neither name has to be a key that exists - there is no key "just past
 the last thing under `k`" for a cursor to be given. The bounds narrow the
 selection rather than the page, which is what lets each window carry its own
 count and the counts be added up.
@@ -159,15 +159,15 @@ count and the counts be added up.
 That leaves a subtree read bounded by **three separate things, all of which
 must hold**: the part of the hierarchy to read, the stretch of the order to
 read, and where the last page stopped. They stay three because a caller needs
-to give any two of them at once — a range that excluded a mount would be
+to give any two of them at once - a range that excluded a mount would be
 inexpressible if the subtree were folded into it, and a page's totals have
 never depended on where the reader had got to, so the cursor cannot be a bound
 on the selection.
 
 **Reads and writes cross a boundary; queries do not.** A read, a write and a
 delete route to one store and translate, and a write or a delete routed to a
-read-only mount is refused there. A subtree read — `get_documents`,
-`keys_missing_meta`, a recursive delete — covers the one store that owns its
+read-only mount is refused there. A subtree read - `get_documents`,
+`keys_missing_meta`, a recursive delete - covers the one store that owns its
 key, minus the stretches its mounts claim, and *says which mounts it did not
 descend into*. A partial answer must not
 be indistinguishable from a whole one, which is the standing argument from
@@ -176,10 +176,10 @@ be indistinguishable from a whole one, which is the standing argument from
 position, so a merge of two ordered streams is already feasible.
 
 **A listing does cross**, and has to. A mount point is a key no store knows
-about — the store beneath it has no row there, and the store above it cannot
-see where it was mounted — so the table splices it into the level above as
-`kind: "mount"` — or `"read-only mount"`, which is the only place that fact is
-announced — described by the inner root. Without that a mounted store is
+about - the store beneath it has no row there, and the store above it cannot
+see where it was mounted - so the table splices it into the level above as
+`kind: "mount"` - or `"read-only mount"`, which is the only place that fact is
+announced - described by the inner root. Without that a mounted store is
 invisible to anyone who does not already know its prefix. Both halves are
 merged before either is cut, for the same reason the store merges its own two
 halves first.
@@ -213,7 +213,7 @@ It records at two grains, correlated by a call number:
 
 * **Requests**, from a `ServerMiddleware` wrapping every inbound message. This
   tier rather than the tool functions, because an argument the server does not
-  know is refused before any tool function is entered — so the one failure the
+  know is refused before any tool function is entered - so the one failure the
   server goes out of its way to catch is the one a tool-level log could not
   see. It also sees `initialize`, and so the client and the moment it connected.
 * **Store accesses**, from a sink the store is given. One tool call is often
@@ -224,7 +224,7 @@ The store takes the log as an argument and defaults it to a null object, so it
 stays independent of MCP and unchanged when nothing is logging.
 
 Document text is subject to a content policy, `--log-content`. The default
-keeps a length, a hash of the whole, and — for anything long — both ends of it.
+keeps a length, a hash of the whole, and - for anything long - both ends of it.
 The tail is not symmetry: the leak that prompted this appended scaffolding
 *after* content that read correctly to its last sentence, so a head-only
 excerpt would miss the exact failure it was built to catch.
@@ -234,7 +234,7 @@ stdout, which carries the protocol. And a failure in the log must disable the
 log rather than fail the call: a logging system that can take the store down is
 a worse trade than no logging system.
 
-The reading half — querying and summarising a log — is deliberately not built
+The reading half - querying and summarising a log - is deliberately not built
 yet. What it should answer is better decided by the first investigation that
 uses one.
 
@@ -242,7 +242,7 @@ uses one.
 
 Implemented, all five pieces, as of 2026-08-19: `outrage get`, `set`, `ls`,
 `dump`, `rm`, `check`, `export`, `import`, `config`, `backup`, `log` and
-`init` — the last of which writes the MCP entry, installs the `SessionStart`
+`init` - the last of which writes the MCP entry, installs the `SessionStart`
 hook and copies the packaged skill and agents into a project.
 
 A CLI over the same store library, covering everything the MCP server exposes
@@ -259,14 +259,14 @@ plus the operations that only make sense from a shell:
 
 **Documents as files.** `outrage export` and `outrage import` map the key
 namespace onto a directory by one rule: a segment is a path component, and a
-document gains an extension naming its format — `.md` or `.json`. `a/b` is the
+document gains an extension naming its format - `.md` or `.json`. `a/b` is the
 file `a/b.md`, and anything below `a/b` is in the directory `a/b/`. The
 extension is what makes that possible at all, since a key is a document and a
 container at once and a path cannot be both a file and a directory. Metadata is
 a segment like any other, so a title is the file `a/b/!title.md`. Nothing is
 escaped, which is what the widened character set bought: what a filename can
 hold, a segment can hold. The two exceptions are the two segments a filesystem
-reads as navigation — `.` and `..` are legal keys with no path, and an export
+reads as navigation - `.` and `..` are legal keys with no path, and an export
 refuses them rather than climbing out of the directory it was given.
 
 Paths are written from the top of the namespace rather than from the key being
@@ -277,7 +277,7 @@ carries documents and formats, and nothing else the database holds about them.
 The last of these removes most of the friction in first time setup. The server
 has to be launched by an absolute path into whichever environment it was
 installed in, and that path is only reliably known from inside that environment
-— which is exactly where the CLI is running. The initial `.mcp.json` in this
+- which is exactly where the CLI is running. The initial `.mcp.json` in this
 repository was written out by hand for that reason, and is machine specific as a
 result.
 
@@ -300,7 +300,7 @@ The skill carries judgment: when to survey the store, what is worth storing,
 what the key namespaces are for, and when to write rather than wait. It does not
 restate the key grammar or the argument rules, because those live in the tool
 descriptions, where they are enforced rather than remembered. Step 4 is the
-argument for that split — a session that had just read the `instructions`
+argument for that split - a session that had just read the `instructions`
 asking for a title on every document stored one without.
 
 The skill ships inside the package rather than only in this repository, so that
@@ -322,12 +322,12 @@ are moments at which nothing prompts an agent to reach for one:
 
 Neither is a request, so neither reliably triggers a skill. Both are events, and
 events are what hooks are for, so a `SessionStart` hook points at the survey.
-It emits static text and depends on nothing — not the store, not the interpreter
-path — so it cannot fail in a way that blocks a session.
+It emits static text and depends on nothing - not the store, not the interpreter
+path - so it cannot fail in a way that blocks a session.
 
 The second moment is **not** covered, and not for want of trying. A `PreCompact`
 hook was written and removed on 2026-08-19: it delivers nothing to the model at
-all, producing no attachment of any kind in the transcript — invisible rather
+all, producing no attachment of any kind in the transcript - invisible rather
 than rejected. The moment is still worth reaching and how to reach it is open;
 see `planned/checkpoint-hook` in the rage store.
 
@@ -354,7 +354,7 @@ Keys are *not* paths, and are never resolved against a filesystem, but the
 delimiter is `/` so that a key may usefully mirror one. That is the reason the
 character set is as wide as it is: a key naming a file has to carry that file's
 name without transforming it. So `.` is an ordinary segment character, and so
-are `..`, `:`, spaces and `?` — they can only *suggest* a navigation or a
+are `..`, `:`, spaces and `?` - they can only *suggest* a navigation or a
 meaning that does not exist here, and refusing them would mean a key that
 cannot mirror a real name.
 
@@ -364,8 +364,8 @@ A key is a Unicode string naming a position in a hierarchy.
 
 * A key is **zero or more segments** joined by `/`, and `/` is the only
   separator there is. The key with **no segments is the root**, spelled by the
-  empty string. It is a key like any other — it holds a document, carries
-  metadata, and is returned by a read — and it is also the parent of every top
+  empty string. It is a key like any other - it holds a document, carries
+  metadata, and is returned by a read - and it is also the parent of every top
   level key.
   * **The root is its own parent**, the way POSIX makes `/..` be `/`. That is
     what lets an ancestor walk terminate without a second value meaning
@@ -376,7 +376,7 @@ A key is a Unicode string naming a position in a hierarchy.
     entry point, so nothing below carries a second spelling of "everywhere".
   * The cost, accepted: an empty string sent in error now addresses the root
     rather than failing. By convention nothing significant lives there, and
-    the roots that will matter — a mounted store's own — are behind a mount
+    the roots that will matter - a mounted store's own - are behind a mount
     prefix that an error does not produce.
 * A segment is **1 to 1024 characters**; a key is **at most 64 segments
   within one store**, and at most **128 in the namespace a mount table
@@ -391,7 +391,7 @@ A key is a Unicode string naming a position in a hierarchy.
     cannot name.
   * The store bound was 128 until 2026-08-20. Halving it was cheaper than the
     alternative, which was a drop path through every listing for keys with no
-    outer name — see the Mounted stores component.
+    outer name - see the Mounted stores component.
   * A key at exactly the store bound can hold a document but **no metadata**,
     since a metadata segment is a segment. That is why the joined bound needs
     no allowance for one: the store refuses the title, so the namespace above
@@ -416,14 +416,14 @@ A key is a Unicode string naming a position in a hierarchy.
     mirroring a filesystem path ought to do.
   * A *wholly* numeric segment loses its leading zeros, so `context/01` and
     `context/1` are one key rather than two. `0` normalises to itself, and a
-    segment that merely contains digits — `v01`, `1.2` — is left alone. This
+    segment that merely contains digits - `v01`, `1.2` - is left alone. This
     applies to metadata names too.
 * A segment beginning with `!` names **metadata** about the document its
   segment sits under. A key splits at its **first** `!` segment: everything
   before it is the document key, everything from it onward is the metadata
   name. A key that is *only* metadata segments is metadata on the root, so
   `!title` is the store's own title. A path may continue below a metadata segment, so `a/!title/b` is an
-  entry on `a` named `title/b`. **Everything below a `!` is metadata** — there
+  entry on `a` named `title/b`. **Everything below a `!` is metadata** - there
   is no document under a metadata path, which is what keeps `meta_name IS NULL`
   an honest test for "is a document".
 * Sort order is **lexicographic by Unicode code point**, over a derived sort
@@ -436,7 +436,7 @@ A key is a Unicode string naming a position in a hierarchy.
 
 Metadata may be attached to any key, including implicit keys with no content,
 and one document may carry several entries. That is the intended mechanism for
-alternative summaries and, in future, embedding vectors — for which the
+alternative summaries and, in future, embedding vectors - for which the
 metadata subtree is the natural shape, as `a/!embedding/<model>`.
 
 ### Sorting
@@ -449,27 +449,27 @@ The sort form does three things to each segment, and each removes a defect:
 
 * **Numeric segments are zero padded** to a fixed width, so `a/2` comes before
   `a/10`. Plain text ordering gives the reverse, which is untidy in a listing
-  and unsafe under a cursor — a reader resuming after `a/9` would never see
+  and unsafe under a cursor - a reader resuming after `a/9` would never see
   `a/10`, because a key written *later* sorts *earlier*. Since autonumbering is
   what parallel agents use to append findings for each other, that would
   silently lose exactly the documents the mechanism exists to deliver. The
   width is 16, which covers epoch milliseconds and microseconds; a longer
   number still sorts, just not numerically against other over-width numbers.
-* **Every segment is marked** — `\x01` for metadata, `\x02` for a document —
+* **Every segment is marked** - `\x01` for metadata, `\x02` for a document -
   so a document's metadata sorts ahead of its subkeys.
 * **Segments are joined with `\x03`** rather than `/`, so a subtree sorts
   immediately after its parent.
 * **The root sorts as the empty string**, not as one marked empty segment, so
   it comes before its own metadata and before every top level key. Given a
   segment marker it would sort *after* `!title`, since the metadata marker is
-  the lower of the two — the one place the marking would invert rather than
+  the lower of the two - the one place the marking would invert rather than
   order. It collides with nothing, because every other sort form begins with a
   marker.
 
 The root is also the one document whose metadata is **not** its sort form plus
 a fixed suffix: it contributes no segment, so `!title` is a first segment
 rather than one joined onto a previous. Anything synthesising where a missing
-metadata entry *would* have sorted has to say so — `missing_meta_stats` does,
+metadata entry *would* have sorted has to say so - `missing_meta_stats` does,
 with a `CASE`. Concatenating anyway would still tile, since the map stays
 monotone, but it would file the root under a later window than the one its
 title would really have sorted in.
@@ -477,7 +477,7 @@ title would really have sorted in.
 All three markers sort below the lowest character a segment may hold, so none
 can occur inside a segment: the encoding needs no escaping, and **two distinct
 keys cannot share a sort form**. That last property is load bearing rather than
-tidy — pagination resumes with `sort_key > ?` over a non-unique index, so a
+tidy - pagination resumes with `sort_key > ?` over a non-unique index, so a
 collision would mean resuming past one row silently skipped another.
 
 Together the marking and the delimiter make a metadata survey walk its
@@ -544,8 +544,8 @@ either problem alone.
 
 ## Values
 
-Values are strings. A document records which of four formats its text is —
-markdown, json, text or html — detected from the content when the caller does
+Values are strings. A document records which of four formats its text is -
+markdown, json, text or html - detected from the content when the caller does
 not say, except that plain text is never detected: it is indistinguishable from
 markdown, so it has to be asked for. The format is what the store knows about
 the text and nothing more; nothing parses or renders on it.
@@ -601,11 +601,11 @@ is rejected on a key that is itself metadata, since metadata does not nest.
 
 **Get documents.** Matches the given key and everything beneath it at any depth,
 with an optional depth limit. Recursion is the default because the motivating
-case — listing the titles of all documents under `context` — spans a level of
+case - listing the titles of all documents under `context` - spans a level of
 nesting.
 
 A survey by `meta_name` can only see documents that carry it, so on its own it
-under-reports the store, and does so silently — the caller has no way to tell a
+under-reports the store, and does so silently - the caller has no way to tell a
 complete survey from a partial one. The result therefore also names the
 documents in range carrying none of the requested names, under `without_meta`.
 
@@ -653,7 +653,7 @@ access patterns are plain indexed lookups:
 
 * *List keys immediately under X* is an equality match on `parent`. The parent
   of `A/B/!title` is `A/B`, so a document's metadata lists alongside its
-  subkeys, as required. Implicit intermediate keys need never be materialised —
+  subkeys, as required. Implicit intermediate keys need never be materialised -
   they fall out of a `DISTINCT parent` query.
 
   The root is the one exception, and it costs one clause rather than a branch.
@@ -668,7 +668,7 @@ collision where `A/B` would match `A/Beta`.
 
 A subtree is bounded by `["A/B/", "A/B0")` rather than by a prefix match. `/`
 and `0` are adjacent code points, so the only strings in that range are `A/B/`
-itself and the keys beneath it — a property of the delimiter alone, holding
+itself and the keys beneath it - a property of the delimiter alone, holding
 whatever segments are allowed to contain.
 
 The schema carries a version in `PRAGMA user_version`. **Version 5 is current.**
@@ -710,7 +710,7 @@ SQLite runs in WAL mode to tolerate concurrent readers.
   that *returns* the configuration and instructions is unobjectionable: it is
   just a document, the agent and the user decide what to do with it, and it
   keeps the guidance versioned alongside the server that it describes. A tool
-  that *edits* local configuration is a different proposition — an MCP server
+  that *edits* local configuration is a different proposition - an MCP server
   writing outside its own store directory is a surprising capability, it is
   hard for a user to audit, and the failure mode is a corrupted configuration
   rather than a bad answer.
@@ -722,7 +722,7 @@ SQLite runs in WAL mode to tolerate concurrent readers.
 
   Note that the CLI already covers both halves under Components: it writes the
   MCP server configuration and installs the packaged skill. So what is deferred
-  here is narrower than it first appears — only whether the *server* should be
+  here is narrower than it first appears - only whether the *server* should be
   able to do either without the CLI, which is the half with the surprising
   capability and no obvious need.
 

@@ -227,7 +227,7 @@ class SqliteStore(Store):
         Keys are rewritten, not just indexed, because stripping leading zeros
         changed what a key *is*: ``a/01`` and ``a/1`` used to name two
         documents and now name one. A store holding both is refused rather
-        than half merged — there is no way to tell which content was meant to
+        than half merged - there is no way to tell which content was meant to
         survive, and quietly keeping one is exactly the kind of success this
         project keeps failing to distinguish from a real one.
 
@@ -1006,8 +1006,8 @@ class SqliteStore(Store):
         store.
 
         Almost everything written since the last checkpoint is in the ``-wal``
-        sidecar rather than the ``.sqlite`` file — 4 KB of database against
-        2 MB of WAL, observed on 2026-08-17 — so copying the file yields a
+        sidecar rather than the ``.sqlite`` file - 4 KB of database against
+        2 MB of WAL, observed on 2026-08-17 - so copying the file yields a
         near-empty database that opens cleanly and passes an integrity check.
         That is a failure indistinguishable from success, which is the one kind
         worth paying for in the library, and it is why this is the backend's

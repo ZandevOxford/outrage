@@ -2,7 +2,7 @@
 
 The rule these guard: **the library layers carry facts, the front ends write
 sentences.** It is a rule about where code lives, so it is worth checking by
-reading the code rather than by exercising every failure — a raise site added
+reading the code rather than by exercising every failure - a raise site added
 tomorrow with a message baked into it should fail here, not silently reach a
 user in whatever shape it was written.
 
@@ -103,7 +103,7 @@ def test_every_raise_names_a_code_that_has_a_template():
 def test_no_raise_site_composes_a_message():
     """The rule itself: facts go in, prose does not.
 
-    An f-string as the code is the shape this catches — it is what every one of
+    An f-string as the code is the shape this catches - it is what every one of
     these raise sites looked like before, and what writing a new one from
     memory would produce.
     """

@@ -7,7 +7,7 @@ was: the standard library's :mod:`logging`, and SQLite's journal, which
 This exists because of a failure that keeps recurring here: a success that
 cannot be told from a real one. Unknown arguments dropped in silence,
 truncation past ``next_offset`` that nothing downstream can detect, scaffolding
-appended to a summary that reads correctly to its last sentence — each was
+appended to a summary that reads correctly to its last sentence - each was
 found by hand, afterwards, from evidence that no longer existed. A log turns
 those from arguments into observations.
 

@@ -18,11 +18,11 @@ can survey the whole store in one call and often does.
 
 **A reference base.** A large corpus of small documents, imported in bulk and
 reached by search rather than by browsing. The worked example is the complete
-Python reference documentation split one key per function —
+Python reference documentation split one key per function -
 `reference/python/os/path/join` and so on. Tens of thousands of keys.
 
 **Notes on a codebase.** Observations, findings and warnings about the files of
-a large project, keyed to mirror the tree they describe — notes about
+a large project, keyed to mirror the tree they describe - notes about
 `src/myfile.py` living at `notes/src/myfile.py`. This is why key naming is
 deliberately compatible with file path naming: `/` is the delimiter so that a
 key can shadow a path without translation.
@@ -34,7 +34,7 @@ written continuously, as the code they describe is read and changed, and they
 go stale when it moves underneath them.
 
 **Agents working in parallel.** Several agents running at once, collating
-findings into one store and using it to pass work between them — one writes what
+findings into one store and using it to pass work between them - one writes what
 it found, another reads it. Autonumbering exists for this: a `?` segment lets an
 agent add a document without coordinating over names and without risking a
 clash with another agent doing the same thing at the same time.
@@ -51,7 +51,7 @@ the system came to quietly assume a store small enough to read in full.
 
 ### 1. Scale
 
-The store must work at reference-base size. Not degrade gracefully at it —
+The store must work at reference-base size. Not degrade gracefully at it -
 work at it, as an ordinary case rather than a stressed one.
 
 The concrete target is the Python reference example above: tens of thousands of
@@ -60,13 +60,13 @@ times.
 
 Scale is not only a read problem. Codebase notes reach a comparable number of
 documents by accumulation rather than import, so writes are frequent, spread
-over time, and interleaved with reads — possibly from more than one session at
+over time, and interleaved with reads - possibly from more than one session at
 once. A store that answers reference-base reads well but serialises or loses
 concurrent writes has met half the requirement.
 
 ### 2. Concurrent use loses nothing
 
-Several writers at once is an ordinary case, not a stressed one — parallel
+Several writers at once is an ordinary case, not a stressed one - parallel
 agents in use 4, and more than one session in use 3.
 
 Two things follow. Allocating a `?` number must be atomic against other
@@ -82,8 +82,8 @@ construction, so there is nobody to be careful.
 No call may return an amount of data determined by how much happens to be in
 the store. This holds on both axes:
 
-* **within a document** — how much of one document's content comes back;
-* **across documents** — how many documents, keys or metadata entries come
+* **within a document** - how much of one document's content comes back;
+* **across documents** - how many documents, keys or metadata entries come
   back.
 
 A bounded call needs a way to ask for the next part, so bounding implies
@@ -103,7 +103,7 @@ makes that true.
 ### 4. A partial answer says how big the whole is
 
 Any component returning part of something must also report the size of the
-whole — the library function, the MCP tool, and the skill's own guidance about
+whole - the library function, the MCP tool, and the skill's own guidance about
 how to read results.
 
 Without it "there is more" is not actionable. 500 characters of 520 and 500
@@ -112,7 +112,7 @@ moves, and a caller that cannot tell them apart will treat them the same. The
 same holds for collections: 20 keys of 22 is a listing, 20 keys of 40,000 is a
 sample.
 
-`Excerpt` already does this on the content axis — it carries `returned`,
+`Excerpt` already does this on the content axis - it carries `returned`,
 `total` and a continuation offset. That shape is the model; what is missing is
 the same discipline everywhere else.
 
@@ -154,8 +154,8 @@ first move.
 
 ## What this does not cover
 
-Deferred items — versioning, semantic search, Unicode keys, bootstrapping the
-skill configuration from the server — are listed with their reasoning in the
+Deferred items - versioning, semantic search, Unicode keys, bootstrapping the
+skill configuration from the server - are listed with their reasoning in the
 Deferred section of `design.md`.
 
 Bulk import, on-disk size, whether metadata values want their own index, and
@@ -168,7 +168,7 @@ arrives after it. Measured, and written up in the store under
 `planned/pagination/key-ordering`. Allocation itself is already atomic.
 
 The codebase-notes use raises two more, both open. There is no way to **move or
-rename a key or a subtree** — the store can write and delete, nothing else — so
+rename a key or a subtree** - the store can write and delete, nothing else - so
 a renamed source file today means notes orphaned under their old path and
 rewritten under the new one. And nothing detects **staleness**: a note keyed to
 a file says nothing about which version of that file it was true of.

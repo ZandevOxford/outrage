@@ -4,7 +4,7 @@ Like the skill, these are prose and nothing here exercises them. What is
 guarded is what would fail silently: a definition that is no longer where the
 loader looks, a broken dogfood symlink, or a tool grant that has drifted from
 what the agent's procedure actually needs. A missing grant does not fail
-loudly — the agent simply cannot do a step, and reports something plausible
+loudly - the agent simply cannot do a step, and reports something plausible
 instead.
 """
 
@@ -105,6 +105,6 @@ def test_backfill_surveys_and_delegates_but_does_not_write():
     assert "mcp__rage__keys_missing_meta" in tools
     assert "Agent" in tools, "it generates by spawning rage-annotate, so it needs to spawn"
     # Every write in the flow goes through rage-annotate, so the metadata
-    # contract — omit title, never touch the document key — lives in one place.
+    # contract - omit title, never touch the document key - lives in one place.
     assert "mcp__rage__store_document" not in tools
     assert "mcp__rage__delete_keys" not in tools
