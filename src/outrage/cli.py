@@ -44,14 +44,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
     init = subcommands.add_parser(
         "init",
-        help="set a project up: MCP server, session hook, skill and agents",
+        help="set a project up: MCP server, session hooks, skill and agents",
         description=(
             "Arrange everything a project needs to use outrage: the MCP server "
-            "entry in .mcp.json, the SessionStart hook in .claude/settings.json, "
-            "and the packaged skill and agents in .claude/. Only the entries "
-            "outrage owns are written; anything else in those files is left as it "
-            "was, and a file already holding the current content is not "
-            "rewritten. Safe to re-run, which is how a project is repaired "
+            "entry in .mcp.json, a session-start hook for each harness - "
+            ".claude/settings.json for Claude Code and .github/hooks/outrage.json "
+            "for Copilot CLI - and the packaged skill and agents in .claude/. "
+            "Only the entries outrage owns are written; anything else in those "
+            "files is left as it was, and a file already holding the current "
+            "content is not rewritten. An option already on an existing server "
+            "entry - a mount, --log - is kept even when this run does not "
+            "mention it. Safe to re-run, which is how a project is repaired "
             "after outrage is upgraded or the environment moves."
         ),
     )
@@ -91,7 +94,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Register the rage MCP server, filling in the absolute path to this "
             "environment's entry point and to the store directory. Only the "
             "server's own entry is touched; anything else in the file is left "
-            "as it was. Safe to re-run, which is how the configuration is "
+            "as it was. Options already on that entry are kept unless this run "
+            "names the same one, so a re-run cannot silently drop mounts or "
+            "logging - which also means removing one is an edit to the file. "
+            "Safe to re-run, which is how the configuration is "
             "repaired after the environment moves."
         ),
     )
@@ -711,7 +717,8 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
     )
 
     _report(done.server, out, dry_run=args.dry_run)
-    _report_hook(done.hook, out, dry_run=args.dry_run)
+    for hook in done.hooks:
+        _report_hook(hook, out, dry_run=args.dry_run)
     _report_assets(done.assets, out, dry_run=args.dry_run, root=done.project_dir)
 
     if args.dry_run and done.writes:
@@ -1291,8 +1298,8 @@ def _report_hook(change: install.HookChange, out: TextIO, *, dry_run: bool) -> N
     recognise is a hook that fired twice, and the only moment anybody finds out
     is the run that finally removes it.
     """
-    print(f"session hook: {change.path}", file=out)
-    print(f"  {install.HOOK_EVENT}: {_said(change.action, dry_run)}", file=out)
+    print(f"session hook ({change.target.name}): {change.path}", file=out)
+    print(f"  {change.target.event}: {_said(change.action, dry_run)}", file=out)
     if change.duplicates:
         removed = "would remove" if dry_run else "removed"
         entries = "entry" if change.duplicates == 1 else "entries"

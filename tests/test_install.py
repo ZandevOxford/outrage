@@ -15,17 +15,19 @@ import os
 import shutil
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from conftest import raises_rendered
 
+from conftest import raises_rendered
 from outrage.config import ConfigError
 from outrage.install import (
     CLAUDE_DIR,
-    HOOK_EVENT,
+    CLAUDE_HOOK,
+    COPILOT_HOOK,
+    HOOK_TARGETS,
     MARKER,
-    TEMPLATE,
     FileChange,
     InstallError,
     asset_sources,
@@ -37,6 +39,11 @@ from outrage.install import (
     settings_path,
     template_entry,
 )
+
+# Almost everything here is about the Claude Code hook, which was the only one
+# until Copilot CLI arrived. Named locally so those tests read as they did.
+HOOK_EVENT = CLAUDE_HOOK.event
+TEMPLATE = CLAUDE_HOOK.template
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -211,14 +218,13 @@ def test_refuses_settings_shaped_wrongly(tmp_path, settings):
     assert path.read_text(encoding="utf-8") == before
 
 
-def test_a_broken_template_is_refused_rather_than_installed(tmp_path, monkeypatch):
+def test_a_broken_template_is_refused_rather_than_installed(tmp_path):
     """A template without the marker would install an entry no run can find again."""
     broken = tmp_path / "broken.json"
     write_json(broken, {"hooks": {HOOK_EVENT: [FOREIGN]}})
-    monkeypatch.setattr("outrage.install.TEMPLATE", broken)
 
     with raises_rendered(InstallError, "marker"):
-        template_entry()
+        template_entry(replace(CLAUDE_HOOK, template=broken))
 
 
 # -- previewing ----------------------------------------------------------
@@ -409,7 +415,7 @@ def test_a_second_init_changes_nothing_anywhere(tmp_path):
 
     assert not done.writes
     assert done.server.action == "unchanged"
-    assert done.hook.action == "unchanged"
+    assert [h.action for h in done.hooks] == ["unchanged"] * len(HOOK_TARGETS)
     assert actions(list(done.assets)) == {"unchanged"}
 
 
@@ -420,7 +426,8 @@ def test_init_dry_run_writes_nothing_and_agrees_with_the_real_run(tmp_path):
     assert not (tmp_path / CLAUDE_DIR).exists()
 
     done = init(tmp_path)
-    assert (preview.server.action, preview.hook.action) == (done.server.action, done.hook.action)
+    assert preview.server.action == done.server.action
+    assert [h.action for h in preview.hooks] == [h.action for h in done.hooks]
     assert actions(list(preview.assets)) == actions(list(done.assets))
 
 
@@ -435,3 +442,166 @@ def test_a_refusal_stops_the_whole_run(tmp_path):
 
     assert not (tmp_path / ".mcp.json").exists(), "the server entry was not written either"
     assert not installed(tmp_path, "skills/rage/SKILL.md").exists()
+
+
+# -- the second harness: Copilot CLI -------------------------------------
+#
+# Copilot CLI reads most of what this project already writes, so the hook was
+# the only piece missing. It is a different shape in every way that matters:
+# its own file rather than a merge into the user's, `sessionStart` rather than
+# `SessionStart`, a `version` stamp the file is ignored without, and the
+# command carried twice for the two shells.
+
+
+def copilot_path(project: Path) -> Path:
+    return COPILOT_HOOK.path(project)
+
+
+def copilot_entries(path: Path) -> list:
+    return read_json(path)["hooks"][COPILOT_HOOK.event]
+
+
+def test_the_copilot_template_ships_and_carries_the_marker():
+    assert COPILOT_HOOK.template.is_file(), "the template must travel with the package"
+    assert is_ours(template_entry(COPILOT_HOOK))
+
+
+def test_the_copilot_template_is_a_whole_file_with_its_version_stamp():
+    loaded = json.loads(COPILOT_HOOK.template.read_text(encoding="utf-8"))
+    # Unlike the Claude fragment this is a complete file, so it carries the
+    # version: without it Copilot CLI does not read the hooks at all.
+    assert loaded["version"] == 1
+    assert len(loaded["hooks"][COPILOT_HOOK.event]) == 1
+
+
+def test_the_copilot_entry_carries_both_shells():
+    entry = template_entry(COPILOT_HOOK)
+    assert entry["type"] == "command"
+    # Both, because the docs ask for both and a Windows session would otherwise
+    # get no context at all. The powershell form is unverified - no PowerShell
+    # on the machine this was written on.
+    assert entry["bash"].startswith("echo '")
+    assert entry["powershell"].startswith("Write-Output '")
+
+
+def test_the_copilot_marker_is_a_field_and_not_a_shell_comment():
+    """The one place outrage puts its marker in JSON rather than in the command.
+
+    A live Copilot session delivered the context from an entry shaped this way.
+    None has been seen to deliver it from one carrying a trailing `# marker`,
+    so until that is pinned down the shipped shape is the watched one. Keeping
+    the command free of the comment is the point, so this asserts it.
+    """
+    entry = template_entry(COPILOT_HOOK)
+
+    assert entry["comment"] == f"{MARKER}:v1"
+    assert MARKER not in entry["bash"]
+    assert MARKER not in entry["powershell"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the marker is a POSIX shell comment")
+@pytest.mark.parametrize("shell", ["sh", "bash", "zsh"])
+def test_the_copilot_command_emits_the_context_and_hides_the_marker(shell):
+    """Same premise as the Claude one, and the same failure if it is wrong.
+
+    Copilot's payload is flatter - `additionalContext` at the top level rather
+    than under `hookSpecificOutput` - so this is not the same assertion twice.
+    """
+    binary = shutil.which(shell)
+    if binary is None:
+        pytest.skip(f"{shell} is not installed")
+    result = subprocess.run(
+        [binary, "-c", template_entry(COPILOT_HOOK)["bash"]], capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert "rage document store" in payload["additionalContext"]
+    assert MARKER not in result.stdout
+
+
+def test_both_harnesses_deliver_the_same_sentence():
+    """One store, one instruction. Two wordings would drift, and silently."""
+    claude = json.loads(
+        subprocess.run(
+            ["sh", "-c", template_entry()["hooks"][0]["command"]],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    copilot = json.loads(
+        subprocess.run(
+            ["sh", "-c", template_entry(COPILOT_HOOK)["bash"]],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    assert copilot["additionalContext"] == claude["hookSpecificOutput"]["additionalContext"]
+
+
+def test_init_writes_the_copilot_hook_with_its_version(tmp_path):
+    init(tmp_path)
+    written = read_json(copilot_path(tmp_path))
+
+    assert written["version"] == 1
+    assert written["hooks"][COPILOT_HOOK.event] == [template_entry(COPILOT_HOOK)]
+
+
+def test_a_second_run_leaves_the_copilot_file_alone(tmp_path):
+    install(tmp_path, target=COPILOT_HOOK)
+    before = copilot_path(tmp_path).read_text()
+
+    change = install(tmp_path, target=COPILOT_HOOK)
+
+    assert change.action == "unchanged"
+    assert copilot_path(tmp_path).read_text() == before
+
+
+def test_the_copilot_file_is_merged_not_claimed(tmp_path):
+    """The file is named for outrage, but that is not a reason to own it.
+
+    Somebody may put their own sessionStart hook beside ours, or another event
+    in the same file. Both survive, the same way the Claude settings do.
+    """
+    path = copilot_path(tmp_path)
+    theirs = {"type": "command", "bash": "echo 'mine'"}
+    write_json(
+        path,
+        {
+            "version": 1,
+            "hooks": {COPILOT_HOOK.event: [theirs], "preToolUse": [{"type": "command"}]},
+        },
+    )
+
+    install(tmp_path, target=COPILOT_HOOK)
+    after = read_json(path)
+
+    assert after["hooks"][COPILOT_HOOK.event] == [theirs, template_entry(COPILOT_HOOK)]
+    assert after["hooks"]["preToolUse"] == [{"type": "command"}]
+    assert after["version"] == 1
+
+
+def test_an_existing_copilot_file_keeps_its_own_version(tmp_path):
+    """`base` fills a file in, it does not correct one. A version outrage does
+    not understand is the user's business, and overwriting it would be the one
+    place this installer damaged what it found."""
+    path = copilot_path(tmp_path)
+    write_json(path, {"version": 2, "hooks": {}})
+
+    install(tmp_path, target=COPILOT_HOOK)
+
+    assert read_json(path)["version"] == 2
+
+
+def test_is_ours_recognises_a_copilot_entry_and_not_a_neighbour():
+    assert is_ours(template_entry(COPILOT_HOOK))
+    assert not is_ours({"type": "command", "bash": "echo 'mine'"})
+
+
+def test_init_reports_one_change_per_harness(tmp_path):
+    done = init(tmp_path, dry_run=True)
+
+    assert [h.target for h in done.hooks] == list(HOOK_TARGETS)
+    assert [h.path for h in done.hooks] == [t.path(done.project_dir) for t in HOOK_TARGETS]

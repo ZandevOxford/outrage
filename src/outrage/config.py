@@ -151,6 +151,77 @@ def server_entry(
     return {"command": argv[0], "args": args}
 
 
+def split_args(args: Sequence[str]) -> list[tuple[str, list[str]]]:
+    """Take an argument list apart into ``(flag, values)`` pairs, in order.
+
+    A flag is any token beginning with ``-``; its values are the tokens up to
+    the next flag. That rule is deliberately about *shape* rather than about a
+    list of known options: an argument this release has never heard of - added
+    by hand, or by a newer one - comes apart the same way and can be put back
+    unchanged. A leading token that is not a flag is paired with the empty
+    string, so nothing is dropped by a list that does not start with one.
+    """
+    chunks: list[tuple[str, list[str]]] = []
+    for token in args:
+        if token.startswith("-"):
+            chunks.append((token, []))
+        elif chunks:
+            chunks[-1][1].append(token)
+        else:
+            chunks.append(("", [token]))
+    return chunks
+
+
+def merge_entry(previous: dict[str, Any] | None, entry: dict[str, Any]) -> dict[str, Any]:
+    """Fold ``entry`` onto the entry already in the file, keeping what it omits.
+
+    An ``outrage init`` that is only asked to set a project up should not be
+    able to switch off logging somebody turned on, or drop the mounts they
+    configured - and before this it did exactly that, because
+    :func:`server_entry` builds an argument list from what the caller passed
+    and nothing else. A re-run with no flags therefore wrote an entry with no
+    mounts.
+
+    So: **an option the new entry does not mention is inherited from the old
+    one.** Options it does mention replace the old ones outright, all of them
+    at once, so a re-run naming one ``--mount`` does not accumulate the
+    previous three beside it. ``command`` always comes from the new entry -
+    the absolute path into this environment is the one thing ``outrage config``
+    exists to correct.
+
+    The consequence to know: **an option cannot be removed by leaving it out.**
+    Dropping a mount is an edit to the file. That is the right way round for a
+    command a user runs to repair a project rather than to redefine it, and
+    losing configuration silently is the failure that was actually reported.
+    """
+    if not previous:
+        return entry
+    old_args = previous.get("args")
+    new_args = entry.get("args")
+    if not _is_string_list(old_args) or not _is_string_list(new_args):
+        # Nothing safe to take apart. The new entry stands on its own, which is
+        # what happened to every entry before this function existed.
+        return entry
+
+    new_chunks = split_args(new_args)
+    mentioned = {flag for flag, _ in new_chunks}
+    inherited = [chunk for chunk in split_args(old_args) if chunk[0] not in mentioned]
+
+    args: list[str] = []
+    for flag, values in [*new_chunks, *inherited]:
+        if flag:
+            args.append(flag)
+        args += values
+
+    merged = dict(entry)
+    merged["args"] = args
+    return merged
+
+
+def _is_string_list(value: Any) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
 def config_path(scope: str, project_dir: str | os.PathLike[str] | None = None) -> Path:
     """Locate the configuration file for ``scope``."""
     if scope == "project":
@@ -206,6 +277,10 @@ def plan(
     previous = servers.get(name)
     if previous is not None and not isinstance(previous, dict):
         raise ConfigError("config-server-not-an-object", path=str(path), server=name)
+
+    # Merged here rather than by each caller, so that `outrage init` and
+    # `outrage config` cannot disagree about what a re-run keeps.
+    entry = merge_entry(previous, entry)
 
     if previous is None:
         action = "created"
@@ -289,8 +364,10 @@ __all__ = [
     "config_path",
     "default_store_dir",
     "launch_command",
+    "merge_entry",
     "plan",
     "read_config",
     "server_entry",
+    "split_args",
     "write_config",
 ]

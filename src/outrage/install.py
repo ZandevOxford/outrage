@@ -1,16 +1,40 @@
-"""Setting a project up: the MCP entry, the hook, and the skill and agents.
+"""Setting a project up: the MCP entry, the hooks, and the skill and agents.
 
 ``init`` is the whole of ``outrage init`` and the three parts are separable: the
 server entry is :mod:`outrage.config`'s and is called rather than repeated, the
-hook is written into ``.claude/settings.json`` here, and the packaged skill and
-agents are copied into ``.claude/``. Most of what follows is about the hook,
-because it is the part with something to say.
+session-start hooks are written here, and the packaged skill and agents are
+copied into ``.claude/``. Most of what follows is about the hooks, because they
+are the part with something to say.
 
-The settings file belongs to the user, not to outrage. It holds their model, their
+A config file belongs to the user, not to outrage. It holds their model, their
 permissions and their own hooks, so this writes the one entry it owns and
 leaves everything else exactly as it found it - the rule :mod:`outrage.config`
 already follows for ``.mcp.json``, and the reason its ``read_config`` and
 ``write_config`` are reused here rather than reimplemented.
+
+## Two harnesses, one hook each
+
+:data:`HOOK_TARGETS` is the list, and everything below takes one of them rather
+than assuming Claude Code. Adding the second one is what turned the constants
+into a :class:`HookTarget`; ``project/reference/harness-portability`` said not
+to generalise before there was something real to generalise *to*, and Copilot
+CLI is it.
+
+They differ in more than spelling:
+
+* **Claude Code** merges into ``.claude/settings.json``, a file the user owns
+  outright and which this project does not commit.
+* **Copilot CLI** takes a file per purpose under ``.github/hooks/``, so
+  ``.github/hooks/outrage.json`` is outrage's own - but ``.github`` is usually
+  **committed**, so a re-run's diff lands in somebody's version control where
+  the Claude one does not.
+* Copilot's entry carries the command twice, as ``bash`` and ``powershell``,
+  and the file needs ``"version": 1`` at its top. Hence
+  :attr:`HookTarget.base`: what to start from when the file does not exist.
+
+Both are written by default. A project that uses one harness carries a small
+inert file for the other, which is cheaper than an installer that has to be
+told what the user is running.
 
 ## Why the marker exists
 
@@ -26,6 +50,17 @@ So the command carries a marker as a trailing shell comment::
 
 Verified to produce identical output under ``sh``, ``bash`` and ``zsh``, with
 the marker absent from stdout in all three.
+
+**Copilot CLI carries the same marker in a ``comment`` field instead**, which
+reverses the argument below for that harness alone. The reason is evidence: a
+live session was seen to deliver the context from an entry shaped that way,
+and no session has yet been seen to deliver it from one carrying a trailing
+shell comment. Which of the two that difference belongs to is *not* settled -
+the failing runs were all non-interactive, and no sessionStart hook fired in
+any of them - so this ships the shape that was watched working and leaves the
+question in the store rather than guessing at it. :func:`is_ours` looks for the
+marker anywhere in the entry, so both forms are recognised and a later
+correction moves it without a migration.
 
 An unknown JSON key on the entry - ``{"_rageManaged": …}`` - was tested and
 works: the client tolerates it and the hook still fires. It was rejected
@@ -54,24 +89,17 @@ import json
 import os
 import tempfile
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from . import config
 from .config import ConfigError, read_config, write_config
 
-#: The hook event outrage installs into. One today; the marker names which hook an
-#: entry is, so a second one would not be ambiguous.
-HOOK_EVENT = "SessionStart"
-
 #: What identifies an entry as ours, and what a matcher compares against. The
-#: version that follows it in the file is deliberately *not* part of this.
+#: version that follows it in the file is deliberately *not* part of this. One
+#: marker for both harnesses: it names the hook, not the client.
 MARKER = "rage-managed:session-start"
-
-#: The settings fragment that ships with the package. A fragment rather than a
-#: file to copy over: only the key below ``hooks`` is ours.
-TEMPLATE = Path(__file__).parent / "hooks" / "settings.json"
 
 #: Where a project's skills, agents and settings live, relative to its root.
 #: Declared above its three users rather than beside the assets, because the
@@ -85,9 +113,76 @@ SETTINGS_NAME = "settings.json"
 #: somebody else's and is written back as it was found.
 HOOKS_FIELD = "hooks"
 
+#: Where the packaged fragments live.
+_TEMPLATES = Path(__file__).parent / "hooks"
+
 
 class InstallError(ConfigError):
     """Settings that cannot safely be updated."""
+
+
+@dataclass(frozen=True, slots=True)
+class HookTarget:
+    """One harness's session-start hook: where it goes and what shape it is.
+
+    Everything harness-specific about the hook is one of these fields, so
+    supporting a third client is a fourth instance rather than a branch in the
+    code below. What is *not* here is deliberate: the merge rule, the marker
+    and the refusal to touch what it did not write are the same everywhere.
+    """
+
+    name: str
+    """What ``outrage init`` calls this in its output."""
+
+    template: Path
+    """The packaged fragment, holding the entry exactly as it is installed."""
+
+    relative: Path
+    """Where the file goes, relative to the project root."""
+
+    event: str
+    """The key below ``hooks`` this harness fires at session start."""
+
+    base: dict[str, Any] = field(default_factory=dict)
+    """What a newly created file starts from, before the entry is merged in.
+
+    Empty for Claude Code. Copilot CLI requires ``{"version": 1}``, and a file
+    without it is not read - which is the sort of thing that fails by the hook
+    simply never firing, so it is carried here rather than assumed.
+    """
+
+    def path(self, project_dir: str | Path) -> Path:
+        """Where this hook's file is in a project, whether or not it exists yet."""
+        return Path(project_dir) / self.relative
+
+
+#: Claude Code: merged into the user's own settings file.
+CLAUDE_HOOK = HookTarget(
+    name="Claude Code",
+    template=_TEMPLATES / SETTINGS_NAME,
+    relative=Path(CLAUDE_DIR) / SETTINGS_NAME,
+    event="SessionStart",
+)
+
+#: Copilot CLI: a file per purpose, so this one is outrage's own. Named for the
+#: package rather than the event, so a second outrage hook joins it here rather
+#: than claiming a second file.
+COPILOT_HOOK = HookTarget(
+    name="Copilot CLI",
+    template=_TEMPLATES / "copilot.json",
+    relative=Path(".github") / "hooks" / "outrage.json",
+    event="sessionStart",
+    base={"version": 1},
+)
+
+#: Every hook ``outrage init`` writes, in the order it reports them.
+HOOK_TARGETS = (CLAUDE_HOOK, COPILOT_HOOK)
+
+# There is deliberately no module-level HOOK_EVENT or TEMPLATE any more. They
+# were the Claude Code target's event and template, and once a second target
+# existed an alias that nothing read was a trap: editing it, or patching it in
+# a test, would change nothing at all. `CLAUDE_HOOK.event` says which one it
+# means, which is the thing that used to be implicit.
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +198,9 @@ class HookChange:
     duplicates: int = 0
     """Extra entries of ours removed, from a run that could not identify them."""
 
+    target: HookTarget = CLAUDE_HOOK
+    """Which harness's hook this is, so a report over several can name them."""
+
     @property
     def writes(self) -> bool:
         return self.action != "unchanged"
@@ -116,11 +214,11 @@ class HookChange:
 
 
 def settings_path(project_dir: str | Path) -> Path:
-    """Where a project's settings file is, whether or not it exists yet."""
-    return Path(project_dir) / CLAUDE_DIR / SETTINGS_NAME
+    """Where a project's Claude Code settings file is, existing or not."""
+    return CLAUDE_HOOK.path(project_dir)
 
 
-def template_entry() -> dict[str, Any]:
+def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     """The entry to install, read from the packaged template.
 
     The template holds the marker rather than this module appending it, so the
@@ -129,15 +227,15 @@ def template_entry() -> dict[str, Any]:
     something the matcher no longer recognises without anything noticing.
     """
     try:
-        loaded = json.loads(TEMPLATE.read_text(encoding="utf-8"))
+        loaded = json.loads(target.template.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:  # pragma: no cover - a broken install
-        raise InstallError("template-missing", path=str(TEMPLATE)) from exc
+        raise InstallError("template-missing", path=str(target.template)) from exc
     except json.JSONDecodeError as exc:  # pragma: no cover - a broken install
-        raise InstallError("template-not-json", path=str(TEMPLATE)) from exc
+        raise InstallError("template-not-json", path=str(target.template)) from exc
 
-    entries = loaded.get(HOOKS_FIELD, {}).get(HOOK_EVENT)
+    entries = loaded.get(HOOKS_FIELD, {}).get(target.event)
     if not isinstance(entries, list) or len(entries) != 1:
-        raise InstallError("template-hook-count", event=HOOK_EVENT)
+        raise InstallError("template-hook-count", event=target.event)
     entry = entries[0]
     if not is_ours(entry):
         raise InstallError("template-unmarked", marker=MARKER)
@@ -145,20 +243,26 @@ def template_entry() -> dict[str, Any]:
 
 
 def is_ours(entry: Any) -> bool:
-    """Whether this ``SessionStart`` entry is one outrage wrote.
+    """Whether this session-start entry is one outrage wrote.
+
+    The marker anywhere in the entry, because the two harnesses put the command
+    in different places - ``hooks[].command`` for Claude Code, ``bash`` and
+    ``powershell`` for Copilot CLI - and a matcher that knows both shapes has
+    to be taught a third. Nothing but our own entry carries a string in this
+    namespace.
 
     Prefix match. See the module docstring on why the version is excluded.
     """
     if not isinstance(entry, dict):
         return False
-    hooks = entry.get("hooks")
-    if not isinstance(hooks, list):
-        return False
-    return any(isinstance(h, dict) and MARKER in str(h.get("command", "")) for h in hooks)
+    return MARKER in json.dumps(entry)
 
 
 def plan(
-    path: Path, entry: dict[str, Any] | None = None
+    path: Path,
+    entry: dict[str, Any] | None = None,
+    *,
+    target: HookTarget = CLAUDE_HOOK,
 ) -> tuple[HookChange, dict[str, Any], str | None]:
     """Work out what installing would change, without writing.
 
@@ -167,16 +271,24 @@ def plan(
     goes through this same function rather than a second one that could
     disagree with it.
     """
-    entry = template_entry() if entry is None else entry
+    entry = template_entry(target) if entry is None else entry
     settings, original = read_config(path)
+
+    if not settings:
+        # A file that is not there yet starts from whatever the harness
+        # requires, which for Copilot CLI is the version stamp. Merged under
+        # the read so that an existing file's own top-level keys win: this is
+        # the one place outrage would otherwise overwrite something it did not
+        # write.
+        settings = dict(target.base)
 
     hooks = settings.get(HOOKS_FIELD, {})
     if not isinstance(hooks, dict):
         raise InstallError("config-field-not-an-object", path=str(path), field=HOOKS_FIELD)
 
-    existing = hooks.get(HOOK_EVENT, [])
+    existing = hooks.get(target.event, [])
     if not isinstance(existing, list):
-        raise InstallError("config-field-not-a-list", path=str(path), field=HOOK_EVENT)
+        raise InstallError("config-field-not-a-list", path=str(path), field=target.event)
 
     ours = [i for i, e in enumerate(existing) if is_ours(e)]
     previous = existing[ours[0]] if ours else None
@@ -192,7 +304,7 @@ def plan(
         action = "unchanged" if previous == entry and len(ours) == 1 else "updated"
 
     merged = dict(settings)
-    merged[HOOKS_FIELD] = dict(hooks) | {HOOK_EVENT: merged_entries}
+    merged[HOOKS_FIELD] = dict(hooks) | {target.event: merged_entries}
 
     change = HookChange(
         path=path,
@@ -200,18 +312,24 @@ def plan(
         entry=entry,
         previous=previous,
         duplicates=max(len(ours) - 1, 0),
+        target=target,
     )
     return change, merged, original
 
 
-def install(project_dir: str | Path, dry_run: bool = False) -> HookChange:
-    """Install the packaged hook into a project, or say what would change.
+def install(
+    project_dir: str | Path,
+    dry_run: bool = False,
+    *,
+    target: HookTarget = CLAUDE_HOOK,
+) -> HookChange:
+    """Install one packaged hook into a project, or say what would change.
 
     The dry run calls the same ``plan`` the real run does, so it cannot preview
     something different from what a write would produce.
     """
-    path = settings_path(project_dir)
-    change, merged, original = plan(path)
+    path = target.path(project_dir)
+    change, merged, original = plan(path, target=target)
     if not dry_run and change.writes:
         write_config(path, merged, original)
     return change
@@ -338,12 +456,18 @@ class Installation:
 
     project_dir: Path
     server: config.Change
-    hook: HookChange
+    hooks: tuple[HookChange, ...]
+    """One per :data:`HOOK_TARGETS`, in that order."""
+
     assets: tuple[FileChange, ...]
 
     @property
     def writes(self) -> bool:
-        return self.server.writes or self.hook.writes or any(a.writes for a in self.assets)
+        return (
+            self.server.writes
+            or any(h.writes for h in self.hooks)
+            or any(a.writes for a in self.assets)
+        )
 
 
 def init(
@@ -367,16 +491,22 @@ def init(
 
     ``outrage config`` writes the server entry alone and this calls it rather than
     repeating it, which is also why ``log``, ``log_content``, ``root_mount``
-    and the two mount lists are passed through: without them a re-run of
-    ``init`` would quietly switch off logging somebody had turned on, or drop
-    the mounts they had configured.
+    and the two mount lists are passed through.
+
+    Passing them through was never enough on its own, and a real project lost
+    three mounts and its ``--log`` to a re-run of ``outrage init`` that was only
+    meant to install a hook: the flags default to nothing, so the entry was
+    rebuilt with nothing. :func:`outrage.config.merge_entry` is the actual fix
+    and it sits in ``plan``, where both this and ``outrage config`` reach it.
     """
     project = Path(project_dir).expanduser().resolve()
 
     assets = plan_assets(project)
 
-    hook_path = settings_path(project)
-    hook, settings, settings_text = plan(hook_path)
+    hooks = []
+    for target in HOOK_TARGETS:
+        path = target.path(project)
+        hooks.append((path, *plan(path, target=target)))
 
     server_path = config.config_path("project", project)
     entry = config.server_entry(
@@ -392,23 +522,31 @@ def init(
     if not dry_run:
         if server.writes:
             config.write_config(server_path, servers, servers_text)
-        if hook.writes:
-            config.write_config(hook_path, settings, settings_text)
+        for path, hook, settings, settings_text in hooks:
+            if hook.writes:
+                config.write_config(path, settings, settings_text)
         write_assets(assets)
 
-    return Installation(project_dir=project, server=server, hook=hook, assets=tuple(assets))
+    return Installation(
+        project_dir=project,
+        server=server,
+        hooks=tuple(hook for _, hook, _, _ in hooks),
+        assets=tuple(assets),
+    )
 
 
 __all__ = [
     "ASSET_DIRS",
     "CLAUDE_DIR",
+    "CLAUDE_HOOK",
+    "COPILOT_HOOK",
     "HOOKS_FIELD",
-    "HOOK_EVENT",
+    "HOOK_TARGETS",
     "MARKER",
     "SETTINGS_NAME",
-    "TEMPLATE",
     "FileChange",
     "HookChange",
+    "HookTarget",
     "InstallError",
     "Installation",
     "asset_sources",

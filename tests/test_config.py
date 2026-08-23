@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 
 import pytest
-from conftest import raises_rendered
 
+from conftest import raises_rendered
 from outrage import config as config_module
 from outrage import eventlog, store
 from outrage.config import (
@@ -405,3 +405,104 @@ def test_an_entry_without_mounts_is_unchanged(tmp_path):
     args = config_module.server_entry(tmp_path, command=["outrage-server"])["args"]
     assert "--mount" not in args
     assert "--mount-ro" not in args
+
+
+# -- keeping what a re-run was not told about ----------------------------
+#
+# Reported from a real project: `outrage init`, run to install a hook, rewrote
+# the server entry from the flags it was given - none - and dropped three
+# mounts and `--log` that had been configured months earlier. Nothing failed.
+# The server simply came back next session serving one store instead of four.
+
+
+def entry_with(*args: str) -> dict:
+    return {"command": "/env/bin/outrage-server", "args": list(args)}
+
+
+def test_a_re_run_with_no_flags_keeps_the_mounts_and_the_log():
+    previous = entry_with(
+        "--dir", "/p/.outrage",
+        "--mount", "test=test.sqlite",
+        "--mount-ro", "ref=ref.sqlite",
+        "--log",
+    )
+    plain = entry_with("--dir", "/p/.outrage")
+
+    assert config_module.merge_entry(previous, plain) == previous
+
+
+def test_naming_an_option_replaces_that_option_and_only_it():
+    """All of a flag's occurrences go together: a re-run naming one mount means
+    one mount, not one added to the three that were there."""
+    previous = entry_with(
+        "--dir", "/p/.outrage",
+        "--mount", "a=a.sqlite",
+        "--mount", "b=b.sqlite",
+        "--log",
+    )
+    new = entry_with("--dir", "/p/.outrage", "--mount", "c=c.sqlite")
+
+    merged = config_module.merge_entry(previous, new)
+
+    assert merged["args"] == ["--dir", "/p/.outrage", "--mount", "c=c.sqlite", "--log"]
+
+
+def test_the_directory_and_the_command_are_always_the_new_ones():
+    """The absolute path into this environment is what `outrage config` is for;
+    inheriting a stale one would defeat the command."""
+    previous = entry_with("--dir", "/old/.outrage", "--log")
+    new = {"command": "/new/bin/outrage-server", "args": ["--dir", "/new/.outrage"]}
+
+    merged = config_module.merge_entry(previous, new)
+
+    assert merged["command"] == "/new/bin/outrage-server"
+    assert merged["args"] == ["--dir", "/new/.outrage", "--log"]
+
+
+def test_an_option_this_release_has_never_heard_of_survives():
+    """The rule is about shape, not a list of known flags, so that a hand-added
+    argument or one from a newer release is not quietly deleted."""
+    previous = entry_with("--dir", "/p/.outrage", "--future-flag", "value", "-v")
+    new = entry_with("--dir", "/p/.outrage")
+
+    merged = config_module.merge_entry(previous, new)
+
+    assert merged["args"] == ["--dir", "/p/.outrage", "--future-flag", "value", "-v"]
+
+
+def test_nothing_to_merge_from_leaves_the_new_entry_alone():
+    new = entry_with("--dir", "/p/.outrage")
+
+    assert config_module.merge_entry(None, new) == new
+    assert config_module.merge_entry({}, new) == new
+    assert config_module.merge_entry({"args": "not a list"}, new) == new
+    assert config_module.merge_entry({"args": [1, 2]}, new) == new
+
+
+def test_init_twice_leaves_a_configured_project_untouched(tmp_path):
+    """The whole bug, end to end: set a project up with mounts, then re-run the
+    plain command somebody would use to repair a hook."""
+    path = tmp_path / ".mcp.json"
+    entry = config_module.server_entry(
+        tmp_path / ".outrage", ["/env/bin/outrage-server"],
+        log=eventlog.DEFAULT, mounts=["test=test.sqlite"], read_only_mounts=["ref=ref.sqlite"],
+    )
+    _, merged, _ = config_module.plan(path, "project", entry)
+    config_module.write_config(path, merged)
+    before = path.read_text()
+
+    plain = config_module.server_entry(tmp_path / ".outrage", ["/env/bin/outrage-server"])
+    change, merged, original = config_module.plan(path, "project", plain)
+
+    assert change.action == "unchanged"
+    assert not change.writes
+    config_module.write_config(path, merged, original)
+    assert path.read_text() == before
+
+
+def test_split_args_keeps_a_leading_bare_token():
+    # `python -m outrage` puts `-m outrage` at the front of the args, so the
+    # first token is not always a flag.
+    split = config_module.split_args(["-m", "outrage", "--log"])
+    assert split == [("-m", ["outrage"]), ("--log", [])]
+    assert config_module.split_args(["bare", "--log"]) == [("", ["bare"]), ("--log", [])]
