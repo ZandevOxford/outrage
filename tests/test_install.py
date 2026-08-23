@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -494,7 +495,7 @@ def test_the_copilot_marker_is_a_field_and_not_a_shell_comment():
     """
     entry = template_entry(COPILOT_HOOK)
 
-    assert entry["comment"] == f"{MARKER}:v1"
+    assert re.fullmatch(rf"{re.escape(MARKER)}:v\d+", entry["comment"])
     assert MARKER not in entry["bash"]
     assert MARKER not in entry["powershell"]
 
@@ -517,6 +518,7 @@ def test_the_copilot_command_emits_the_context_and_hides_the_marker(shell):
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert "rage document store" in payload["additionalContext"]
+    assert "readme" in payload["additionalContext"]
     assert MARKER not in result.stdout
 
 
