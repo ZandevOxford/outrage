@@ -22,6 +22,12 @@ dist/
 .claude/hooks/sessionstart_canary.py
 .claude/hooks/sessionstart-canary.sh
 .claude/settings.json
+
+# The Copilot CLI hook file is rendered output too, on the same rule as
+# .claude/settings.json above: the template in src/ is the source of truth, and
+# a canary belongs on the machine that runs it rather than in the repository.
+# A project that is not outrage itself has every reason to commit this file.
+.github/hooks/outrage.json
 .outrage-*/
 .rage-*/
 
