@@ -3,7 +3,9 @@
 A key is zero or more segments joined by ``/``, and ``/`` is the only separator
 there is. A segment may hold almost any text: the intent is that a key can
 mirror a filesystem path without transforming the names it carries, so the only
-exclusions are ``/`` itself and the control characters below ``\\t``.
+exclusions are ``/`` itself, the control characters below ``\\t``, and a leading
+``?`` -- which is reserved, since a segment beginning with one names something
+for the store to *do* rather than a key to store under.
 
 The key with no segments is the **root**, spelled by the empty string. It is a
 key like any other: it holds a document, carries metadata as ``!title``, and is
@@ -18,10 +20,13 @@ below one, and ``a/!title/b`` is a second metadata entry on ``a`` rather than a
 document.
 
 A key being written may use ``?`` as a whole segment to ask the store to
-allocate a number for it. A segment that is purely numeric is normalised by
-stripping its leading zeros, so ``context/01`` and ``context/1`` are the same
-key, and is sorted as though zero padded, so ``context/2`` comes before
-``context/10``.
+allocate a number for it, and any key may use ``?last`` as a whole segment to
+name the key that sorts last at that point -- resolved by a front end, against
+a store, before the key is parsed for anything else.
+
+A segment that is purely numeric is normalised by stripping its leading zeros,
+so ``context/01`` and ``context/1`` are the same key, and is sorted as though
+zero padded, so ``context/2`` comes before ``context/10``.
 
 The reasoning behind the grammar, the sort form and the schema is in
 ``design.md`` **at the root of the repository**, which is not part of this
@@ -32,6 +37,7 @@ else.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from .errors import RageError
@@ -45,14 +51,43 @@ DELIMITER = "/"
 META_PREFIX = "!"
 
 #: Stands in for a segment the store should allocate. Legal only when writing,
-#: and only as a whole segment: elsewhere in a segment it is ordinary text, so
-#: ``notes/where?.md`` is a perfectly good key.
+#: and only as a whole segment: past the first character it is ordinary text,
+#: so ``notes/where?.md`` is a perfectly good key. A segment that *begins* with
+#: one is reserved -- see :data:`RESERVED_PREFIX`.
 WILDCARD = "?"
+
+#: Stands in for the last key at that point, so ``notes/?last`` names whatever
+#: sorts last immediately below ``notes``. Legal only as a whole segment, and
+#: only where a front end has resolved it against a store first -- which is why
+#: :func:`parse` refuses it by default, exactly as it refuses :data:`WILDCARD`.
+#: The two are spelled alike because they are the same idea from either end:
+#: one names a key that does not exist yet, the other the newest that does.
+LAST = "?last"
+
+#: Begins a segment the store interprets rather than stores. :data:`WILDCARD`
+#: and :data:`LAST` are the whole of it today; every other spelling is refused,
+#: which is what reserves the space for the filters and logical operations a
+#: key will grow -- a subtree filter, a range, a choice between two keys.
+#:
+#: Reserved **before** anything needs it, deliberately and at a known cost:
+#: ``a/?x`` was a legal key until 2026-08-23 and is not one now. The
+#: alternative is adding each operator to a namespace that already allows it as
+#: ordinary text, where every one of them silently changes what an existing key
+#: means. One refusal now, or an unbounded number of migrations later.
+#:
+#: Only the *first* character is reserved, so a key can still mirror a name
+#: holding a question mark: ``notes/where?.md`` is fine.
+RESERVED_PREFIX = "?"
 
 #: The metadata suffix this namespace used until schema 4, kept only so the
 #: schema 2 to 3 migration can read keys written in it. No longer rejected by
 #: ``parse``: ``:`` is an ordinary segment character now, like any other.
 LEGACY_META = ":"
+
+#: Every reserved segment that means something today. A third one is a constant
+#: and a line here, and needs no change to the grammar: that is what reserving
+#: the prefix bought.
+RESERVED_SEGMENTS = frozenset({WILDCARD, LAST})
 
 #: The lowest character a segment may contain. Excluding everything below tab
 #: costs nothing worth mirroring -- no filesystem name addresses that range --
@@ -304,6 +339,17 @@ class Key:
     def has_wildcard(self) -> bool:
         return self.wildcard_parent is not None
 
+    @property
+    def has_last(self) -> bool:
+        """Whether any segment is ``?last`` and still waiting to be resolved.
+
+        Derived rather than stored, and there is no ``last_parent`` beside
+        ``wildcard_parent``, because a key may hold several: each one is
+        resolved against the key the ones before it produced, so the parent
+        only exists part way through :func:`resolve_last`.
+        """
+        return LAST in self.doc_key.split(DELIMITER)
+
 
 def migrate_legacy(key: str) -> str:
     """The current spelling of a key written with the pre-schema-4 ``:`` suffix.
@@ -325,6 +371,7 @@ def parse(
     key: str,
     *,
     allow_wildcard: bool = False,
+    allow_last: bool = False,
     max_segments: int = MAX_SEGMENTS,
 ) -> Key:
     """Parse and validate ``key``.
@@ -332,6 +379,14 @@ def parse(
     With ``allow_wildcard`` a single segment of the document key may be ``?``,
     which the store replaces with a number it allocates. Reads and deletes
     parse without it, so a wildcard cannot be mistaken for a search.
+
+    With ``allow_last`` a segment may be ``?last``, which :func:`resolve_last`
+    replaces with the key that sorts last at that point. Only that function
+    passes it: refused by default, an unresolved ``?last`` reaching a store is
+    a loud failure rather than a document quietly written to a key spelled
+    ``?last``, which is what it was before this segment meant anything. Several
+    are allowed, unlike ``?``, because each is resolved against the key the one
+    before it produced and there is nothing to be ambiguous about.
 
     ``max_segments`` defaults to the bound on a key **within one store**, which
     is what almost every caller wants. Only a front end resolving a key across
@@ -374,11 +429,18 @@ def parse(
 
     wildcard_parent = None
     for index, segment in enumerate(segments):
+        in_metadata = meta_at is not None and index >= meta_at
+        if segment == LAST:
+            if not allow_last:
+                raise InvalidKeyError("key-last-not-allowed", key=original)
+            if in_metadata:
+                raise InvalidKeyError("key-last-in-metadata", key=original)
+            continue
         if segment != WILDCARD:
             continue
         if not allow_wildcard:
             raise InvalidKeyError("key-wildcard-not-allowed", key=original)
-        if meta_at is not None and index >= meta_at:
+        if in_metadata:
             raise InvalidKeyError("key-wildcard-in-metadata", key=original)
         if wildcard_parent is not None:
             raise InvalidKeyError("key-multiple-wildcards", key=original)
@@ -416,6 +478,12 @@ def _check_segment(segment: str, key: str) -> None:
 
     if segment == META_PREFIX:
         raise InvalidKeyError("key-empty-metadata-name", key=key)
+    # Before the wildcard and `?last` rules rather than instead of them: those
+    # two say *where* their own segment is allowed, and this says that nothing
+    # else may be spelled like one. A reserved segment nobody has defined is a
+    # mistake at any position, including one where a wildcard would be legal.
+    if segment.startswith(RESERVED_PREFIX) and segment not in RESERVED_SEGMENTS:
+        raise InvalidKeyError("key-reserved-segment", key=key, segment=segment)
     if len(segment) > MAX_SEGMENT_CHARS:
         raise InvalidKeyError(
             "key-segment-too-long", key=key, what=what, length=len(segment)
@@ -435,11 +503,17 @@ def is_valid(
     key: str,
     *,
     allow_wildcard: bool = False,
+    allow_last: bool = False,
     max_segments: int = MAX_SEGMENTS,
 ) -> bool:
     """Whether ``key`` matches the grammar."""
     try:
-        parse(key, allow_wildcard=allow_wildcard, max_segments=max_segments)
+        parse(
+            key,
+            allow_wildcard=allow_wildcard,
+            allow_last=allow_last,
+            max_segments=max_segments,
+        )
     except InvalidKeyError:
         return False
     return True
@@ -457,6 +531,68 @@ def substitute_wildcard(key: str, segment: str) -> str:
     return DELIMITER.join(
         segment if part == WILDCARD else part for part in parsed.key.split(DELIMITER)
     )
+
+
+#: What :func:`resolve_last` asks a store for: the final segment of the last
+#: key immediately below the one it is given, or None when nothing is below it.
+#: A *segment*, not a key, because the caller already knows the part above it
+#: and joining the two here is what keeps a mounted store's answer -- which is
+#: named from inside that store -- usable in the namespace it was asked in.
+LastChild = Callable[[str], str | None]
+
+
+def resolve_last(
+    key: str,
+    last_child: LastChild,
+    *,
+    max_segments: int = MAX_SEGMENTS,
+) -> str:
+    """``key`` with every ``?last`` segment replaced by the last key at that point.
+
+    ``notes/?last/state`` becomes ``notes/9/state`` where 9 is the last key
+    below ``notes``, in the order a listing walks -- so a numeric level gives
+    the highest number rather than the highest spelling, which is the whole
+    reason :func:`sort_form` pads. It resolves against what *exists*, including
+    a key that holds nothing itself and is only there because something lies
+    beneath it: ``context/?last`` is the newest context whether or not anybody
+    wrote a document at it.
+
+    **Left to right, and one store call per ``?last``.** An inner one cannot be
+    asked until the key above it is known, so ``a/?last/?last`` is two lookups
+    and the second depends on the first.
+
+    Keys with no ``?last`` are returned normalised and no lookup is made, so
+    every front end can call this on every key it is given.
+
+    ``last_child`` is the store's :meth:`outrage.store.Store.last_child`, or a
+    mount table's, which is the same question asked of a whole namespace. It is
+    a parameter because this module knows nothing about stores and is not going
+    to start: what a key *is* has to stay decidable without opening one.
+
+    Raises InvalidKeyError when a ``?last`` has nothing below it to name. That
+    is a failed *read*, not a malformed key, but it is raised as one anyway:
+    the caller asked for a key and there is no key to give it, and inventing
+    one -- or resolving to the parent -- would silently answer a different
+    question.
+
+    >>> resolve_last("a/?last/b", {"a": "9"}.get)
+    'a/9/b'
+    >>> resolve_last("a/b", {}.get)
+    'a/b'
+    """
+    parsed = parse(key, allow_wildcard=True, allow_last=True, max_segments=max_segments)
+    if not parsed.has_last:
+        return parsed.key
+    resolved: list[str] = []
+    for segment in parsed.key.split(DELIMITER):
+        if segment == LAST:
+            parent = DELIMITER.join(resolved)
+            found = last_child(parent)
+            if found is None:
+                raise InvalidKeyError("key-no-last-child", key=key, parent=parent)
+            segment = _normalise(found)
+        resolved.append(segment)
+    return DELIMITER.join(resolved)
 
 
 def ancestors(key: str) -> list[str]:
@@ -641,6 +777,7 @@ def fits(key: str) -> bool:
 
 __all__ = [
     "DELIMITER",
+    "LAST",
     "LEGACY_META",
     "MAX_JOINED_SEGMENTS",
     "MAX_SEGMENTS",
@@ -648,10 +785,13 @@ __all__ = [
     "META_PREFIX",
     "MIN_SEGMENT_CHAR",
     "NUMERIC_RE",
+    "RESERVED_PREFIX",
+    "RESERVED_SEGMENTS",
     "ROOT",
     "WILDCARD",
     "InvalidKeyError",
     "Key",
+    "LastChild",
     "ancestors",
     "depth",
     "displayed",
@@ -663,6 +803,7 @@ __all__ = [
     "normalise_segment",
     "parse",
     "remaining_depth",
+    "resolve_last",
     "sort_form",
     "sort_subtree_end",
     "strip_prefix",

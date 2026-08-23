@@ -1256,3 +1256,47 @@ def test_a_missing_parquet_mount_is_refused_rather_than_created(tmp_path):
     with raises_rendered(BackendError, "no parquet store at"):
         open_mounts(tmp_path / "base", ["ref=absent.parquet"])
     assert not (tmp_path / "base" / "absent.parquet").exists()
+
+
+# -- ?last across the table -------------------------------------------------
+
+
+def test_last_sees_a_mount_point(table, server):
+    # The root level of the namespace is `context`, `lib`, `notes` and `ref`,
+    # and only two of those are keys any store holds. Without the mount half,
+    # `?last` would name `notes` -- a key the caller can see it is not the
+    # last one.
+    assert table.last_child(keys.ROOT) == "ref"
+    assert call(server, "list_keys", key="?last")["key"] == "ref"
+
+
+def test_last_routes_into_the_store_it_resolves_to(server):
+    # Resolved before the routing, which is the order that matters: a `?last`
+    # naming a mount decides which store answers.
+    assert call(server, "retrieve_document", key="?last")["content"] == "The reference base."
+    assert call(server, "retrieve_document", key="?last/python/typing")["content"] == "Annotations."
+
+
+def test_last_inside_a_mounted_store_is_named_from_outside(table, server):
+    assert table.last_child("ref/python") == "typing"
+    assert call(server, "get_documents", key="ref/?last")["key"] == "ref/python"
+
+
+def test_last_at_a_level_holding_only_mounts(table):
+    # `lib` exists because `lib/deep` is mounted; no store holds a row there.
+    assert table.last_child("lib") == "deep"
+    assert table.last_child("lib/deep") == "a"
+
+
+def test_last_refuses_a_read_only_mount_the_way_a_named_key_would(tmp_path):
+    root = SqliteStore(tmp_path / "root")
+    ref = SqliteStore(tmp_path / "ref")
+    ref.store_document("a", "Reference.")
+    built = Mounts({"": root, "ref": ref}, read_only={"ref"})
+    try:
+        message = call_expecting_error(
+            build_server(built), "store_document", key="?last/b", content="x"
+        )
+        assert "ref" in message
+    finally:
+        built.close()

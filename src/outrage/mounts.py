@@ -534,6 +534,32 @@ class Mounts:
             found[child] = self._mount_entry(mount) if child == mount.prefix else _implicit(child)
         return [found[key] for key in sorted(found, key=keys.sort_form)]
 
+    def last_child(self, key: str | None) -> str | None:
+        """The final segment of the last key immediately below ``key``.
+
+        :meth:`outrage.store.Store.last_child` asked of the whole namespace, so
+        that ``?last`` resolves to what a listing of that level would actually
+        end with -- a mount point included. Without the second half, ``?last``
+        at a level a mount stands in would name a key the caller can see and
+        skip the one they are looking at.
+
+        The two halves compare as bare segments and need no translation between
+        namespaces: routing changes what lies *above* a level, never the name
+        of a key within it, so the answering store's last child is spelled the
+        same from outside as from in.
+        """
+        found = self.resolve(key)
+        mounted = self.children(found.outer)
+        names = [
+            name
+            for name in (
+                found.store.last_child(found.key),
+                mounted[-1].key.rpartition(keys.DELIMITER)[2] if mounted else None,
+            )
+            if name is not None
+        ]
+        return max(names, key=keys.sort_form) if names else None
+
     def shadowing(self) -> list[Mount]:
         """The mounts whose mount point the store beneath them already holds.
 

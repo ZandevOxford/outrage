@@ -66,6 +66,12 @@ session can guess where to look.
 at `context/?/task` first and the result reports the key it allocated, then put
 everything else in that thread alongside it.
 
+To read the newest thread without looking its number up, put `?last` in place
+of the segment: `context/?last/state`. It names whatever sorts last at that
+point, works on any key a tool takes, and the result reports which key it
+resolved to. It is refused when there is nothing below that point rather than
+answering about the level above.
+
 * `context/<n>/task` - what is being attempted, in a few lines.
 * `context/<n>/state` - where it got to, what is unfinished, what to do next.
 * `context/<n>/design`, `…/findings`, `…/decisions` - whatever the work

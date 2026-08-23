@@ -310,9 +310,10 @@ def test_wildcard_is_rejected_unless_allowed():
 
 
 def test_only_a_whole_segment_is_a_wildcard():
-    # `?` inside a segment is ordinary text, so a key can mirror a filename
-    # that contains one.
-    for key in ("tmp/a?b", "tmp/?x", "tmp/x:?"):
+    # `?` past the first character is ordinary text, so a key can mirror a
+    # filename that contains one. A `?` that *begins* a segment is reserved:
+    # see the reservation tests below.
+    for key in ("tmp/a?b", "tmp/x:?", "notes/where?.md"):
         assert keys.parse(key, allow_wildcard=True).has_wildcard is False
         assert keys.is_valid(key)
 
@@ -345,6 +346,122 @@ def test_substitute_wildcard(key, expected):
 def test_substitute_wildcard_needs_a_wildcard():
     with pytest.raises(InvalidKeyError):
         keys.substitute_wildcard("tmp/a", "7")
+
+
+# -- ?last ---------------------------------------------------------------
+
+
+def _level(children: dict[str, str]):
+    """A ``last_child`` that answers from a table, and records what it was asked."""
+    asked: list[str] = []
+
+    def last_child(parent: str) -> str | None:
+        asked.append(parent)
+        return children.get(parent)
+
+    return last_child, asked
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("context/?last", "context/50"),
+        ("context/?last/state", "context/50/state"),
+        ("context/?last/state/!title", "context/50/state/!title"),
+        ("?last", "context"),
+    ],
+)
+def test_last_is_replaced_by_the_final_key_at_that_point(key, expected):
+    last_child, _ = _level({"": "context", "context": "50"})
+    assert keys.resolve_last(key, last_child) == expected
+
+
+def test_a_key_without_last_asks_the_store_nothing():
+    # Every front end calls this on every key, so the common key must cost no
+    # lookup at all.
+    last_child, asked = _level({"context": "50"})
+    assert keys.resolve_last("context/a1b2/design", last_child) == "context/a1b2/design"
+    assert asked == []
+
+
+def test_several_lasts_resolve_left_to_right():
+    # The inner one cannot be asked until the key above it is known, which is
+    # the whole reason the order is fixed rather than incidental.
+    last_child, asked = _level({"context": "50", "context/50": "state"})
+    assert keys.resolve_last("context/?last/?last", last_child) == "context/50/state"
+    assert asked == ["context", "context/50"]
+
+
+def test_last_is_rejected_unless_allowed():
+    # The safety net: an unresolved `?last` reaching a store used to be a
+    # document written to a key spelled `?last`.
+    with raises_rendered(InvalidKeyError, "resolved against the store"):
+        keys.parse("context/?last")
+    assert keys.parse("context/?last", allow_last=True).has_last
+    assert keys.is_valid("context/?last", allow_last=True)
+
+
+def test_only_a_whole_segment_is_last():
+    for key in ("tmp/x?last", "tmp/last"):
+        assert keys.parse(key).has_last is False
+        assert keys.is_valid(key)
+
+
+def test_a_metadata_segment_cannot_be_the_last_one():
+    with raises_rendered(InvalidKeyError, "document part"):
+        keys.parse("a/!title/?last", allow_last=True)
+
+
+def test_nothing_below_the_key_is_a_refusal_naming_it():
+    # Not the parent, and not an invented key: the caller asked for a key that
+    # is not there, and answering a different question is the failure mode.
+    last_child, _ = _level({})
+    with raises_rendered(InvalidKeyError, "nothing below it") as raised:
+        keys.resolve_last("context/?last/state", last_child)
+    assert raised.value.details["parent"] == "context"
+
+
+def test_last_survives_a_wildcard_beside_it():
+    # `context/?last/?` writes a new document under the newest context: one
+    # segment resolved here, the other allocated by the store later.
+    last_child, _ = _level({"context": "50"})
+    assert keys.resolve_last("context/?last/?", last_child) == "context/50/?"
+
+
+def test_a_resolved_segment_is_normalised():
+    last_child, _ = _level({"context": "007"})
+    assert keys.resolve_last("context/?last", last_child) == "context/7"
+
+
+# -- reserved segments ----------------------------------------------------
+
+
+@pytest.mark.parametrize("key", ["tmp/?x", "tmp/?lastly", "?filter", "a/?b/c", "a/!title/?x"])
+def test_a_segment_beginning_with_a_question_mark_is_reserved(key):
+    # Held back for the filters and logical operations a key will grow. The
+    # point of refusing them now is that adding one later cannot change what an
+    # existing key means.
+    with raises_rendered(InvalidKeyError, "is reserved"):
+        keys.parse(key, allow_wildcard=True, allow_last=True)
+
+
+def test_the_two_reserved_segments_that_mean_something_are_not_refused():
+    assert keys.is_valid("tmp/?", allow_wildcard=True)
+    assert keys.is_valid("tmp/?last", allow_last=True)
+    assert keys.RESERVED_SEGMENTS == {keys.WILDCARD, keys.LAST}
+
+
+def test_a_reserved_segment_is_refused_even_where_a_wildcard_would_be_legal():
+    # The reservation is about the spelling, not the position: `tmp/?` is a
+    # legal write, and `tmp/?x` is not a write with a typo in it.
+    with raises_rendered(InvalidKeyError, "is reserved"):
+        keys.parse("tmp/?x", allow_wildcard=True)
+
+
+def test_only_the_first_character_is_reserved():
+    # A key still mirrors a real name, which is what the namespace is for.
+    assert keys.is_valid("notes/where?.md")
+    assert keys.parse("notes/where?.md").key == "notes/where?.md"
 
 
 # -- derived values ------------------------------------------------------

@@ -358,6 +358,11 @@ are `..`, `:`, spaces and `?` - they can only *suggest* a navigation or a
 meaning that does not exist here, and refusing them would mean a key that
 cannot mirror a real name.
 
+The **first** character of a segment is the exception, and there are two of
+them. `!` names metadata, and `?` is reserved: see Reserved segments. A name
+starting with either still mirrors, since nothing stops it being carried a
+level down.
+
 ### Grammar
 
 A key is a Unicode string naming a position in a hierarchy.
@@ -428,11 +433,18 @@ A key is a Unicode string naming a position in a hierarchy.
   an honest test for "is a document".
 * Sort order is **lexicographic by Unicode code point**, over a derived sort
   form rather than over the key. See Sorting.
+* A segment **beginning** with `?` is reserved for the store to interpret
+  rather than to store. See Reserved segments. Only the first character is
+  reserved, so `notes/where?.md` is a good key.
 * A key *being written* may use `?` in place of one whole segment, asking the
   store to allocate a number for it. See Autonumbering. **Only a whole segment
-  is a wildcard**: `?` inside a segment is ordinary text, so `notes/where?.md`
-  is a good key. A `?` segment is rejected by every operation but a write, so
-  it can never read as a pattern.
+  is a wildcard**: `?` past the first character is ordinary text. A `?` segment
+  is rejected by every operation but a write, so it can never read as a
+  pattern.
+* A key *being read, written or deleted* may use `?last` in place of one whole
+  segment, naming the key that sorts last at that point. See Naming the newest
+  key. Only a whole segment again, and several are allowed - each is resolved
+  against the key the one before it produced.
 
 Metadata may be attached to any key, including implicit keys with no content,
 and one document may carry several entries. That is the intended mechanism for
@@ -512,6 +524,54 @@ This exists so that an agent can create a container without inventing an
 identifier. Inventing one is what a guid is for, but a guid is expensive to
 carry in a prompt and impossible to type, and picking a name commits to a
 description before the work is understood.
+
+### Reserved segments
+
+A segment beginning with `?` is **reserved**. `?` and `?last` are the whole of
+it today and everything else spelled that way is refused, which holds the space
+open for the filters and logical operations a key will grow - a subtree filter,
+a range, a choice between two keys. `keys.RESERVED_SEGMENTS` is the list, and a
+third one is a constant and a line in it rather than a change to the grammar.
+
+Reserved **before** anything needs it, and at a known cost: `a/?x` was a legal
+key until 2026-08-23 and is not one now. The alternative is adding each
+operator to a namespace that already allows it as ordinary text, where every
+one of them silently changes what an existing key means and needs its own
+migration. One refusal now, or an unbounded number of migrations later.
+
+This is the second exception to "a segment may hold almost any text", and it
+works the same way as the first: `!` and `?` are special at the **start** of a
+segment and ordinary everywhere else. A key can still mirror a name holding a
+question mark, and one that begins with a `?` can be carried a level down -
+which is the same answer a metadata name gets.
+
+### Naming the newest key
+
+`?last` is the other half of that. Autonumbering hands out a key nobody chose,
+which leaves the next session with a number it has to go and look up before it
+can read anything: `context/?last/state` is that lookup written into the key.
+It resolves to whatever sorts last at that point - `context/50`, not
+`context/9`, because the sort form pads numbers - and it counts implicit keys,
+since the newest thread of work is a container and rarely a document.
+
+Resolution happens in the **front end**, before the key is parsed for routing
+or handed to a store, and it costs one `last_child` call per `?last` segment.
+That placement is not an implementation detail. A `?last` in the part of a key
+that names a mount decides which store answers, so a mount table asked to route
+one has not been told enough to route it; and every tool then accepts `?last`
+without knowing it exists, because they all resolve through one function.
+`keys.resolve_last` holds the walk and takes the lookup as an argument, so what
+a key *is* stays decidable without opening a store.
+
+Each front end reports what it resolved to - the tools echo the key on the
+result, the command line says so on stderr - for the same reason a write
+reports the number it allocated: reading the wrong document is the one outcome
+the caller cannot see happening.
+
+A `?last` with nothing below it is a refusal, not the parent and not an
+invented key. The cost of all this is that `?last` was an ordinary segment
+before, so a key spelled that way is no longer reachable; `keys.parse` refuses
+one by default rather than letting an unresolved `?last` be written as a key.
 
 The allocated number is one past the highest number already used among the
 children of the key enclosing the wildcard, counting keys that exist only

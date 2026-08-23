@@ -269,7 +269,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     _store_option(get)
     get.add_argument(
-        "key", help="Key to read, e.g. context/1/task or context/1/task/!title."
+        "key",
+        help=(
+            "Key to read, e.g. context/1/task, context/1/task/!title, or "
+            "context/?last/task for the newest."
+        ),
     )
     get.add_argument("--offset", type=int, default=0, help="Character offset to start at.")
     get.add_argument("--length", type=int, default=None, help="Characters to return.")
@@ -304,7 +308,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(set_)
-    set_.add_argument("key", help="Key to write, e.g. notes/thing or notes/? to allocate.")
+    set_.add_argument(
+        "key",
+        help=(
+            "Key to write, e.g. notes/thing, notes/? to allocate a number, or "
+            "context/?last/task for the newest."
+        ),
+    )
     set_.add_argument("--content", default=None, help="Content, instead of reading it in.")
     set_.add_argument("--file", default=None, metavar="PATH", help="Read the content from a file.")
     set_.add_argument(
@@ -335,7 +345,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(ls)
-    ls.add_argument("key", nargs="?", default=None, help="Key to list below. Omit for the top.")
+    ls.add_argument(
+        "key",
+        nargs="?",
+        default=None,
+        help="Key to list below, ?last for the newest. Omit for the top.",
+    )
     ls.add_argument(
         "--recursive",
         "-r",
@@ -527,7 +542,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(rm)
-    rm.add_argument("key", help="Key to delete.")
+    rm.add_argument("key", help="Key to delete, ?last for the newest.")
     rm.add_argument(
         "--recursive", "-r", action="store_true", help="Also delete everything beneath the key."
     )
@@ -838,9 +853,29 @@ def _limited(events: list[logread.Event], limit: int) -> tuple[list[logread.Even
     return events[-limit:], len(events) - limit
 
 
+def _resolved(opened: store.Store, args: argparse.Namespace) -> None:
+    """Replace a ``?last`` in ``args.key`` with the key it names, and say so.
+
+    Rebinds the argument rather than returning a value: a command uses its key
+    to read with and again in what it prints when there was nothing there, and
+    a resolution that reached only half of those would report the question
+    instead of the answer.
+
+    The note goes to stderr, and only when a ``?last`` was actually asked for,
+    so a report piped onward is unchanged and an ordinary key costs no line.
+    Said at all for the reason a ``?`` reports the number it allocated: reading
+    the wrong document is the one outcome the caller cannot see happening.
+    """
+    if args.key is None or keys.LAST not in args.key.split(keys.DELIMITER):
+        return
+    args.key = keys.resolve_last(args.key, opened.last_child)
+    print(f"outrage: {keys.LAST} is {keys.displayed(args.key)}", file=sys.stderr)
+
+
 def _get_command(args: argparse.Namespace, out: TextIO) -> int:
     """Print a document, whole unless a slice was asked for."""
     with _open_existing(args) as opened:
+        _resolved(opened, args)
         slicing = {
             "offset": args.offset,
             "length": args.length,
@@ -870,6 +905,7 @@ def _set_command(args: argparse.Namespace, out: TextIO) -> int:
     content = _content(args)
     directory = store.resolve_directory(args.directory)
     with store.open_store(directory, filename=args.filename) as opened:
+        _resolved(opened, args)
         written = opened.store_document(args.key, content, args.format, title=args.title)
 
     # The resolved directory, not the one asked for: a mistyped --dir creates a
@@ -911,6 +947,7 @@ def _ls_command(args: argparse.Namespace, out: TextIO) -> int:
     """List one level, or the whole subtree, printing as it goes."""
     shown = 0
     with _open_existing(args) as opened:
+        _resolved(opened, args)
         entries = bulk.walk(opened, args.key) if args.recursive else bulk.levels(opened, args.key)
         for entry in entries:
             if args.limit is not None and shown >= args.limit:
@@ -933,6 +970,7 @@ def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
     """Print a subtree, one document at a time, as each one arrives."""
     shown = 0
     with _open_existing(args) as opened:
+        _resolved(opened, args)
         for excerpt in _documents(opened, args):
             if args.limit is not None and shown >= args.limit:
                 print(f"outrage: stopped at --limit {args.limit}", file=sys.stderr)
@@ -986,6 +1024,7 @@ def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.
 def _export_command(args: argparse.Namespace, out: TextIO) -> int:
     """Write a subtree out as files, reporting each document as it lands."""
     with _open_existing(args) as opened:
+        _resolved(opened, args)
         transfers = bulk.export_tree(
             opened,
             args.key,
@@ -1005,6 +1044,7 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
     # visible rather than silently successful.
     directory = store.resolve_directory(args.directory)
     with store.open_store(directory, filename=args.filename) as opened:
+        _resolved(opened, args)
         transfers = bulk.import_tree(
             opened,
             args.source,
@@ -1097,6 +1137,7 @@ def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
         with _open_existing(argparse.Namespace(
             directory=args.directory, filename=args.from_store
         )) as opened:
+            _resolved(opened, args)
             status = _report_transfers(
                 bulk.pack(
                     target,
@@ -1131,6 +1172,7 @@ def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
 def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
     """Delete a key, saying what went and what stayed."""
     with _open_existing(args) as opened:
+        _resolved(opened, args)
         beneath = opened.descendant_count(args.key)
         if args.dry_run:
             # Asking the store rather than predicting: a dry run that computes

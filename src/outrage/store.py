@@ -757,6 +757,40 @@ class Store(ABC):
         answer, for no caller that exists.
         """
 
+    def last_child(self, key: str) -> str | None:
+        """The final segment of the last key immediately below ``key``.
+
+        What ``?last`` resolves to, and the store half of
+        :func:`outrage.keys.resolve_last` -- so ``notes/?last`` names whatever
+        this returns for ``notes``. None when nothing is below ``key``, which
+        is what the caller turns into a refusal.
+
+        **Last in the order a listing walks**, which is :func:`sort_form`'s,
+        so a level of numbers gives the highest number and not the highest
+        spelling. Implicit keys count: a container holding only descendants is
+        as much the last key at that level as a document is, and ``?last``
+        exists to name the newest thread of work whether or not somebody
+        wrote a document at the top of it.
+
+        Metadata does not count. ``?last`` stands where a document segment
+        goes -- it can no more resolve to ``!title`` than ``?`` can allocate
+        one -- so a level holding a document and its title has one child here.
+
+        Concrete rather than abstract, on :meth:`list_keys`, because it asks
+        nothing a backend answers differently. **It reads the whole level to
+        take its last row**, which is one round trip at the sizes a level
+        actually reaches and the wrong shape if one ever holds thousands: the
+        fix then is an override selecting one row in descending order, not a
+        second definition of what "last" means.
+        """
+        level = self.list_keys(key)
+        names = [
+            entry.key.rpartition(keys.DELIMITER)[2]
+            for entry in level.items
+            if entry.kind != "metadata"
+        ]
+        return names[-1] if names else None
+
     @abstractmethod
     def get_documents(
         self,
