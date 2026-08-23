@@ -893,7 +893,7 @@ def _get_command(args: argparse.Namespace, out: TextIO) -> int:
     out.write(excerpt.content)
     if excerpt.truncated:
         print(
-            f"\nrage: {excerpt.returned} of {excerpt.total} characters; "
+            f"\noutrage: {excerpt.returned} of {excerpt.total} characters; "
             f"more from --offset {excerpt.next_offset}",
             file=sys.stderr,
         )

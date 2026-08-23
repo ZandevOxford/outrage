@@ -854,7 +854,13 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
     @_reported
     def list_keys(
         key: Annotated[
-            str | None, Field(description="Key to list below; omit for the top level")
+            str | None,
+            Field(
+                description=(
+                    "Key to list below, e.g. context/?last for the newest; "
+                    "omit for the top level"
+                )
+            ),
         ] = None,
         limit: Annotated[
             int, Field(description="Maximum keys to return", gt=0)
@@ -951,7 +957,13 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
     @_reported
     def get_documents(
         key: Annotated[
-            str | None, Field(description="Key whose subtree to read; omit for everything")
+            str | None,
+            Field(
+                description=(
+                    "Key whose subtree to read, e.g. context/?last for the newest; "
+                    "omit for everything"
+                )
+            ),
         ] = None,
         meta_name: Annotated[
             list[str] | None,
@@ -1069,7 +1081,13 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
     @_reported
     def keys_missing_meta(
         key: Annotated[
-            str | None, Field(description="Key whose subtree to check; omit for everything")
+            str | None,
+            Field(
+                description=(
+                    "Key whose subtree to check, e.g. context/?last for the newest; "
+                    "omit for everything"
+                )
+            ),
         ] = None,
         meta_name: Annotated[
             list[str] | None,
@@ -1130,7 +1148,10 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
     )
     @_reported
     def delete_keys(
-        key: Annotated[str, Field(description="Key to delete")],
+        key: Annotated[
+            str,
+            Field(description="Key to delete, e.g. context/?last for the newest"),
+        ],
         recursive: Annotated[
             bool, Field(description="Also delete everything beneath the key")
         ] = False,
