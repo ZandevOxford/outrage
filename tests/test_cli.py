@@ -1351,3 +1351,74 @@ def test_writing_to_a_parquet_store_is_refused_as_a_message(tmp_path, capsys):
     reported = capsys.readouterr().err
     assert "written whole rather than updated" in reported
     assert "outrage pack" in reported
+
+
+# -- ?last ---------------------------------------------------------------
+
+
+def a_few_threads(directory: Path) -> None:
+    from outrage.store_sqlite import SqliteStore
+
+    with SqliteStore(directory) as store:
+        for name in ("2", "10", "9"):
+            store.store_document(f"context/{name}/state", f"thread {name}", title=name)
+
+
+def test_last_reads_the_newest_key(tmp_path, capsys):
+    a_few_threads(tmp_path / ".outrage")
+
+    status, output = run("get", "--dir", str(tmp_path / ".outrage"), "context/?last/state")
+
+    assert status == 0
+    assert output == "thread 10"
+
+
+def test_last_says_on_stderr_which_key_it_meant(tmp_path, capsys):
+    # stdout is the document, so the note cannot go there: `outrage get > f`
+    # has to give back exactly what went in.
+    a_few_threads(tmp_path / ".outrage")
+
+    run("get", "--dir", str(tmp_path / ".outrage"), "context/?last/state")
+
+    assert "?last is context/10" in capsys.readouterr().err
+
+
+def test_an_ordinary_key_says_nothing(tmp_path, capsys):
+    a_few_threads(tmp_path / ".outrage")
+
+    run("get", "--dir", str(tmp_path / ".outrage"), "context/10/state")
+
+    assert capsys.readouterr().err == ""
+
+
+def test_last_writes_under_the_newest_key(tmp_path):
+    a_few_threads(tmp_path / ".outrage")
+
+    status, output = run(
+        "set", "--dir", str(tmp_path / ".outrage"), "context/?last/notes", "--content", "body"
+    )
+
+    assert status == 0
+    assert "context/10/notes" in output
+
+
+def test_last_deletes_from_the_newest_key(tmp_path):
+    a_few_threads(tmp_path / ".outrage")
+
+    status, output = run(
+        "rm", "--dir", str(tmp_path / ".outrage"), "context/?last/state", "--recursive"
+    )
+
+    assert status == 0
+    assert "context/10/state" in output
+
+
+def test_last_with_nothing_below_it_is_a_message_and_a_status(tmp_path, capsys):
+    a_few_threads(tmp_path / ".outrage")
+
+    status = main(
+        ["get", "--dir", str(tmp_path / ".outrage"), "nowhere/?last"], io.StringIO()
+    )
+
+    assert status == 1
+    assert "nothing below it" in capsys.readouterr().err

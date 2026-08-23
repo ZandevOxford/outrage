@@ -82,8 +82,24 @@ def _reported[**P, T](function: Callable[P, T]) -> Callable[P, T]:
 
 
 def _resolve(table: Mounts, key: str | None, *, allow_wildcard: bool = False) -> Resolved:
-    """Which store answers for ``key``, with an omitted key meaning the root."""
-    return table.resolve(_scope(key), allow_wildcard=allow_wildcard)
+    """Which store answers for ``key``, with an omitted key meaning the root.
+
+    ``?last`` is resolved first, against the whole namespace, so every tool
+    accepts it without knowing it exists. It has to happen before the routing
+    and not after: a ``?last`` in the part of a key that names a mount decides
+    which store answers, so a table asked to route one has not been told enough
+    to route it.
+
+    The key that comes back on ``Resolved.outer`` is the resolved one, which is
+    what each tool echoes -- a caller that wrote ``context/?last`` is told which
+    context it got, for the same reason a ``?`` reports the number it allocated.
+    """
+    return table.resolve(
+        keys.resolve_last(
+            _scope(key), table.last_child, max_segments=keys.MAX_JOINED_SEGMENTS
+        ),
+        allow_wildcard=allow_wildcard,
+    )
 
 
 def _resolve_for_write(
@@ -439,9 +455,10 @@ result as everything there is - 20 of 22 is a listing, 20 of 40000 is a sample.
 #: packaged skill, or a failure that explains itself when it happens. That is
 #: the whole test for putting something here rather than in `ESSENTIALS`.
 TAIL = """\
-A segment may hold almost any text - `/` and the control characters below tab
-are the only exclusions - so a key can mirror a real name without transforming
-it. Keys are not file paths, but they read like them: notes about a file can
+A segment may hold almost any text - the exclusions are `/`, the control
+characters below tab, and a leading `?`, which is reserved for `?` and `?last`
+and for the filters a key will grow - so a key can mirror a real name without
+transforming it. Keys are not file paths, but they read like them: notes about a file can
 live at `notes/src/myfile.py`. A path may continue below a metadata segment,
 and everything under one is metadata rather than a document.
 
@@ -458,6 +475,11 @@ one - `?` allocates the key, so this costs no naming decision.
 
 A key that holds nothing itself but has keys beneath it is a container: reading
 it fails, listing it does not.
+
+`?last` in place of a whole segment names the key that sorts last there, so
+`context/?last/state` reads the newest context without looking the number up
+first. It works on any key a tool takes, counts containers, and the result says
+which key it resolved to.
 
 The empty key is the root, and omitting a key means the same thing. It holds a
 document like any other key and carries metadata as `!title`, so a store can
@@ -681,7 +703,15 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
     )
     @_reported
     def retrieve_document(
-        key: Annotated[str, Field(description="Key to read, e.g. context/a1b2/design")],
+        key: Annotated[
+            str,
+            Field(
+                description=(
+                    "Key to read, e.g. context/a1b2/design, or context/?last/design "
+                    "for the newest"
+                )
+            ),
+        ],
         offset: Annotated[int, Field(description="Character offset to start at", ge=0)] = 0,
         length: Annotated[
             int | None, Field(description="Characters to return; capped by max_chars", ge=0)
@@ -731,7 +761,8 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             Field(
                 description=(
                     "Key to write, e.g. context/a1b2/design, "
-                    "context/a1b2/design/!title, or context/?/design to allocate"
+                    "context/a1b2/design/!title, context/?/design to allocate a "
+                    "number, or context/?last/design for the newest"
                 )
             ),
         ],
@@ -883,7 +914,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         # characters of a document the same listing has just declined to show.
         replaced = [_replaced(found, e.key) for e in children]
         result: dict[str, Any] = {
-            "key": _scope(key),
+            "key": found.outer,
             "entries": [dataclasses.asdict(e) for e in items],
             "returned": len(items),
             "total": listing.total + sum(1 for e in replaced if e is None),
@@ -954,7 +985,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         # thing -- a mount is *stepped over* in the store above (it still holds
         # every row a mount shadows, and reading straight through would report
         # documents that reading by key refuses) and then *read* in its own.
-        segments = table.segments(key, depth)
+        segments = table.segments(at.outer, depth)
         documents, total, total_chars, cursor, spans = _across_segments(
             segments,
             lambda segment, **bounds: segment.store.get_documents(
@@ -972,7 +1003,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         )
 
         result: dict[str, Any] = {
-            "key": _scope(key),
+            "key": at.outer,
             "count": len(documents),
             "returned": len(documents),
             "total": total,
@@ -1065,7 +1096,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         # this whole tool exists to prevent -- while a mounted store's own
         # documents are exactly the ones a backfill has to find.
         names, total, total_chars, cursor, _ = _across_segments(
-            table.segments(key, depth),
+            table.segments(at.outer, depth),
             lambda segment, **bounds: segment.store.keys_missing_meta(
                 segment.subtree,
                 meta_name=meta_name if meta_name is not None else "title",
@@ -1080,7 +1111,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         )
 
         result: dict[str, Any] = {
-            "key": _scope(key),
+            "key": at.outer,
             "keys": names,
             "returned": len(names),
             "total": total,
@@ -1111,7 +1142,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
         # less, and it is deliberate: a delete that stopped at a boundary while
         # every other tool crossed it would leave the caller to discover the
         # rule from the wreckage. See `planned/mounts/crossing`.
-        segments = table.segments(key)
+        segments = table.segments(found.outer)
         deleted: list[str] = []
         refused: list[str] = []
         if not recursive:
@@ -1124,7 +1155,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             # yet -- but `remaining` is about to count what is down there, and
             # a caller told to pass `recursive` deserves to know which part of
             # that count it still would not reach.
-            refused = [mount.prefix for mount in table.below(key) if mount.read_only]
+            refused = [mount.prefix for mount in table.below(found.outer) if mount.read_only]
         else:
             for segment in segments:
                 if segment.mount.read_only:
@@ -1144,7 +1175,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
                     ),
                 )
 
-        result: dict[str, Any] = {"key": key, "deleted": deleted, "count": len(deleted)}
+        result: dict[str, Any] = {"key": found.outer, "deleted": deleted, "count": len(deleted)}
         if not recursive:
             # Without this a no-op delete and a successful one look identical,
             # so a key left standing reads as a key removed. Counted across

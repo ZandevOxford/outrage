@@ -531,6 +531,39 @@ def test_list_empty(store):
     assert store.list_keys("nothing/here").items == []
 
 
+# -- the last key at a level ----------------------------------------------
+
+
+def test_last_child_is_the_final_key_in_the_order_a_listing_walks(store):
+    for name in ("2", "10", "9"):
+        store.store_document(f"context/{name}/state", "x")
+    # Not the highest spelling, which would be "9": the level orders the way
+    # `sort_form` pads, and `?last` has to agree with what a listing shows.
+    assert store.last_child("context") == "10"
+
+
+def test_last_child_counts_a_key_that_only_has_things_below_it(store):
+    store.store_document("context/1/state", "x")
+    store.store_document("context/2/notes/a", "x")
+    # `context/2` holds no document of its own. It is still the newest thread
+    # of work, which is what `?last` is for.
+    assert store.last_child("context") == "2"
+
+
+def test_last_child_ignores_metadata(store):
+    store.store_document("context/1", "x", title="One")
+    # `!title` sorts after the document it belongs to at the same level, and
+    # `?last` stands where a document segment goes.
+    assert store.last_child("context") == "1"
+    assert store.last_child("context/1") is None
+
+
+def test_last_child_of_a_level_with_nothing_below_it(store):
+    store.store_document("context/1", "x")
+    assert store.last_child("nowhere") is None
+    assert store.last_child(keys.ROOT) == "context"
+
+
 # -- bulk reads ----------------------------------------------------------
 
 

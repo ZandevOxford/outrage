@@ -741,3 +741,59 @@ def test_the_root_document_does_not_list_below_itself(server):
 def test_a_slash_is_a_spelling_of_the_root(server):
     call(server, "store_document", key="/", content="body")
     assert call(server, "retrieve_document", key="")["content"] == "body"
+
+
+# -- ?last ------------------------------------------------------------------
+
+
+def test_last_reads_the_newest_key_and_says_which_one(server):
+    # `?` reports the number it allocated; this is the same obligation from the
+    # other end -- a caller that asked for the newest is told what that was.
+    result = call(server, "retrieve_document", key="context/?last/task")
+    assert result["key"] == "context/c3d4/task"
+    assert result["content"] == "Add a delete tool."
+
+
+def test_last_is_echoed_resolved_by_every_tool_that_takes_a_key(server):
+    for tool in ("list_keys", "get_documents", "keys_missing_meta"):
+        assert call(server, tool, key="context/?last")["key"] == "context/c3d4"
+
+
+def test_last_orders_the_way_a_listing_does(server):
+    for name in ("2", "10", "9"):
+        call(server, "store_document", key=f"threads/{name}/task", content=name)
+    # Numbers sort as numbers, so this is 10 and not the highest spelling.
+    assert call(server, "list_keys", key="threads/?last")["key"] == "threads/10"
+
+
+def test_last_writes_under_the_newest_key(server):
+    written = call(server, "store_document", key="context/?last/notes", content="body")
+    assert written["key"] == "context/c3d4/notes"
+    assert call(server, "retrieve_document", key="context/c3d4/notes")["content"] == "body"
+
+
+def test_last_and_a_wildcard_in_one_key(server):
+    # One segment resolved before the store is reached, the other allocated
+    # inside the write. The result names both.
+    written = call(server, "store_document", key="context/?last/?", content="body")
+    assert written["key"] == "context/c3d4/1"
+
+
+def test_last_deletes_from_the_newest_key(server):
+    result = call(server, "delete_keys", key="context/?last/task", recursive=True)
+    assert result["key"] == "context/c3d4/task"
+    assert result["deleted"] == ["context/c3d4/task", "context/c3d4/task/!title"]
+
+
+def test_last_with_nothing_below_it_is_refused_by_name(server):
+    message = call_expecting_error(server, "retrieve_document", key="nowhere/?last/task")
+    assert "nowhere" in message and "nothing below it" in message
+
+
+def test_a_key_spelled_last_can_no_longer_be_written(server):
+    # The one thing this costs: `?last` used to be an ordinary segment, so a
+    # key could be spelled that way. It now names the newest key instead, and
+    # there is no escape that gets the old meaning back.
+    written = call(server, "store_document", key="context/?last", content="x")
+    assert written["key"] == "context/c3d4"
+    assert "?last" not in [e["key"] for e in call(server, "list_keys", key="context")["entries"]]

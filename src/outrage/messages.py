@@ -236,6 +236,40 @@ def _key_segment_bad_character(
     )
 
 
+@template("key-reserved-segment")
+def _key_reserved_segment(name: Namer, /, *, key: str, segment: str, **_: Any) -> str:
+    return (
+        f"segment {segment!r} in key {key!r} is reserved: a segment beginning "
+        f"with {keys.RESERVED_PREFIX!r} names a filter or an operation, and "
+        f"{', '.join(sorted(repr(s) for s in keys.RESERVED_SEGMENTS))} are the "
+        f"only ones defined"
+    )
+
+
+@template("key-last-not-allowed")
+def _key_last_not_allowed(name: Namer, /, *, key: str, **_: Any) -> str:
+    return (
+        f"key {key!r} may not contain {keys.LAST!r} here; it is resolved "
+        f"against the store before a key is parsed"
+    )
+
+
+@template("key-last-in-metadata")
+def _key_last_in_metadata(name: Namer, /, *, key: str, **_: Any) -> str:
+    return (
+        f"key {key!r} may not name the last metadata segment; "
+        f"{keys.LAST!r} is allowed only in the document part of a key"
+    )
+
+
+@template("key-no-last-child")
+def _key_no_last_child(name: Namer, /, *, key: str, parent: str, **_: Any) -> str:
+    return (
+        f"key {key!r} asks for the last key below {name(parent)}, "
+        f"which has nothing below it"
+    )
+
+
 @template("key-no-wildcard-to-substitute")
 def _key_no_wildcard_to_substitute(name: Namer, /, *, key: str, **_: Any) -> str:
     return f"key {key!r} has no {keys.WILDCARD!r} segment to substitute"
