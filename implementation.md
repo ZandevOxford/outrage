@@ -2,10 +2,11 @@
 
 ## Currently implemented
 
-Environment: conda environment `rage`, Python 3.14.6, SQLite 3.53.4, pyarrow
-25.0.1. Package installed in editable mode with `pip install -e ".[dev]"`; the
-parquet backend needs `.[parquet]` as well. 902 tests and 17 doctests passing,
-`ruff check` clean, as of 2026-08-21. Doctests are not in
+Environment: Python 3.14 or later, which is what `requires-python` asks for.
+Developed against SQLite 3.53 and, for the optional parquet backend, pyarrow 25.
+Package installed in editable mode with `pip install -e ".[dev]"`; the parquet
+backend needs `.[parquet]` as well. 993 tests and 18 doctests passing,
+`ruff check .` clean, as of 2026-08-24. Doctests are not in
 `testpaths` and need a second run: `pytest --doctest-modules src/outrage`.
 `ruff format --check` reports six files it would reformat and has done for
 some time; the project lints and does not enforce the formatter.
@@ -291,7 +292,7 @@ mount table.
 ### 4. Integration with Claude Code - done
 
 * `.mcp.json` written, registering the server for this project. Its `command` is
-  an absolute path into the conda environment and so is machine specific.
+  an absolute path to the installed `outrage-server` and so is machine specific.
 * The server has been exercised end to end over stdio by an MCP client: tool
   listing, store, survey by `!title`, read and recursive delete.
 * Used from a real Claude Code session, which is what turned up the six points
@@ -387,11 +388,13 @@ tools whose behaviour was already known.
   only in the repository, so an install carries it and the CLI has something to
   install.
 * `.claude/skills/outrage` - a relative symlink to it, so this project uses the
-  copy it is editing.
+  copy it is editing. Nothing under `.claude/` is committed: it is rendered
+  output, and `outrage init` writes it into any project, this one included.
 * `.claude/settings.json` - a `SessionStart` hook. A `PreCompact` hook was
   installed here too until 2026-08-19; see below for why it is gone.
 * `tests/test_skill.py` - the skill is packaged, its frontmatter names it, and
-  the symlink still resolves to the packaged file.
+  what `.claude/` holds is the file in this checkout. That last check is
+  skipped where there is no `.claude/` to check, since it is not committed.
 
 The skill carries only judgment: survey before reading, what the three key
 namespaces are for, what is worth storing and what the repository already
