@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## 0.2.0 — unreleased
+## 0.2.0 - 2026-08-24
 
 **Breaking.** Everything still called `rage` is now `outrage`, and one on-disk
 format changed with it. The rename was finished in one go, deliberately, while
@@ -15,14 +15,14 @@ The key the format version is recorded under changed:
     rage.format-version  ->  outrage.format-version
 
 A parquet store written by any earlier release now fails to open, reporting
-`parquet-not-a-store` — which reads as though the file is not a store at all.
+`parquet-not-a-store` - which reads as though the file is not a store at all.
 **There is no migration and none is planned.** Rebuild affected files with
 `outrage pack` from the corpus they were packed from.
 
 ### The MCP server is named `outrage`, so every tool is renamed
 
-`mcp__rage__*` tools are now `mcp__outrage__*`. Anything naming the old tools —
-saved permissions, prompts, your own agent and skill files — needs updating.
+`mcp__rage__*` tools are now `mcp__outrage__*`. Anything naming the old tools -
+saved permissions, prompts, your own agent and skill files - needs updating.
 
 **This one needs a manual step.** `outrage config` and `outrage init` write the
 new `outrage` entry but cannot recognise the old `rage` one, so `.mcp.json`
@@ -36,7 +36,7 @@ server that fails to start.
 
 **This changes behaviour silently.** An unset variable is a default, not an
 error, so a shell profile still exporting the old names is ignored rather than
-refused — the store directory quietly becomes `./.outrage` again.
+refused - the store directory quietly becomes `./.outrage` again.
 
 `RAGE_TEST_INSTALLED` → `OUTRAGE_TEST_INSTALLED` (test suite only).
 
@@ -61,7 +61,7 @@ where they are and can be deleted.
   an upgrade that already ran are collapsed. This is why the session hook is
   the one item above that needs no manual step.
 
-## 0.1.2 — 2026-08-23
+## 0.1.2 - 2026-08-23
 
 * `?last` names the newest key, on every tool that takes a key, and `?` is
   reserved as a segment prefix.
@@ -71,12 +71,12 @@ where they are and can be deleted.
 * Packaging is tested: the built sdist and wheel are checked for every packaged
   data file, and the version has a single source.
 
-## 0.1.1 — 2026-08-22
+## 0.1.1 - 2026-08-22
 
 * Fixed: the 0.1.0 wheel was missing `outrage/skills/`, so `outrage init`
   aborted on a clean install without writing anything.
 
-## 0.1.0 — 2026-08-22
+## 0.1.0 - 2026-08-22
 
 First release. 0.1.0 remains installable and its `init` is broken; use 0.1.1 or
 later.
