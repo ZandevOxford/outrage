@@ -39,11 +39,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import keys
-from .errors import RageError
+from .errors import OutrageError
 from .store import Store, store_file
 
 
-class CheckError(RageError, RuntimeError):
+class CheckError(OutrageError, RuntimeError):
     """Raised when a store cannot be checked at all."""
 
 

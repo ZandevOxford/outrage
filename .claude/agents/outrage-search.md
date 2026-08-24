@@ -1,0 +1,1 @@
+../../src/outrage/agents/outrage-search.md

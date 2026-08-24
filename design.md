@@ -65,7 +65,7 @@ backups, and whatever an index or a vector store needs later. The file is
 The directory is resolved in this order:
 
 1. `--dir PATH` command line argument
-2. `RAGE_DIR` environment variable
+2. `OUTRAGE_DIR` environment variable
 3. `./.outrage/` relative to the server's working directory
 
 The file is `--root-mount FILE`, defaulting to `store.sqlite`, and it is
@@ -329,7 +329,7 @@ The second moment is **not** covered, and not for want of trying. A `PreCompact`
 hook was written and removed on 2026-08-19: it delivers nothing to the model at
 all, producing no attachment of any kind in the transcript - invisible rather
 than rejected. The moment is still worth reaching and how to reach it is open;
-see `planned/checkpoint-hook` in the rage store.
+see `planned/checkpoint-hook` in the outrage store.
 
 This is the same principle as putting `title` in the tool signature: the
 convention should be reachable at the moment it applies, rather than requiring
@@ -758,7 +758,7 @@ SQLite runs in WAL mode to tolerate concurrent readers.
 
 * **Key move and rename.** Not possible today: a key is the identity of a
   document, so relocating a subtree means rewriting every key beneath it and
-  every reference to them. Recorded under `scale` in the rage store rather than
+  every reference to them. Recorded under `scale` in the outrage store rather than
   designed here.
 
 * **Bootstrapping the skill configuration from the MCP server.** The server

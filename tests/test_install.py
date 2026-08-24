@@ -68,6 +68,17 @@ def marked(text: str, version: int = 1) -> dict:
 FOREIGN = {"hooks": [{"type": "command", "command": "echo 'the user own hook'"}]}
 
 
+def marked_by_a_former_name(text: str, name: str, version: int = 2) -> dict:
+    """An entry as a release under a *different* product name would have written it.
+
+    ``rage`` is the one that actually shipped: 0.1.1 wrote it, and the rename is
+    what made recognising it a problem. The second name is there to say the
+    matcher is not special-casing that one.
+    """
+    comment = f"{name}-managed:session-start:v{version}"
+    return {"hooks": [{"type": "command", "command": f"echo {text!r}  # {comment}"}]}
+
+
 # -- the packaged template -----------------------------------------------
 
 
@@ -154,6 +165,21 @@ def test_replaces_our_older_entry_in_place(tmp_path):
     assert change.action == "updated"
     assert change.previous == marked("old text")
     # Position matters: somebody may have ordered these deliberately.
+    assert entries(path) == [FOREIGN, template_entry()]
+
+
+@pytest.mark.parametrize("name", ["rage", "former"])
+def test_replaces_an_entry_written_under_a_former_product_name(tmp_path, name):
+    # The rename to `outrage` moved the marker, so an upgrade stopped
+    # recognising what the previous release wrote and appended a second hook.
+    path = settings_path(tmp_path)
+    previous = marked_by_a_former_name("old text", name)
+    write_json(path, {"hooks": {HOOK_EVENT: [FOREIGN, previous]}})
+
+    change = install(tmp_path)
+
+    assert change.action == "updated", "a renamed marker must not append a second hook"
+    assert change.previous == previous
     assert entries(path) == [FOREIGN, template_entry()]
 
 
@@ -287,11 +313,11 @@ def test_the_package_ships_a_skill_and_three_agents():
     """The copy is only as good as what is packaged, so check it is there."""
     relative = {str(r) for _, r in asset_sources()}
 
-    assert "skills/rage/SKILL.md" in relative
+    assert "skills/outrage/SKILL.md" in relative
     assert {r for r in relative if r.startswith("agents/")} >= {
-        "agents/rage-annotate.md",
-        "agents/rage-backfill.md",
-        "agents/rage-search.md",
+        "agents/outrage-annotate.md",
+        "agents/outrage-backfill.md",
+        "agents/outrage-search.md",
     }
 
 
@@ -305,7 +331,7 @@ def test_an_empty_project_gets_every_packaged_file(tmp_path):
 
 def test_a_second_run_copies_nothing(tmp_path):
     init(tmp_path)
-    skill = installed(tmp_path, "skills/rage/SKILL.md")
+    skill = installed(tmp_path, "skills/outrage/SKILL.md")
     before = skill.stat().st_mtime_ns
 
     assert actions(init(tmp_path).assets) == {"unchanged"}
@@ -315,7 +341,7 @@ def test_a_second_run_copies_nothing(tmp_path):
 def test_an_edited_copy_is_replaced_by_the_packaged_one(tmp_path):
     """The copy is output, not a document to keep: an upgrade has to reach it."""
     init(tmp_path)
-    skill = installed(tmp_path, "skills/rage/SKILL.md")
+    skill = installed(tmp_path, "skills/outrage/SKILL.md")
     skill.write_text("something older", encoding="utf-8")
 
     changes = init(tmp_path).assets
@@ -327,10 +353,10 @@ def test_an_edited_copy_is_replaced_by_the_packaged_one(tmp_path):
 
 def test_a_symlinked_file_is_left_alone(tmp_path):
     """Reported rather than silently skipped, and never written through."""
-    elsewhere = tmp_path / "source" / "rage-search.md"
+    elsewhere = tmp_path / "source" / "outrage-search.md"
     elsewhere.parent.mkdir(parents=True)
     elsewhere.write_text("the linked agent", encoding="utf-8")
-    link = installed(tmp_path, "agents/rage-search.md")
+    link = installed(tmp_path, "agents/outrage-search.md")
     link.parent.mkdir(parents=True)
     link.symlink_to(elsewhere)
 
@@ -342,11 +368,11 @@ def test_a_symlinked_file_is_left_alone(tmp_path):
 
 
 def test_a_symlinked_directory_is_left_alone(tmp_path):
-    """This repository links .claude/skills/rage at its own source tree."""
-    elsewhere = tmp_path / "source" / "rage"
+    """This repository links .claude/skills/outrage at its own source tree."""
+    elsewhere = tmp_path / "source" / "outrage"
     elsewhere.mkdir(parents=True)
     (elsewhere / "SKILL.md").write_text("the linked skill", encoding="utf-8")
-    link = installed(tmp_path, "skills/rage")
+    link = installed(tmp_path, "skills/outrage")
     link.parent.mkdir(parents=True)
     link.symlink_to(elsewhere, target_is_directory=True)
 
@@ -372,11 +398,11 @@ def servers(path: Path) -> dict:
 def test_init_writes_the_three_things(tmp_path):
     done = init(tmp_path)
 
-    entry = servers(tmp_path / ".mcp.json")["rage"]
+    entry = servers(tmp_path / ".mcp.json")["outrage"]
     assert Path(entry["command"]).is_absolute()
     assert entry["args"][-1] == str(tmp_path / ".outrage"), "the store defaults beside the project"
     assert is_ours(entries(settings_path(tmp_path))[-1])
-    assert installed(tmp_path, "skills/rage/SKILL.md").is_file()
+    assert installed(tmp_path, "skills/outrage/SKILL.md").is_file()
     assert done.writes
 
 
@@ -442,7 +468,7 @@ def test_a_refusal_stops_the_whole_run(tmp_path):
         init(tmp_path)
 
     assert not (tmp_path / ".mcp.json").exists(), "the server entry was not written either"
-    assert not installed(tmp_path, "skills/rage/SKILL.md").exists()
+    assert not installed(tmp_path, "skills/outrage/SKILL.md").exists()
 
 
 # -- the second harness: Copilot CLI -------------------------------------
@@ -517,7 +543,7 @@ def test_the_copilot_command_emits_the_context_and_hides_the_marker(shell):
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert "rage document store" in payload["additionalContext"]
+    assert "outrage document store" in payload["additionalContext"]
     assert "readme" in payload["additionalContext"]
     assert MARKER not in result.stdout
 

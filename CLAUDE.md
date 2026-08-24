@@ -1,7 +1,7 @@
 # Outrage
 
 This project keeps its working knowledge - decisions, findings, and where the
-work got to - in its own rage document store, reached through the `rage` MCP
+work got to - in its own outrage document store, reached through the `outrage` MCP
 tools. That store is the record. **This file is only a pointer to it**, so that
 nothing here can go stale against what the store says.
 
@@ -20,6 +20,6 @@ version behind. Use `outrage backup`.
 
 ## Conventions
 
-The `rage` skill (`.claude/skills/rage/SKILL.md`) holds the key conventions and
+The `outrage` skill (`.claude/skills/outrage/SKILL.md`) holds the key conventions and
 what is worth storing. The tools themselves carry the key grammar and the
 argument rules.

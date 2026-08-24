@@ -66,7 +66,7 @@ would change without writing.
   tens of thousands of documents - 11× smaller than the same corpus in SQLite,
   and it seeks a range rather than scanning one. It refuses writes, which is the
   storage rather than a setting.
-* **Skill** - `src/outrage/skills/rage/SKILL.md`, initially for Claude Code,
+* **Skill** - `src/outrage/skills/outrage/SKILL.md`, initially for Claude Code,
   covering when to store and retrieve and what key conventions to follow. It
   ships inside the package so that an install carries it, and `outrage init`
   copies it into a project. A `SessionStart` hook in `.claude/settings.json`,
@@ -90,7 +90,7 @@ pytest
 ruff check . && ruff format --check .
 ```
 
-The stores live in a directory given to the server by `--dir` or `RAGE_DIR`,
+The stores live in a directory given to the server by `--dir` or `OUTRAGE_DIR`,
 defaulting to `./.outrage/` in the working directory, each as a file inside it:
 `--root-mount FILE` names the one answering for everything (default
 `store.sqlite`) and `--mount KEY=FILE` mounts another under a key. A store file

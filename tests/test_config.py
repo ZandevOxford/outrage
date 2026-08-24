@@ -35,7 +35,7 @@ def write_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
-def apply(path: Path, entry: dict, name: str = "rage") -> Change:
+def apply(path: Path, entry: dict, name: str = "outrage") -> Change:
     """Plan and write in one step, as the command does."""
     change, merged, original = plan(path, "project", entry, name=name)
     if change.writes:
@@ -143,9 +143,8 @@ def test_creates_a_configuration_file(tmp_path):
     change = apply(path, {"command": "/env/bin/outrage-server", "args": ["--dir", "/store"]})
 
     assert change.action == "created"
-    assert (
-        json.loads(path.read_text())["mcpServers"]["rage"]["command"] == "/env/bin/outrage-server"
-    )
+    written = json.loads(path.read_text())["mcpServers"]["outrage"]
+    assert written["command"] == "/env/bin/outrage-server"
 
 
 def test_rerunning_with_the_same_entry_changes_nothing(tmp_path):
@@ -169,9 +168,8 @@ def test_rerunning_after_the_environment_moves_repairs_the_entry(tmp_path):
 
     assert change.action == "updated"
     assert change.previous == {"command": "/old/bin/outrage-server", "args": ["--dir", "/store"]}
-    assert (
-        json.loads(path.read_text())["mcpServers"]["rage"]["command"] == "/new/bin/outrage-server"
-    )
+    written = json.loads(path.read_text())["mcpServers"]["outrage"]
+    assert written["command"] == "/new/bin/outrage-server"
 
 
 def test_other_servers_and_other_keys_survive(tmp_path):
@@ -189,17 +187,17 @@ def test_other_servers_and_other_keys_survive(tmp_path):
     written = json.loads(path.read_text())
     assert written["numStartups"] == 7
     assert written["mcpServers"]["other"] == {"command": "/somewhere/else", "args": ["--flag"]}
-    assert set(written["mcpServers"]) == {"other", "rage"}
+    assert set(written["mcpServers"]) == {"other", "outrage"}
 
 
 def test_a_custom_name_leaves_the_default_entry_alone(tmp_path):
     path = tmp_path / ".mcp.json"
     apply(path, {"command": "/env/bin/outrage-server", "args": []})
-    apply(path, {"command": "/other/bin/outrage-server", "args": []}, name="rage-notes")
+    apply(path, {"command": "/other/bin/outrage-server", "args": []}, name="outrage-notes")
 
     servers = json.loads(path.read_text())["mcpServers"]
-    assert servers["rage"]["command"] == "/env/bin/outrage-server"
-    assert servers["rage-notes"]["command"] == "/other/bin/outrage-server"
+    assert servers["outrage"]["command"] == "/env/bin/outrage-server"
+    assert servers["outrage-notes"]["command"] == "/other/bin/outrage-server"
 
 
 def test_empty_file_is_treated_as_empty_configuration(tmp_path):
@@ -209,7 +207,7 @@ def test_empty_file_is_treated_as_empty_configuration(tmp_path):
     change = apply(path, {"command": "/env/bin/outrage-server", "args": []})
 
     assert change.action == "created"
-    assert "rage" in json.loads(path.read_text())["mcpServers"]
+    assert "outrage" in json.loads(path.read_text())["mcpServers"]
 
 
 # -- refusing to write ---------------------------------------------------
@@ -237,7 +235,7 @@ def test_non_object_file_is_left_alone(tmp_path):
 
 def test_non_object_servers_field_is_left_alone(tmp_path):
     path = tmp_path / ".mcp.json"
-    write_json(path, {"mcpServers": ["rage"]})
+    write_json(path, {"mcpServers": ["outrage"]})
 
     with raises_rendered(ConfigError, "not an object"):
         plan(path, "project", {"command": "x", "args": []})
@@ -245,7 +243,7 @@ def test_non_object_servers_field_is_left_alone(tmp_path):
 
 def test_non_object_existing_entry_is_left_alone(tmp_path):
     path = tmp_path / ".mcp.json"
-    write_json(path, {"mcpServers": {"rage": "outrage-server"}})
+    write_json(path, {"mcpServers": {"outrage": "outrage-server"}})
 
     with raises_rendered(ConfigError, "not an object"):
         plan(path, "project", {"command": "x", "args": []})
@@ -327,7 +325,7 @@ def test_read_config_reports_a_missing_file_as_empty(tmp_path):
 
 def test_server_name_is_the_key_that_gets_replaced():
     # The whole "leave unrelated servers alone" property rests on this.
-    assert config_module.SERVER_NAME == "rage"
+    assert config_module.SERVER_NAME == "outrage"
     assert config_module.SERVERS_FIELD == "mcpServers"
 
 

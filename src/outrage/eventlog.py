@@ -36,7 +36,7 @@ from typing import Any
 #: Environment variable naming the log file. Consulted after ``--log`` and
 #: before giving up: there is no default location, because the default is not
 #: to log at all.
-ENV_LOG = "RAGE_LOG"
+ENV_LOG = "OUTRAGE_LOG"
 
 #: Filename used when ``--log`` is given without a path, alongside the database
 #: in the store directory. That directory exists so things can live beside the
@@ -80,7 +80,7 @@ DEFAULT = _BesideTheStore()
 #: to the call that caused them. A context variable rather than an argument
 #: threaded through every store method: the store would otherwise have to carry
 #: a parameter that only exists because of a front end it knows nothing about.
-current_call: ContextVar[int | None] = ContextVar("rage_current_call", default=None)
+current_call: ContextVar[int | None] = ContextVar("outrage_current_call", default=None)
 
 
 class EventLog:
@@ -247,7 +247,7 @@ def resolve_path(
     explicit: str | os.PathLike[str] | _BesideTheStore | None,
     directory: str | os.PathLike[str],
 ) -> Path | None:
-    """Locate the log file: ``--log``, then RAGE_LOG, then off.
+    """Locate the log file: ``--log``, then OUTRAGE_LOG, then off.
 
     The same order ``store.resolve_directory`` uses, minus the fallback: there
     is no default location, because the default is not to log at all.

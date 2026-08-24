@@ -30,7 +30,7 @@ def test_config_writes_the_project_file(tmp_path):
     status, output = run("config", "--project-dir", str(tmp_path))
 
     assert status == 0
-    entry = servers(tmp_path / ".mcp.json")["rage"]
+    entry = servers(tmp_path / ".mcp.json")["outrage"]
     assert Path(entry["command"]).is_absolute()
     assert entry["args"][-1] == str(tmp_path / ".outrage")
     assert str(tmp_path / ".mcp.json") in output
@@ -39,7 +39,7 @@ def test_config_writes_the_project_file(tmp_path):
 def test_store_directory_defaults_beside_the_project(tmp_path):
     run("config", "--project-dir", str(tmp_path))
 
-    entry = servers(tmp_path / ".mcp.json")["rage"]
+    entry = servers(tmp_path / ".mcp.json")["outrage"]
     assert entry["args"][entry["args"].index("--dir") + 1] == str(tmp_path / ".outrage")
 
 
@@ -48,7 +48,7 @@ def test_explicit_store_directory_is_used(tmp_path):
 
     run("config", "--project-dir", str(tmp_path), "--dir", str(elsewhere))
 
-    entry = servers(tmp_path / ".mcp.json")["rage"]
+    entry = servers(tmp_path / ".mcp.json")["outrage"]
     assert entry["args"][-1] == str(elsewhere)
 
 
@@ -73,7 +73,7 @@ def test_report_names_both_paths_it_guessed(tmp_path):
     # if wrong, so both have to be visible before anyone runs the server.
     _, output = run("config", "--project-dir", str(tmp_path))
 
-    entry = servers(tmp_path / ".mcp.json")["rage"]
+    entry = servers(tmp_path / ".mcp.json")["outrage"]
     assert entry["command"] in output
     assert str(tmp_path / ".outrage") in output
 
@@ -81,7 +81,7 @@ def test_report_names_both_paths_it_guessed(tmp_path):
 def test_an_update_shows_what_it_replaced(tmp_path):
     path = tmp_path / ".mcp.json"
     path.write_text(
-        json.dumps({"mcpServers": {"rage": {"command": "/old/bin/outrage-server", "args": []}}}),
+        json.dumps({"mcpServers": {"outrage": {"command": "/old/bin/outrage-server", "args": []}}}),
         encoding="utf-8",
     )
 
@@ -96,14 +96,14 @@ def test_explicit_path_overrides_the_scope(tmp_path):
 
     run("config", "--project-dir", str(tmp_path), "--path", str(target))
 
-    assert "rage" in servers(target)
+    assert "outrage" in servers(target)
     assert not (tmp_path / ".mcp.json").exists()
 
 
 def test_custom_name_is_registered(tmp_path):
-    run("config", "--project-dir", str(tmp_path), "--name", "rage-notes")
+    run("config", "--project-dir", str(tmp_path), "--name", "outrage-notes")
 
-    assert set(servers(tmp_path / ".mcp.json")) == {"rage-notes"}
+    assert set(servers(tmp_path / ".mcp.json")) == {"outrage-notes"}
 
 
 def test_a_refusal_is_a_message_and_a_status(tmp_path, capsys):
@@ -122,7 +122,7 @@ def test_user_scope_targets_the_home_file(tmp_path, monkeypatch):
 
     run("config", "--scope", "user", "--project-dir", str(tmp_path))
 
-    assert "rage" in servers(tmp_path / ".claude.json")
+    assert "outrage" in servers(tmp_path / ".claude.json")
 
 
 def test_config_leaves_logging_off_by_default(tmp_path):
@@ -130,14 +130,14 @@ def test_config_leaves_logging_off_by_default(tmp_path):
 
     # It records document text, so it is never turned on by a command that was
     # not asked to turn it on.
-    assert "--log" not in servers(tmp_path / ".mcp.json")["rage"]["args"]
+    assert "--log" not in servers(tmp_path / ".mcp.json")["outrage"]["args"]
 
 
 def test_config_can_turn_logging_on(tmp_path):
     status, output = run("config", "--project-dir", str(tmp_path), "--log")
 
     assert status == 0
-    assert servers(tmp_path / ".mcp.json")["rage"]["args"][-1] == "--log"
+    assert servers(tmp_path / ".mcp.json")["outrage"]["args"][-1] == "--log"
     assert "--log" in output
 
 
@@ -155,14 +155,14 @@ def test_config_records_mounts_as_files_inside_the_store_directory(tmp_path):
     )
 
     assert status == 0
-    args = servers(tmp_path / ".mcp.json")["rage"]["args"]
+    args = servers(tmp_path / ".mcp.json")["outrage"]["args"]
     assert args[args.index("--root-mount") + 1] == "main.sqlite"
     assert args[args.index("--mount") + 1] == "lib=lib.sqlite"
     assert args[args.index("--mount-ro") + 1] == "ref=reference.sqlite"
     # Only --dir is absolute; everything else names a store inside it, which is
     # what lets the project move with one line to fix.
     assert [a for a in args if a.startswith("/")] == [
-        servers(tmp_path / ".mcp.json")["rage"]["args"][args.index("--dir") + 1]
+        servers(tmp_path / ".mcp.json")["outrage"]["args"][args.index("--dir") + 1]
     ]
 
 
@@ -390,8 +390,8 @@ def test_log_limit_keeps_the_end_and_says_what_it_dropped(tmp_path):
 def test_log_finds_the_file_beside_the_store_by_default(tmp_path, monkeypatch):
     a_log(tmp_path / ".outrage")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("RAGE_LOG", raising=False)
-    monkeypatch.delenv("RAGE_DIR", raising=False)
+    monkeypatch.delenv("OUTRAGE_LOG", raising=False)
+    monkeypatch.delenv("OUTRAGE_DIR", raising=False)
 
     status, output = run("log")
 
@@ -1132,9 +1132,9 @@ def test_init_arranges_the_whole_project(tmp_path):
     status, output = run("init", "--project-dir", str(tmp_path))
 
     assert status == 0
-    assert servers(tmp_path / ".mcp.json")["rage"]
+    assert servers(tmp_path / ".mcp.json")["outrage"]
     assert (tmp_path / ".claude" / "settings.json").is_file()
-    assert (tmp_path / ".claude" / "skills" / "rage" / "SKILL.md").is_file()
+    assert (tmp_path / ".claude" / "skills" / "outrage" / "SKILL.md").is_file()
     assert "added" in output
 
 
@@ -1152,13 +1152,13 @@ def test_init_names_every_path_it_touches(tmp_path):
 
     assert str(tmp_path / ".mcp.json") in output
     assert str(tmp_path / ".claude" / "settings.json") in output
-    assert "skills/rage/SKILL.md" in output
+    assert "skills/outrage/SKILL.md" in output
 
 
 def test_init_records_the_store_directory_and_the_log(tmp_path):
     run("init", "--project-dir", str(tmp_path), "--dir", str(tmp_path / "store"), "--log")
 
-    args = servers(tmp_path / ".mcp.json")["rage"]["args"]
+    args = servers(tmp_path / ".mcp.json")["outrage"]["args"]
     assert str(tmp_path / "store") in args
     assert "--log" in args
 

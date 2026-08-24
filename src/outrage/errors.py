@@ -38,7 +38,7 @@ from collections.abc import Mapping
 from typing import Any
 
 
-class RageError(Exception):
+class OutrageError(Exception):
     """A failure a caller asked for and should be told about in a sentence.
 
     ``code`` names *which* failure, uniquely across the whole codebase, and is
@@ -60,4 +60,4 @@ class RageError(Exception):
     __repr__ = __str__
 
 
-__all__ = ["RageError"]
+__all__ = ["OutrageError"]

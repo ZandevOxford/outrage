@@ -5,7 +5,7 @@ The suite already guards that the packaged files are *in the checkout* -
 reach the artefacts, and 0.1.0 went to PyPI without ``src/outrage/skills/``:
 the build walked a dogfooding symlink, claimed the inode under ``.claude`` and
 skipped the real directory. Every test passed, because a test that reads the
-checkout cannot see what the build dropped. ``context/48/findings`` in the rage
+checkout cannot see what the build dropped. ``context/48/findings`` in the outrage
 store has the whole of it.
 
 So these tests build the artefacts and read them. The build follows the path a
@@ -120,7 +120,7 @@ def test_there_are_data_files_to_lose():
     # while asserting nothing. The skill is named because it is the file that
     # actually went missing.
     files = _data_files()
-    assert "skills/rage/SKILL.md" in files
+    assert "skills/outrage/SKILL.md" in files
     assert len(files) >= 5, files
 
 

@@ -11,9 +11,9 @@ from typing import Any
 
 import anyio
 import pytest
-from conftest import raises_rendered
 from mcp.server.mcpserver.exceptions import ToolError
 
+from conftest import raises_rendered
 from outrage import keys, messages
 from outrage.mounts import (
     MOUNT_KIND,
@@ -918,7 +918,7 @@ def test_two_things_worth_saying_are_both_said(tmp_path):
         assert "refuse a delete" in result["note"]
 
 
-def test_rage_check_finds_a_key_that_predates_the_bound(tmp_path):
+def test_outrage_check_finds_a_key_that_predates_the_bound(tmp_path):
     """The discovery path for the one remaining way a join can fail.
 
     `Mount.outer` raises when it meets such a key, which is correct and late.

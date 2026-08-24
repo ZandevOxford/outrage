@@ -1,4 +1,4 @@
-"""Turning a :class:`~outrage.errors.RageError` into a sentence for a person.
+"""Turning a :class:`~outrage.errors.OutrageError` into a sentence for a person.
 
 The one place wording lives. The layers that *raise* carry facts and a code
 (see :mod:`outrage.errors`); this renders them, and the front end says how a key
@@ -29,7 +29,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from . import keys
-from .errors import RageError
+from .errors import OutrageError
 
 #: How a key is named when nobody says otherwise: as one store sees it.
 Namer = Callable[[str], str]
@@ -60,7 +60,7 @@ def template(code: str) -> Callable[[Callable[..., str]], Callable[..., str]]:
     return register
 
 
-def render(error: RageError, name: Namer | None = None) -> str:
+def render(error: OutrageError, name: Namer | None = None) -> str:
     """``error`` as one line, with keys named the way ``name`` says.
 
     Front ends call this; nothing else should. A code with no template is a

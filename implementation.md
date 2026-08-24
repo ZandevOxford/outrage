@@ -276,7 +276,7 @@ is called; `Store` is still untouched. A listing reports the mount point as
 `kind: "read-only mount"`, which is the only announcement - a `read_only` field
 on `Entry` would appear as a null on every entry of every listing. `open_mounts`
 refuses a read-only mount whose database does not exist, since `Store` would
-otherwise create one, and `server.main` now renders a `RageError` as one line
+otherwise create one, and `server.main` now renders a `OutrageError` as one line
 and exits 1 rather than tracebacking, which is the rule `cli.main` already
 followed.
 
@@ -383,10 +383,10 @@ Expected to be the hardest part and the one that determines whether the system
 is actually used in practice; deliberately last, so it could be written against
 tools whose behaviour was already known.
 
-* `src/outrage/skills/rage/SKILL.md` - the skill. Inside the package rather than
+* `src/outrage/skills/outrage/SKILL.md` - the skill. Inside the package rather than
   only in the repository, so an install carries it and the CLI has something to
   install.
-* `.claude/skills/rage` - a relative symlink to it, so this project uses the
+* `.claude/skills/outrage` - a relative symlink to it, so this project uses the
   copy it is editing.
 * `.claude/settings.json` - a `SessionStart` hook. A `PreCompact` hook was
   installed here too until 2026-08-19; see below for why it is gone.
@@ -430,7 +430,7 @@ boundary three times.
 
 ### 8. Event log - `src/outrage/eventlog.py` - done
 
-Steps 6 and 7 - the CLI and the packaged agents - are recorded in the rage
+Steps 6 and 7 - the CLI and the packaged agents - are recorded in the outrage
 store under `project/reference/implementation` rather than here.
 
 Off unless `--log` is given, since it records document text. Design and
@@ -468,7 +468,7 @@ Two things the build found that prose would not have:
 
 ## Planned work
 
-Not recorded here. The CLI and everything after it live in the rage store, under
+Not recorded here. The CLI and everything after it live in the outrage store, under
 `project/reference/planned`, so that a plan being worked from cannot go stale
 against a file nobody reopened. Deferred and unscheduled work stays in the
 Deferred section of design.md.

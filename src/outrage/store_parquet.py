@@ -110,7 +110,7 @@ DEFAULT_STORE_FILE = "store.parquet"
 FORMAT_VERSION = 1
 
 #: Where that version is written.
-VERSION_KEY = b"rage.format-version"
+VERSION_KEY = b"outrage.format-version"
 
 #: The columns held whole once a file is opened: everything except ``content``.
 #: Naming them is what keeps the promise in the module docstring checkable --

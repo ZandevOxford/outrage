@@ -28,8 +28,8 @@ import pathlib
 import threading
 
 import pytest
-from conftest import in_threads, raises_rendered
 
+from conftest import in_threads, raises_rendered
 from outrage import bulk, keys
 from outrage import store as store_module
 from outrage.store import (

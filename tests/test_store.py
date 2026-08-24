@@ -19,8 +19,8 @@ import sqlite3
 import threading
 
 import pytest
-from conftest import in_threads, raises_rendered
 
+from conftest import in_threads, raises_rendered
 from outrage import keys
 from outrage import store as store_module
 from outrage.eventlog import EventLog

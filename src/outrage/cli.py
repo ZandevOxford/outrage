@@ -25,7 +25,7 @@ from typing import TextIO
 
 from . import __version__, bulk, eventlog, install, keys, logread, maintenance, messages, store
 from . import config as config_module
-from .errors import RageError
+from .errors import OutrageError
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -91,7 +91,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "config",
         help="write the MCP server configuration for a project or user",
         description=(
-            "Register the rage MCP server, filling in the absolute path to this "
+            "Register the outrage MCP server, filling in the absolute path to this "
             "environment's entry point and to the store directory. Only the "
             "server's own entry is touched; anything else in the file is left "
             "as it was. Options already on that entry are kept unless this run "
@@ -939,7 +939,7 @@ def _content(args: argparse.Namespace) -> str:
     return sys.stdin.read()
 
 
-class ConflictingSourceError(RageError):
+class ConflictingSourceError(OutrageError):
     """Raised when the content to store cannot be determined from the arguments."""
 
 
@@ -1376,7 +1376,7 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     """Run one command and return its exit status.
 
     The console script ``outrage``, and the whole of what this front end does:
-    parse, dispatch, and turn a :class:`~outrage.errors.RageError` into a sentence
+    parse, dispatch, and turn a :class:`~outrage.errors.OutrageError` into a sentence
     on stderr. ``out`` is where a command's own output goes, and defaults to
     stdout; a test passes its own and reads what a person would have seen.
 
@@ -1387,9 +1387,9 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     args = parse_args(argv)
     try:
         return args.handler(args, out or sys.stdout)
-    except RageError as exc:
+    except OutrageError as exc:
         # One base rather than a tuple that grows with each command. A failure
-        # that is not a RageError is a bug in outrage, and a traceback is the right
+        # that is not a OutrageError is a bug in outrage, and a traceback is the right
         # output for a bug.
         #
         # Rendered here, because this is a front end and the error is not. The

@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from . import keys, messages, store
-from .errors import RageError
+from .errors import OutrageError
 
 #: How much of a collection one internal query asks for. The command line reads
 #: to the end regardless, so this only decides how many round trips that takes
@@ -110,7 +110,7 @@ READ = "read"
 STOPPED = "stopped"
 
 
-class UnmappableError(RageError, ValueError):
+class UnmappableError(OutrageError, ValueError):
     """Raised when a key has no file it can be written to, or a file no key."""
 
 
@@ -202,7 +202,7 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
         # be named by the empty stem: `.md`, which is hidden, which an import
         # skips by default. That does not relocate the root document, it drops
         # it. Refused until the naming is settled -- see `planned/root-key` in
-        # the rage store, which has the two ways out. The root's *metadata*
+        # the outrage store, which has the two ways out. The root's *metadata*
         # maps normally, as `!title.md`, so only the document itself is stuck.
         raise UnmappableError("root-has-no-filename")
     segments = parsed.split(keys.DELIMITER)
@@ -294,7 +294,7 @@ def export_tree(
 
         try:
             excerpt = store.read_all(opened, stored)
-        except RageError as exc:
+        except OutrageError as exc:
             # A key can go between the listing and the read; the walk is not a
             # snapshot and nothing here pretends it is.
             yield Transfer(FAILED, stored, path, messages.render(exc))
@@ -362,7 +362,7 @@ def _write_file(path: Path, content: str) -> None:
 # -- into the store ------------------------------------------------------
 
 
-class SourceMissingError(RageError, FileNotFoundError):
+class SourceMissingError(OutrageError, FileNotFoundError):
     """Raised when the directory to import from is not there."""
 
 

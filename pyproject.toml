@@ -56,7 +56,7 @@ path = "src/outrage/__init__.py"
 # wheel built from it, silently lost `src/outrage/skills/`.
 #
 # hatchling walks the project with `safe_walk`, which follows symlinks and
-# refuses to visit the same (st_dev, st_ino) twice. `.claude/skills/rage` is a
+# refuses to visit the same (st_dev, st_ino) twice. `.claude/skills/outrage` is a
 # symlink to a directory inside `src/`, for dogfooding, and `.claude` sorts
 # before `src` - so the walk claimed that inode under `.claude` and then
 # skipped the real directory as already seen. `exclude` alone does not help:

@@ -55,7 +55,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
 
 from . import eventlog, keys
-from .errors import RageError
+from .errors import OutrageError
 from .eventlog import EventLog
 
 if TYPE_CHECKING:
@@ -65,7 +65,7 @@ if TYPE_CHECKING:
     from .maintenance import Repaired, Report
 
 #: Default directory name, relative to the working directory, when neither
-#: --dir nor RAGE_DIR is given.
+#: --dir nor OUTRAGE_DIR is given.
 DEFAULT_DIR_NAME = ".outrage"
 
 #: Where backups go when no destination is given, relative to the store
@@ -80,7 +80,7 @@ BACKUP_STAMP = "%Y%m%d-%H%M%S"
 #: Environment variable naming the store directory, consulted when no ``--dir``
 #: is given. See :func:`resolve_directory` for the order the three sources
 #: are tried in.
-ENV_DIR = "RAGE_DIR"
+ENV_DIR = "OUTRAGE_DIR"
 
 #: Cap on a single retrieve, so one oversized document cannot flood an agent's
 #: context window. The caller pages with the returned next_offset.
@@ -104,7 +104,7 @@ FORMATS = ("markdown", "json", "text", "html")
 ENCODINGS = ("json-string",)
 
 
-class StoreFileError(RageError, ValueError):
+class StoreFileError(OutrageError, ValueError):
     """A store file that does not name a file inside its directory.
 
     A store file is always relative to the directory holding it -- that is what
@@ -115,19 +115,19 @@ class StoreFileError(RageError, ValueError):
     """
 
 
-class KeyNotFoundError(RageError, LookupError):
+class KeyNotFoundError(OutrageError, LookupError):
     """Raised when a key holds no content."""
 
 
-class PatternNotFoundError(RageError, LookupError):
+class PatternNotFoundError(OutrageError, LookupError):
     """Raised when a search pattern does not occur in a document."""
 
 
-class BackupError(RageError, RuntimeError):
+class BackupError(OutrageError, RuntimeError):
     """Raised when a backup cannot be taken, or cannot be shown to be good."""
 
 
-class ReadOnlyStoreError(RageError, PermissionError):
+class ReadOnlyStoreError(OutrageError, PermissionError):
     """Raised when a store is asked to write and its backend cannot.
 
     Distinct from :class:`outrage.mounts.ReadOnlyMountError`, which is about a
@@ -139,7 +139,7 @@ class ReadOnlyStoreError(RageError, PermissionError):
     """
 
 
-class BackendError(RageError, RuntimeError):
+class BackendError(OutrageError, RuntimeError):
     """Raised when a backend cannot be used: absent, or asked for a file it
     did not write."""
 
@@ -394,7 +394,7 @@ def store_file(
 
 
 def resolve_directory(explicit: str | os.PathLike[str] | None = None) -> Path:
-    """Locate the store directory: explicit path, then RAGE_DIR, then ./.outrage.
+    """Locate the store directory: explicit path, then OUTRAGE_DIR, then ./.outrage.
 
     A directory rather than a file, so that other files can live beside the
     database later.
