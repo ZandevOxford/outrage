@@ -12,13 +12,13 @@ from pathlib import Path
 
 import outrage
 
-SKILL = Path(outrage.__file__).parent / "skills" / "rage" / "SKILL.md"
+SKILL = Path(outrage.__file__).parent / "skills" / "outrage" / "SKILL.md"
 REPO = Path(__file__).resolve().parents[1]
-DOGFOOD = REPO / ".claude" / "skills" / "rage" / "SKILL.md"
+DOGFOOD = REPO / ".claude" / "skills" / "outrage" / "SKILL.md"
 # Where the symlink is meant to land. Not ``SKILL``: that is whichever copy is
 # under test, and under ``OUTRAGE_TEST_INSTALLED`` it is an installed one,
 # which this project's own configuration has no reason to point at.
-IN_CHECKOUT = REPO / "src" / "outrage" / "skills" / "rage" / "SKILL.md"
+IN_CHECKOUT = REPO / "src" / "outrage" / "skills" / "outrage" / "SKILL.md"
 
 
 def _frontmatter(text: str) -> dict[str, str]:
@@ -40,7 +40,7 @@ def test_skill_is_packaged():
 
 def test_frontmatter_names_the_skill():
     fields = _frontmatter(SKILL.read_text())
-    assert fields["name"] == "rage"
+    assert fields["name"] == "outrage"
     # The description is the only part always in context, so it is what decides
     # whether the skill is ever reached.
     assert len(fields["description"]) > 100

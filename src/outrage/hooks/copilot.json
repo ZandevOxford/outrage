@@ -4,9 +4,9 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "echo '{\"additionalContext\":\"Unless you are told otherwise, read the document at key \\\"readme\\\" in the rage document store to find what is available and the conventions for this project.\"}'",
-        "powershell": "Write-Output '{\"additionalContext\":\"Unless you are told otherwise, read the document at key \\\"readme\\\" in the rage document store to find what is available and the conventions for this project.\"}'",
-        "comment": "rage-managed:session-start:v2"
+        "bash": "echo '{\"additionalContext\":\"Unless you are told otherwise, read the document at key \\\"readme\\\" in the outrage document store to find what is available and the conventions for this project.\"}'",
+        "powershell": "Write-Output '{\"additionalContext\":\"Unless you are told otherwise, read the document at key \\\"readme\\\" in the outrage document store to find what is available and the conventions for this project.\"}'",
+        "comment": "outrage-managed:session-start:v2"
       }
     ]
   }

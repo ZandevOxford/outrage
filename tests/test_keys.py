@@ -1,6 +1,6 @@
 import pytest
-from conftest import raises_rendered
 
+from conftest import raises_rendered
 from outrage import keys
 from outrage.keys import InvalidKeyError
 

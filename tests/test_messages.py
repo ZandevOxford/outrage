@@ -17,7 +17,7 @@ import pathlib
 import pytest
 
 from outrage import keys, messages
-from outrage.errors import RageError
+from outrage.errors import OutrageError
 from outrage.mounts import Mount, Mounts, ReadOnlyMountError
 from outrage.store import KeyNotFoundError
 from outrage.store_sqlite import SqliteStore
@@ -25,8 +25,8 @@ from outrage.store_sqlite import SqliteStore
 SOURCE = pathlib.Path(messages.__file__).parent
 
 
-def _rage_errors() -> set[str]:
-    """Every exception class in the package that ends up a ``RageError``.
+def _outrage_errors() -> set[str]:
+    """Every exception class in the package that ends up a ``OutrageError``.
 
     Derived from the source rather than listed here. A hand-kept list is a
     second place to remember a new error, and the way it fails is silent: a
@@ -46,7 +46,7 @@ def _rage_errors() -> set[str]:
             if isinstance(node, ast.ClassDef):
                 bases[node.name] = {b.id for b in node.bases if isinstance(b, ast.Name)}
 
-    errors = {"RageError"}
+    errors = {"OutrageError"}
     while True:
         found = {name for name, parents in bases.items() if parents & errors}
         if found <= errors:
@@ -54,11 +54,11 @@ def _rage_errors() -> set[str]:
         errors |= found
 
 
-RAGE_ERRORS = _rage_errors()
+OUTRAGE_ERRORS = _outrage_errors()
 
 
 def _raises() -> list[tuple[str, int, ast.Call]]:
-    """Every ``raise SomeRageError(...)`` in the package, with where it is."""
+    """Every ``raise SomeOutrageError(...)`` in the package, with where it is."""
     found = []
     for path in sorted(SOURCE.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -67,7 +67,7 @@ def _raises() -> list[tuple[str, int, ast.Call]]:
                 continue
             function = node.exc.func
             name = getattr(function, "id", getattr(function, "attr", None))
-            if name in RAGE_ERRORS:
+            if name in OUTRAGE_ERRORS:
                 found.append((path.name, node.lineno, node.exc))
     return found
 
@@ -134,7 +134,7 @@ def test_every_template_renders_from_the_details_its_raise_site_passes():
     for filename, lineno, call in _raises():
         code = call.args[0].value
         details = {keyword.arg: _stand_in(keyword.arg) for keyword in call.keywords if keyword.arg}
-        error = RageError(code, **details)
+        error = OutrageError(code, **details)
         rendered = messages.render(error)
         assert isinstance(rendered, str) and rendered, f"{filename}:{lineno} renders nothing"
 
@@ -184,7 +184,7 @@ def test_the_container_advice_names_the_key_the_caller_would_use(tmp_path):
 
 def test_a_render_without_a_template_raises_rather_than_guessing():
     with pytest.raises(AssertionError, match="no message template"):
-        messages.render(RageError("not-a-real-code"))
+        messages.render(OutrageError("not-a-real-code"))
 
 
 def test_a_read_only_refusal_still_names_the_key_that_was_asked_for(tmp_path):

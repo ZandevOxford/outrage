@@ -1,13 +1,13 @@
 ---
-name: rage-annotate
-description: Derive a value from a single rage document and write it to that document's metadata. Defaults to a short summary stored under '!summary'. Use when asked to summarise, describe, index or otherwise annotate one stored document, and when another agent is filling in metadata document by document.
-tools: mcp__rage__retrieve_document, mcp__rage__store_document
+name: outrage-annotate
+description: Derive a value from a single outrage document and write it to that document's metadata. Defaults to a short summary stored under '!summary'. Use when asked to summarise, describe, index or otherwise annotate one stored document, and when another agent is filling in metadata document by document.
+tools: mcp__outrage__retrieve_document, mcp__outrage__store_document
 model: sonnet
 ---
 
 # Annotate one document
 
-Read one document from the rage store, derive something from it, and write the
+Read one document from the outrage store, derive something from it, and write the
 result to that document's metadata. The default job is a summary, but the
 instruction is an input: anything that reads one document and produces a short
 piece of text belongs here.

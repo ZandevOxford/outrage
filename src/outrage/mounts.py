@@ -42,7 +42,7 @@ from pathlib import Path
 
 from . import keys
 from . import store as store_module
-from .errors import RageError
+from .errors import OutrageError
 from .eventlog import EventLog
 from .store import (
     BoundedSubtree,
@@ -82,11 +82,11 @@ MOUNT_KIND = "mount"
 READ_ONLY_MOUNT_KIND = "read-only mount"
 
 
-class MountError(RageError, ValueError):
+class MountError(OutrageError, ValueError):
     """Raised when a mount table cannot be built as described."""
 
 
-class ReadOnlyMountError(RageError, PermissionError):
+class ReadOnlyMountError(OutrageError, PermissionError):
     """Raised when a write is routed to a mount that was mounted read-only.
 
     Separate from :class:`MountError`, which is about a table that cannot be

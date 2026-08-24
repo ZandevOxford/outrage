@@ -22,7 +22,7 @@ to call the `outrage` console script by absolute path; see
 `project/reference/planned/hook-install` in the store.
 
 A re-run recognises its own entry by a marker carried as a shell comment on
-the command - `# rage-managed:session-start:v1`, matched on the prefix so a
+the command - `# outrage-managed:session-start:v1`, matched on the prefix so a
 version bump still identifies it. `hooks.SessionStart` is a list with no name
 to key on the way `mcpServers` has one, and an unknown JSON key would depend on
 the client tolerating one. See `project/reference/planned/hook-install/marker`.

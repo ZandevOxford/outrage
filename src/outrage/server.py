@@ -26,7 +26,7 @@ from pydantic import Field
 from . import __version__, eventlog, keys, messages
 from . import mounts as mounts_module
 from . import store as store_module
-from .errors import RageError
+from .errors import OutrageError
 from .eventlog import EventLog
 from .mounts import Mounts, Resolved, Segment
 from .store import (
@@ -54,7 +54,7 @@ def _scope(key: str | None) -> str:
 
 
 def _reported[**P, T](function: Callable[P, T]) -> Callable[P, T]:
-    """Render a :class:`RageError` from a tool into the sentence a caller reads.
+    """Render a :class:`OutrageError` from a tool into the sentence a caller reads.
 
     The boundary the whole of :mod:`outrage.messages` exists for. Below here an
     error carries facts and a code; a caller gets one line, and gets it with
@@ -75,7 +75,7 @@ def _reported[**P, T](function: Callable[P, T]) -> Callable[P, T]:
     def reported(*args: P.args, **kwargs: P.kwargs) -> T:
         try:
             return function(*args, **kwargs)
-        except RageError as exc:
+        except OutrageError as exc:
             raise ToolError(messages.render(exc)) from exc
 
     return reported
@@ -152,7 +152,7 @@ def _named(mount: mounts_module.Mount) -> Iterator[None]:
     """
     try:
         yield
-    except RageError as exc:
+    except OutrageError as exc:
         raise ToolError(messages.render(exc, name=mount.outer)) from exc
 
 
@@ -684,7 +684,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
     log = log if log is not None else eventlog.NULL
     table = store if isinstance(store, Mounts) else Mounts.single(store)
     server = MCPServer(
-        name="rage",
+        name="outrage",
         version=__version__,
         instructions=instructions(table),
         # Registered only when there is somewhere to write, so that the default
@@ -1315,7 +1315,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Store directory: the one directory holding every store this "
             "server serves, and the event log and backups beside them. "
-            "Defaults to the RAGE_DIR environment variable, then ./.outrage in "
+            "Defaults to the OUTRAGE_DIR environment variable, then ./.outrage in "
             "the working directory."
         ),
     )
@@ -1428,11 +1428,11 @@ def main(argv: list[str] | None = None) -> int:
                     file=sys.stderr,
                 )
             build_server(table, log).run("stdio")
-    except RageError as exc:
+    except OutrageError as exc:
         # The same rule `cli.main` follows, and for the same reason: a mount
         # table that cannot be built is an answer about the configuration, not
         # a bug, and a traceback in a client's stderr is where an operator is
-        # least able to read one. Anything that is not a RageError still
+        # least able to read one. Anything that is not a OutrageError still
         # tracebacks, because that is a bug in outrage.
         #
         # The default namer: nothing has been mounted yet when a table refuses

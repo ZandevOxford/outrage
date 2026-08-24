@@ -24,14 +24,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .errors import RageError
+from .errors import OutrageError
 from .eventlog import DEFAULT as LOG_BESIDE_STORE
 from .mounts import SPEC_DELIMITER, parse_spec
 from .store import DEFAULT_DIR_NAME, default_store_file
 
 #: The name this server is registered under. Also the key that a re-run
 #: replaces, which is what keeps unrelated servers in the file untouched.
-SERVER_NAME = "rage"
+SERVER_NAME = "outrage"
 
 #: Project scoped configuration, committed with the project and read by clients
 #: from the project root.
@@ -57,7 +57,7 @@ SCRIPT_NAME = "outrage-server"
 _DEFAULT_INDENT = 2
 
 
-class ConfigError(RageError, RuntimeError):
+class ConfigError(OutrageError, RuntimeError):
     """Raised when existing configuration cannot be safely updated."""
 
 

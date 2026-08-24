@@ -46,7 +46,7 @@ destroy hooks it did not write.
 
 So the command carries a marker as a trailing shell comment::
 
-    echo '{"hookSpecificOutput": …}'  # rage-managed:session-start:v1
+    echo '{"hookSpecificOutput": …}'  # outrage-managed:session-start:v1
 
 Verified to produce identical output under ``sh``, ``bash`` and ``zsh``, with
 the marker absent from stdout in all three.
@@ -62,7 +62,7 @@ question in the store rather than guessing at it. :func:`is_ours` looks for the
 marker anywhere in the entry, so both forms are recognised and a later
 correction moves it without a migration.
 
-An unknown JSON key on the entry - ``{"_rageManaged": …}`` - was tested and
+An unknown JSON key on the entry - ``{"_outrageManaged": …}`` - was tested and
 works: the client tolerates it and the hook still fires. It was rejected
 anyway. It depends on that tolerance continuing, which is undocumented, and if
 it ever stops the hook is rejected and delivers nothing *silently*. A shell
@@ -70,9 +70,19 @@ comment depends only on POSIX shell semantics and cannot break a hook that runs
 at all. Both client behaviours this project has been burnt by were undocumented
 ones; see ``project/reference/harness-delivery`` in the store.
 
-**Match on the prefix, never the whole marker.** ``:vN`` is informational. A
-matcher that includes the version stops recognising the entry it exists to
-replace the moment the version changes, which is how one hook becomes two.
+**Match on the stable part, never the whole marker.** ``:vN`` is
+informational, and so is the product name in front of it. A matcher that
+includes either stops recognising the entry it exists to replace the moment
+that part changes, which is how one hook becomes two.
+
+That is not hypothetical: the rename to ``outrage`` moved the name, an upgrade
+stopped recognising what the previous release had written, and ``init``
+appended a second session-start hook instead of replacing the first. So
+:data:`MARKER` is what gets *written* and :data:`MARKER_MATCH` is what gets
+*compared*, and the second is the part a rename does not touch. The cost is a
+slightly wider namespace claim - any entry carrying ``-managed:session-start``
+is treated as ours - which is the same bet the previous matcher already made
+one word further along.
 
 ## The bridge this is
 
@@ -96,10 +106,14 @@ from typing import Any
 from . import config
 from .config import ConfigError, read_config, write_config
 
-#: What identifies an entry as ours, and what a matcher compares against. The
-#: version that follows it in the file is deliberately *not* part of this. One
+#: What gets written into the entry, minus the ``:vN`` the template adds. One
 #: marker for both harnesses: it names the hook, not the client.
-MARKER = "rage-managed:session-start"
+MARKER = "outrage-managed:session-start"
+
+#: What a matcher compares against: :data:`MARKER` without the product name, so
+#: that an entry written under a former name is still recognised as ours and
+#: replaced rather than duplicated. See the module docstring.
+MARKER_MATCH = "-managed:session-start"
 
 #: Where a project's skills, agents and settings live, relative to its root.
 #: Declared above its three users rather than beside the assets, because the
@@ -251,11 +265,12 @@ def is_ours(entry: Any) -> bool:
     to be taught a third. Nothing but our own entry carries a string in this
     namespace.
 
-    Prefix match. See the module docstring on why the version is excluded.
+    Compares :data:`MARKER_MATCH`, not :data:`MARKER`. See the module docstring
+    on why neither the version nor the product name is part of it.
     """
     if not isinstance(entry, dict):
         return False
-    return MARKER in json.dumps(entry)
+    return MARKER_MATCH in json.dumps(entry)
 
 
 def plan(
@@ -408,7 +423,7 @@ def _through_a_link(root: Path, relative: Path) -> bool:
     """Whether anything on the way down to ``relative`` is a symlink.
 
     A destination reached through a link is reported and left alone. This
-    repository points ``.claude/skills/rage`` at its own source tree
+    repository points ``.claude/skills/outrage`` at its own source tree
     deliberately, so that an edit to the skill is live without reinstalling;
     writing through such a link would edit the package rather than the project.
     Copy is right for an installed project and symlink is right for this one,
@@ -543,6 +558,7 @@ __all__ = [
     "HOOKS_FIELD",
     "HOOK_TARGETS",
     "MARKER",
+    "MARKER_MATCH",
     "SETTINGS_NAME",
     "FileChange",
     "HookChange",

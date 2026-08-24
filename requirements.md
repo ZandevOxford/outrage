@@ -2,7 +2,7 @@
 
 Why this exists and what has to hold true of it.
 
-`design.md` describes how it is built. The rage store itself, under
+`design.md` describes how it is built. The outrage store itself, under
 `project/reference/`, holds the build discussion decision by decision. This
 file is the short human-readable version that should outlive both.
 

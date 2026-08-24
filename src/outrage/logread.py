@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .errors import RageError
+from .errors import OutrageError
 
 #: Arguments whose value carries no information on a summary line. ``max_chars``
 #: is on every read and is a caller default rather than an intent; the rest are
@@ -45,7 +45,7 @@ _DULL_WHEN_ZERO = frozenset({"offset", "occurrence"})
 MESSAGE_CHARS = 110
 
 
-class LogError(RageError):
+class LogError(OutrageError):
     """A log that cannot be read at all, as opposed to one with a bad line in it."""
 
 

@@ -24,7 +24,7 @@ DOGFOOD = REPO / ".claude" / "agents"
 # which this project's own configuration has no reason to point at.
 IN_CHECKOUT = REPO / "src" / "outrage" / "agents"
 
-NAMES = ["rage-annotate", "rage-backfill", "rage-search"]
+NAMES = ["outrage-annotate", "outrage-backfill", "outrage-search"]
 
 
 def _frontmatter(text: str) -> dict[str, str]:
@@ -76,39 +76,39 @@ def test_dogfood_symlink_resolves_to_the_packaged_agent(name):
 
 
 def test_annotate_can_read_and_write_but_nothing_else():
-    tools = _tools("rage-annotate")
+    tools = _tools("outrage-annotate")
 
-    assert tools == {"mcp__rage__retrieve_document", "mcp__rage__store_document"}
+    assert tools == {"mcp__outrage__retrieve_document", "mcp__outrage__store_document"}
     # It writes one metadata value beside one document. Deletion is not part of
     # that, and an agent that can delete is one bad key away from removing the
     # document it was asked to describe.
-    assert "mcp__rage__delete_keys" not in tools
+    assert "mcp__outrage__delete_keys" not in tools
 
 
 def test_search_reads_at_both_levels_but_does_not_write():
-    tools = _tools("rage-search")
+    tools = _tools("outrage-search")
 
     # The cascade needs all three: metadata a level at a time, whole documents
     # for what the metadata could not decide, and the keys carrying no metadata
     # at all, which a survey by that metadata cannot show.
     assert tools == {
-        "mcp__rage__get_documents",
-        "mcp__rage__retrieve_document",
-        "mcp__rage__keys_missing_meta",
+        "mcp__outrage__get_documents",
+        "mcp__outrage__retrieve_document",
+        "mcp__outrage__keys_missing_meta",
     }
     # Searching is a read. An agent that answers a question should not be able
     # to change the thing it was asked about.
-    assert "mcp__rage__store_document" not in tools
+    assert "mcp__outrage__store_document" not in tools
 
 
 def test_backfill_surveys_and_delegates_but_does_not_write():
-    tools = _tools("rage-backfill")
+    tools = _tools("outrage-backfill")
 
     # What it actually asks for: the keys missing the metadata, not the
     # documents that already have it.
-    assert "mcp__rage__keys_missing_meta" in tools
-    assert "Agent" in tools, "it generates by spawning rage-annotate, so it needs to spawn"
-    # Every write in the flow goes through rage-annotate, so the metadata
+    assert "mcp__outrage__keys_missing_meta" in tools
+    assert "Agent" in tools, "it generates by spawning outrage-annotate, so it needs to spawn"
+    # Every write in the flow goes through outrage-annotate, so the metadata
     # contract - omit title, never touch the document key - lives in one place.
-    assert "mcp__rage__store_document" not in tools
-    assert "mcp__rage__delete_keys" not in tools
+    assert "mcp__outrage__store_document" not in tools
+    assert "mcp__outrage__delete_keys" not in tools

@@ -40,7 +40,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .errors import RageError
+from .errors import OutrageError
 
 #: Separates the segments of a key, and the only separator in the namespace.
 DELIMITER = "/"
@@ -293,10 +293,10 @@ def _pad(segment: str) -> str:
     return segment.zfill(_SORT_WIDTH) if NUMERIC_RE.match(segment) else segment
 
 
-class InvalidKeyError(RageError, ValueError):
+class InvalidKeyError(OutrageError, ValueError):
     """Raised when a key does not match the grammar.
 
-    A ``RageError`` because a malformed key is *about the request*, so a front
+    A ``OutrageError`` because a malformed key is *about the request*, so a front
     end should render it as one line rather than a traceback. Still a
     ``ValueError`` as well, so existing callers catching that go on working.
     """

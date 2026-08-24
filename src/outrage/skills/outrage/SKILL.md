@@ -1,11 +1,11 @@
 ---
-name: rage
-description: Keep and recover working knowledge in this project's rage document store - notes, decisions, findings and task state that outlive one session. Use when starting or resuming work and the question is what earlier sessions established ("where were we", "what do we already know about X", "continue", "pick up where we left off"); when something worth keeping has just been settled (a decision and its reasoning, a finding that took effort to get, where the work got to); when asked to remember, store or save context; and before a session ends or its context is compacted.
+name: outrage
+description: Keep and recover working knowledge in this project's outrage document store - notes, decisions, findings and task state that outlive one session. Use when starting or resuming work and the question is what earlier sessions established ("where were we", "what do we already know about X", "continue", "pick up where we left off"); when something worth keeping has just been settled (a decision and its reasoning, a finding that took effort to get, where the work got to); when asked to remember, store or save context; and before a session ends or its context is compacted.
 ---
 
-# The rage store
+# The outrage store
 
-A document store for this project, reached through the `rage` MCP tools. The
+A document store for this project, reached through the `outrage` MCP tools. The
 tools carry the key grammar and the argument rules; this skill covers when to
 use them and what to name things.
 
@@ -55,7 +55,7 @@ the store this page covers, so paging the survey walks the gaps alongside the
 titles instead of repeating a subtree-wide total on every page.
 
 It is a count, not a listing, and carries no cursor: `keys_missing_meta` is
-what enumerates them, and `rage-backfill` fills them in.
+what enumerates them, and `outrage-backfill` fills them in.
 
 ## Key conventions
 
@@ -88,11 +88,11 @@ Pass `title` on every document. It is what the survey above can see, and a
 document without one is findable only by someone who already knows its key.
 
 Store a `!summary` as well for any document whose subject its title cannot
-carry. `rage-search` screens on title *then* summary, so a document with a
+carry. `outrage-search` screens on title *then* summary, so a document with a
 title and no summary is judged on the title alone - and "Notes from the Tuesday
 run" is an honest title that tells a reader nothing. Aim for about a fifth of
 the document: a summary that approaches the length of its document costs as much
-to screen as the document costs to read. `rage-backfill` fills these in across a subtree,
+to screen as the document costs to read. `outrage-backfill` fills these in across a subtree,
 which is the right thing to run after adding several documents at once.
 
 ## What is worth storing

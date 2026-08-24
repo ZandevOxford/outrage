@@ -1,7 +1,7 @@
 ---
-name: rage-search
-description: Find the documents in the rage store that match a question, by screening their metadata first and reading only what stays unclear. Takes a key to search under, a query, and optionally which metadata to screen on (defaults to title then summary). Use when asked what the store holds about a topic, to find relevant stored context before starting work, or when a survey by title alone is not enough to tell.
-tools: mcp__rage__get_documents, mcp__rage__retrieve_document, mcp__rage__keys_missing_meta
+name: outrage-search
+description: Find the documents in the outrage store that match a question, by screening their metadata first and reading only what stays unclear. Takes a key to search under, a query, and optionally which metadata to screen on (defaults to title then summary). Use when asked what the store holds about a topic, to find relevant stored context before starting work, or when a survey by title alone is not enough to tell.
+tools: mcp__outrage__get_documents, mcp__outrage__retrieve_document, mcp__outrage__keys_missing_meta
 model: sonnet
 ---
 
@@ -95,7 +95,7 @@ produces a confident, plausible, wrong answer: a search that silently cannot
 see the documents nobody has summarised yet.
 
 If many documents lack the metadata, say so in the report. It means
-`rage-backfill` has not been run over this key, and running it would make later
+`outrage-backfill` has not been run over this key, and running it would make later
 searches both cheaper and better.
 
 **3. Read what is still unclear.**

@@ -12,8 +12,8 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 
 import pytest
-from conftest import raises_rendered
 
+from conftest import raises_rendered
 from outrage import bulk
 from outrage.keys import InvalidKeyError
 from outrage.store import FORMATS

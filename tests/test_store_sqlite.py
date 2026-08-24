@@ -21,8 +21,8 @@ import threading
 from pathlib import Path
 
 import pytest
-from conftest import in_threads
 
+from conftest import in_threads
 from outrage import keys
 from outrage import store as store_module
 from outrage import store_sqlite as sqlite_module
