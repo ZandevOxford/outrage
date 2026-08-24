@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 import outrage
 
 SKILL = Path(outrage.__file__).parent / "skills" / "outrage" / "SKILL.md"
@@ -19,6 +21,15 @@ DOGFOOD = REPO / ".claude" / "skills" / "outrage" / "SKILL.md"
 # under test, and under ``OUTRAGE_TEST_INSTALLED`` it is an installed one,
 # which this project's own configuration has no reason to point at.
 IN_CHECKOUT = REPO / "src" / "outrage" / "skills" / "outrage" / "SKILL.md"
+# `.claude/` is not committed - all of it is rendered output, this machine's
+# configuration, or a canary - so a checkout that was never set up has none of
+# it and skips. One that has it is asserted against, and the assertion is the
+# invariant the symlink exists for rather than the symlink itself: what a
+# client loads from `.claude/` here is what is in this checkout. A OneDrive
+# conflict copy, which leaves a plain file holding the link target string, is
+# exactly what that catches.
+UNCONFIGURED = not (REPO / ".claude").is_dir()
+NO_DOGFOOD = "no .claude/ in this checkout; `outrage init` installs one"
 
 
 def _frontmatter(text: str) -> dict[str, str]:
@@ -46,8 +57,9 @@ def test_frontmatter_names_the_skill():
     assert len(fields["description"]) > 100
 
 
-def test_dogfood_symlink_resolves_to_the_packaged_skill():
-    # This project uses its own skill through a symlink. A broken link would
-    # leave the skill quietly unloaded, which is the failure mode this whole
-    # store exists to avoid, so it fails the suite instead.
-    assert DOGFOOD.resolve() == IN_CHECKOUT.resolve()
+@pytest.mark.skipif(UNCONFIGURED, reason=NO_DOGFOOD)
+def test_dogfood_skill_is_the_one_in_the_checkout():
+    # This project uses its own skill, linked from `.claude/`. A link that has
+    # gone stale leaves the skill quietly unloaded, which is the failure mode
+    # this whole store exists to avoid, so it fails the suite instead.
+    assert DOGFOOD.read_text(encoding="utf-8") == IN_CHECKOUT.read_text(encoding="utf-8")

@@ -13,18 +13,19 @@ dist/
 .outrage/
 .rage/
 .DS_Store
-.claude/settings.local.json
-.claude/harness-canary/
 
-# The SessionStart canary probes the client, not this project: it is
-# registered in the untracked settings.local.json, its log above is ignored,
-# and it ships nowhere. It stays on the machine that runs it.
-.claude/hooks/sessionstart_canary.py
-.claude/hooks/sessionstart-canary.sh
-.claude/settings.json
+# Nothing under .claude/ is committed. Every part of it is one of three things:
+# rendered output whose source of truth is src/outrage/ - settings.json, and
+# the skill and agents that `outrage init` writes or that this checkout links
+# at src/outrage/ to dogfood them; this machine's own configuration, in
+# settings.local.json; or the SessionStart canary, which probes the client
+# rather than this project and stays on the machine that runs it. Recreate the
+# lot with `outrage init`. A project that is not outrage itself has every
+# reason to commit some of this.
+.claude/
 
 # The Copilot CLI hook file is rendered output too, on the same rule as
-# .claude/settings.json above: the template in src/ is the source of truth, and
+# .claude/ above: the template in src/ is the source of truth, and
 # a canary belongs on the machine that runs it rather than in the repository.
 # A project that is not outrage itself has every reason to commit this file.
 .github/hooks/outrage.json

@@ -23,6 +23,15 @@ DOGFOOD = REPO / ".claude" / "agents"
 # is under test, and under ``OUTRAGE_TEST_INSTALLED`` it is an installed one,
 # which this project's own configuration has no reason to point at.
 IN_CHECKOUT = REPO / "src" / "outrage" / "agents"
+# `.claude/` is not committed - all of it is rendered output, this machine's
+# configuration, or a canary - so a checkout that was never set up has none of
+# it and skips. One that has it is asserted against, and the assertion is the
+# invariant the symlink exists for rather than the symlink itself: what a
+# client loads from `.claude/` here is what is in this checkout. A OneDrive
+# conflict copy, which leaves a plain file holding the link target string, is
+# exactly what that catches.
+UNCONFIGURED = not (REPO / ".claude").is_dir()
+NO_DOGFOOD = "no .claude/ in this checkout; `outrage init` installs one"
 
 NAMES = ["outrage-annotate", "outrage-backfill", "outrage-search"]
 
@@ -68,11 +77,15 @@ def test_description_is_substantial(name):
     assert len(_fields(name)["description"]) > 100
 
 
+@pytest.mark.skipif(UNCONFIGURED, reason=NO_DOGFOOD)
 @pytest.mark.parametrize("name", NAMES)
-def test_dogfood_symlink_resolves_to_the_packaged_agent(name):
-    # This project uses its own agents through symlinks, as it does the skill.
-    # A broken link leaves the agent quietly absent rather than failing.
-    assert (DOGFOOD / f"{name}.md").resolve() == (IN_CHECKOUT / f"{name}.md").resolve()
+def test_dogfood_agent_is_the_one_in_the_checkout(name):
+    # This project uses its own agents, linked from `.claude/` as the skill is.
+    # A link that has gone stale leaves the agent quietly absent rather than
+    # failing.
+    assert (DOGFOOD / f"{name}.md").read_text(encoding="utf-8") == (
+        IN_CHECKOUT / f"{name}.md"
+    ).read_text(encoding="utf-8")
 
 
 def test_annotate_can_read_and_write_but_nothing_else():
