@@ -29,7 +29,14 @@ import threading
 
 import pytest
 
-from conftest import in_threads, raises_rendered
+from conftest import (
+    answers_alike,
+    in_threads,
+    page_facts,
+    raises_rendered,
+    walk_documents,
+    walk_level,
+)
 from outrage import bulk, keys
 from outrage import store as store_module
 from outrage.store import (
@@ -151,23 +158,6 @@ _SUBTREES = [
 _METAS = [None, "title", ["title"], ["title", "summary"], ["summary"]]
 
 
-def _same(sqlite, parquet, call):
-    """Put ``call`` to both stores and require the same answer, exception or not.
-
-    Exceptions are compared as a rendered type and code rather than re-raised,
-    because "SQLite raises and parquet returns an empty page" is exactly the
-    kind of disagreement this is looking for, and a test that let the first one
-    propagate would report it as a failure of the oracle.
-    """
-
-    def answer(store):
-        try:
-            return call(store)
-        except Exception as exc:  # noqa: BLE001 - the answer, when it is one
-            return type(exc).__name__, getattr(exc, "code", str(exc))
-
-    left, right = answer(sqlite), answer(parquet)
-    assert left == right
 
 
 def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
@@ -181,42 +171,42 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
     better than the assertion message does.
     """
     for key in _KEYS:
-        _same(sqlite, parquet, lambda s, k=key: s.exists(k))
-        _same(sqlite, parquet, lambda s, k=key: s.descendant_count(k))
-        _same(sqlite, parquet, lambda s, k=key: s.retrieve_document(k))
+        answers_alike(sqlite, parquet, lambda s, k=key: s.exists(k))
+        answers_alike(sqlite, parquet, lambda s, k=key: s.descendant_count(k))
+        answers_alike(sqlite, parquet, lambda s, k=key: s.retrieve_document(k))
         if key != keys.ROOT:
-            _same(sqlite, parquet, lambda s, k=key: s.level_entry(k))
+            answers_alike(sqlite, parquet, lambda s, k=key: s.level_entry(k))
         for limit in (None, 1, 2, 100):
-            _same(sqlite, parquet, lambda s, k=key, n=limit: s.list_keys(k, limit=n))
+            answers_alike(sqlite, parquet, lambda s, k=key, n=limit: s.list_keys(k, limit=n))
         # Paged to the end at a page size of two, so a level of three or more
         # crosses a boundary and the totals are asserted on every page.
-        _same(sqlite, parquet, lambda s, k=key: _walk_level(s, k))
+        answers_alike(sqlite, parquet, lambda s, k=key: walk_level(s, k))
 
     for subtree, key_range, meta in itertools.product(_SUBTREES, _RANGES, _METAS):
-        _same(
+        answers_alike(
             sqlite,
             parquet,
-            lambda s, t=subtree, r=key_range, m=meta: _page(
+            lambda s, t=subtree, r=key_range, m=meta: page_facts(
                 s.get_documents(t, key_range=r, meta_name=m)
             ),
         )
-        _same(
+        answers_alike(
             sqlite,
             parquet,
-            lambda s, t=subtree, r=key_range, m=meta: _walk_documents(s, t, r, m),
+            lambda s, t=subtree, r=key_range, m=meta: walk_documents(s, t, r, m),
         )
 
     names = ["title", ["title", "x"]]
     for subtree, key_range, meta in itertools.product(_SUBTREES, _RANGES, names):
-        _same(
+        answers_alike(
             sqlite,
             parquet,
-            lambda s, t=subtree, r=key_range, m=meta: _page(
+            lambda s, t=subtree, r=key_range, m=meta: page_facts(
                 s.keys_missing_meta(t, key_range=r, meta_name=m)
             ),
         )
         for window in _RANGES:
-            _same(
+            answers_alike(
                 sqlite,
                 parquet,
                 lambda s, t=subtree, r=key_range, m=meta, w=window: s.missing_meta_stats(
@@ -237,10 +227,10 @@ def test_the_two_backends_agree_under_every_combination_of_caps(sqlite, parquet)
     for max_chars, max_total, limit in itertools.product(
         [1, 5, 2000], [None, 1, 10, 100], [None, 1, 3]
     ):
-        _same(
+        answers_alike(
             sqlite,
             parquet,
-            lambda s, c=max_chars, t=max_total, n=limit: _walk_documents(
+            lambda s, c=max_chars, t=max_total, n=limit: walk_documents(
                 s, EVERYTHING, UNBOUNDED, None, max_chars=c, max_total_chars=t, limit=n
             ),
         )
@@ -257,7 +247,7 @@ def test_the_two_backends_slice_a_document_identically(sqlite, parquet):
         for offset, length, pattern, occurrence, max_chars in itertools.product(
             [0, 1, 5], [None, 0, 2], [None, "a", "zz"], [0, 1], [1, 8000]
         ):
-            _same(
+            answers_alike(
                 sqlite,
                 parquet,
                 lambda s, k=key, o=offset, ln=length, p=pattern, c=occurrence, m=max_chars: (
@@ -266,53 +256,6 @@ def test_the_two_backends_slice_a_document_identically(sqlite, parquet):
                     )
                 ),
             )
-
-
-def _page(page):
-    """A page as the facts worth comparing, rather than as an object."""
-    return (
-        [
-            item if isinstance(item, str) else (item.key, item.content, item.format)
-            for item in page.items
-        ],
-        page.returned,
-        page.total,
-        page.total_chars,
-        page.next_cursor,
-    )
-
-
-def _walk_level(store, key):
-    """A whole level, two keys at a time, with each page's totals."""
-    seen, totals, cursor = [], [], None
-    while True:
-        page = store.list_keys(key, limit=2, cursor=cursor)
-        seen += [(e.key, e.kind, e.size, e.format) for e in page.items]
-        totals.append((page.total, page.total_chars))
-        if page.next_cursor is None:
-            return seen, totals
-        cursor = page.next_cursor
-
-
-def _walk_documents(store, subtree, key_range, meta, **caps):
-    """A whole selection, paged to the end, with each page's totals.
-
-    Bounded at two hundred pages, so a backend whose cursor fails to advance is
-    a failure rather than a test run that never finishes -- which is the shape
-    the ``max_total_chars`` guard in both backends exists to prevent.
-    """
-    caps.setdefault("limit", 2)
-    seen, totals, cursor = [], [], None
-    for _ in range(200):
-        page = store.get_documents(
-            subtree, key_range=key_range, meta_name=meta, cursor=cursor, **caps
-        )
-        seen += [(e.key, e.content, e.returned, e.total) for e in page.items]
-        totals.append((page.total, page.total_chars))
-        if page.next_cursor is None:
-            return seen, totals
-        cursor = page.next_cursor
-    raise AssertionError("the cursor did not reach the end of the selection")
 
 
 # -- what only this backend does -----------------------------------------
