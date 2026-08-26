@@ -2,6 +2,39 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.3.0 - unreleased
+
+### A mount table is now a `Store`, and `Mounts` is renamed
+
+`outrage.mounts.Mounts` is `outrage.mounts.MountedStore`, and it implements
+`outrage.store.Store`. **Breaking** for anything importing the old name; there
+is no alias. Nothing about the command line or the MCP tools changes.
+
+It means the routing, the level merge and the subtree traversal that make
+several stores answer as one namespace are no longer the MCP server's - so a
+mount table can go in front of anything that speaks to a `Store`, and the same
+contract tests cover it as cover SQLite.
+
+A table has no file of its own, and says so rather than answering for its root
+mount: `path`, `backup`, `check` and `repair` raise `mount-has-no-file`. A
+check of one store out of three would be a clean bill of health for the two
+nobody looked at.
+
+### Three fixes at a mount boundary
+
+* **A key with a mount below it listed as an empty container.** A document with
+  a mounted store somewhere beneath it came back from `list_keys` as `implicit`,
+  with no size, format or timestamp, while `retrieve_document` returned its
+  content. A mount *point* shadows what is under it; a mount below a key does
+  not.
+* **A count across a boundary was short by two rows per mount.** The mount point
+  itself and its metadata were left out, so the `remaining` on a non-recursive
+  `delete_keys` told you to pass `recursive` for fewer keys than were there.
+* **A failure at the root printed `''` instead of `/`.** An error was named with
+  the owning mount's own outward function, which for the root mount is the
+  identity, so the empty string reached the reader where the root's name should
+  have been.
+
 ## 0.2.0 - 2026-08-24
 
 **Breaking.** Everything still called `rage` is now `outrage`, and one on-disk

@@ -41,12 +41,19 @@ can be tested and reused on its own.
 **The interface and the backend are separate modules.** `outrage.store` says
 what a store is - the operations, the value types every answer comes back as,
 and the two ways a call bounds what it is asking about - as an abstract `Store`.
-There are two implementations. `outrage.store_sqlite` is the read-write one -
-the schema, its migrations, the connection handling, and the SQL - and is what a
+There are two **backends**. `outrage.store_sqlite` is the read-write one - the
+schema, its migrations, the connection handling, and the SQL - and is what a
 store is opened as when its file says nothing else. `outrage.store_parquet` is
 one columnar file, written whole and read many times, for a reference base of
 tens of thousands of documents; it refuses writes, and `outrage pack` is how
 documents get into one.
+
+A backend is not the only kind of `Store`. `outrage.mounts.MountedStore` is one
+too, and it keeps nothing at all: it answers the same interface and routes to
+the stores behind it. That is what the abstraction bought - a mount table in
+front of the server, the command line, or another table, with none of them
+holding routing code - and it is why `Store` says the operations without saying
+how they are kept.
 
 `store._backend_for` is the single place the package chooses between them, and
 it chooses **by the store file's extension**: `.sqlite` and `.parquet`. So a
@@ -164,16 +171,32 @@ inexpressible if the subtree were folded into it, and a page's totals have
 never depended on where the reader had got to, so the cursor cannot be a bound
 on the selection.
 
-**Reads and writes cross a boundary; queries do not.** A read, a write and a
-delete route to one store and translate, and a write or a delete routed to a
-read-only mount is refused there. A subtree read - `get_documents`,
-`keys_missing_meta`, a recursive delete - covers the one store that owns its
-key, minus the stretches its mounts claim, and *says which mounts it did not
-descend into*. A partial answer must not
-be indistinguishable from a whole one, which is the standing argument from
-`context/8/decisions`. Aggregating across mounts is deferred, not abandoned:
-`sort_key` is derived from the key alone and a cursor names a key rather than a
-position, so a merge of two ordered streams is already feasible.
+**Everything crosses a boundary.** A read, a write and a single-key delete
+route to one store and translate, and a write or a delete routed to a read-only
+mount is refused there. A subtree read - `get_documents`, `keys_missing_meta`, a
+count, a recursive delete - reads the subtree as an ordered list of *segments*:
+the answering store's stretches between the mounts below it, and those mounts'
+own subtrees, in the order the one namespace puts them. The items concatenate
+and the totals add, because the segments are disjoint and tile the subtree, and
+that is only true because a range bounds the **selection** rather than the page.
+Stepping over a mount and reading it are the same operation with a different
+list of segments.
+
+It was not always so. A subtree read used to stop at the store that owned its
+key and *say which mounts it did not descend into*, which was staging rather
+than design - the standing argument from `context/8/decisions` is that a partial
+answer must not be indistinguishable from a whole one, and naming what was
+skipped satisfied it while a merge was still to be written. Since the merge
+exists there is nothing to name. A recursive delete crosses too, deliberately
+and with the risk accepted: a delete that stopped at a boundary while everything
+else crossed would leave a caller to learn the rule from what survived. What a
+read-only mount kept back is reported, because that is a refusal rather than a
+silence.
+
+A caller's own range crosses as well, spelled inward per mount and intersected
+with the stretch each segment already was - so a range that excludes a mount
+drops that segment rather than asking it with the bound quietly missing, which
+is what would hand back the whole of it.
 
 **A listing does cross**, and has to. A mount point is a key no store knows
 about - the store beneath it has no row there, and the store above it cannot

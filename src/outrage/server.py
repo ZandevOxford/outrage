@@ -2,18 +2,33 @@
 
 A thin wrapper: argument shaping and result shaping only. All behaviour lives
 in :mod:`outrage.store`, so it can be exercised without a protocol harness.
+
+**Including the mount table.** More than one store behind one key namespace
+used to be this module's work -- the routing, the segment list a subtree is read
+as, the merge of a level with the mounts standing in it, the cursor recomputed
+at every boundary. All of it is
+:class:`~outrage.mounts.MountedStore` now, which *is* a
+:class:`~outrage.store.Store`, so every handler here calls one store method and
+shapes the answer. What is left that knows about mounts is configuration
+(``--mount`` at startup) and the two sentences a result carries about what a
+delete would not reach -- because those are sentences, and a sentence is a front
+end's business.
+
+Two things a front end still does before anything routes. ``?last`` is resolved
+against the whole namespace, since a ``?last`` naming a mount decides which store
+answers; and an error is rendered, by :mod:`outrage.messages`, from the code and
+facts it carries.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 import dataclasses
 import functools
 import itertools
 import sys
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from mcp.server import MCPServer
@@ -28,15 +43,14 @@ from . import mounts as mounts_module
 from . import store as store_module
 from .errors import OutrageError
 from .eventlog import EventLog
-from .mounts import Mounts, Resolved, Segment
+from .mounts import MountedStore
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
-    Entry,
+    BoundedSubtree,
     Excerpt,
     KeyNotFoundError,
     KeyRange,
-    Page,
     Store,
 )
 
@@ -81,273 +95,29 @@ def _reported[**P, T](function: Callable[P, T]) -> Callable[P, T]:
     return reported
 
 
-def _resolve(table: Mounts, key: str | None, *, allow_wildcard: bool = False) -> Resolved:
-    """Which store answers for ``key``, with an omitted key meaning the root.
+def _named_key(table: MountedStore, key: str | None, *, allow_wildcard: bool = False) -> str:
+    """The key a tool was given: ``?last`` resolved, normalised, root for None.
 
-    ``?last`` is resolved first, against the whole namespace, so every tool
-    accepts it without knowing it exists. It has to happen before the routing
-    and not after: a ``?last`` in the part of a key that names a mount decides
-    which store answers, so a table asked to route one has not been told enough
-    to route it.
+    Resolved **here** and not in the table, and before anything routes: a
+    ``?last`` in the part of a key that names a mount decides which store
+    answers, so a table asked to route one has not been told enough to route it.
+    See ``context/51/design``.
 
-    The key that comes back on ``Resolved.outer`` is the resolved one, which is
-    what each tool echoes -- a caller that wrote ``context/?last`` is told which
-    context it got, for the same reason a ``?`` reports the number it allocated.
+    Normalised too, because this is the key every tool echoes back. A caller who
+    wrote ``context/?last`` is told which context they got, for the same reason a
+    ``?`` reports the number it allocated.
+
+    At the joined bound, since a key in this namespace may name a mount point
+    and a key inside it. The store bound is the mounted stores' own, and
+    ``keys.MAX_JOINED_SEGMENTS`` being twice it is what makes every such key
+    nameable from out here.
     """
-    return table.resolve(
-        keys.resolve_last(
-            _scope(key), table.last_child, max_segments=keys.MAX_JOINED_SEGMENTS
-        ),
-        allow_wildcard=allow_wildcard,
+    resolved = keys.resolve_last(
+        _scope(key), table.last_child, max_segments=keys.MAX_JOINED_SEGMENTS
     )
-
-
-def _resolve_for_write(
-    table: Mounts, key: str, *, action: str = "write", allow_wildcard: bool = False
-) -> Resolved:
-    """As ``_resolve``, but refuse a key owned by a read-only mount.
-
-    A second function rather than a flag on the first, so that the write paths
-    name themselves and a tool that writes cannot pick up the reading one by
-    default. The refusal happens **here**, before the store is touched, which
-    is the whole requirement: "a refusal that arrives after the caller thought
-    it had written is the failure class this project keeps finding".
-    """
-    return _resolve(table, key, allow_wildcard=allow_wildcard).writable(action)
-
-
-def _inward_cursor(found: Resolved, after: str | None) -> str | None:
-    """A caller's cursor as the answering store names it.
-
-    A cursor is a key, so it crosses the boundary the same way every other key
-    does. One that names nothing under the mount being listed is refused rather
-    than dropped: silently ignoring it would restart the collection from the
-    beginning, and a caller paging a large listing would loop over the first
-    page forever without anything ever reporting an error.
-    """
-    if after is None:
-        return None
-    inner = found.mount.inner(after)
-    if inner is None:
-        raise keys.InvalidKeyError(
-            "cursor-outside-subtree", cursor=after, mount=found.mount.prefix, key=found.outer
-        )
-    return inner
-
-
-
-@contextlib.contextmanager
-def _named(mount: mounts_module.Mount) -> Iterator[None]:
-    """Render an error from ``mount``'s store with that mount's names.
-
-    The other half of :func:`_reported`, and the line between them is the
-    resolve: **above** it a key belongs to the caller and already has the name
-    they used, **below** it a key belongs to one store and has to regain the
-    prefix that store has never heard of.
-
-    Used where a tool hands an inner key to a store and the store can refuse
-    it. The traversals do not need it -- they answer with pages rather than
-    raising about a key -- and could not use it honestly if they did, since a
-    page crossing a mount has no single mount to name a key against.
-    """
-    try:
-        yield
-    except OutrageError as exc:
-        raise ToolError(messages.render(exc, name=mount.outer)) from exc
-
-
-def _outward_items[T](found: Resolved, items: list[T]) -> list[T]:
-    """``items`` renamed into the whole namespace.
-
-    Total, since the bounds were halved: a mount point and a key inside a store
-    are each capped at ``keys.MAX_SEGMENTS`` and the joined namespace allows
-    twice that, so every key a mounted store returns has a name here. This
-    used to drop and count the ones that did not, and every listing carried a
-    `dropped` field and a note to say so.
-    """
-    return [
-        dataclasses.replace(item, key=found.mount.outer(item.key))  # type: ignore[arg-type]
-        for item in items
-    ]
-
-
-def _outward_keys(found: Resolved, names: list[str]) -> list[str]:
-    """:func:`_outward_items` for a plain list of keys."""
-    return [found.mount.outer(name) for name in names]
-
-
-def _outward_cursor(found: Resolved, cursor: str | None) -> str | None:
-    """A store's cursor as the caller will send it back.
-
-    A cursor is a key, so it crosses the boundary exactly as one, and since the
-    join is total it is a *valid* key on the far side -- which matters because
-    a cursor is handed to a caller that has every reason to try reading it.
-    """
-    return None if cursor is None else found.mount.outer(cursor)
-
-
-def _replaced(found: Resolved, outer_key: str) -> Entry | None:
-    """The entry a mount point displaces from the answering store's own level.
-
-    Asked only of the keys a mount contributes to a listing, and only so that
-    the level totals describe what the listing shows. A mount point the store
-    beneath it also holds is a misconfiguration -- ``Mounts.shadowing`` reports
-    it at startup -- but the totals have to be right for every listing after,
-    and a mount **replaces** what it shadows rather than adding to it: one
-    position in the level, and the characters are the mount's, not the ones
-    underneath it that nothing can now read.
-    """
-    inner = found.mount.inner(outer_key)
-    return None if inner is None else found.store.level_entry(inner)
-
-
-@dataclasses.dataclass(frozen=True, slots=True)
-class _Span:
-    """One segment a page touched, and how far into it the page reached.
-
-    ``reached`` is the last key the page emitted from this segment when the
-    page stopped inside it, and None when the page covered the segment whole.
-    It is what a second question asked about the same page -- ``without_meta``
-    -- has to be bounded by, or the two halves stop describing one stretch of
-    the store. ``cursor`` is the segment's own inward cursor, kept because that
-    second question has to be asked with the same bounds the first was.
-    """
-
-    segment: Segment
-    cursor: str | None
-    reached: str | None
-
-
-def _named_items[T](segment: Segment, items: list[T]) -> list[T]:
-    """``items`` from one segment, renamed into the whole namespace.
-
-    Per segment rather than per call, which is the difference crossing makes:
-    the items in one answer now come from several stores and each knows its
-    keys by a different name. Total, since the key bounds were halved -- a
-    mount point and a key inside a store are each capped at
-    ``keys.MAX_SEGMENTS`` and the joined namespace allows twice that, so every
-    key a mounted store returns has a name here.
-    """
-    return [
-        dataclasses.replace(item, key=segment.mount.outer(item.key))  # type: ignore[arg-type]
-        for item in items
-    ]
-
-
-def _named_keys(segment: Segment, names: list[str]) -> list[str]:
-    """:func:`_named_items` for a plain list of keys."""
-    return [segment.mount.outer(name) for name in names]
-
-
-def _across_segments[T](
-    segments: list[Segment],
-    read: Callable[..., Page[T]],
-    *,
-    after: str | None,
-    limit: int,
-    max_total_chars: int | None,
-    named: Callable[[Segment, list[T]], list[T]],
-    key_of: Callable[[T], str],
-    size_of: Callable[[T], int],
-) -> tuple[list[T], int, int, str | None, list[_Span]]:
-    """Read a subtree as a sequence of segments and answer as though it were one.
-
-    The segments are disjoint and in key order, so the items concatenate and
-    the totals add: each counts its own stretch, and the stretches tile the
-    subtree. That is why the range bounds belong to the store's *selection*
-    rather than to its page -- a count taken per segment is the only kind that
-    can be summed.
-
-    A segment is a stretch of one store, and consecutive ones may be stretches
-    of **different** stores: the outer store's windows between the mounts below
-    it, and the mounted stores' own subtrees, in the order the one namespace
-    puts them. Nothing here knows which is which. That is the whole trick --
-    crossing a mount boundary is the same operation as stepping over one, with
-    a different list of segments.
-
-    Every segment is read, even after the page is full, because ``total`` and
-    ``total_chars`` describe the whole collection and not the part returned.
-    Those later reads take ``limit=0``: they cost a count and fetch nothing,
-    and a non-zero total in one of them is what says there is another page.
-
-    The cursor is the last key **emitted**, in the emitting store's namespace;
-    the caller renames it. A segment that stopped part way through gives one
-    that already says so, since a store's cursor is its own last emitted key;
-    what this must not do is take a cursor from a segment further on, or let a
-    page that filled up exactly at a segment's edge report no cursor at all
-    while a later segment still holds something. The second is why every
-    segment is counted even after the page is full.
-    """
-    items: list[T] = []
-    total = 0
-    total_chars = 0
-    spent = 0
-    spans: list[_Span] = []
-    cursor: str | None = None
-    more = False
-    stopped = False
-
-    for segment in segments:
-        # Recomputed here rather than carried inward once: the same cursor
-        # names a different key in every store it crosses, and a segment
-        # already behind it cannot name it at all.
-        inward, behind = segment.resume_from(after)
-        quiet = stopped or behind
-        bounds: dict[str, Any] = {
-            "key_range": segment.key_range,
-            "cursor": inward,
-            "limit": 0 if quiet else limit - len(items),
-        }
-        # Only when the caller has a character budget at all. A collection of
-        # keys has none, and passing one it does not take would be a decision
-        # about its shape taken here rather than by the tool that has it.
-        if max_total_chars is not None:
-            bounds["max_total_chars"] = max_total_chars - spent
-        page = read(segment, **bounds)
-        total += page.total
-        total_chars += page.total_chars
-
-        if quiet:
-            # Counted, never emitted. Behind the cursor it was returned by an
-            # earlier page; past the end of this one, anything it holds is
-            # another page still to come.
-            more = more or (stopped and page.total > 0)
-            continue
-
-        # Renamed as they arrive, so everything from here out -- the items, the
-        # cursor, the fallback taken from the last item -- is in the one
-        # namespace the caller sees, and no later step has to remember which
-        # store a given item came from.
-        items += named(segment, page.items)
-        spent += sum(size_of(item) for item in page.items)
-        if page.next_cursor is not None:
-            spans.append(_Span(segment, inward, page.next_cursor))
-            cursor, more, stopped = segment.mount.outer(page.next_cursor), True, True
-        else:
-            spans.append(_Span(segment, inward, None))
-            stopped = len(items) >= limit or (
-                max_total_chars is not None and spent >= max_total_chars
-            )
-
-    if more and cursor is None:
-        cursor = key_of(items[-1]) if items else None
-    return items, total, total_chars, cursor, spans
-
-
-def _kept_below(segment: Segment, found: Resolved) -> int:
-    """How many rows this segment holds below the key a delete was asked about.
-
-    Two shapes of the same question, because "below" is measured from the key
-    and a segment is not always rooted at it. In the store answering for the
-    key, below means strictly below -- the key's own row is what the delete
-    just removed. In a store mounted further down, *everything* is below,
-    including the row at its own root, which is the mount point.
-    """
-    if segment.mount is found.mount:
-        return segment.store.descendant_count(segment.subtree.key, key_range=segment.key_range)
-    return segment.store.get_documents(
-        segment.subtree, key_range=segment.key_range, limit=0
-    ).total
+    return keys.parse(
+        resolved, max_segments=keys.MAX_JOINED_SEGMENTS, allow_wildcard=allow_wildcard
+    ).key
 
 
 def _add_note(result: dict[str, Any], text: str) -> None:
@@ -561,7 +331,7 @@ README_MAX_CHARS = DELIVERY_BUDGET - SCAFFOLDING_CHARS
 README_FLOOR_CHARS = 600
 
 
-def instructions(store: Store | Mounts) -> str:
+def instructions(store: Store) -> str:
     """The root store's own readme, then the essentials, then the tail.
 
     Delivered rather than requested. A line telling a session to go and read a
@@ -591,7 +361,11 @@ def instructions(store: Store | Mounts) -> str:
     that ordering exists to prevent. A mount announces itself in a listing
     instead, where it costs nothing until somebody looks.
     """
-    root = store.root.store if isinstance(store, Mounts) else store
+    # The root mount's, when this is a table. Not a routed read of the key:
+    # a mount at `readme` would then decide what a store introduces itself
+    # with, and the reason only the root's is carried is a budget rather than
+    # a routing question. A bare store is its own root.
+    root = store.root.store if isinstance(store, MountedStore) else store
     try:
         excerpt = root.retrieve_document(README_KEY, max_chars=README_MAX_CHARS)
     except KeyNotFoundError:
@@ -673,7 +447,7 @@ class RequestLog:
             eventlog.current_call.reset(token)
 
 
-def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServer:
+def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
     """Build a server exposing ``store``, which may be one store or a mount table.
 
     A lone ``Store`` is wrapped in a table of one rather than served by a
@@ -682,7 +456,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
     code every call takes.
     """
     log = log if log is not None else eventlog.NULL
-    table = store if isinstance(store, Mounts) else Mounts.single(store)
+    table = store if isinstance(store, MountedStore) else MountedStore.single(store)
     server = MCPServer(
         name="outrage",
         version=__version__,
@@ -727,19 +501,16 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             int, Field(description="Maximum characters to return", gt=0)
         ] = DEFAULT_MAX_CHARS,
     ) -> dict[str, Any]:
-        found = _resolve(table, key)
-        with _named(found.mount):
-            excerpt = found.store.retrieve_document(
-                found.key,
+        return _excerpt_result(
+            table.retrieve_document(
+                _named_key(table, key),
                 offset=offset,
                 length=length,
                 pattern=pattern,
                 occurrence=occurrence,
                 max_chars=max_chars,
             )
-        # Renamed to the key that was asked for: the store answered about its
-        # own key, which is the mount point stripped off and means nothing here.
-        return _excerpt_result(dataclasses.replace(excerpt, key=found.outer))
+        )
 
     @server.tool(
         annotations=ToolAnnotations(idempotent_hint=True),
@@ -800,24 +571,20 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             ),
         ] = None,
     ) -> dict[str, Any]:
-        found = _resolve_for_write(table, key, allow_wildcard=True)
-        with _named(found.mount):
-            written = found.store.store_document(
-                found.key, content, format, title=title, encoding=encoding
-            )
-            outer = found.mount.outer(written)
+        written = table.store_document(
+            _named_key(table, key, allow_wildcard=True),
+            content,
+            format,
+            title=title,
+            encoding=encoding,
+        )
+        result: dict[str, Any] = {
+            "key": written,
             # `content` is what arrived, which is not what was stored once it
             # has been decoded, so the encoded path asks the store rather than
             # guessing.
-            stored = (
-                len(content)
-                if encoding is None
-                else found.store.retrieve_document(written).total
-            )
-        result: dict[str, Any] = {
-            "key": outer,
-            "stored": stored,
-            "generated": outer != key,
+            "stored": len(content) if encoding is None else table.retrieve_document(written).total,
+            "generated": written != key,
         }
         if title is not None:
             # Parsed rather than joined: the root's title is `!title`, not
@@ -827,7 +594,7 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             # parse must not refuse it again on a narrower bound it was never
             # judged against.
             result["title_key"] = keys.parse(
-                f"{outer}{keys.DELIMITER}{keys.META_PREFIX}title",
+                f"{written}{keys.DELIMITER}{keys.META_PREFIX}title",
                 max_segments=keys.MAX_JOINED_SEGMENTS,
             ).key
         return result
@@ -870,68 +637,17 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
     ) -> dict[str, Any]:
-        found = _resolve(table, key)
-        listing = found.store.list_keys(
-            found.key, limit=limit, cursor=_inward_cursor(found, after)
-        )
-        entries = _outward_items(found, listing.items)
-
-        # A mount point is a key no store knows about: the store beneath it has
-        # no row there, and the store above it cannot see where it was mounted.
-        # Spliced in here or a mounted store is invisible to anyone who does
-        # not already know its prefix.
-        children = table.children(found.outer)
-        bound = None if after is None else keys.sort_form(after)
-        ahead = [e for e in children if bound is None or keys.sort_form(e.key) > bound]
-
-        # A mount wins a collision, because a mount shadows: the same rule the
-        # routing follows, so a listing cannot show a key that reading it would
-        # not reach.
-        merged = {e.key: e for e in entries} | {e.key: e for e in ahead}
-        ordered = sorted(merged.values(), key=lambda e: keys.sort_form(e.key))
-
-        # Both halves are merged before either is cut, for the reason the store
-        # merges its own two halves first: cutting separately lets whichever
-        # half is denser near the cursor push the other's keys over the edge,
-        # and a cursor never looks back.
-        cut = limit is not None and len(ordered) > limit
-        items = ordered[:limit] if cut else ordered
-
-        # Where to resume. When the page was cut, the last key emitted -- never
-        # the store's own cursor, which lies past the rows the cut withheld and
-        # would skip them. When it was not, the later of the two.
-        #
-        # The later of the two cannot skip a store row, and the argument is now
-        # short: every key the store returned was emitted, since nothing is
-        # dropped any more, so a child sorting past the store's page end would
-        # make the merged page longer than the limit and the page would have
-        # been cut instead. It used to rest on a much narrower coincidence
-        # about how deep a mount point could be; halving `MAX_SEGMENTS` removed
-        # the need for it. See `project/reference/planned/mounts/cursors`.
-        marks = [items[-1].key] if items else []
-        if not cut and listing.next_cursor is not None:
-            marks.append(_outward_cursor(found, listing.next_cursor))
-        more = cut or listing.next_cursor is not None
-
-        # The store counted its whole level, including whatever a mount now
-        # stands in front of. A mount replaces that position rather than
-        # joining it, so the displaced entry comes back out of the totals
-        # before the mount's own goes in -- otherwise the level reports the
-        # characters of a document the same listing has just declined to show.
-        replaced = [_replaced(found, e.key) for e in children]
-        result: dict[str, Any] = {
-            "key": found.outer,
-            "entries": [dataclasses.asdict(e) for e in items],
-            "returned": len(items),
-            "total": listing.total + sum(1 for e in replaced if e is None),
-            "total_chars": (
-                listing.total_chars
-                - sum(e.size or 0 for e in replaced if e is not None)
-                + sum(e.size or 0 for e in children)
-            ),
-            "next_cursor": max(marks, key=keys.sort_form) if more and marks else None,
+        at = _named_key(table, key)
+        page = table.list_keys(at, limit=limit, cursor=after)
+        return {
+            "key": at,
+            "entries": [dataclasses.asdict(entry) for entry in page.items],
+            "returned": page.returned,
+            "total": page.total,
+            "total_chars": page.total_chars,
+            "next_cursor": page.next_cursor,
         }
-        return result
+
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -988,81 +704,48 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             Field(description="Maximum characters across the whole page", gt=0),
         ] = DEFAULT_PAGE_CHARS,
     ) -> dict[str, Any]:
-        at = _resolve(table, key)
-        _inward_cursor(at, after)  # rejects a cursor from outside the subtree
-
-        # The subtree read as the segments that make it up: this store's
-        # stretches between the mounts below it, and those mounts' own
-        # subtrees, in key order. Two things at once, and deliberately the same
-        # thing -- a mount is *stepped over* in the store above (it still holds
-        # every row a mount shadows, and reading straight through would report
-        # documents that reading by key refuses) and then *read* in its own.
-        segments = table.segments(at.outer, depth)
-        documents, total, total_chars, cursor, spans = _across_segments(
-            segments,
-            lambda segment, **bounds: segment.store.get_documents(
-                segment.subtree,
-                meta_name=meta_name,
-                max_chars=max_chars,
-                **bounds,
-            ),
-            after=after,
+        at = _named_key(table, key)
+        subtree = BoundedSubtree(at, depth)
+        page = table.get_documents(
+            subtree,
+            meta_name=meta_name,
+            max_chars=max_chars,
             limit=limit,
+            cursor=after,
             max_total_chars=max_total_chars,
-            named=_named_items,
-            key_of=lambda excerpt: excerpt.key,
-            size_of=lambda excerpt: excerpt.returned,
         )
-
         result: dict[str, Any] = {
-            "key": at.outer,
-            "count": len(documents),
-            "returned": len(documents),
-            "total": total,
-            "total_chars": total_chars,
-            "next_cursor": cursor,
-            "documents": [_excerpt_result(e) for e in documents],
+            "key": at,
+            "count": page.returned,
+            "returned": page.returned,
+            "total": page.total,
+            "total_chars": page.total_chars,
+            "next_cursor": page.next_cursor,
+            "documents": [_excerpt_result(excerpt) for excerpt in page.items],
         }
         if meta_name is not None:
             # A survey by metadata cannot see documents that lack it, so left
             # alone it quietly under-reports the store. Reported over this
-            # page's own window -- the same bounds that produced `documents`,
-            # so the two halves describe one stretch of the store and the
-            # windows tile as a caller pages. Always present, because "no block"
-            # and "none missing here" are answers a caller must be able to tell
-            # apart. No cursor: pass the same `key` to keys_missing_meta to
-            # enumerate them, which is the collection this only counts.
-            # Asked once per segment the page reached, and over exactly the
-            # stretch of each that the page covered, so the two halves still
-            # describe one span of the store and the spans still tile as a
-            # caller pages. A segment the page never reached is not asked about
-            # at all: it is not part of this page's window. Each is asked of
-            # its own store, with its own cursor -- the counts sum for the same
-            # reason the pages concatenate.
-            missing = [
-                (
-                    span.segment,
-                    span.segment.store.missing_meta_stats(
-                        span.segment.subtree,
-                        key_range=span.segment.key_range,
-                        window=KeyRange(
-                            after=span.cursor, before_inclusive=span.reached
-                        ),
-                        meta_name=meta_name,
-                        sample=WITHOUT_META_SAMPLE,
-                    ),
-                )
-                for span in spans
-            ]
-            sample = [
-                name
-                for segment, gap in missing
-                for name in _named_keys(segment, gap.sample)
-            ][:WITHOUT_META_SAMPLE]
+            # page's own window -- `after` the cursor that opened the page and
+            # `before_inclusive` the one it closed with -- so the two halves
+            # describe one stretch of the store and the windows tile as a
+            # caller pages. Both ends unset when the page covered the whole
+            # collection, which is the same window said the other way.
+            #
+            # Always present, because "no block" and "none missing here" are
+            # answers a caller must be able to tell apart. No cursor: pass the
+            # same `key` to keys_missing_meta to enumerate them, which is the
+            # collection this only counts.
+            gap = table.missing_meta_stats(
+                subtree,
+                window=KeyRange(after=after, before_inclusive=page.next_cursor),
+                meta_name=meta_name,
+                sample=WITHOUT_META_SAMPLE,
+            )
             result["without_meta"] = {
-                "total": sum(gap.total for _, gap in missing),
-                "total_chars": sum(gap.total_chars for _, gap in missing),
-                "sample": sample,
+                "total": gap.total,
+                "total_chars": gap.total_chars,
+                "sample": gap.sample,
             }
         return result
 
@@ -1105,38 +788,21 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
     ) -> dict[str, Any]:
-        at = _resolve(table, key)
-        _inward_cursor(at, after)  # rejects a cursor from outside the subtree
-
-        # Segmented for the reason the survey is, and it matters twice over
-        # here: the store beneath a mount still holds the rows the mount
-        # shadows, and naming a document that cannot be read is the failure
-        # this whole tool exists to prevent -- while a mounted store's own
-        # documents are exactly the ones a backfill has to find.
-        names, total, total_chars, cursor, _ = _across_segments(
-            table.segments(at.outer, depth),
-            lambda segment, **bounds: segment.store.keys_missing_meta(
-                segment.subtree,
-                meta_name=meta_name if meta_name is not None else "title",
-                **bounds,
-            ),
-            after=after,
+        at = _named_key(table, key)
+        page = table.keys_missing_meta(
+            BoundedSubtree(at, depth),
+            meta_name=meta_name if meta_name is not None else "title",
             limit=limit,
-            max_total_chars=None,
-            named=_named_keys,
-            key_of=lambda name: name,
-            size_of=lambda name: 0,
+            cursor=after,
         )
-
-        result: dict[str, Any] = {
-            "key": at.outer,
-            "keys": names,
-            "returned": len(names),
-            "total": total,
-            "total_chars": total_chars,
-            "next_cursor": cursor,
+        return {
+            "key": at,
+            "keys": page.items,
+            "returned": page.returned,
+            "total": page.total,
+            "total_chars": page.total_chars,
+            "next_cursor": page.next_cursor,
         }
-        return result
 
     @server.tool(
         annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=True),
@@ -1156,53 +822,28 @@ def build_server(store: Store | Mounts, log: EventLog | None = None) -> MCPServe
             bool, Field(description="Also delete everything beneath the key")
         ] = False,
     ) -> dict[str, Any]:
-        found = _resolve_for_write(table, key, action="delete")
+        at = _named_key(table, key)
+        # A delete crosses a mount boundary, exactly as a read does, and the
+        # table is what crosses it. It is the one call where crossing makes the
+        # system more dangerous rather than less, and it is deliberate: a delete
+        # that stopped at a boundary while every other tool crossed it would
+        # leave the caller to discover the rule from the wreckage. See
+        # `planned/mounts/crossing`.
+        deleted = table.delete(at, recursive=recursive)
+        # What a read-only mount kept back is not a key, so it is not in that
+        # answer. Asked separately, and for a *non*-recursive delete too:
+        # `remaining` is about to count what is below, and a caller told to pass
+        # `recursive` deserves to know which part of that count it still would
+        # not reach.
+        refused = table.read_only_below(at)
 
-        # A delete crosses a mount boundary, exactly as a read does. It is the
-        # one tool where crossing makes the system more dangerous rather than
-        # less, and it is deliberate: a delete that stopped at a boundary while
-        # every other tool crossed it would leave the caller to discover the
-        # rule from the wreckage. See `planned/mounts/crossing`.
-        segments = table.segments(found.outer)
-        deleted: list[str] = []
-        refused: list[str] = []
-        if not recursive:
-            # The key itself, and nothing else. It lives in the store that
-            # answers for it and nowhere else -- a mount at that key would have
-            # taken over answering for it -- so this crosses nothing and needs
-            # no range to stay inside.
-            deleted = _outward_keys(found, found.store.delete(found.key))
-            # Nothing below the key was touched, so no mount refused anything
-            # yet -- but `remaining` is about to count what is down there, and
-            # a caller told to pass `recursive` deserves to know which part of
-            # that count it still would not reach.
-            refused = [mount.prefix for mount in table.below(found.outer) if mount.read_only]
-        else:
-            for segment in segments:
-                if segment.mount.read_only:
-                    # Skipped rather than fatal: the refusal is real, but one
-                    # read-only mount deep below a key should not veto a delete
-                    # that is legal everywhere else in the subtree. Named in
-                    # the result, so what survived is never left to be inferred.
-                    if segment.mount.prefix not in refused:
-                        refused.append(segment.mount.prefix)
-                    continue
-                deleted += _named_keys(
-                    segment,
-                    segment.store.delete(
-                        segment.subtree.key,
-                        recursive=True,
-                        key_range=segment.key_range,
-                    ),
-                )
-
-        result: dict[str, Any] = {"key": found.outer, "deleted": deleted, "count": len(deleted)}
+        result: dict[str, Any] = {"key": at, "deleted": deleted, "count": len(deleted)}
         if not recursive:
             # Without this a no-op delete and a successful one look identical,
-            # so a key left standing reads as a key removed. Counted across
-            # every segment, since "below this key" now means below it in
-            # whichever store answers for each part.
-            remaining = sum(_kept_below(segment, found) for segment in segments)
+            # so a key left standing reads as a key removed. Counted across the
+            # whole table, since "below this key" now means below it in
+            # whichever store answers for each part of the subtree.
+            remaining = table.descendant_count(at)
             if remaining:
                 result["remaining"] = remaining
                 _add_note(

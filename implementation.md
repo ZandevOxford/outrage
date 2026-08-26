@@ -178,11 +178,20 @@ rather than returning a result with an error flag.
 ### 3a. Mounted stores - `src/outrage/mounts.py` - done
 
 More than one database behind the one key namespace, configured at startup with
-a repeatable `--mount KEY=FILE`. `Mounts` is a prefix to `Store` table; the
-longest prefix matching a key owns it, and the store `--root-mount` names sits
-at the root, so every key resolves. `build_server` wraps a lone `Store` in
-`Mounts.single`, so there is no second code path that only runs when nothing is
-mounted.
+a repeatable `--mount KEY=FILE`. `MountedStore` is a prefix to `Store` table;
+the longest prefix matching a key owns it, and the store `--root-mount` names
+sits at the root, so every key resolves. `build_server` wraps a lone `Store` in
+`MountedStore.single`, so there is no second code path that only runs when
+nothing is mounted.
+
+**A mount table is itself a `Store`.** It answers the whole interface, over keys
+spelled the way a caller spells them, and routes, steps over, crosses and merges
+underneath - so nothing above it holds routing code, and `tests/test_store.py`
+asks it the same contract it asks SQLite. What it is not is a *file*: it has no
+path, no format version, nothing to back up and nothing to repair, and it says
+so with `mount-has-no-file` rather than answering for its root mount, since a
+check of one store out of three would be a clean bill of health for the two
+nobody looked at.
 
 **One directory, several files.** A store is addressed as a file *inside* the
 directory `--dir` names - `--root-mount FILE` for the root, `KEY=FILE` for each
@@ -248,25 +257,47 @@ totals need in order to count a mount point once.
 a key inside a store and a mount point. That is what makes the join total:
 `Mount.outer` returns a `str`, not a `str | None`, and no listing has a drop
 path. `keys.parse` defaults to the store bound and takes `max_segments`; the
-only callers passing the joined bound are `Mounts.resolve`/`below`/`children`
-and the `title_key` the server reports, which are the only places a key
-spanning a mount point is seen whole. `outrage check` gained `_check_depth` for
+only callers passing the joined bound are
+`MountedStore.resolve`/`below`/`children`, and `server._named_key` and the
+`title_key` the server reports, which are the only places a key spanning a mount
+point is seen whole. `outrage check` gained `_check_depth` for
 keys written before the bound was halved.
 
-The routing lives in the server, which is where the argument and result shaping
-already lives. Per tool: `retrieve_document`, `store_document` and
-`delete_keys` route to the owning mount and translate; `list_keys` also splices
-in the mount points at that level, merging before it cuts, and counts a mount
-as *replacing* what it stands in front of rather than joining it;
-`get_documents` and `keys_missing_meta` read their store as the windows the
-mounts below the key leave between them (`_shadowed`, `_windows`,
-`_across_windows`) and report `mounts_not_searched`. One limit and one
-character budget are spent across all the windows of a page, the totals are
-summed, and `without_meta` is asked once per window over exactly the stretch
-the page covered, so a survey's windows still tile as a caller pages. With no
-mount below the key there is a single unbounded window, which is the query it
-always was. Results grow a field only when there is something to say, so a
-single store answer is the shape it was before mounts existed.
+The routing lives in `MountedStore`, and every tool crosses a boundary. Per
+method: `retrieve_document`, `store_document`, `exists` and `level_entry` route
+to the owning mount and translate, with `level_entry` describing a mount point
+from the inner store's root rather than asking the store the mount shadows;
+`list_keys` splices in the mount points at that level, merging before it cuts;
+`get_documents`, `keys_missing_meta`, `descendant_count` and a recursive
+`delete` read the subtree as an ordered list of `Segment`s - the answering
+store's stretches between the mounts below it, and those mounts' own subtrees -
+which `_across_segments` reads as though it were one thing. One limit and one
+character budget are spent across the whole page, the totals are summed, and
+`Segment.resume_from` recomputes the cursor at each boundary with a third answer
+a single store never needed: *behind* it, counted but not emitted. With nothing
+mounted below the key the list is one unbounded segment, which is the query it
+always was.
+
+A caller's own `KeyRange` crosses too. `_inward_range` spells it as each mounted
+store names keys - three answers per bound, the same shape a cursor gets - and
+`_intersect` narrows the segment by it, so a range that excludes a mount drops
+that segment rather than asking it with the bound quietly missing.
+`missing_meta_stats` takes its window the same way, which is what replaced the
+server carrying a per-segment span list back out of a page.
+
+An error raised inside a mounted store is re-raised with its key spelled from
+outside, at the crossing, so every front end gets the right name rather than
+only the one that had a mount table to fix it with.
+
+Three defects were found by asking the table the store contract and by comparing
+the whole tool surface against the previous server on the live corpus. A key
+holding a document with a mount somewhere *below* it listed as an implicit
+container with no size, while reading it returned the document - a mount *point*
+shadows, a mount below a key does not. A count across a boundary missed the
+mount point's own row and its metadata, so `remaining` told a caller to pass
+`recursive` for fewer keys than were there. And a failure in the *root* mount
+was named with that mount's own outward function, which is the identity, so the
+front end's namer never ran and the root printed as `''` rather than `/`.
 
 **Read-only mounts** - `--mount-ro KEY=FILE`, and `outrage config --mount-ro` to
 record one. `Mount.read_only` carries it, `Resolved.writable(action)` raises

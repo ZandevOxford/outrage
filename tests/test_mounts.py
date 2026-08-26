@@ -6,6 +6,7 @@ caller actually sees. The table itself is tested directly where the question is
 about routing rather than about a tool result.
 """
 
+import itertools
 from pathlib import Path
 from typing import Any
 
@@ -13,19 +14,28 @@ import anyio
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from conftest import raises_rendered
+from conftest import answers_alike, page_facts, raises_rendered, walk_documents, walk_level
 from outrage import keys, messages
 from outrage.mounts import (
     MOUNT_KIND,
     READ_ONLY_MOUNT_KIND,
+    MountedStore,
     MountError,
-    Mounts,
     ReadOnlyMountError,
     open_mounts,
     parse_spec,
 )
 from outrage.server import build_server, parse_args
-from outrage.store import BackendError, ReadOnlyStoreError, StoreFileError
+from outrage.store import (
+    EVERYTHING,
+    UNBOUNDED,
+    BackendError,
+    BoundedSubtree,
+    KeyNotFoundError,
+    KeyRange,
+    ReadOnlyStoreError,
+    StoreFileError,
+)
 from outrage.store_sqlite import SqliteStore
 
 
@@ -57,7 +67,7 @@ def table(tmp_path):
 
     deep.store_document("a", "Deep.", title="Deep")
 
-    built = Mounts({"": root, "ref": ref, "lib/deep": deep})
+    built = MountedStore({"": root, "ref": ref, "lib/deep": deep})
     yield built
     built.close()
 
@@ -102,12 +112,12 @@ def test_the_longest_prefix_owns_a_key(table):
 
 def test_a_table_needs_a_root(tmp_path):
     with SqliteStore(tmp_path) as store, raises_rendered(MountError, "at the root"):
-        Mounts({"ref": store})
+        MountedStore({"ref": store})
 
 
 def test_a_mount_point_may_not_be_metadata(tmp_path):
     with SqliteStore(tmp_path) as store, raises_rendered(MountError, "may not be metadata"):
-        Mounts({"": store, "!title": store})
+        MountedStore({"": store, "!title": store})
 
 
 def test_mounts_below_a_key_are_the_ones_a_subtree_read_misses(table):
@@ -269,7 +279,7 @@ def test_a_recursive_delete_skips_a_read_only_mount_and_says_so(tmp_path):
     writable.store_document("a", "Writable.", title="A")
     frozen.store_document("b", "Frozen.", title="B")
 
-    with Mounts(
+    with MountedStore(
         {"": root, "lib/soft": writable, "lib/hard": frozen}, read_only=["lib/hard"]
     ) as table:
         server = build_server(table)
@@ -300,7 +310,7 @@ def test_a_cursor_is_recomputed_at_every_boundary(tmp_path):
     outer.store_document("m", "Outer.", title="M")
     nested.store_document("n", "Nested.", title="N")
 
-    with Mounts({"": root, "lib": outer, "lib/deep": nested}) as table:
+    with MountedStore({"": root, "lib": outer, "lib/deep": nested}) as table:
         server = build_server(table)
         after, seen = None, []
         while True:
@@ -325,7 +335,7 @@ def test_a_depth_budget_is_translated_into_a_mounted_store(tmp_path):
     ref.store_document("one", "One down.", title="One")
     ref.store_document("one/two", "Two down.", title="Two")
 
-    with Mounts({"": root, "ref": ref}) as table:
+    with MountedStore({"": root, "ref": ref}) as table:
         server = build_server(table)
         assert survey(server, depth=1) == ["ref", "top"]
         assert survey(server, depth=2) == ["ref", "ref/one", "top"]
@@ -366,7 +376,7 @@ def test_a_container_inside_a_mount_gives_advice_that_works(server):
 def test_an_empty_mounted_store_is_not_reported_as_a_blank_key(tmp_path):
     """`planned/root-key/impact` finding 7: a blank key is invisible in a report."""
     root, empty = SqliteStore(tmp_path / "root"), SqliteStore(tmp_path / "empty")
-    with Mounts({"": root, "blank": empty}) as table:
+    with MountedStore({"": root, "blank": empty}) as table:
         message = call_expecting_error(build_server(table), "retrieve_document", key="blank")
     assert "at or below 'blank'" in message
     assert "at or below ''" not in message
@@ -403,9 +413,9 @@ def test_a_store_key_may_not_exceed_half_the_namespace(tmp_path):
 
 def test_a_mount_point_may_not_exceed_half_the_namespace(tmp_path):
     with SqliteStore(tmp_path) as store:
-        Mounts({"": store, _deep_key(keys.MAX_SEGMENTS): store})
+        MountedStore({"": store, _deep_key(keys.MAX_SEGMENTS): store})
         with raises_rendered(keys.InvalidKeyError, "at most 64 are allowed"):
-            Mounts({"": store, _deep_key(keys.MAX_SEGMENTS + 1): store})
+            MountedStore({"": store, _deep_key(keys.MAX_SEGMENTS + 1): store})
         with raises_rendered(keys.InvalidKeyError, "at most 64 are allowed"):
             parse_spec(f"{_deep_key(keys.MAX_SEGMENTS + 1)}=/srv/x")
 
@@ -433,7 +443,7 @@ def test_two_full_halves_still_join(tmp_path):
     with pytest.raises(keys.InvalidKeyError):
         inner.store_document(deepest, "x", title="no room for this")
 
-    with Mounts({"": root, point: inner}) as table:
+    with MountedStore({"": root, point: inner}) as table:
         joined = f"{point}/{deepest}"
         assert joined.count(keys.DELIMITER) + 1 == keys.MAX_JOINED_SEGMENTS
         assert keys.fits(joined)
@@ -479,7 +489,7 @@ def test_a_key_predating_the_bound_fails_loudly_rather_than_silently(tmp_path):
     )
     inner.connection.commit()
 
-    with Mounts({"": root, "old": inner}) as table:
+    with MountedStore({"": root, "old": inner}) as table:
         mount = table.resolve("old").mount
         with raises_rendered(MountError, "has no name in this namespace"):
             mount.outer(legacy)
@@ -494,7 +504,7 @@ def test_a_mount_shadows_what_the_store_beneath_it_holds(tmp_path):
     root.store_document("ref/hidden", "Unreachable.", title="Hidden")
     inner.store_document("shown", "Reachable.", title="Shown")
 
-    with Mounts({"": root, "ref": inner}) as table:
+    with MountedStore({"": root, "ref": inner}) as table:
         server = build_server(table)
         assert [m.prefix for m in table.shadowing()] == ["ref"]
         assert [e["key"] for e in call(server, "list_keys", key="ref")["entries"]] == ["ref/shown"]
@@ -523,7 +533,7 @@ def shadowing(tmp_path):
     inner.store_document("", "Mounted.", title="Mounted root")
     inner.store_document("shown", "Reachable.", title="Shown")
 
-    with Mounts({"": root, "project": inner}) as built:
+    with MountedStore({"": root, "project": inner}) as built:
         yield built
 
 
@@ -712,7 +722,7 @@ def test_a_listing_counts_a_mount_point_the_store_holds_only_metadata_for(tmp_pa
     root.store_document("ref/!title", "Stale title")
     inner.store_document("", "Mounted.", title="Mounted root")
 
-    with Mounts({"": root, "ref": inner}) as table:
+    with MountedStore({"": root, "ref": inner}) as table:
         listing = call(build_server(table), "list_keys")
         assert [e["key"] for e in listing["entries"]] == ["ref"]
         assert listing["total"] == 1
@@ -733,7 +743,7 @@ def test_a_nested_mount_is_read_in_its_place(tmp_path):
     outer.store_document("shown", "Reachable.", title="Shown")
     nested.store_document("deeper", "Reachable.", title="Deeper")
 
-    with Mounts({"": root, "lib": outer, "lib/deep": nested}) as table:
+    with MountedStore({"": root, "lib": outer, "lib/deep": nested}) as table:
         server = build_server(table)
         # Both mounts read, both shadowed documents absent, and all four in the
         # order the one namespace puts them rather than the order the stores
@@ -757,7 +767,7 @@ def test_a_survey_inside_a_mount_crosses_a_mount_below_it(tmp_path):
     outer.store_document("deep/hidden", "Unreachable.", title="Hidden")
     nested.store_document("shown", "Reachable.", title="Shown")
 
-    with Mounts({"": root, "lib": outer, "lib/deep": nested}) as table:
+    with MountedStore({"": root, "lib": outer, "lib/deep": nested}) as table:
         server = build_server(table)
         result = call(server, "get_documents", key="lib", meta_name=["title"])
         assert [d["key"] for d in result["documents"]] == [
@@ -853,7 +863,7 @@ def test_the_instructions_carry_the_root_readme(tmp_path):
     inner = SqliteStore(tmp_path / "inner")
     root.store_document("readme", "The root store.")
     inner.store_document("readme", "The mounted store.")
-    with Mounts({"": root, "ref": inner}) as table:
+    with MountedStore({"": root, "ref": inner}) as table:
         text = instructions(table)
     assert "The root store." in text
     assert "The mounted store." not in text
@@ -889,7 +899,7 @@ def test_every_mount_gets_its_own_connection_in_every_thread(table):
 
 def test_a_table_closes_every_store_it_holds(tmp_path):
     stores = [SqliteStore(tmp_path / "root"), SqliteStore(tmp_path / "ref")]
-    with Mounts({"": stores[0], "ref": stores[1]}):
+    with MountedStore({"": stores[0], "ref": stores[1]}):
         for store in stores:
             store.exists("a")  # opens this thread's connection
     # Asked of the tracking rather than of the connection: `SqliteStore.connection`
@@ -906,7 +916,7 @@ def test_two_things_worth_saying_are_both_said(tmp_path):
     root.store_document("lib/keep/below", "kept")
     inner.store_document("a", "x")
 
-    with Mounts({"": root, "lib/deep": inner}, read_only=["lib/deep"]) as table:
+    with MountedStore({"": root, "lib/deep": inner}, read_only=["lib/deep"]) as table:
         server = build_server(table)
         result = call(server, "delete_keys", key="lib")
         # `remaining` crosses, so it counts the read-only mount's row too --
@@ -975,7 +985,7 @@ def read_only_table(tmp_path):
     ref.store_document("python/asyncio", "Event loops.", title="asyncio")
     deep.store_document("a", "Deep.", title="Deep")
 
-    built = Mounts({"": root, "ref": ref, "lib/deep": deep}, read_only=["ref"])
+    built = MountedStore({"": root, "ref": ref, "lib/deep": deep}, read_only=["ref"])
     yield built
     built.close()
 
@@ -1069,7 +1079,7 @@ def test_a_read_only_flag_naming_nothing_mounted_is_refused(tmp_path):
     ref = SqliteStore(tmp_path / "ref")
     try:
         with pytest.raises(MountError) as raised:
-            Mounts({"": root, "ref": ref}, read_only=["reference"])
+            MountedStore({"": root, "ref": ref}, read_only=["reference"])
         assert "nothing is mounted at 'reference'" in messages.render(raised.value)
     finally:
         root.close()
@@ -1080,7 +1090,7 @@ def test_the_root_cannot_be_mounted_read_only(tmp_path):
     root = SqliteStore(tmp_path / "root")
     try:
         with pytest.raises(MountError) as raised:
-            Mounts({"": root}, read_only=[""])
+            MountedStore({"": root}, read_only=[""])
         assert "root" in str(raised.value)
     finally:
         root.close()
@@ -1292,7 +1302,7 @@ def test_last_refuses_a_read_only_mount_the_way_a_named_key_would(tmp_path):
     root = SqliteStore(tmp_path / "root")
     ref = SqliteStore(tmp_path / "ref")
     ref.store_document("a", "Reference.")
-    built = Mounts({"": root, "ref": ref}, read_only={"ref"})
+    built = MountedStore({"": root, "ref": ref}, read_only={"ref"})
     try:
         message = call_expecting_error(
             build_server(built), "store_document", key="?last/b", content="x"
@@ -1300,3 +1310,353 @@ def test_last_refuses_a_read_only_mount_the_way_a_named_key_would(tmp_path):
         assert "ref" in message
     finally:
         built.close()
+
+
+# -- the contract, as a comparison ----------------------------------------
+#
+# A mount table is a ``Store``, and ``test_store.py`` asks it the whole
+# contract -- but as a table of *one*, because a mount point is a visible key
+# and a boundary inside that corpus would disagree with assertions written
+# about a single store while behaving exactly as designed.
+#
+# So crossing is checked the other way round, the way the parquet backend is:
+# one corpus, put into a single store and into a four-store table that splits
+# it, the same battery of calls put to each, and every answer asserted equal.
+# That is stronger than expectations written down twice, because it compares
+# against a live oracle -- and it guards precisely what the table exists to
+# claim, that a caller cannot tell where the boundaries are.
+#
+# Two differences are declared rather than asserted away, and they are the
+# whole of what a mount changes: a mount point lists as its own **kind**, which
+# is the only place the fact is announced at all, and the two stores were
+# written at different moments, so their timestamps differ.
+
+#: Chosen for the places a boundary could show. Every mount point holds a
+#: document *and* has children, so the inner store's root has to answer for
+#: both; ``a/z`` and ``context`` sit behind mounts so the stretches either side
+#: of one are non-empty; ``a-x`` sorts between ``a`` and its own children under
+#: a naive ordering; and the numeric segments sort wrong as text.
+_SPLIT_CORPUS = [
+    ("", "root document"),
+    ("!title", "The store itself"),
+    ("a", "a body"),
+    ("a/!title", "A"),
+    ("a/2", "a two"),
+    ("a/10", "a ten"),
+    ("a/10/!title", "A ten"),
+    ("a/b", "a b body"),
+    ("a/b/!title", "A b"),
+    ("a/b/c", "deep"),
+    ("a/b/c/!title", "Deep"),
+    ("a/b/c/d", "deeper"),
+    ("a/z", "a zed"),
+    ("a-x", "adversarial sibling"),
+    ("a-x/!title", "A-x"),
+    ("b", "b body"),
+    ("b/!title", "B"),
+    ("b/1", "b one"),
+    ("context/1/design", "design one"),
+    ("context/10/design", "design ten"),
+    ("context/10/design/!title", "Ten"),
+    ("z", "last"),
+]
+
+#: Where the table breaks the corpus up. ``a/b/c`` inside ``a/b`` is a **nested**
+#: mount, which is reached from the store containing it rather than from the
+#: root -- so the recursion in ``_segments`` is under these assertions too.
+_SPLIT_POINTS = ["a/b", "a/b/c", "b"]
+
+
+def _routed(key: str) -> tuple[str, str]:
+    """The mount that owns ``key`` in the split table, and its name inside it."""
+    owner = ""
+    for point in _SPLIT_POINTS:
+        if (key == point or key.startswith(point + "/")) and len(point) > len(owner):
+            owner = point
+    return owner, key if not owner else key[len(owner) + 1 :]
+
+
+@pytest.fixture
+def whole(tmp_path):
+    """The corpus in one store."""
+    with SqliteStore(tmp_path / "one") as store:
+        for key, content in _SPLIT_CORPUS:
+            store.store_document(key, content)
+        yield store
+
+
+@pytest.fixture
+def split(tmp_path):
+    """The same corpus, cut across four stores behind one namespace."""
+    stores = {keys.ROOT: SqliteStore(tmp_path / "many")}
+    for point in _SPLIT_POINTS:
+        name = point.replace(keys.DELIMITER, "-")
+        stores[point] = SqliteStore(tmp_path / "many", filename=f"{name}.sqlite")
+    for key, content in _SPLIT_CORPUS:
+        owner, inner = _routed(key)
+        stores[owner].store_document(inner, content)
+    with MountedStore(stores) as table:
+        yield table
+
+
+#: A mount point announces itself with its ``kind`` and in no other way, so the
+#: comparison takes that one word out. Everything else about the entry -- that
+#: it is there, its size, its format -- has to match the single store, and
+#: those are what a mount describing itself from the inner store's root is for.
+def _one_kind(kind: str) -> str:
+    return "document" if kind in (MOUNT_KIND, READ_ONLY_MOUNT_KIND) else kind
+
+
+def _one_page(page):
+    return (
+        [(e.key, _one_kind(e.kind), e.size, e.format) for e in page.items],
+        page.returned,
+        page.total,
+        page.total_chars,
+        page.next_cursor,
+    )
+
+
+def _level(store, key):
+    seen, totals = walk_level(store, key)
+    return [(k, _one_kind(kind), size, form) for k, kind, size, form in seen], totals
+
+
+def _entry(store, key):
+    found = store.level_entry(key)
+    return None if found is None else (found.key, _one_kind(found.kind), found.size, found.format)
+
+
+def _read(store, key):
+    got = store.retrieve_document(key)
+    return got.key, got.content, got.format, got.offset, got.returned, got.total, got.next_offset
+
+
+_SPLIT_KEYS = [
+    "", "a", "a/2", "a/10", "a/b", "a/b/c", "a/b/c/d", "a/z", "a-x",
+    "b", "b/1", "context", "context/10", "z", "nope", "a/b/nope",
+]
+
+_SPLIT_RANGES = [
+    UNBOUNDED,
+    KeyRange(after="a"),
+    KeyRange(after="a/b"),
+    KeyRange(after_inclusive="a/b"),
+    KeyRange(after_subtree="a/b"),
+    KeyRange(before="a/b"),
+    KeyRange(before_inclusive="a/b"),
+    KeyRange(final_subtree="a/b"),
+    KeyRange(after="a", before="z"),
+    KeyRange(after_subtree="a", before_inclusive="context/10"),
+    KeyRange(after_inclusive="a/b/c", final_subtree="b"),
+    KeyRange(after="nope"),
+]
+
+_SPLIT_SUBTREES = [
+    EVERYTHING,
+    BoundedSubtree(key="a"),
+    BoundedSubtree(key="a", depth=1),
+    BoundedSubtree(key="a", depth=2),
+    BoundedSubtree(key="a/b"),
+    BoundedSubtree(key="a/b", depth=0),
+    BoundedSubtree(key="b"),
+    BoundedSubtree(key=None, depth=1),
+    BoundedSubtree(key=None, depth=2),
+    BoundedSubtree(key="nope"),
+]
+
+
+def test_a_split_table_answers_every_read_the_way_one_store_holding_it_all_does(whole, split):
+    """A caller cannot tell where the boundaries are.
+
+    Written as one test rather than parametrised into thousands because what is
+    asserted is a single claim -- *these are the same store* -- and a run
+    reporting thousands of passes would say it thousands of times and locate a
+    failure no better than the assertion does.
+    """
+    for key in _SPLIT_KEYS:
+        answers_alike(whole, split, lambda s, k=key: s.exists(k))
+        answers_alike(whole, split, lambda s, k=key: s.descendant_count(k))
+        answers_alike(whole, split, lambda s, k=key: _read(s, k))
+        answers_alike(whole, split, lambda s, k=key: s.last_child(k))
+        if key != keys.ROOT:
+            answers_alike(whole, split, lambda s, k=key: _entry(s, k))
+        for limit in (None, 1, 2, 100):
+            answers_alike(
+                whole,
+                split,
+                lambda s, k=key, n=limit: _one_page(s.list_keys(k, limit=n)),
+            )
+        answers_alike(whole, split, lambda s, k=key: _level(s, k))
+
+    for subtree, key_range in itertools.product(_SPLIT_SUBTREES, _SPLIT_RANGES):
+        for meta in (None, "title", ["title", "summary"]):
+            answers_alike(
+                whole,
+                split,
+                lambda s, t=subtree, r=key_range, m=meta: page_facts(
+                    s.get_documents(t, key_range=r, meta_name=m)
+                ),
+            )
+            answers_alike(
+                whole,
+                split,
+                lambda s, t=subtree, r=key_range, m=meta: walk_documents(s, t, r, m),
+            )
+        for meta in ("title", ["title", "x"]):
+            answers_alike(
+                whole,
+                split,
+                lambda s, t=subtree, r=key_range, m=meta: page_facts(
+                    s.keys_missing_meta(t, key_range=r, meta_name=m)
+                ),
+            )
+            for window in _SPLIT_RANGES:
+                answers_alike(
+                    whole,
+                    split,
+                    lambda s, t=subtree, r=key_range, m=meta, w=window: s.missing_meta_stats(
+                        t, key_range=r, window=w, meta_name=m, sample=3
+                    ),
+                )
+
+
+# -- what the contract found ----------------------------------------------
+
+
+def test_a_key_with_a_mount_below_it_still_lists_as_what_it_is(tmp_path):
+    """A mount *point* shadows; a mount below a key does not.
+
+    The mirror image of ``planned/mounts/shadow-leak``. There, a survey offered
+    keys that reading refused; here a listing hid a key that reading returns --
+    a document with a mount somewhere beneath it came back as an implicit
+    container, with no size, no format and no timestamp, while
+    ``retrieve_document`` and ``level_entry`` both reported it as a document.
+    A caller comparing the two would have had no way to tell which was lying.
+    """
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    outer.store_document("a", "really there")
+    inner.store_document("", "the mount")
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        (entry,) = table.list_keys().items
+        assert (entry.key, entry.kind, entry.size) == ("a", "document", len("really there"))
+        assert table.list_keys().total_chars == len("really there")
+        assert entry == table.level_entry("a")
+        # And the mount itself is still spliced into the level it stands in.
+        (below,) = table.list_keys("a").items
+        assert (below.key, below.kind, below.size) == ("a/b", MOUNT_KIND, len("the mount"))
+
+
+def test_a_count_across_a_boundary_includes_the_mount_point_and_its_metadata(tmp_path):
+    """Two rows a count taken from the inside cannot see.
+
+    ``descendant_count`` measures from a store's own root and counts neither the
+    row at it nor that row's metadata, because a key's metadata does not lie
+    beneath the key. From outside, both of those rows *are* beneath the key
+    being counted -- they are the mount point and its title -- so a count that
+    forgot them told a caller to pass ``recursive`` for fewer keys than were
+    really there.
+    """
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    outer.store_document("a", "a")
+    inner.store_document("", "mounted")
+    inner.store_document("!title", "Mounted")
+    inner.store_document("c", "below")
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        # a/b, a/b/!title, a/b/c.
+        assert table.descendant_count("a") == 3
+        assert table.descendant_count("a/b") == 1
+
+
+def test_a_table_says_it_has_no_file_rather_than_answering_for_its_root(tmp_path):
+    """A backup or a check of one store out of three is not an answer.
+
+    It would be a clean bill of health for the stores nobody looked at, which is
+    the failure this project keeps finding rather than a convenience. Refused
+    with a sentence naming what to do instead.
+    """
+    with MountedStore.single(SqliteStore(tmp_path)) as table:
+        asked = [
+            lambda: table.path,
+            lambda: table.directory,
+            lambda: table.stored_format_version,
+            lambda: table.backup(),
+            lambda: table.backup_path(None, overwrite=False),
+            lambda: list(table.audit_rows()),
+            lambda: table.check_file(None),
+            lambda: table.repair(),
+        ]
+        for ask in asked:
+            with raises_rendered(BackendError, "no file of its own") as raised:
+                ask()
+            assert raised.value.code == "mount-has-no-file"
+
+
+def test_a_mount_point_describes_itself_when_its_place_in_a_level_is_asked_for(tmp_path):
+    """``level_entry`` and ``list_keys`` have to agree about a mount point.
+
+    The store beneath it has no row there, and asking it would answer about
+    whatever the mount shadows -- which is the row the listing has just declined
+    to show. So the mount describes itself, from the inner store's root, in both.
+    """
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    outer.store_document("ref", "shadowed, and unreachable")
+    inner.store_document("", "the reference base")
+    with MountedStore({keys.ROOT: outer, "ref": inner}) as table:
+        (listed,) = table.list_keys().items
+        assert table.level_entry("ref") == listed
+        assert (listed.kind, listed.size) == (MOUNT_KIND, len("the reference base"))
+
+
+def test_a_failure_in_the_root_mount_still_spells_the_root_the_way_a_reader_reads_it(tmp_path):
+    """The root is ``/`` in a sentence, never the empty string.
+
+    Found live, comparing the whole tool surface against the server before this
+    change. Naming used to happen at the MCP boundary with the *mount's* own
+    outward function, which for the root mount is the identity -- so the front
+    end's namer never ran and a failure at the root printed ``''``, "the empty
+    string that reads like a missing value" the namer exists to prevent. Now
+    that only a crossing renames, an error from the root mount reaches the
+    front end untouched and is spelled by it.
+    """
+    store = SqliteStore(tmp_path)
+    store.store_document("a", "below")
+    with MountedStore.single(store) as table:
+        server = build_server(table)
+        assert "'/'" in call_expecting_error(server, "retrieve_document", key="")
+
+
+def test_read_only_mounts_below_a_key_are_named_without_being_deleted(tmp_path):
+    """What a delete kept back is a sentence, so it is asked for separately.
+
+    ``delete`` answers with the keys that went. A mount that refused is not a
+    key, and folding it into that list would make a caller unable to tell the
+    two apart.
+    """
+    root = SqliteStore(tmp_path, filename="root.sqlite")
+    kept = SqliteStore(tmp_path, filename="kept.sqlite")
+    root.store_document("a/x", "gone")
+    kept.store_document("y", "safe")
+    with MountedStore({keys.ROOT: root, "a/ref": kept}, read_only=["a/ref"]) as table:
+        assert table.read_only_below("a") == ["a/ref"]
+        assert table.delete("a", recursive=True) == ["a/x"]
+        assert table.retrieve_document("a/ref/y").content == "safe"
+
+
+def test_an_error_from_inside_a_mount_names_the_key_the_caller_passed(tmp_path):
+    """Renamed where the crossing happens, so every front end gets it.
+
+    A store refuses a key by the name it knows, which is the name with the
+    prefix taken off -- so a failed read of ``ref/nope`` used to report
+    ``'nope'``, a key in no namespace anybody can pass back. Fixing it at the
+    MCP boundary left the command line with no mount table to fix it with.
+    """
+    root = SqliteStore(tmp_path, filename="root.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    with MountedStore({keys.ROOT: root, "ref": inner}) as table:
+        with raises_rendered(KeyNotFoundError, "'ref/nope'") as raised:
+            table.retrieve_document("ref/nope")
+        assert raised.value.details["key"] == "ref/nope"

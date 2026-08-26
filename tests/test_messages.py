@@ -18,7 +18,7 @@ import pytest
 
 from outrage import keys, messages
 from outrage.errors import OutrageError
-from outrage.mounts import Mount, Mounts, ReadOnlyMountError
+from outrage.mounts import Mount, MountedStore, ReadOnlyMountError
 from outrage.store import KeyNotFoundError
 from outrage.store_sqlite import SqliteStore
 
@@ -190,7 +190,7 @@ def test_a_render_without_a_template_raises_rather_than_guessing():
 def test_a_read_only_refusal_still_names_the_key_that_was_asked_for(tmp_path):
     """Raised at the boundary, so it was already right; kept so it stays right."""
     with SqliteStore(tmp_path / "root") as root, SqliteStore(tmp_path / "ref") as ref:
-        with Mounts({"": root, "ref": ref}, read_only=["ref"]) as table:
+        with MountedStore({"": root, "ref": ref}, read_only=["ref"]) as table:
             with pytest.raises(ReadOnlyMountError) as raised:
                 table.resolve("ref/x").writable()
     assert "cannot write 'ref/x'" in messages.render(raised.value)

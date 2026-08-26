@@ -25,6 +25,7 @@ from outrage import keys
 from outrage import store as store_module
 from outrage.eventlog import EventLog
 from outrage.keys import InvalidKeyError
+from outrage.mounts import MountedStore
 from outrage.store import (
     BoundedSubtree,
     KeyNotFoundError,
@@ -35,8 +36,47 @@ from outrage.store import (
 from outrage.store_sqlite import SqliteStore
 
 
+@pytest.fixture(params=["sqlite", "mounted"])
+def store(request, tmp_path):
+    """The contract, asked of a store and of the table that presents as one.
+
+    A mount table **is** a ``Store``: it answers this whole file, over keys
+    spelled the way a caller spells them, and routes underneath. Asking the
+    contract of it is the only check that says so -- a table tested only
+    through its own tests is tested against what it does rather than against
+    what a store is.
+
+    A table of *one*, deliberately, and not because crossing does not matter.
+    A mount point is a visible key: it lists in the level above it as its own
+    kind, and describes itself from the inner store's root. So a table with a
+    boundary inside this corpus would be answering correctly and still
+    disagreeing with assertions that were written about one store, and the
+    disagreement would be the design rather than a defect. Crossing is checked
+    where its keys can be chosen for it -- differentially, one corpus in a
+    single store and in a three-store table, in ``test_mounts.py``.
+
+    Everything else still runs: every call routes, every key is translated in
+    and out, every error is renamed on the way past, and ``segments`` builds
+    its list with nothing to step over.
+    """
+    if request.param == "sqlite":
+        with SqliteStore(tmp_path / "store") as s:
+            yield s
+        return
+    with MountedStore.single(SqliteStore(tmp_path / "store")) as table:
+        yield table
+
+
 @pytest.fixture
-def store(tmp_path):
+def file_store(tmp_path):
+    """A store that is a file, for the half of the contract about one.
+
+    Backup, a format version, an audit and a repair are questions about
+    *storage*, and a mount table refuses them rather than answering for its
+    root: a check of three stores that silently reported one would be a clean
+    bill of health for the two nobody looked at. So the tests that ask them ask
+    a backend, and this fixture is what says which half of the file they are in.
+    """
     with SqliteStore(tmp_path / "store") as s:
         yield s
 
@@ -55,7 +95,17 @@ def events(tmp_path) -> list[dict]:
 
 
 @pytest.fixture
+def populated_file(file_store):
+    """:func:`populated`, in a store that has a file."""
+    return _populate(file_store)
+
+
+@pytest.fixture
 def populated(store):
+    return _populate(store)
+
+
+def _populate(store):
     store.store_document("context/a1b2/design", "# Store schema\n\nBody.")
     store.store_document("context/a1b2/design/!title", "Store schema")
     store.store_document("context/a1b2/task", "Add a delete tool.")
@@ -839,8 +889,8 @@ def documents_in(path) -> int:
         conn.close()
 
 
-def test_backup_holds_what_the_store_holds(populated):
-    result = populated.backup()
+def test_backup_holds_what_the_store_holds(populated_file):
+    result = populated_file.backup()
 
     assert result.integrity == "ok"
     assert result.documents == 7
@@ -848,7 +898,7 @@ def test_backup_holds_what_the_store_holds(populated):
     assert documents_in(result.path) == 7
 
 
-def test_backup_captures_writes_that_are_still_only_in_the_wal(populated, tmp_path):
+def test_backup_captures_writes_that_are_still_only_in_the_wal(populated_file, tmp_path):
     """The whole reason this lives in the store rather than in a caller.
 
     Nothing has been checkpointed, so the .sqlite file on its own is a database
@@ -856,20 +906,20 @@ def test_backup_captures_writes_that_are_still_only_in_the_wal(populated, tmp_pa
     failure being guarded against, so the test states it directly.
     """
     copied = tmp_path / "copied.sqlite"
-    copied.write_bytes(populated.path.read_bytes())
+    copied.write_bytes(populated_file.path.read_bytes())
     try:
         by_copy = documents_in(copied)
     except sqlite3.DatabaseError:
         by_copy = 0  # Not even a schema yet, which is the same failure, harder.
 
-    result = populated.backup()
+    result = populated_file.backup()
 
     assert by_copy < 7, "a file copy would have been good enough, so this test proves nothing"
     assert documents_in(result.path) == 7
 
 
-def test_a_backup_is_a_store_that_can_be_opened(populated, tmp_path):
-    result = populated.backup()
+def test_a_backup_is_a_store_that_can_be_opened(populated_file, tmp_path):
+    result = populated_file.backup()
 
     restored_dir = tmp_path / "restored"
     restored_dir.mkdir()
@@ -879,59 +929,59 @@ def test_a_backup_is_a_store_that_can_be_opened(populated, tmp_path):
         assert restored.retrieve_document("context/a1b2/task").content == "Add a delete tool."
 
 
-def test_backup_defaults_to_a_timestamped_name_below_the_store(populated):
-    result = populated.backup()
+def test_backup_defaults_to_a_timestamped_name_below_the_store(populated_file):
+    result = populated_file.backup()
 
-    assert result.path.parent == (populated.directory / store_module.BACKUP_DIR_NAME).resolve()
+    assert result.path.parent == (populated_file.directory / store_module.BACKUP_DIR_NAME).resolve()
     assert result.path.name.startswith("store-")
     assert result.path.suffix == ".sqlite"
 
 
-def test_a_destination_directory_gets_the_default_name(populated, tmp_path):
+def test_a_destination_directory_gets_the_default_name(populated_file, tmp_path):
     elsewhere = tmp_path / "elsewhere"
     elsewhere.mkdir()
 
-    result = populated.backup(elsewhere)
+    result = populated_file.backup(elsewhere)
 
     assert result.path.parent == elsewhere.resolve()
     assert result.path.name.startswith("store-")
 
 
-def test_a_named_destination_is_used_as_given(populated, tmp_path):
-    result = populated.backup(tmp_path / "snapshots" / "monday.sqlite")
+def test_a_named_destination_is_used_as_given(populated_file, tmp_path):
+    result = populated_file.backup(tmp_path / "snapshots" / "monday.sqlite")
 
     assert result.path == (tmp_path / "snapshots" / "monday.sqlite").resolve()
 
 
-def test_an_existing_destination_is_refused(populated, tmp_path):
+def test_an_existing_destination_is_refused(populated_file, tmp_path):
     target = tmp_path / "taken.sqlite"
     target.write_text("not a database")
 
     with raises_rendered(store_module.BackupError, "already exists"):
-        populated.backup(target)
+        populated_file.backup(target)
 
     assert target.read_text() == "not a database"
 
 
-def test_an_existing_destination_can_be_replaced_on_purpose(populated, tmp_path):
+def test_an_existing_destination_can_be_replaced_on_purpose(populated_file, tmp_path):
     target = tmp_path / "taken.sqlite"
     target.write_text("not a database")
 
-    result = populated.backup(target, overwrite=True)
+    result = populated_file.backup(target, overwrite=True)
 
     assert documents_in(result.path) == 7
 
 
-def test_the_store_itself_is_refused_as_a_destination(populated):
+def test_the_store_itself_is_refused_as_a_destination(populated_file):
     with raises_rendered(store_module.BackupError, "the store itself"):
-        populated.backup(populated.path)
+        populated_file.backup(populated_file.path)
 
     # The refusal has to come before anything is unlinked, or the check that
     # protects the store is what destroys it.
-    assert populated.retrieve_document("context/a1b2/task").content == "Add a delete tool."
+    assert populated_file.retrieve_document("context/a1b2/task").content == "Add a delete tool."
 
 
-def test_a_short_backup_is_refused_rather_than_returned(populated, monkeypatch):
+def test_a_short_backup_is_refused_rather_than_returned(populated_file, monkeypatch):
     """The count is the only check that catches a copy which opens cleanly."""
     monkeypatch.setattr(
         SqliteStore,
@@ -942,7 +992,7 @@ def test_a_short_backup_is_refused_rather_than_returned(populated, monkeypatch):
     )
 
     with raises_rendered(store_module.BackupError, "holds 0 documents"):
-        populated.backup()
+        populated_file.backup()
 
 
 def test_a_backup_is_logged_with_what_it_wrote(logged, tmp_path):
@@ -1377,15 +1427,15 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
         store.connection.close()
 
 
-def test_a_document_and_its_metadata_survive_the_rebuild_in_order(store):
-    # The property the whole sort form exists for, read back through the store
+def test_a_document_and_its_metadata_survive_the_rebuild_in_order(file_store):
+    # The property the whole sort form exists for, read back through the file_store
     # rather than asserted on the encoding.
     for key in ["a", "a-x", "a/b"]:
-        store.store_document(key, "body", title="T")
+        file_store.store_document(key, "body", title="T")
 
     listed = [
         r["key"]
-        for r in store.connection.execute("SELECT key FROM documents ORDER BY sort_key")
+        for r in file_store.connection.execute("SELECT key FROM documents ORDER BY sort_key")
     ]
     assert listed == [
         "a",
@@ -1784,14 +1834,14 @@ def test_autonumbering_allocates_at_the_top_level(store):
     assert store.store_document("?", "second") == "2"
 
 
-def test_a_title_on_the_root_with_no_document_is_named_in_a_check(store, tmp_path):
+def test_a_title_on_the_root_with_no_document_is_named_in_a_check(file_store, tmp_path):
     from outrage import maintenance
 
-    # Legal, and easy to reach: titling a store is not the same as writing a
+    # Legal, and easy to reach: titling a file_store is not the same as writing a
     # document at its root. The report has to be able to name the root, or the
     # detail line carries a blank where a key should be.
-    store.store_document("!title", "This store")
-    report = maintenance.check(store)
+    file_store.store_document("!title", "This file_store")
+    report = maintenance.check(file_store)
     notes = [p for p in report.problems if p.summary == "some metadata has no document"]
     assert notes and notes[0].detail == "/"
 
@@ -1875,6 +1925,17 @@ def test_every_backend_validates_by_calling_the_shared_check():
             if not isinstance(node, ast.ClassDef):
                 continue
             if not any(isinstance(b, ast.Name) and b.id == "Store" for b in node.bases):
+                continue
+            # A backend names the file it keeps; ``MountedStore`` is a ``Store``
+            # that keeps nothing and validates by delegating to the store it
+            # routed to, which is the one honest way to answer this.
+            if not any(
+                isinstance(item, ast.Assign)
+                and any(
+                    getattr(target, "id", None) == "default_filename" for target in item.targets
+                )
+                for item in node.body
+            ):
                 continue
             for method in node.body:
                 if not isinstance(method, ast.FunctionDef) or method.name != "store_document":
