@@ -20,7 +20,7 @@ mount: `path`, `backup`, `check` and `repair` raise `mount-has-no-file`. A
 check of one store out of three would be a clean bill of health for the two
 nobody looked at.
 
-### Three fixes at a mount boundary
+### Six fixes at a mount boundary
 
 * **A key with a mount below it listed as an empty container.** A document with
   a mounted store somewhere beneath it came back from `list_keys` as `implicit`,
@@ -34,6 +34,18 @@ nobody looked at.
   the owning mount's own outward function, which for the root mount is the
   identity, so the empty string reached the reader where the root's name should
   have been.
+* **The count in "N key(s) lie beneath it" stopped at the store's edge.** The
+  store answering counted its own rows, so everything held by a mount below the
+  key was missing from the number - live in this project's own store, a key with
+  20,000 rows beneath it reported 536.
+* **A key whose only content is a mount below it read as empty.** No store holds
+  a row at `lib` when the mount is at `lib/deep`, so `retrieve_document('lib')`
+  raised `key-not-found`, whose sentence is "nothing is stored at or below" and
+  which was untrue. It is now `key-is-a-container`, with the advice that finds
+  the mount.
+* **`level_entry` returned `None` for a key its own listing offers.** The same
+  key: `list_keys` splices `lib` into the level above, and asking what that
+  entry is got nothing back.
 
 ## 0.2.0 - 2026-08-24
 

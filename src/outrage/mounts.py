@@ -443,6 +443,13 @@ def _intersect(first: KeyRange, second: KeyRange) -> KeyRange:
     return KeyRange(**both)
 
 
+#: The two codes a store raises when it holds nothing at a key. Both count what
+#: lies beneath it, and a store can only count as far as its own edge, so both
+#: have to be asked again of the table. See
+#: :meth:`MountedStore._nothing_there`.
+_NOTHING_THERE = ("key-not-found", "key-is-a-container")
+
+
 #: The details of an error that name a key, and so have to regain a mount's
 #: prefix on the way out. Every other detail is a fact about the store rather
 #: than a name in the namespace -- a path, a count, a backend -- and means the
@@ -1119,16 +1126,42 @@ class MountedStore(Store):
         max_chars: int = DEFAULT_MAX_CHARS,
     ) -> Excerpt:
         found = self.resolve(key)
-        with _renamed(found.mount):
-            excerpt = found.store.retrieve_document(
-                found.key,
-                offset=offset,
-                length=length,
-                pattern=pattern,
-                occurrence=occurrence,
-                max_chars=max_chars,
-            )
+        try:
+            with _renamed(found.mount):
+                excerpt = found.store.retrieve_document(
+                    found.key,
+                    offset=offset,
+                    length=length,
+                    pattern=pattern,
+                    occurrence=occurrence,
+                    max_chars=max_chars,
+                )
+        except KeyNotFoundError as exc:
+            if exc.code not in _NOTHING_THERE:
+                raise
+            raise self._nothing_there(found.outer) from exc
         return dataclasses.replace(excerpt, key=found.outer)
+
+    def _nothing_there(self, key: str) -> KeyNotFoundError:
+        """Say what the *table* holds at a key no single store holds anything at.
+
+        Both codes in :data:`_NOTHING_THERE` are answers about a subtree, and a
+        store answers them from its own rows: it counts to its own edge and
+        stops. So a mount below the key was missing from the count, and where
+        the store answering had no row there at all -- an implicit ancestor of
+        a mount point, which the merge invents and no store knows -- a key with
+        a whole store beneath it came back as ``key-not-found``, whose sentence
+        is "nothing is stored at or below", and which was then simply untrue.
+
+        Counting across is what a table is for, so the table raises both codes
+        itself rather than repairing the count in the one it caught. The same
+        rule as :meth:`level_entry`: where the answer is about the namespace
+        rather than about a store, only the table can give it.
+        """
+        beneath = 0 if keys.parse(key).is_metadata else self.descendant_count(key)
+        if beneath:
+            return KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
+        return KeyNotFoundError("key-not-found", key=key)
 
     def exists(self, key: str) -> bool:
         found = self.resolve(key)
@@ -1146,7 +1179,16 @@ class MountedStore(Store):
         if not found.mount.is_root and found.key == keys.ROOT:
             return self._mount_entry(found.mount)
         entry = found.store.level_entry(found.key)
-        return None if entry is None else dataclasses.replace(entry, key=found.outer)
+        if entry is None:
+            # An implicit ancestor of a mount point: a mount at `lib/deep` puts
+            # `lib` in the root listing through :meth:`children`, and no store
+            # holds a row there to describe it. Answering None said the key a
+            # listing had just offered was not on the level it came from, which
+            # is the disagreement `test_level_entry_agrees_with_the_listing_it
+            # _describes` exists to catch -- the same fault as a mount shadowing
+            # a document, in the one direction that had no row to win it.
+            return _implicit(found.outer) if self.children(found.outer) else None
+        return dataclasses.replace(entry, key=found.outer)
 
     def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
         found = self.resolve(key)
