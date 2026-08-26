@@ -1605,21 +1605,34 @@ def test_reading_an_implicit_ancestor_of_a_mount_does_not_call_it_empty(tmp_path
     it was mounted. The store answering said so, and the sentence it said it
     with claims the subtree is empty while a whole store sits in it -- and it
     withholds the advice that would have found it.
+
+    Asked of a plain store holding the same keys as well, which is the
+    specification the table is supposed to meet: what a caller is told about a
+    key cannot depend on whether a mount is what put the content below it.
     """
+    single = SqliteStore(tmp_path, filename="single.sqlite")
     outer = SqliteStore(tmp_path, filename="outer.sqlite")
     inner = SqliteStore(tmp_path, filename="inner.sqlite")
     inner.store_document("c", "below", title="Below")
+    single.store_document("a/b/c", "below", title="Below")
     with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
-        with raises_rendered(KeyNotFoundError, "no content stored at 'a'") as raised:
+        with raises_rendered(KeyNotFoundError, "no content stored at 'a'") as table_said:
             table.retrieve_document("a")
-        assert raised.value.code == "key-is-a-container"
-        # And the advice, followed literally, answers.
+        with raises_rendered(KeyNotFoundError, "no content stored at 'a'") as store_said:
+            single.retrieve_document("a")
+        assert table_said.value.code == store_said.value.code == "key-is-a-container"
+        assert table_said.value.details == store_said.value.details
+        # And the advice, followed literally, answers -- the same advice, and
+        # the same answer, as without a mount in it.
         assert [e.key for e in table.list_keys("a").items] == ["a/b"]
+        assert [e.key for e in single.list_keys("a").items] == ["a/b"]
 
     # A key with genuinely nothing below it still gets the other sentence.
     with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
         with raises_rendered(KeyNotFoundError, "nothing is stored at or below 'z'"):
             table.retrieve_document("z")
+        with raises_rendered(KeyNotFoundError, "nothing is stored at or below 'z'"):
+            single.retrieve_document("z")
 
 
 def test_level_entry_describes_an_implicit_ancestor_the_listing_offers(tmp_path):
@@ -1631,16 +1644,26 @@ def test_level_entry_describes_an_implicit_ancestor_the_listing_offers(tmp_path)
     level it came from -- the mirror of the shadowed document in
     ``test_a_listing_counts_the_mount_and_not_what_it_replaced``, where the
     store's own row is what settles it.
+
+    Against a plain store holding the same keys, as above. The equivalence
+    stops at the mount point itself, where ``kind`` is the one field that says
+    a mount is there at all -- ``test_a_single_store_result_says_nothing_about
+    _mounts`` is that half.
     """
+    single = SqliteStore(tmp_path, filename="single.sqlite")
     outer = SqliteStore(tmp_path, filename="outer.sqlite")
     inner = SqliteStore(tmp_path, filename="inner.sqlite")
     inner.store_document("c", "below")
+    single.store_document("a/b/c", "below")
     with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
         (entry,) = table.list_keys().items
         assert (entry.key, entry.kind) == ("a", "implicit")
         assert table.level_entry("a") == entry
+        # An implicit ancestor is described the same whether a mount or a row
+        # is what lies below it.
+        assert table.level_entry("a") == single.level_entry("a")
         # A key nothing lies below is still nothing, and says so the same way.
-        assert table.level_entry("z") is None
+        assert table.level_entry("z") is single.level_entry("z") is None
 
 
 def test_a_table_says_it_has_no_file_rather_than_answering_for_its_root(tmp_path):
