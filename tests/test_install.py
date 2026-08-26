@@ -26,17 +26,20 @@ from outrage.config import ConfigError
 from outrage.install import (
     CLAUDE_DIR,
     CLAUDE_HOOK,
+    CODEX_DIR,
     COPILOT_HOOK,
     HOOK_TARGETS,
     MARKER,
     FileChange,
     InstallError,
     asset_sources,
+    codex_asset_sources,
     init,
     install,
     is_ours,
     plan,
     plan_assets,
+    plan_codex_assets,
     settings_path,
     template_entry,
 )
@@ -309,6 +312,10 @@ def installed(project: Path, relative: str) -> Path:
     return project / CLAUDE_DIR / relative
 
 
+def codex_installed(project: Path, relative: str) -> Path:
+    return project / CODEX_DIR / relative
+
+
 def test_the_package_ships_a_skill_and_three_agents():
     """The copy is only as good as what is packaged, so check it is there."""
     relative = {str(r) for _, r in asset_sources()}
@@ -321,11 +328,26 @@ def test_the_package_ships_a_skill_and_three_agents():
     }
 
 
+def test_the_package_ships_a_codex_skill_with_agent_workflows():
+    relative = {str(r) for _, r in codex_asset_sources()}
+
+    assert "skills/outrage/SKILL.md" in relative
+    assert {
+        "skills/outrage/references/annotate.md",
+        "skills/outrage/references/backfill.md",
+        "skills/outrage/references/search.md",
+    } <= relative
+
+
 def test_an_empty_project_gets_every_packaged_file(tmp_path):
-    changes = init(tmp_path).assets
+    done = init(tmp_path)
+    changes = done.assets
 
     assert actions(changes) == {"created"}
     for change in changes:
+        assert change.path.read_bytes() == change.source.read_bytes()
+    assert actions(list(done.codex_assets)) == {"created"}
+    for change in done.codex_assets:
         assert change.path.read_bytes() == change.source.read_bytes()
 
 
@@ -336,6 +358,7 @@ def test_a_second_run_copies_nothing(tmp_path):
 
     assert actions(init(tmp_path).assets) == {"unchanged"}
     assert skill.stat().st_mtime_ns == before, "an unchanged file is not rewritten"
+    assert actions(init(tmp_path).codex_assets) == {"unchanged"}
 
 
 def test_an_edited_copy_is_replaced_by_the_packaged_one(tmp_path):
@@ -382,10 +405,26 @@ def test_a_symlinked_directory_is_left_alone(tmp_path):
     assert (elsewhere / "SKILL.md").read_text(encoding="utf-8") == "the linked skill"
 
 
+def test_a_symlinked_codex_skill_is_left_alone(tmp_path):
+    elsewhere = tmp_path / "source" / "outrage"
+    elsewhere.mkdir(parents=True)
+    (elsewhere / "SKILL.md").write_text("the linked Codex skill", encoding="utf-8")
+    link = codex_installed(tmp_path, "skills/outrage")
+    link.parent.mkdir(parents=True)
+    link.symlink_to(elsewhere, target_is_directory=True)
+
+    changes = plan_codex_assets(tmp_path)
+
+    assert {change.action for change in changes} == {"linked"}
+    assert (elsewhere / "SKILL.md").read_text(encoding="utf-8") == "the linked Codex skill"
+
+
 def test_planning_the_copy_writes_nothing(tmp_path):
     plan_assets(tmp_path)
+    plan_codex_assets(tmp_path)
 
     assert not (tmp_path / CLAUDE_DIR).exists()
+    assert not (tmp_path / CODEX_DIR).exists()
 
 
 # -- setting a whole project up ------------------------------------------
@@ -403,6 +442,7 @@ def test_init_writes_the_three_things(tmp_path):
     assert entry["args"][-1] == str(tmp_path / ".outrage"), "the store defaults beside the project"
     assert is_ours(entries(settings_path(tmp_path))[-1])
     assert installed(tmp_path, "skills/outrage/SKILL.md").is_file()
+    assert codex_installed(tmp_path, "skills/outrage/SKILL.md").is_file()
     assert done.writes
 
 
@@ -444,6 +484,7 @@ def test_a_second_init_changes_nothing_anywhere(tmp_path):
     assert done.server.action == "unchanged"
     assert [h.action for h in done.hooks] == ["unchanged"] * len(HOOK_TARGETS)
     assert actions(list(done.assets)) == {"unchanged"}
+    assert actions(list(done.codex_assets)) == {"unchanged"}
 
 
 def test_init_dry_run_writes_nothing_and_agrees_with_the_real_run(tmp_path):
@@ -451,6 +492,7 @@ def test_init_dry_run_writes_nothing_and_agrees_with_the_real_run(tmp_path):
 
     assert not (tmp_path / ".mcp.json").exists()
     assert not (tmp_path / CLAUDE_DIR).exists()
+    assert not (tmp_path / CODEX_DIR).exists()
 
     done = init(tmp_path)
     assert preview.server.action == done.server.action
@@ -469,6 +511,7 @@ def test_a_refusal_stops_the_whole_run(tmp_path):
 
     assert not (tmp_path / ".mcp.json").exists(), "the server entry was not written either"
     assert not installed(tmp_path, "skills/outrage/SKILL.md").exists()
+    assert not codex_installed(tmp_path, "skills/outrage/SKILL.md").exists()
 
 
 # -- the second harness: Copilot CLI -------------------------------------

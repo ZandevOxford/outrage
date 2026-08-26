@@ -24,6 +24,13 @@ dist/
 # reason to commit some of this.
 .claude/
 
+# Everything under .codex/ is rendered output on the same rule as .claude/
+# above: `outrage init` writes the skill bundle there from src/outrage/codex/,
+# which is the source of truth, and the config and the canary belong to the
+# machine that runs them. Recreate it with `outrage init`. A project that is not
+# outrage itself has every reason to commit some of this.
+.codex/
+
 # The Copilot CLI hook file is rendered output too, on the same rule as
 # .claude/ above: the template in src/ is the source of truth, and
 # a canary belongs on the machine that runs it rather than in the repository.

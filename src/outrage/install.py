@@ -1,10 +1,10 @@
-"""Setting a project up: the MCP entry, the hooks, and the skill and agents.
+"""Setting a project up: the MCP entry, hooks, and harness-specific skills.
 
 ``init`` is the whole of ``outrage init`` and the three parts are separable: the
 server entry is :mod:`outrage.config`'s and is called rather than repeated, the
-session-start hooks are written here, and the packaged skill and agents are
-copied into ``.claude/``. Most of what follows is about the hooks, because they
-are the part with something to say.
+session-start hooks are written here, and packaged assets are copied into the
+directories their harness reads. Most of what follows is about the hooks,
+because they are the part with something to say.
 
 A config file belongs to the user, not to outrage. It holds their model, their
 permissions and their own hooks, so this writes the one entry it owns and
@@ -119,6 +119,9 @@ MARKER_MATCH = "-managed:session-start"
 #: Declared above its three users rather than beside the assets, because the
 #: settings path is one of them and used to spell the directory out.
 CLAUDE_DIR = ".claude"
+
+#: Where Codex reads project-scoped skills, relative to the project root.
+CODEX_DIR = ".codex"
 
 #: The settings file the fragment is merged into, inside :data:`CLAUDE_DIR`.
 SETTINGS_NAME = "settings.json"
@@ -394,9 +397,13 @@ def asset_sources() -> list[tuple[Path, Path]]:
 
 def plan_assets(project_dir: str | Path) -> list[FileChange]:
     """Work out which packaged files a project is missing or has an older copy of."""
-    root = Path(project_dir) / CLAUDE_DIR
+    return _plan_files(Path(project_dir) / CLAUDE_DIR, asset_sources())
+
+
+def _plan_files(root: Path, sources: list[tuple[Path, Path]]) -> list[FileChange]:
+    """Compare packaged files with one harness directory without writing."""
     changes = []
-    for source, relative in asset_sources():
+    for source, relative in sources:
         path = root / relative
         if _through_a_link(root, relative):
             action = "linked"
@@ -417,6 +424,26 @@ def write_assets(changes: list[FileChange]) -> None:
             continue
         change.path.parent.mkdir(parents=True, exist_ok=True)
         _replace(change.path, change.source.read_bytes())
+
+
+def codex_asset_sources() -> list[tuple[Path, Path]]:
+    """Every packaged Codex skill, as a source and path below ``.codex``."""
+    root = Path(__file__).parent / "codex" / "skills"
+    if not root.is_dir():  # pragma: no cover - a broken install
+        raise InstallError("assets-missing", asset="codex/skills", path=str(root))
+    found = [
+        (source, Path("skills") / source.relative_to(root))
+        for source in sorted(root.rglob("*"))
+        if source.is_file() and not source.name.startswith(".")
+    ]
+    if not found:  # pragma: no cover - a broken install
+        raise InstallError("assets-empty", asset=CODEX_DIR, path=str(root))
+    return found
+
+
+def plan_codex_assets(project_dir: str | Path) -> list[FileChange]:
+    """Work out which Codex skills a project is missing or has an older copy of."""
+    return _plan_files(Path(project_dir) / CODEX_DIR, codex_asset_sources())
 
 
 def _through_a_link(root: Path, relative: Path) -> bool:
@@ -475,6 +502,10 @@ class Installation:
     """One per :data:`HOOK_TARGETS`, in that order."""
 
     assets: tuple[FileChange, ...]
+    """Claude Code skills and agents."""
+
+    codex_assets: tuple[FileChange, ...]
+    """Codex skills."""
 
     @property
     def writes(self) -> bool:
@@ -482,6 +513,7 @@ class Installation:
             self.server.writes
             or any(h.writes for h in self.hooks)
             or any(a.writes for a in self.assets)
+            or any(a.writes for a in self.codex_assets)
         )
 
 
@@ -496,7 +528,7 @@ def init(
     read_only_mounts: Sequence[str] = (),
     dry_run: bool = False,
 ) -> Installation:
-    """Set a project up: the MCP server entry, the hook, and the skill and agents.
+    """Set a project up: the MCP server entry, hooks, and packaged skills.
 
     The whole of it is planned before any of it is written, so a refusal - a
     settings file that does not parse, a ``.mcp.json`` that does not - stops
@@ -517,6 +549,7 @@ def init(
     project = Path(project_dir).expanduser().resolve()
 
     assets = plan_assets(project)
+    codex_assets = plan_codex_assets(project)
 
     hooks = []
     for target in HOOK_TARGETS:
@@ -541,18 +574,21 @@ def init(
             if hook.writes:
                 config.write_config(path, settings, settings_text)
         write_assets(assets)
+        write_assets(codex_assets)
 
     return Installation(
         project_dir=project,
         server=server,
         hooks=tuple(hook for _, hook, _, _ in hooks),
         assets=tuple(assets),
+        codex_assets=tuple(codex_assets),
     )
 
 
 __all__ = [
     "ASSET_DIRS",
     "CLAUDE_DIR",
+    "CODEX_DIR",
     "CLAUDE_HOOK",
     "COPILOT_HOOK",
     "HOOKS_FIELD",
@@ -566,11 +602,13 @@ __all__ = [
     "InstallError",
     "Installation",
     "asset_sources",
+    "codex_asset_sources",
     "init",
     "install",
     "is_ours",
     "plan",
     "plan_assets",
+    "plan_codex_assets",
     "settings_path",
     "template_entry",
     "write_assets",

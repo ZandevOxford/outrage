@@ -41,7 +41,7 @@ parquet = ["pyarrow>=18"]
 # hatchling and build are here because the suite builds the sdist and the wheel
 # and asserts what is in them - tests/test_packaging.py. Without them that
 # check skips, and a release can drop a file the way 0.1.0 did.
-dev = ["pytest>=8", "ruff>=0.6", "hatchling", "build>=1"]
+dev = ["pytest>=8", "ruff>=0.6", "hatchling", "build>=1", "PyYAML>=6"]
 docs = ["sphinx>=8", "furo"]
 
 [project.scripts]

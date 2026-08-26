@@ -1135,6 +1135,7 @@ def test_init_arranges_the_whole_project(tmp_path):
     assert servers(tmp_path / ".mcp.json")["outrage"]
     assert (tmp_path / ".claude" / "settings.json").is_file()
     assert (tmp_path / ".claude" / "skills" / "outrage" / "SKILL.md").is_file()
+    assert (tmp_path / ".codex" / "skills" / "outrage" / "SKILL.md").is_file()
     assert "added" in output
 
 
@@ -1153,6 +1154,7 @@ def test_init_names_every_path_it_touches(tmp_path):
     assert str(tmp_path / ".mcp.json") in output
     assert str(tmp_path / ".claude" / "settings.json") in output
     assert "skills/outrage/SKILL.md" in output
+    assert str(tmp_path / ".codex") in output
 
 
 def test_init_records_the_store_directory_and_the_log(tmp_path):

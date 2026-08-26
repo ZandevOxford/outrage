@@ -734,7 +734,20 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
     _report(done.server, out, dry_run=args.dry_run)
     for hook in done.hooks:
         _report_hook(hook, out, dry_run=args.dry_run)
-    _report_assets(done.assets, out, dry_run=args.dry_run, root=done.project_dir)
+    _report_assets(
+        done.assets,
+        out,
+        dry_run=args.dry_run,
+        root=done.project_dir / install.CLAUDE_DIR,
+        label="skill and agents",
+    )
+    _report_assets(
+        done.codex_assets,
+        out,
+        dry_run=args.dry_run,
+        root=done.project_dir / install.CODEX_DIR,
+        label="Codex skill",
+    )
 
     if args.dry_run and done.writes:
         # Where the report is long enough to scroll, one line on stderr is what
@@ -1349,15 +1362,19 @@ def _report_hook(change: install.HookChange, out: TextIO, *, dry_run: bool) -> N
 
 
 def _report_assets(
-    changes: tuple[install.FileChange, ...], out: TextIO, *, dry_run: bool, root: Path
+    changes: tuple[install.FileChange, ...],
+    out: TextIO,
+    *,
+    dry_run: bool,
+    root: Path,
+    label: str,
 ) -> None:
     """Say what happened to each packaged file, by its path within the project."""
-    claude = root / install.CLAUDE_DIR
-    print(f"skill and agents: {claude}", file=out)
+    print(f"{label}: {root}", file=out)
     for change in changes:
         try:
-            where = change.path.relative_to(claude)
-        except ValueError:  # pragma: no cover - only if CLAUDE_DIR stops being a prefix
+            where = change.path.relative_to(root)
+        except ValueError:  # pragma: no cover - only if an asset root changes
             where = change.path
         line = f"  {_said(change.action, dry_run):<15} {where}"
         if change.action == "linked":
