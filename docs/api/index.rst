@@ -20,19 +20,27 @@ written in these terms.
 Storage
 -------
 
-What a store is, the two implementations of it, and the routing that makes
-several stores look like one namespace. :mod:`outrage.store` is the contract; a
-caller that does not care which storage it is reading stops there and never
-names a backend.
+What a store is, the implementations of it, and the table that makes several
+stores look like one namespace. :mod:`outrage.store` is the contract; a caller
+that does not care which storage it is reading stops there and never names a
+backend. :mod:`outrage.mounts` is a caller of that kind and a store itself:
+a table of mounts **is** a ``Store``, which is what lets one answer for many
+without anything above it knowing.
 
-The two backends answer the same twelve operations and are for different
-things. :mod:`outrage.store_sqlite` is the one a store is opened as by default:
+The backends answer the same operations and are for different things.
+:mod:`outrage.store_sqlite` is the one a store is opened as by default:
 read-write, accumulated a document at a time, and what session context and
 notes on a codebase live in. :mod:`outrage.store_parquet` is one file, written
 whole and read many times, for a reference base of tens of thousands of
 documents; it refuses writes, and ``outrage pack`` is how documents get into
-one. Which of the two a store file is kept in follows from its extension --
-:func:`outrage.store._backend_for`.
+one. :mod:`outrage.store_files` is a directory of files, one per key, which is
+what an export target and a working copy are -- the shape a person edits by
+hand.
+
+Which storage a store *file* is kept in follows from its extension --
+:func:`outrage.store._backend_for` -- and a tree has no extension to read, so
+a filesystem store is constructed directly at its path rather than opened by
+name.
 
 .. toctree::
    :maxdepth: 1
@@ -40,6 +48,7 @@ one. Which of the two a store file is kept in follows from its extension --
    store
    store_sqlite
    store_parquet
+   store_files
    mounts
 
 Front ends

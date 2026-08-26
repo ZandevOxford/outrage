@@ -58,14 +58,16 @@ would change without writing.
 
 * **MCP server** - Python, stdio, for local use. Exposes the store as tools.
 * **Data store** - a Python library, independent of MCP so that it can be tested
-  and reused on its own. One interface with two backends behind it, and which
-  one a store uses follows from its file's extension. **SQLite** is the
+  and reused on its own. One interface with three backends behind it, and which
+  one a store *file* uses follows from its extension. **SQLite** is the
   read-write default: a store accumulated a document at a time, which is what
   session context and notes on a codebase are. **Parquet** is one columnar file,
   written whole by `outrage pack` and read many times, for a reference base of
   tens of thousands of documents - 11× smaller than the same corpus in SQLite,
   and it seeks a range rather than scanning one. It refuses writes, which is the
-  storage rather than a setting.
+  storage rather than a setting. **Files** is a directory with one file per key,
+  which is what `outrage export` already wrote: the tree a person edits by hand,
+  readable as a store rather than only as a transfer.
 * **Skill** - `src/outrage/skills/outrage/SKILL.md`, initially for Claude Code,
   covering when to store and retrieve and what key conventions to follow. It
   ships inside the package so that an install carries it, and `outrage init`

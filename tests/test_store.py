@@ -33,10 +33,11 @@ from outrage.store import (
     PatternNotFoundError,
     Store,
 )
+from outrage.store_files import FilesystemStore
 from outrage.store_sqlite import SqliteStore
 
 
-@pytest.fixture(params=["sqlite", "mounted"])
+@pytest.fixture(params=["sqlite", "mounted", "files"])
 def store(request, tmp_path):
     """The contract, asked of a store and of the table that presents as one.
 
@@ -62,6 +63,10 @@ def store(request, tmp_path):
     if request.param == "sqlite":
         with SqliteStore(tmp_path / "store") as s:
             yield s
+        return
+    if request.param == "files":
+        with FilesystemStore(tmp_path / "tree") as tree:
+            yield tree
         return
     with MountedStore.single(SqliteStore(tmp_path / "store")) as table:
         yield table

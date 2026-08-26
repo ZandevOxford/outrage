@@ -20,6 +20,44 @@ mount: `path`, `backup`, `check` and `repair` raise `mount-has-no-file`. A
 check of one store out of three would be a clean bill of health for the two
 nobody looked at.
 
+### A directory of files is now a `Store`
+
+`outrage.store_files.FilesystemStore` reads and writes a tree with one file per
+key - the mapping `outrage export` has always written, expressed as a store. A
+segment is a path component and an extension names the format, so `a/b` stored
+as markdown is `a/b.md` and everything below `a/b` is in `a/b/`.
+
+It passes the same contract tests as SQLite, and is compared against it
+directly: one corpus in both, the same battery of reads put to each, every
+answer asserted equal.
+
+A tree has no extension for `--store` to read, so it is not addressed by file
+name yet and is constructed at its path. Reads walk the tree per call, which is
+the right shape for an export target and the wrong one for a large corpus; the
+module says so where it costs.
+
+Three divergences, each covered by a test that names it: `.` and `..` are legal
+keys and impossible paths, so they are refused on write; a key whose path
+leaves the tree is refused; and a file that does not hold UTF-8 text is
+reported rather than mangled into a document.
+
+### The root document can be exported, and comes back
+
+**Breaking** for anything relying on `outrage export` refusing the document at
+the root. It now writes it as the file named by its extension alone - `.md` at
+the top of the tree - and an import reads it back, dotfile skip or not. Before
+this, exporting a store that had a document at its root reported one failed
+transfer and dropped it.
+
+### A key can no longer be exported outside the directory it was given
+
+An export resolves each path it is about to write and refuses one that has left
+the target tree. A symlinked directory anywhere along the path was enough
+before this - no unusual key required - and the per-segment `..` check could
+not see it. The same guard covers the two Windows shapes a segment can take:
+one holding a backslash, which re-parses into components, and one holding a
+colon, which becomes a drive letter.
+
 ### Six fixes at a mount boundary
 
 * **A key with a mount below it listed as an empty container.** A document with

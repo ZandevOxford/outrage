@@ -1182,6 +1182,94 @@ def _cursor_bound(cursor: str | None) -> str | None:
     return None if cursor is None else _position(cursor)
 
 
+#: A sort position past every key there is. :func:`outrage.keys.sort_subtree_end`
+#: refuses the root, because everything is beneath it and nothing can be
+#: appended to the empty sort form that a descendant would sort below -- but a
+#: bound naming the root still has to be *compared* against something, so the
+#: comparison gets the position the refusal denies it. Above every sort form by
+#: construction, since a sort form is built from segment characters and the
+#: three low markers.
+_PAST_EVERYTHING = "\uffff"
+
+#: Each bound of a :class:`KeyRange`, as the three things a comparison needs:
+#: which side of the order it cuts from, whether the cut keeps the key it
+#: names, and where in the order the cut falls. Every bound is a cut in one
+#: ordering, so what differs between them is only this.
+#:
+#: Written down once, here with the range itself, because three things now ask
+#: it: a table deciding whether a bound reaches a mounted store, a bisect over
+#: rows already in order, and a filter over a stream that is in order but
+#: cannot be bisected. The table is the same six rows as
+#: ``store_parquet._span`` and ``store_sqlite._range_clauses``, and the three
+#: are meant to be read against each other.
+_BOUNDS: tuple[tuple[str, bool, bool, Callable[[str], str]], ...] = (
+    ("after_inclusive", True, True, keys.sort_form),
+    ("after", True, False, keys.sort_form),
+    ("after_subtree", True, True, keys.sort_subtree_end),
+    ("before", False, False, keys.sort_form),
+    ("before_inclusive", False, True, keys.sort_form),
+    ("final_subtree", False, False, keys.sort_subtree_end),
+)
+
+
+def _parsed(key: str) -> str:
+    """``key`` normalised, allowing the segments a mount table's namespace has.
+
+    A bound may name a key spanning several stores, which is longer than one
+    store's own limit and still a key -- see :data:`outrage.keys.MAX_JOINED_SEGMENTS`.
+    """
+    return keys.parse(key, max_segments=keys.MAX_JOINED_SEGMENTS).key
+
+
+def _cut(key: str, at: Callable[[str], str]) -> str:
+    """Where a bound naming ``key`` falls in the order."""
+    if at is keys.sort_subtree_end:
+        parsed = keys.parse(key, max_segments=keys.MAX_JOINED_SEGMENTS)
+        if parsed.key == keys.ROOT:
+            return _PAST_EVERYTHING
+    return at(key)
+
+
+def _within(key_range: KeyRange) -> Callable[[str], bool]:
+    """``key_range`` as a test on a sort position.
+
+    The predicate form of the same six bounds a backend holding its rows in
+    order bisects. A store that reads its rows as a stream cannot bisect -- it
+    has no list to seek within -- and yet the range means exactly what it means
+    everywhere else, so it is answered here from :data:`_BOUNDS` rather than
+    re-derived per backend.
+
+    Built once per call and applied per row, so a key is parsed and a cut
+    taken once for the whole read rather than once for every row it looks at.
+
+    **A subtree bound naming the root is refused here**, by
+    :func:`outrage.keys.sort_subtree_end` rather than by anything written down
+    twice: everything is beneath the root, so there is no bound to draw around
+    it, and the alternative is a bound that quietly matches nothing. That is
+    the contract every backend keeps, and it is why this takes the cut
+    directly rather than through :func:`_cut`, which answers a different
+    question -- where a bound falls *relative to a stretch of the order*, for a
+    table deciding whether it reaches a store at all.
+    """
+    cuts = [
+        (is_lower, inclusive, at(_parsed(named)))
+        for name, is_lower, inclusive, at in _BOUNDS
+        if (named := getattr(key_range, name)) is not None
+    ]
+    if not cuts:
+        return lambda position: True
+
+    def inside(position: str) -> bool:
+        for is_lower, inclusive, cut in cuts:
+            if is_lower and (position < cut or (not inclusive and position == cut)):
+                return False
+            if not is_lower and (position > cut or (not inclusive and position == cut)):
+                return False
+        return True
+
+    return inside
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
