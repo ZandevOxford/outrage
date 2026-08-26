@@ -1570,6 +1570,79 @@ def test_a_count_across_a_boundary_includes_the_mount_point_and_its_metadata(tmp
         assert table.descendant_count("a/b") == 1
 
 
+def test_a_container_count_crosses_into_what_is_mounted_below_it(tmp_path):
+    """A store counts to its own edge, and only the table can count past it.
+
+    The same corpus in one store and in a table, asked the same question: the
+    number a caller is given for what lies beneath a key has to be the same
+    either way, or the mount is visible in an answer that is not about mounts.
+    Before this, the table gave the root store's own count and left out every
+    row of the mount -- 536 against the 12,780 in one mounted store alone, live.
+    """
+    single = SqliteStore(tmp_path, filename="single.sqlite")
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    for store in (single, outer):
+        store.store_document("a/kept", "kept", title="Kept")
+    for key, content in (("", "the mount"), ("!title", "Mounted"), ("c", "below")):
+        inner.store_document(key, content)
+        single.store_document(keys.with_prefix("a/b", key) if key else "a/b", content)
+
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        with raises_rendered(KeyNotFoundError, "5 key\\(s\\) lie beneath") as table_said:
+            table.retrieve_document("a")
+        with raises_rendered(KeyNotFoundError, "5 key\\(s\\) lie beneath") as store_said:
+            single.retrieve_document("a")
+        assert table_said.value.details == store_said.value.details
+        assert table.descendant_count("a") == single.descendant_count("a") == 5
+
+
+def test_reading_an_implicit_ancestor_of_a_mount_does_not_call_it_empty(tmp_path):
+    """`key-not-found` says "nothing is stored at or below", which was false.
+
+    No store holds a row at ``a`` when the only thing under it is the mount at
+    ``a/b``: the outer one has nothing there and the inner one cannot see where
+    it was mounted. The store answering said so, and the sentence it said it
+    with claims the subtree is empty while a whole store sits in it -- and it
+    withholds the advice that would have found it.
+    """
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    inner.store_document("c", "below", title="Below")
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        with raises_rendered(KeyNotFoundError, "no content stored at 'a'") as raised:
+            table.retrieve_document("a")
+        assert raised.value.code == "key-is-a-container"
+        # And the advice, followed literally, answers.
+        assert [e.key for e in table.list_keys("a").items] == ["a/b"]
+
+    # A key with genuinely nothing below it still gets the other sentence.
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        with raises_rendered(KeyNotFoundError, "nothing is stored at or below 'z'"):
+            table.retrieve_document("z")
+
+
+def test_level_entry_describes_an_implicit_ancestor_the_listing_offers(tmp_path):
+    """The listing/level disagreement again, in the direction with no row to win.
+
+    A mount at ``a/b`` puts ``a`` into the root listing through ``children``,
+    and ``level_entry`` asked the store behind it, which has never heard of the
+    key. One call offered ``a`` and the other said there was no such key on the
+    level it came from -- the mirror of the shadowed document in
+    ``test_a_listing_counts_the_mount_and_not_what_it_replaced``, where the
+    store's own row is what settles it.
+    """
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    inner.store_document("c", "below")
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        (entry,) = table.list_keys().items
+        assert (entry.key, entry.kind) == ("a", "implicit")
+        assert table.level_entry("a") == entry
+        # A key nothing lies below is still nothing, and says so the same way.
+        assert table.level_entry("z") is None
+
+
 def test_a_table_says_it_has_no_file_rather_than_answering_for_its_root(tmp_path):
     """A backup or a check of one store out of three is not an answer.
 
