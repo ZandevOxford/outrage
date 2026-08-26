@@ -13,7 +13,6 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from conftest import raises_rendered
 from outrage import bulk
 from outrage.keys import InvalidKeyError
 from outrage.store import FORMATS
@@ -420,12 +419,18 @@ def test_exists_asks_about_the_key_itself(store):
 # -- the root ------------------------------------------------------------
 
 
-def test_the_root_document_has_no_path_yet(store):
-    # Parked, not decided: the empty stem gives `.md`, which is hidden, which
-    # an import skips by default -- so a round trip would drop the root
-    # document rather than relocate it. Refused loudly until that is settled.
-    with raises_rendered(bulk.UnmappableError, "no file name"):
-        bulk.path_for_key("")
+def test_the_root_document_is_the_file_named_by_the_extension_alone(store):
+    # Settled by taking the mapping's own answer: the root has no segments, so
+    # its file is named by the empty stem. No key has an empty last segment, so
+    # `.md` collides with nothing, and only the file at the *top* of the tree
+    # is read back as the root.
+    assert bulk.path_for_key("") == PurePosixPath(".md")
+    assert bulk.path_for_key("", "json") == PurePosixPath(".json")
+    assert bulk.key_for_path(".md") == ("", "markdown")
+    assert bulk.key_for_path(".md", "a") == ("a", "markdown")
+    # Further down it is a name like any other leading-dot name, because the
+    # key it would otherwise mean does not exist.
+    assert bulk.key_for_path("a/.md") == ("a/.md", None)
 
 
 def test_root_metadata_maps_like_any_other_key():
@@ -435,15 +440,27 @@ def test_root_metadata_maps_like_any_other_key():
     assert bulk.key_for_path("!title.md") == ("!title", "markdown")
 
 
-def test_exporting_reports_the_root_document_rather_than_dropping_it(populated, tmp_path):
+def test_the_root_document_survives_the_round_trip(populated, tmp_path):
     populated.store_document("", "the root body", title="This store")
     transfers = list(bulk.export_tree(populated, None, tmp_path / "out"))
 
-    failed = [t for t in transfers if t.action == bulk.FAILED]
-    assert [t.key for t in failed] == [""]
-    assert "no file name" in failed[0].reason
-    # The title is exported even though the document it belongs to is not.
+    assert [t.key for t in transfers if t.action == bulk.FAILED] == []
+    assert (tmp_path / "out" / ".md").read_text() == "the root body"
     assert (tmp_path / "out" / "!title.md").read_text() == "This store"
+
+
+def test_an_import_keeps_the_root_document_its_dotfile_skip_would_drop(populated, tmp_path):
+    # The one exception the skip makes, and the reason it exists: the file is
+    # hidden because the mapping names it by its extension alone, not because
+    # somebody else's tree happened to hide it.
+    populated.store_document("", "the root body")
+    list(bulk.export_tree(populated, None, tmp_path / "out"))
+    (tmp_path / "out" / ".ignored.md").write_text("not a document of ours")
+
+    with SqliteStore(tmp_path / "second") as second:
+        transfers = list(bulk.import_tree(second, tmp_path / "out"))
+        assert second.retrieve_document("").content == "the root body"
+    assert ".ignored" not in " ".join(str(t.key) for t in transfers)
 
 
 def test_an_omitted_key_exports_from_the_root(populated, tmp_path):

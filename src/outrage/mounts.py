@@ -48,6 +48,7 @@ from . import store as store_module
 from .errors import OutrageError
 from .eventlog import EventLog
 from .store import (
+    _BOUNDS,
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
     EVERYTHING,
@@ -64,6 +65,8 @@ from .store import (
     Page,
     ReadOnlyStoreError,
     Store,
+    _cut,
+    _within,
     store_file,
 )
 
@@ -312,43 +315,6 @@ class Resolved:
 
 # -- a range, and a page, on the far side of a boundary ---------------------
 
-#: A sort position past every key there is. :func:`keys.sort_subtree_end`
-#: refuses the root, because everything is beneath it and nothing can be
-#: appended to the empty sort form that a descendant would sort below -- but a
-#: bound naming the root still has to be *compared* against a mount's stretch,
-#: so the comparison gets the position the refusal denies it. Above every sort
-#: form by construction, since a sort form is built from segment characters and
-#: the three low markers.
-_PAST_EVERYTHING = "\uffff"
-
-#: Every :class:`~outrage.store.KeyRange` bound: whether it cuts from below,
-#: whether the cut keeps what sits exactly on it, and where in the order the
-#: cut falls. The same six rows as ``store_sqlite._range_clauses`` and
-#: ``store_parquet._span``, and meant to be read against them -- what differs
-#: between the bounds is only which key the cut is taken at and which side of
-#: it survives.
-#:
-#: Written down once because a range crossing a boundary asks two questions of
-#: every bound and that one position answers both: does this bound touch the
-#: mounted store at all, and what does it say once it does.
-_BOUNDS: tuple[tuple[str, bool, bool, Callable[[str], str]], ...] = (
-    ("after_inclusive", True, True, keys.sort_form),
-    ("after", True, False, keys.sort_form),
-    ("after_subtree", True, True, keys.sort_subtree_end),
-    ("before", False, False, keys.sort_form),
-    ("before_inclusive", False, True, keys.sort_form),
-    ("final_subtree", False, False, keys.sort_subtree_end),
-)
-
-
-def _cut(key: str, at: Callable[[str], str]) -> str:
-    """Where a bound naming ``key`` falls in the order."""
-    if at is keys.sort_subtree_end:
-        parsed = keys.parse(key, max_segments=keys.MAX_JOINED_SEGMENTS)
-        if parsed.key == keys.ROOT:
-            return _PAST_EVERYTHING
-    return at(key)
-
 
 def _inward_range(mount: Mount, key_range: KeyRange) -> KeyRange | None:
     """``key_range`` as ``mount``'s store spells it, or None if it excludes it.
@@ -409,16 +375,7 @@ def _in_range(key: str, key_range: KeyRange) -> bool:
     them the range keeps. See :func:`_rows_at`.
     """
     position = keys.sort_form(keys.parse(key, max_segments=keys.MAX_JOINED_SEGMENTS).key)
-    for name, is_lower, inclusive, at in _BOUNDS:
-        named = getattr(key_range, name)
-        if named is None:
-            continue
-        cut = _cut(named, at)
-        if is_lower and (position < cut or (not inclusive and position == cut)):
-            return False
-        if not is_lower and (position > cut or (not inclusive and position == cut)):
-            return False
-    return True
+    return _within(key_range)(position)
 
 
 def _intersect(first: KeyRange, second: KeyRange) -> KeyRange:

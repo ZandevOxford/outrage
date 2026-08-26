@@ -41,12 +41,16 @@ can be tested and reused on its own.
 **The interface and the backend are separate modules.** `outrage.store` says
 what a store is - the operations, the value types every answer comes back as,
 and the two ways a call bounds what it is asking about - as an abstract `Store`.
-There are two **backends**. `outrage.store_sqlite` is the read-write one - the
-schema, its migrations, the connection handling, and the SQL - and is what a
-store is opened as when its file says nothing else. `outrage.store_parquet` is
-one columnar file, written whole and read many times, for a reference base of
-tens of thousands of documents; it refuses writes, and `outrage pack` is how
-documents get into one.
+There are three **backends**. `outrage.store_sqlite` is the read-write one -
+the schema, its migrations, the connection handling, and the SQL - and is what
+a store is opened as when its file says nothing else. `outrage.store_parquet`
+is one columnar file, written whole and read many times, for a reference base
+of tens of thousands of documents; it refuses writes, and `outrage pack` is how
+documents get into one. `outrage.store_files` is a directory of files, one per
+key, which is what an export target and a working copy already were - the same
+mapping `outrage.bulk` writes a tree with, expressed as a store, so that moving
+documents between a database and a directory is a copy rather than a fourth
+hand-written walker.
 
 A backend is not the only kind of `Store`. `outrage.mounts.MountedStore` is one
 too, and it keeps nothing at all: it answers the same interface and routes to
@@ -61,6 +65,14 @@ mount spec says `ref=python.parquet` and means it, with no new grammar and no
 `--backend` flag threaded through the server, the command line and the mount
 table. An unrecognised extension is the default backend rather than an error -
 a store file has always been free to be called anything.
+
+A **tree is not addressed that way**, and claims no extension: a directory has
+none to read, and reading the name of the directory instead would make
+`.outrage/documents` a store and `.outrage/documents.d` a different one for no
+reason a caller could see. An option that forces the backend type is what will
+address one; until then `FilesystemStore` is constructed directly at a path,
+which is also the shape an export target has - somebody's absolute path, which
+the directory-and-file rule above correctly refuses.
 
 #### Store location
 

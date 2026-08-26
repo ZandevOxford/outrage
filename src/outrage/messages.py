@@ -162,6 +162,14 @@ def _backup_schema_mismatch(
     return f"{target} came out at schema {found}, but the store is at {expected}"
 
 
+@template("backup-incomplete")
+def _backup_incomplete(name: Namer, /, *, target: str, differs: str, **_: Any) -> str:
+    return (
+        f"{target} does not hold what the store holds: {differs}. A concurrent "
+        f"write can cause this, so try again before suspecting the copy"
+    )
+
+
 @template("backup-short")
 def _backup_short(name: Namer, /, *, target: str, found: int, expected: int, **_: Any) -> str:
     return (
@@ -275,15 +283,26 @@ def _key_no_wildcard_to_substitute(name: Namer, /, *, key: str, **_: Any) -> str
     return f"key {key!r} has no {keys.WILDCARD!r} segment to substitute"
 
 
+# -- a store kept as files -------------------------------------------------
+
+
+@template("files-not-text")
+def _files_not_text(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
+    return (
+        f"key {name(key)!r} is the file {path!r}, which does not hold UTF-8 "
+        f"text: a store holds text, and this is reported rather than mangled "
+        f"into some"
+    )
+
+
 # -- bulk import and export ------------------------------------------------
 
 
-@template("root-has-no-filename")
-def _root_has_no_filename(name: Namer, /, **_: Any) -> str:
+@template("key-escapes-tree")
+def _key_escapes_tree(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
     return (
-        "the root has no file name: a path is made of segments and the "
-        "root has none. Its metadata exports as `!title.md`; the document "
-        "at the root itself has nowhere to go yet."
+        f"key {name(key)!r} would be written to {path!r}, which is outside the "
+        f"directory it was given: a link along the path leads out of the tree"
     )
 
 

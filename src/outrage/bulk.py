@@ -69,6 +69,13 @@ FORMAT_BY_EXTENSION = {
     extension: format for format, extension in EXTENSION_BY_FORMAT.items()
 }
 
+#: What a half-written file is called while it is being written. Named rather
+#: than spelled inline because a store that *reads* a tree has to skip one:
+#: :func:`_write_file` finishes with ``os.replace``, so the temporary is only
+#: ever seen by a reader looking at the same directory at the same moment, and
+#: a reader that took it for a document would report a key nothing wrote.
+TEMP_PREFIX = ".outrage-"
+
 #: Segments that are legal keys and impossible file names. `.` and `..` became
 #: legal segments when the grammar widened to mirror a filesystem; a path
 #: component of `..` does not mirror anything, it climbs out of the directory
@@ -197,20 +204,50 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
     PurePosixPath('a/b/!title.md')
     """
     parsed = keys.parse(key).key
+    extension = EXTENSION_BY_FORMAT.get(format or "markdown", EXTENSION_BY_FORMAT["markdown"])
     if parsed == keys.ROOT:
-        # A path is made of segments and the root has none, so its file would
-        # be named by the empty stem: `.md`, which is hidden, which an import
-        # skips by default. That does not relocate the root document, it drops
-        # it. Refused until the naming is settled -- see `planned/root-key` in
-        # the outrage store, which has the two ways out. The root's *metadata*
-        # maps normally, as `!title.md`, so only the document itself is stuck.
-        raise UnmappableError("root-has-no-filename")
+        # The mapping's own answer, taken rather than refused: a path is made
+        # of segments and the root has none, so its file is named by the empty
+        # stem -- `.md` at the top of the tree. No key has an empty last
+        # segment, so it collides with nothing. It is hidden, which is a
+        # question for what *reads* a tree and not for the mapping: an import's
+        # dotfile skip is a policy for foreign trees, and it makes an exception
+        # for this one file. See `planned/root-key`.
+        return PurePosixPath(extension)
     segments = parsed.split(keys.DELIMITER)
     for segment in segments:
         if segment in TRAVERSAL:
             raise UnmappableError("key-segment-is-traversal", key=key, segment=segment)
-    extension = EXTENSION_BY_FORMAT.get(format or "markdown", EXTENSION_BY_FORMAT["markdown"])
     return PurePosixPath(*segments[:-1], segments[-1] + extension)
+
+
+def contained_path(root: str | os.PathLike[str], relative: PurePosixPath, key: str) -> Path:
+    """``root / relative``, refused unless it stays inside ``root``.
+
+    **The guard on the join, rather than on the segments.** A segment of `..`
+    is refused by :func:`path_for_key` and gives a good sentence when it is,
+    but it was never the whole of the question: the traversal that is
+    reachable today is in the *target tree* rather than in the namespace, a
+    symlinked directory anywhere along the path being enough to write through
+    it. Resolving the joined path and requiring containment catches that, and
+    the two Windows cases beside it -- a segment holding a backslash, which
+    re-parses into components off a Windows path, and one holding a colon,
+    which becomes a drive and drops the target from the path entirely --
+    without enumerating what a component may look like on any platform.
+
+    :func:`os.path.realpath` rather than :meth:`Path.resolve`, for the strict
+    reading of a path that does not exist yet: the file being written is
+    usually the part that is missing, and it is the *directories* above it that
+    a link can redirect.
+
+    See ``project/reference/planned/export-traversal``, which is the whole
+    analysis and says which of these are reachable where.
+    """
+    inside = Path(os.path.realpath(root))
+    candidate = Path(root) / relative
+    if not Path(os.path.realpath(candidate)).is_relative_to(inside):
+        raise UnmappableError("key-escapes-tree", key=key, path=str(candidate))
+    return candidate
 
 
 def key_for_path(
@@ -232,6 +269,13 @@ def key_for_path(
     ('src/myfile.py', None)
     """
     relative = PurePosixPath(relative)
+    if len(relative.parts) == 1 and relative.name in FORMAT_BY_EXTENSION:
+        # The root document, which is the one file named by an extension alone
+        # -- `path_for_key` writes it there. Only at the top of the tree: a
+        # `.md` further down would be the document of a key with an empty last
+        # segment, and there is no such key, so it falls through and is read as
+        # a name like any other leading-dot name.
+        return (prefix or keys.ROOT), FORMAT_BY_EXTENSION[relative.name]
     stem, extension = os.path.splitext(relative.name)
     format = FORMAT_BY_EXTENSION.get(extension)
     name = stem if format is not None else relative.name
@@ -274,7 +318,7 @@ def export_tree(
 
     for stored, format in _exported(opened, key):
         try:
-            path = target / path_for_key(stored, format)
+            path = contained_path(target, path_for_key(stored, format), stored)
         except UnmappableError as exc:
             # `reason` is report text, like "already there" beside it, so it is
             # rendered here. The default namer is the right one: bulk transfer
@@ -347,7 +391,7 @@ def _write_file(path: Path, content: str) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, prefix=".outrage-", suffix=".tmp", delete=False
+        "w", encoding="utf-8", dir=path.parent, prefix=TEMP_PREFIX, suffix=".tmp", delete=False
     )
     temporary = Path(handle.name)
     try:
@@ -428,21 +472,30 @@ def import_tree(
         yield Transfer(WROTE, stored, path, characters=len(content))
 
 
-def _entries(root: Path, *, hidden: bool) -> Iterator[tuple[Path, str]]:
+def _entries(root: Path, *, hidden: bool, top: bool = True) -> Iterator[tuple[Path, str]]:
     """Every file below ``root``, in name order, with symlinks named not followed.
 
     Sorted so that two runs over the same tree report in the same order and a
     diff of two reports is about the trees rather than about the readdir order
     the filesystem happened to hand back. Directories are descended where their
     name falls.
+
+    **The dotfile skip makes one exception**, and it is the root document. The
+    mapping names it by its extension alone -- `.md` at the top of the tree --
+    so skipping it would drop a document this package's own export wrote, which
+    is not a policy about foreign trees but a hole in the round trip. Only at
+    the top, where that file is, and only for a name that is exactly an
+    extension, which is why ``top`` is tracked rather than inferred from the
+    name.
     """
     for entry in sorted(root.iterdir(), key=lambda path: path.name):
-        if not hidden and entry.name.startswith("."):
+        skipped = entry.name.startswith(".") and not (top and entry.name in FORMAT_BY_EXTENSION)
+        if not hidden and skipped:
             continue
         if entry.is_symlink():
             yield entry, "symlink"
         elif entry.is_dir():
-            yield from _entries(entry, hidden=hidden)
+            yield from _entries(entry, hidden=hidden, top=False)
         elif entry.is_file():
             yield entry, "file"
 
@@ -576,11 +629,13 @@ __all__ = [
     "SKIPPED",
     "STOP",
     "STOPPED",
+    "TEMP_PREFIX",
     "TRAVERSAL",
     "WROTE",
     "SourceMissingError",
     "Transfer",
     "UnmappableError",
+    "contained_path",
     "documents_from_store",
     "documents_from_tree",
     "export_tree",

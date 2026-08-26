@@ -1227,15 +1227,15 @@ def test_listing_the_top_level_does_not_show_the_root(tmp_path):
     assert output.count("\n") == 1  # `a` and nothing else
 
 
-def test_export_reports_the_root_document_as_a_key_not_as_absent(tmp_path):
+def test_export_writes_the_root_document_and_names_it_as_a_key(tmp_path):
     d = str(tmp_path / ".outrage")
     run("set", "--dir", d, "", "--content", "root body")
 
     status, output = run("export", "--dir", d, str(tmp_path / "out"))
+    assert status == 0
     # `-` in this column means "no key"; the root is a key, so it is spelled.
-    assert status != 0
-    assert "failed      /  ->" in output
-    assert "no file name" in output
+    assert "wrote       /  ->" in output
+    assert (tmp_path / "out" / ".md").read_text() == "root body"
 
 
 # -- pack ------------------------------------------------------------------
