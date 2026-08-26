@@ -121,6 +121,7 @@ def test_there_are_data_files_to_lose():
     # actually went missing.
     files = _data_files()
     assert "skills/outrage/SKILL.md" in files
+    assert "codex/skills/outrage/SKILL.md" in files
     assert len(files) >= 5, files
 
 
