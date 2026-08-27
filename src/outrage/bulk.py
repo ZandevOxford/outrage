@@ -24,7 +24,7 @@ re-imports to where it came from. Grafting it somewhere else is what the
 import's key prefix is for.
 
 What this is not is a backup. `updated_at` does not survive the round trip and
-neither does anything else the database holds about a document; ``Store.backup``
+neither does anything else the database holds about a document; ``FileStore.backup``
 is the copy that keeps all of it.
 """
 

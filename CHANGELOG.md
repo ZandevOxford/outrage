@@ -4,6 +4,51 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## 0.3.0 - unreleased
 
+### `Store` and `FileStore`: a store, and a store kept in a file
+
+**Breaking for library callers.** `Store` now says only what a store *does* -
+the vocabulary of keys, ranges, subtrees and pages that any store answers in.
+Everything that needs somewhere on disk to answer from moves to a new
+`FileStore(Store)`: `directory`, `path`, `default_filename`, `format_version`,
+`stored_format_version`, `backup`, `backup_path`, `audit_rows`, `check_file`,
+`repair`, and the constructor that settles where a store's file is.
+`SqliteStore`, `ParquetStore` and `FilesystemStore` are `FileStore`s;
+`MountedStore` is a `Store` and not a `FileStore`.
+
+`outrage.maintenance.check` and `repair`, and `store.default_store` and
+`open_store`, are typed as `FileStore` accordingly.
+
+**A mount table no longer refuses those eleven members - it does not have
+them.** Asking one for a `path` or a `backup` used to raise a written
+`mount-has-no-file` sentence, which was a class saying in eight declarations
+what one line of its inheritance now says. `isinstance(store, FileStore)` is
+how a caller asks, and a caller that asks anyway gets Python's own
+`AttributeError`. Nothing on the command line reaches this: `outrage backup`
+and `outrage check` already name the store they mean with `--store`, which is
+the honest answer for a table spanning three files.
+
+### Every store can back itself up
+
+`FileStore.backup` is no longer abstract. The default opens a fresh store of
+the same class at the destination and copies this one into it with
+`copy_from`, then reopens the copy and compares **every key** against the
+source - not a count of them, since a copy that lost one document and gained
+another counts the same and is not a backup. `FileStore.verified_backup` is
+that check on its own, and `FileStore.opened_at(path)` is the one thing a
+generic copy cannot work out for itself: another store of this class, kept
+there.
+
+`SqliteStore` and `ParquetStore` override it as before, and must: the file
+alone is not the store for the first, and a byte copy is faster and exact for
+the second.
+
+**What changes for a user: a backup of a directory of files is now a copy of
+its documents, not of its directory.** It was `shutil.copytree` until now. A
+symbolic link, a file that is not UTF-8 text, a name that no key spells, and
+the second of two files claiming one key are not documents - every read of that
+store already passes them over - so they are no longer in the backup.
+`outrage check` names three of the four; a link is the one it does not.
+
 ### `Store.copy_from`: every bulk move is a copy between two stores
 
 New, and the shape the export, the import, the repack and the backup are being

@@ -33,9 +33,11 @@ from outrage.store import (
     WROTE,
     BackendError,
     BoundedSubtree,
+    FileStore,
     KeyNotFoundError,
     KeyRange,
     ReadOnlyStoreError,
+    Store,
     StoreFileError,
 )
 from outrage.store_sqlite import SqliteStore
@@ -1757,28 +1759,40 @@ def test_a_copy_into_a_table_lands_in_the_store_that_owns_the_key(table, tmp_pat
     assert table.resolve("lib/deep/b").store.retrieve_document("b").content == "New."
 
 
-def test_a_table_says_it_has_no_file_rather_than_answering_for_its_root(tmp_path):
+def test_a_table_has_no_file_to_answer_for_and_is_not_a_file_store(tmp_path):
     """A backup or a check of one store out of three is not an answer.
 
     It would be a clean bill of health for the stores nobody looked at, which is
-    the failure this project keeps finding rather than a convenience. Refused
-    with a sentence naming what to do instead.
+    the failure this project keeps finding rather than a convenience.
+
+    **Said by the type rather than by a refusal**, since 2026-08-27. These eight
+    were declared on the table to raise ``mount-has-no-file``, which was a class
+    spelling out in eight sentences what one line of its inheritance now says:
+    a table is a :class:`~outrage.store.Store` and not a
+    :class:`~outrage.store.FileStore`. A caller holding one and wanting a file
+    is holding the wrong thing, and this is how it asks.
     """
-    with MountedStore.single(SqliteStore(tmp_path)) as table:
-        asked = [
-            lambda: table.path,
-            lambda: table.directory,
-            lambda: table.stored_format_version,
-            lambda: table.backup(),
-            lambda: table.backup_path(None, overwrite=False),
-            lambda: list(table.audit_rows()),
-            lambda: table.check_file(None),
-            lambda: table.repair(),
-        ]
-        for ask in asked:
-            with raises_rendered(BackendError, "no file of its own") as raised:
-                ask()
-            assert raised.value.code == "mount-has-no-file"
+    with (
+        MountedStore.single(SqliteStore(tmp_path / "a")) as table,
+        SqliteStore(tmp_path / "b") as one,
+    ):
+        assert isinstance(table, Store)
+        assert not isinstance(table, FileStore)
+        assert isinstance(one, FileStore)
+        for member in (
+            "path",
+            "directory",
+            "stored_format_version",
+            "backup",
+            "backup_path",
+            "audit_rows",
+            "check_file",
+            "repair",
+        ):
+            assert not hasattr(table, member), f"a table should not answer {member!r}"
+            # Asked of an open store rather than of the class, because ``path``
+            # and ``directory`` are settled per store and the other six are not.
+            assert hasattr(one, member), f"{member!r} should be a file store's"
 
 
 def test_a_mount_point_describes_itself_when_its_place_in_a_level_is_asked_for(tmp_path):

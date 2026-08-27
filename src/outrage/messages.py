@@ -528,18 +528,6 @@ def _store_read_only(name: Namer, /, *, key: str, path: str, action: str, **_: A
     )
 
 
-@template("mount-has-no-file")
-def _mount_has_no_file(name: Namer, /, *, asked: str, **_: Any) -> str:
-    # Deliberately does not answer for the root mount instead. A check or a
-    # backup of a three-store table that silently reported one store would be a
-    # clean bill of health for the two nobody looked at, which is the failure
-    # this project keeps finding rather than a convenience.
-    return (
-        f"a mount table has no file of its own, so it cannot answer {asked!r}: "
-        f"name the store you mean instead, with --store."
-    )
-
-
 @template("backend-unavailable")
 def _backend_unavailable(
     name: Namer, /, *, filename: str, backend: str, reason: str, **_: Any

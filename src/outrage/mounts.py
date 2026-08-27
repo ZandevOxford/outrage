@@ -41,9 +41,9 @@ import os
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-from . import eventlog, keys
+from . import keys
 from . import store as store_module
 from .errors import OutrageError
 from .eventlog import EventLog
@@ -53,9 +53,6 @@ from .store import (
     DEFAULT_MAX_CHARS,
     EVERYTHING,
     UNBOUNDED,
-    AuditRow,
-    BackendError,
-    Backup,
     BoundedSubtree,
     Entry,
     Excerpt,
@@ -70,11 +67,6 @@ from .store import (
     entry_kind,
     store_file,
 )
-
-if TYPE_CHECKING:
-    # Only in the signatures of the maintenance methods this table refuses. A
-    # runtime import would be a cycle, for the reason ``store`` gives.
-    from .maintenance import Repaired, Report
 
 #: Separates a mount point from its store file in a ``--mount`` argument.
 #: ``=`` rather than ``:`` because a Windows path holds a colon and no key can
@@ -711,12 +703,12 @@ class MountedStore(Store):
     backend_name = "mounts"
 
     def __init__(self, stores: Mapping[str, Store], *, read_only: Collection[str] = ()) -> None:
-        # Deliberately not `Store.__init__`: that settles where a store's file
-        # is, and this one has none. The log is null rather than absent because
-        # every mounted store already records what it was asked, under the key
-        # it knows -- a second record here would double every event and spell
-        # the key twice.
-        self._log = eventlog.NULL
+        # The base's own, which settles nothing but the log -- where a store's
+        # file is belongs to `FileStore`, and this one has none. The log is
+        # null because every mounted store already records what it was asked,
+        # under the key it knows: a second record here would double every event
+        # and spell the key twice.
+        super().__init__()
 
         # Normalised before anything is compared against it, so that a mount
         # point spelled one way in `stores` and another way here still names
@@ -1412,41 +1404,13 @@ class MountedStore(Store):
             names += _named_keys(segment, gap.sample)
         return MissingMeta(total=total, total_chars=total_chars, sample=names[:sample])
 
-    # -- what a table has no file to answer with ---------------------------
-
-    @property
-    def directory(self) -> Path:  # type: ignore[override]
-        raise BackendError("mount-has-no-file", asked="directory")
-
-    @property
-    def path(self) -> Path:  # type: ignore[override]
-        raise BackendError("mount-has-no-file", asked="path")
-
-    @property
-    def stored_format_version(self) -> int:
-        raise BackendError("mount-has-no-file", asked="stored_format_version")
-
-    def backup(
-        self,
-        destination: str | os.PathLike[str] | None = None,
-        *,
-        overwrite: bool = False,
-    ) -> Backup:
-        raise BackendError("mount-has-no-file", asked="backup")
-
-    def backup_path(
-        self, destination: str | os.PathLike[str] | None, *, overwrite: bool
-    ) -> Path:
-        raise BackendError("mount-has-no-file", asked="backup")
-
-    def audit_rows(self) -> Iterator[AuditRow]:
-        raise BackendError("mount-has-no-file", asked="audit_rows")
-
-    def check_file(self, report: Report) -> None:
-        raise BackendError("mount-has-no-file", asked="check")
-
-    def repair(self) -> list[Repaired]:
-        raise BackendError("mount-has-no-file", asked="repair")
+    # A table has no ``path``, ``directory``, ``backup``, ``audit_rows``,
+    # ``check_file`` or ``repair``, and does not answer them at all: it is a
+    # `Store` and not a `FileStore`, which is what those members belong to.
+    # Until 2026-08-27 they were declared here to raise `mount-has-no-file`,
+    # which was a class saying in eight sentences what its base class now says
+    # once. A caller holding a table and wanting a file is holding the wrong
+    # thing, and `isinstance(store, FileStore)` is how it asks.
 
     def close(self) -> None:
         """Close this thread's connection to every mounted store."""

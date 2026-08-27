@@ -29,6 +29,7 @@ from outrage.keys import InvalidKeyError
 from outrage.mounts import MountedStore
 from outrage.store import (
     BoundedSubtree,
+    FileStore,
     KeyNotFoundError,
     KeyRange,
     PatternNotFoundError,
@@ -2298,17 +2299,26 @@ def test_every_operation_a_caller_uses_is_declared_abstract():
             "get_documents",
             "missing_meta_stats",
             "keys_missing_meta",
-            "backup",
             "close",
-            # Maintenance. A backend quietly not implementing these would let
-            # a store be reported sound without anything having looked at the
-            # storage, which is the answer this codebase keeps refusing.
+        }
+    )
+    # Maintenance, which needs a file to answer and so is `FileStore`'s. A
+    # backend quietly not implementing these would let a store be reported
+    # sound without anything having looked at the storage, which is the answer
+    # this codebase keeps refusing.
+    assert FileStore.__abstractmethods__ - Store.__abstractmethods__ == frozenset(
+        {
             "stored_format_version",
             "audit_rows",
             "check_file",
             "repair",
         }
     )
+    # `backup` is the exception, and deliberately: every file store can copy
+    # itself by writing its documents into a fresh one, so the base implements
+    # it and a backend with a native copy overrides. Left abstract, a new
+    # backend would have to write one before it could be backed up at all.
+    assert "backup" not in FileStore.__abstractmethods__
 
 
 def test_validation_normalises_what_a_backend_then_writes():
@@ -2348,7 +2358,9 @@ def test_every_backend_validates_by_calling_the_shared_check():
         for node in ast.walk(ast.parse(path.read_text())):
             if not isinstance(node, ast.ClassDef):
                 continue
-            if not any(isinstance(b, ast.Name) and b.id == "Store" for b in node.bases):
+            if not any(
+                isinstance(b, ast.Name) and b.id in ("Store", "FileStore") for b in node.bases
+            ):
                 continue
             # A backend names the file it keeps; ``MountedStore`` is a ``Store``
             # that keeps nothing and validates by delegating to the store it
@@ -2396,13 +2408,15 @@ def test_what_the_interface_settles_is_settled_once(tmp_path):
 
     A backend that re-answered either would be free to disagree with
     ``store_file`` about what ``--dir`` and a mount spec mean, which is the one
-    rule ``context/24/decisions`` exists to keep in one place.
+    rule ``context/24/decisions`` exists to keep in one place. The base is
+    :class:`FileStore` rather than :class:`Store` since 2026-08-27: a store
+    kept in no file settles none of this, and a mount table is the one.
     """
     s = SqliteStore(tmp_path / ".outrage", filename="ref.sqlite")
     try:
         assert s.directory == tmp_path / ".outrage"
         assert s.path == tmp_path / ".outrage" / "ref.sqlite"
         assert type(s).__init__ is not Store.__init__
-        assert s.backup_path.__func__ is Store.backup_path
+        assert s.backup_path.__func__ is FileStore.backup_path
     finally:
         s.close()

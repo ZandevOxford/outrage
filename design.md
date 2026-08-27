@@ -66,6 +66,27 @@ rather than a restamping. `outrage export` and `outrage import` are wrappers
 over it; `outrage pack` still builds a parquet file its own way, because what a
 half-built file written whole looks like as a copy target is not settled.
 
+**A store, and a store kept in a file, are two different things.** `Store` is
+what any store answers: keys, ranges, subtrees, pages, excerpts. `FileStore` is
+the half that needs somewhere on disk to answer from - where it lives, which
+version of its format wrote it, how it is backed up, and what a check can say
+about the storage rather than about the keys. The three backends are
+`FileStore`s. A mount table is not, and that is the point of the split: it kept
+eleven members whose only job was to raise "a mount table has no file of its
+own", which is a class spelling out in eight declarations what one line of its
+inheritance says. A caller wanting a file asks with `isinstance`.
+
+The split is what lets `backup` stop being abstract. Every file store can copy
+itself the same way: open a fresh one of the same class at the destination,
+`copy_from` this one into it, reopen the copy and compare every key against the
+source. A backend with a native copy of its file still overrides it -
+`SqliteStore` must, because the file alone is not the store there, and
+`ParquetStore` does because a byte copy is faster and exact - but what none of
+them may do is skip the verifying, since a copy that opens cleanly is not
+evidence of a complete one. What a backend cannot work out for itself is how to
+open another of its own kind at a path, so that is the one thing the base asks
+it: `opened_at`.
+
 A backend is not the only kind of `Store`. `outrage.mounts.MountedStore` is one
 too, and it keeps nothing at all: it answers the same interface and routes to
 the stores behind it. That is what the abstraction bought - a mount table in

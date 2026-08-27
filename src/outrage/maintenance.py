@@ -14,10 +14,10 @@ agrees with the key it was derived from, whether any metadata has no document,
 and whether the file was written by a newer outrage than this. None of those is
 SQLite's, and a backend keeping its rows some other way has the same
 invariants to break. They are asked here, once, over
-:meth:`~outrage.store.Store.audit_rows`.
+:meth:`~outrage.store.FileStore.audit_rows`.
 
 What is left really is the backend's, and is asked through
-:meth:`~outrage.store.Store.check_file`: SQLite's own integrity check and the
+:meth:`~outrage.store.FileStore.check_file`: SQLite's own integrity check and the
 size of its write-ahead log, a parquet file's sort order. Neither has any
 meaning for the other, which is why neither is here.
 
@@ -40,7 +40,7 @@ from pathlib import Path
 
 from . import keys
 from .errors import OutrageError
-from .store import Store, entry_kind, store_file
+from .store import FileStore, entry_kind, store_file
 
 
 class CheckError(OutrageError, RuntimeError):
@@ -57,8 +57,8 @@ class Problem:
 
     ``repairable`` is set by whoever raises the problem, because that is the
     only place the answer is known: a backend appending this from
-    :meth:`~outrage.store.Store.check_file` knows whether its own
-    :meth:`~outrage.store.Store.repair` acts on it, and nothing above can. It
+    :meth:`~outrage.store.FileStore.check_file` knows whether its own
+    :meth:`~outrage.store.FileStore.repair` acts on it, and nothing above can. It
     defaults to False so that a problem nobody thought about cannot claim to
     be fixable.
     """
@@ -85,7 +85,7 @@ class Report:
     details: dict[str, str] = field(default_factory=dict)
     """What this backend says about its own storage, label to value, in the
     order it is worth printing. Filled by
-    :meth:`~outrage.store.Store.check_file`. A mapping rather than fields, so
+    :meth:`~outrage.store.FileStore.check_file`. A mapping rather than fields, so
     that the numbers SQLite has and parquet does not are absent rather than
     zero -- a report reading ``0 bytes in the log`` for a store that has no log
     is a wrong answer delivered as a clean bill of health."""
@@ -117,7 +117,7 @@ class Repaired:
     after: int
 
 
-def check(store: Store) -> Report:
+def check(store: FileStore) -> Report:
     """Ask whether the store is what it should be.
 
     Read-only, and answerable for any backend. It runs against an open store
@@ -136,23 +136,23 @@ def check(store: Store) -> Report:
     return report
 
 
-def repair(store: Store) -> list[Repaired]:
+def repair(store: FileStore) -> list[Repaired]:
     """Fix what a check found and the backend can act on.
 
     A thin pair for :func:`check`, and here rather than left as a method so
     that a caller doing maintenance reaches for one vocabulary throughout.
     Returns what was done, which is an empty list for a backend whose storage
     cannot get into a repairable state -- see
-    :meth:`~outrage.store.Store.repair`.
+    :meth:`~outrage.store.FileStore.repair`.
     """
     return store.repair()
 
 
-def _check_format_version(store: Store, report: Report) -> None:
+def _check_format_version(store: FileStore, report: Report) -> None:
     """Compare the version in the file with the one this build writes.
 
     Written once rather than per backend: each records the number somewhere
-    different, and :attr:`~outrage.store.Store.stored_format_version` is the name
+    different, and :attr:`~outrage.store.FileStore.stored_format_version` is the name
     that difference does not reach. "Written by something newer than this" is
     the same fault whatever wrote it.
 
@@ -184,7 +184,7 @@ def _check_format_version(store: Store, report: Report) -> None:
         )
 
 
-def _check_rows(store: Store, report: Report) -> None:
+def _check_rows(store: FileStore, report: Report) -> None:
     """Every question a check can ask about rows and keys, in one pass.
 
     One pass rather than a query per question, because they want the same rows
@@ -318,7 +318,7 @@ def _listed(names: list[str], shown: int = 5, separator: str = ", ") -> str:
 def require_store(directory: Path, filename: str | None = None) -> Path:
     """Refuse a store file that is not there, rather than creating one.
 
-    ``Store.__init__`` creates what is missing, so every command that means to
+    ``FileStore.__init__`` creates what is missing, so every command that means to
     act on an existing store has to ask first - otherwise checking a mistyped
     path reports a perfectly healthy empty store, which is the wrong answer
     delivered as a clean bill of health.
