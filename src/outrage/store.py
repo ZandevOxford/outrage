@@ -278,6 +278,64 @@ class Entry:
     updated_at: str | None
 
 
+#: Leave what is already there and carry on. The default, because a transfer
+#: that overwrites by accident cannot be undone from here.
+SKIP = "skip"
+
+#: Replace what is already there.
+OVERWRITE = "overwrite"
+
+#: Stop the whole transfer at the first collision, having written what came
+#: before it. What a caller wants when a collision means the wrong target.
+STOP = "stop"
+
+#: What to do about something already there, at the far end.
+CONFLICTS = (SKIP, OVERWRITE, STOP)
+
+#: The outcome recorded on a :class:`Transfer`: it crossed.
+WROTE = "wrote"
+
+#: Something was already there and :data:`SKIP` was asked for.
+SKIPPED = "skipped"
+
+#: This one could not cross, and the rest were still tried. ``reason`` says why.
+FAILED = "failed"
+
+#: Read and held for a store that is not written yet. A store written whole
+#: cannot report a document as written while it goes -- nothing is written
+#: until all of it is -- and calling it ``wrote`` in the meantime would be a
+#: report an interrupted run made untrue. See :attr:`Store.writes_deferred`.
+READ = "read"
+
+#: The collision that ended the run, under :data:`STOP`. Reported rather than
+#: swallowed, so a caller can see where the transfer stopped and why; nothing
+#: after it is yielded at all.
+STOPPED = "stopped"
+
+
+@dataclass(frozen=True, slots=True)
+class Transfer:
+    """One document crossing from one store to another, or not, and why not.
+
+    Yielded per document rather than collected, so that a front end can print
+    a transfer as it happens and an interrupted one has reported exactly what
+    it did. ``action`` is what happened at the far end, and it says nothing
+    about a dry run: a caller that wrote nothing knows it, and it is the only
+    one that can render the difference honestly.
+
+    ``key`` is the key **written**, which is the source's own key unless the
+    copy grafted it somewhere else. ``path`` is the file behind it where
+    either end keeps its documents in files, which is what makes an export
+    report readable; None where neither does, and the report is key to key.
+    """
+
+    action: str
+    key: str | None
+    path: Path | None
+    reason: str | None = None
+    characters: int = 0
+
+
 @dataclass(frozen=True, slots=True)
 class KeyRange:
     """A stretch of the key order, named by keys rather than by positions.
@@ -492,6 +550,13 @@ class Store(ABC):
     #: corpus and a half-written file.
     writable: ClassVar[bool] = True
 
+    #: Whether a write here is only visible once the whole store is written.
+    #: True for a store built in one pass, where nothing exists until all of it
+    #: does -- so a transfer into one reports :data:`READ` rather than
+    #: :data:`WROTE`, because an interrupted run wrote nothing and a report
+    #: saying otherwise would be one the interruption made untrue.
+    writes_deferred: ClassVar[bool] = False
+
     #: What this backend is called where a report or a refusal has to name it.
     #: A short lowercase word, matching the store file's extension, so that a
     #: sentence about a store and the name of its file agree.
@@ -557,6 +622,7 @@ class Store(ABC):
         *,
         title: str | None = None,
         encoding: str | None = None,
+        updated_at: str | None = None,
     ) -> str:
         """Store ``content`` at ``key``, overwriting anything already there.
 
@@ -584,6 +650,21 @@ class Store(ABC):
         plain text either way, so readers are unaffected. Its purpose is to
         make damage in transit loud - see ``_decode``.
 
+        ``updated_at`` is when the document was last written, and left out it
+        is now - which is what an ordinary write means by it. It is here for
+        the write that is a *copy* of a document that already exists: a
+        transfer between two stores carries the timestamp across, or the copy
+        says every document was written the moment it was copied and the store
+        loses the one fact about a document that nothing can reconstruct. An
+        ISO 8601 timestamp, normalised to UTC at second precision, which is
+        what :func:`_now` writes and so what every stored value already looks
+        like; a naive one is read as UTC.
+
+        Deliberately **not** offered by the MCP tool or by ``outrage set``. A
+        client writing a document is writing it now, and a stamp it could
+        choose is one it could get wrong about its own work; the callers that
+        legitimately restamp are copying something that was already stamped.
+
         Every refusal above is :meth:`_validated`'s, which an implementation
         calls before it writes anything.
         """
@@ -597,14 +678,18 @@ class Store(ABC):
         *,
         title: str | None,
         encoding: str | None,
-    ) -> tuple[keys.Key, str, str, str | None]:
+        updated_at: str | None = None,
+    ) -> tuple[keys.Key, str, str, str | None, str | None]:
         """What :meth:`store_document` accepts, and what it turns into.
 
-        Returns the parsed key, the decoded content, the resolved format and
-        the decoded title - the arguments as they are actually written, with
-        every refusal already made. A ``?`` in the key survives this: which
-        number it becomes is read from the store, inside the transaction that
-        writes it, and is the one part of the call that is not decidable here.
+        Returns the parsed key, the decoded content, the resolved format, the
+        decoded title and the normalised timestamp - the arguments as they are
+        actually written, with every refusal already made. A ``?`` in the key
+        survives this: which number it becomes is read from the store, inside
+        the transaction that writes it, and is the one part of the call that is
+        not decidable here. So does a timestamp of None, because what "now"
+        means is the storage's own answer: a row gets :func:`_now` and a file
+        gets the mtime the write already gave it.
 
         A classmethod rather than a template method calling down into the
         backend. It leaves every implementation's control flow exactly where it
@@ -626,8 +711,9 @@ class Store(ABC):
         metadata does not nest; it nests now, so every key in a metadata
         namespace takes a title like any other.
         Detecting a format before decoding would read the JSON *literal* rather
-        than the document inside it. ``tests/test_store.py`` has a case per
-        refusal.
+        than the document inside it. The timestamp is checked last, since it is
+        about the document rather than about what it says.
+        ``tests/test_store.py`` has a case per refusal.
         """
         parsed = keys.parse(key, allow_wildcard=True)
         if not isinstance(content, str):
@@ -647,7 +733,83 @@ class Store(ABC):
         if title is not None:
             if not isinstance(title, str):
                 raise TypeError(f"title must be a string, got {type(title).__name__}")
-        return parsed, content, format, title
+        return parsed, content, format, title, _timestamp(updated_at)
+
+    def copy_from(
+        self,
+        source: Store,
+        subtree: BoundedSubtree = EVERYTHING,
+        *,
+        key_range: KeyRange = UNBOUNDED,
+        prefix: str | None = None,
+        on_conflict: str = SKIP,
+        dry_run: bool = False,
+    ) -> Iterator[Transfer]:
+        """Write every document ``source`` holds in ``subtree`` into this store.
+
+        The one bulk operation, and it is a method on the **target** rather
+        than a function over a pair, because the target is what knows how it
+        is written: a database takes a document at a time, and a file written
+        whole takes all of them and writes once. A caller asks for the same
+        transfer either way and each store answers it appropriately, which is
+        what an export, an import, a repack and a backup all turn out to be.
+
+        ``source`` is any :class:`Store` -- a database, a directory of files,
+        or a mount table presenting several of them as one namespace, which is
+        what makes a copy *out of* a table possible at all. ``subtree`` and
+        ``key_range`` bound what crosses exactly as they bound a read, so a
+        copy of part of a store is the same selection as a listing of it.
+        ``prefix`` grafts what crosses under a key here, and left out, each
+        document keeps the key it had.
+
+        Metadata crosses as the keys it is: a copy that left every ``!title``
+        behind would produce a store nothing can be surveyed by. So does each
+        document's ``updated_at``, which is what makes this a copy rather than
+        a restamping -- see :meth:`store_document`.
+
+        Yields a :class:`Transfer` per document as it goes, so that a front end
+        can report the transfer while it happens and an interrupted one has
+        reported exactly what it did. ``on_conflict`` decides what happens to a
+        key already here, one key at a time: :data:`SKIP` leaves it,
+        :data:`OVERWRITE` replaces it, :data:`STOP` ends the run at the first
+        collision having kept what it already wrote.
+
+        The default implementation reads each document and writes it here,
+        which is every store's answer until it has a better one. A backend
+        with a bulk way in overrides this; what it may not do is change what
+        the transfer *means*, which is why the report is the same either way.
+
+        The walk itself is :mod:`outrage.bulk`'s, imported where it is used
+        rather than at the top of this module: a store's own reads are pages,
+        deliberately, and the caller that legitimately wants all of it lives
+        there. A copy is that caller.
+        """
+        from . import bulk
+
+        yield from bulk.copied(
+            source,
+            self,
+            subtree,
+            key_range=key_range,
+            prefix=prefix,
+            on_conflict=on_conflict,
+            dry_run=dry_run,
+        )
+
+    def located(self, key: str, format: str | None = None) -> Path | None:
+        """The file this store keeps ``key`` in, when there is one to name.
+
+        None by default, and that is not an omission: a row in a database has
+        no file of its own, and a store answering with the file the *whole*
+        corpus is in would be naming something a caller cannot open expecting
+        one document.
+
+        For reporting rather than for reading -- nothing here opens what it
+        returns. A copy into a directory of files is worth reading as key to
+        path, and the store on the far end is the only thing that knows which
+        path, so :class:`Transfer` carries it and this is where it comes from.
+        """
+        return None
 
     @abstractmethod
     def delete(
@@ -1361,6 +1523,35 @@ def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
+def _timestamp(updated_at: str | None) -> str | None:
+    """One spelling for a caller's ``updated_at``, or None left as it is.
+
+    Normalised rather than taken as given, so that a timestamp a copy carried
+    in is the same shape as one :func:`_now` wrote: every stored value is then
+    comparable as a string, which is how a listing sorts them and how a check
+    reads them. UTC at second precision for the same reason - the corpus has
+    never held anything else, and a store where half the rows carry an offset
+    is one where a string comparison quietly stops meaning what it says.
+
+    A naive timestamp is read as UTC. It is the only reading that agrees with
+    the rest of the package: :func:`_now` is UTC, and so is the mtime the
+    filesystem backend reads back.
+    """
+    if updated_at is None:
+        return None
+    if not isinstance(updated_at, str):
+        raise TypeError(f"updated_at must be a string, got {type(updated_at).__name__}")
+    try:
+        moment = datetime.fromisoformat(updated_at)
+    except ValueError as exc:
+        raise ValueError(
+            f"updated_at must be an ISO 8601 timestamp, got {updated_at!r}"
+        ) from exc
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).isoformat(timespec="seconds")
+
+
 def _ms(started: int) -> float:
     """Elapsed milliseconds, from the monotonic clock a time change cannot move."""
     return round((time.monotonic_ns() - started) / 1_000_000, 3)
@@ -1550,6 +1741,7 @@ def _excerpt(
 __all__ = [
     "BACKUP_DIR_NAME",
     "BACKUP_STAMP",
+    "CONFLICTS",
     "DEFAULT_BACKEND",
     "DEFAULT_BULK_MAX_CHARS",
     "DEFAULT_DIR_NAME",
@@ -1557,8 +1749,16 @@ __all__ = [
     "ENCODINGS",
     "ENV_DIR",
     "EVERYTHING",
+    "FAILED",
     "FORMATS",
+    "OVERWRITE",
+    "READ",
+    "SKIP",
+    "SKIPPED",
+    "STOP",
+    "STOPPED",
     "UNBOUNDED",
+    "WROTE",
     "AuditRow",
     "Backup",
     "BackendError",
@@ -1575,6 +1775,7 @@ __all__ = [
     "ReadOnlyStoreError",
     "Store",
     "StoreFileError",
+    "Transfer",
     "default_store",
     "default_store_file",
     "entry_kind",

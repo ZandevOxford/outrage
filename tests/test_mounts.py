@@ -15,7 +15,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from conftest import answers_alike, page_facts, raises_rendered, walk_documents, walk_level
-from outrage import keys, messages
+from outrage import bulk, keys, messages
 from outrage.mounts import (
     MOUNT_KIND,
     READ_ONLY_MOUNT_KIND,
@@ -28,7 +28,9 @@ from outrage.mounts import (
 from outrage.server import build_server, parse_args
 from outrage.store import (
     EVERYTHING,
+    OVERWRITE,
     UNBOUNDED,
+    WROTE,
     BackendError,
     BoundedSubtree,
     KeyNotFoundError,
@@ -1704,6 +1706,55 @@ def test_level_entry_describes_an_implicit_ancestor_the_listing_offers(tmp_path)
         assert table.level_entry("a") == single.level_entry("a")
         # A key nothing lies below is still nothing, and says so the same way.
         assert table.level_entry("z") is single.level_entry("z") is None
+
+
+def test_a_copy_out_of_a_table_carries_every_store_it_spans(table, tmp_path):
+    """The whole namespace, spelled the way the table spells it.
+
+    A copy takes a ``Store`` as its source and a table *is* one, so a corpus
+    kept in three files crosses into one as the keys a caller reads, not as
+    the keys each mounted store knows itself by. That is the whole argument
+    for the table being a store rather than a router in front of the server.
+    """
+    with SqliteStore(tmp_path / "one") as flat:
+        transfers = list(flat.copy_from(table))
+        assert [entry.key for entry in bulk.walk(flat, None) if entry.kind != "implicit"] == [
+            "context/1/state",
+            "context/1/state/!title",
+            "lib/deep/a",
+            "lib/deep/a/!title",
+            "notes/readme.md",
+            "notes/readme.md/!title",
+            "ref",
+            "ref/!title",
+            "ref/python/asyncio",
+            "ref/python/asyncio/!title",
+            "ref/python/typing",
+            "ref/python/typing/!title",
+        ]
+        assert flat.retrieve_document("ref").content == "The reference base."
+        assert flat.retrieve_document("lib/deep/a").content == "Deep."
+    # `lib` holds nothing itself and neither does the mount point at
+    # `lib/deep`, whose store has no root document. Neither is a document that
+    # failed to read; they are keys with nothing at them.
+    assert all(transfer.action == WROTE for transfer in transfers)
+
+
+def test_a_copy_into_a_table_lands_in_the_store_that_owns_the_key(table, tmp_path):
+    """Routing, on the writing side, with no new code to do it.
+
+    Each document is written through ``store_document``, which the table
+    routes as it routes any write, so a copy into a table is distributed
+    across its stores by the same rule that decides where a single write goes.
+    """
+    with SqliteStore(tmp_path / "source") as source:
+        source.store_document("ref/python/asyncio", "Replaced.")
+        source.store_document("lib/deep/b", "New.")
+        list(table.copy_from(source, on_conflict=OVERWRITE))
+    assert table.retrieve_document("ref/python/asyncio").content == "Replaced."
+    assert table.retrieve_document("lib/deep/b").content == "New."
+    # In the store that owns it, under the key that store knows it by.
+    assert table.resolve("lib/deep/b").store.retrieve_document("b").content == "New."
 
 
 def test_a_table_says_it_has_no_file_rather_than_answering_for_its_root(tmp_path):

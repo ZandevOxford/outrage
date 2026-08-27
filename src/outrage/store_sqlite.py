@@ -415,6 +415,7 @@ class SqliteStore(Store):
         *,
         title: str | None = None,
         encoding: str | None = None,
+        updated_at: str | None = None,
     ) -> str:
         """One row per key, upserted, with the title written in the same
         transaction.
@@ -422,11 +423,15 @@ class SqliteStore(Store):
         The transaction is ``IMMEDIATE`` only when a ``?`` has to be allocated:
         that path reads the level before it writes, and a deferred transaction
         would let two callers read the same highest number and pick it twice.
+
+        A caller's ``updated_at`` stamps the title row too. The pair is written
+        as one thing and read back as one thing, and a title dated later than
+        the document it titles would say an edit happened that did not.
         """
         # Inside the logged method, deliberately: `_logged` has already bound
         # the arguments the caller passed, which is what the log is for.
-        parsed, content, format, title = self._validated(
-            key, content, format, title=title, encoding=encoding
+        parsed, content, format, title, updated_at = self._validated(
+            key, content, format, title=title, encoding=encoding, updated_at=updated_at
         )
 
         # Allocating reads before it writes, so the whole thing has to be one
@@ -436,13 +441,15 @@ class SqliteStore(Store):
             if parsed.has_wildcard:
                 allocated = self._next_number(parsed.wildcard_parent)
                 parsed = keys.parse(keys.substitute_wildcard(parsed.key, allocated))
-            self._write(parsed, content, format)
+            self._write(parsed, content, format, updated_at)
             if title is not None:
                 title_key = f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}title"
-                self._write(keys.parse(title_key), title, "markdown")
+                self._write(keys.parse(title_key), title, "markdown", updated_at)
         return parsed.key
 
-    def _write(self, parsed: keys.Key, content: str, format: str) -> None:
+    def _write(
+        self, parsed: keys.Key, content: str, format: str, updated_at: str | None = None
+    ) -> None:
         """Insert or replace one row. Caller holds the transaction."""
         self._conn.execute(
             """
@@ -454,7 +461,7 @@ class SqliteStore(Store):
                 format = excluded.format,
                 updated_at = excluded.updated_at
             """,
-            _row_values(parsed, content, format, _now()),
+            _row_values(parsed, content, format, updated_at or _now()),
         )
 
     @contextmanager

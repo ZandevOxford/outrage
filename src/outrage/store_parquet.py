@@ -489,6 +489,7 @@ class ParquetStore(Store):
         *,
         title: str | None = None,
         encoding: str | None = None,
+        updated_at: str | None = None,
     ) -> str:
         """Refused: a parquet file is not updated in place.
 
@@ -508,7 +509,9 @@ class ParquetStore(Store):
         :meth:`build` is the way in, and ``outrage pack`` is the command line
         over it.
         """
-        self._validated(key, content, format, title=title, encoding=encoding)
+        self._validated(
+            key, content, format, title=title, encoding=encoding, updated_at=updated_at
+        )
         raise ReadOnlyStoreError("store-read-only", key=key, path=str(self.path), action="write")
 
     @_logged("delete")
@@ -1085,15 +1088,15 @@ class ParquetStore(Store):
 
         rows: dict[str, tuple[keys.Key, str, str, str]] = {}
         for key, content, format, updated_at in documents:
-            parsed, decoded, resolved, _ = cls._validated(
-                key, content, format, title=None, encoding=None
+            parsed, decoded, resolved, _, stamped = cls._validated(
+                key, content, format, title=None, encoding=None, updated_at=updated_at
             )
             if parsed.has_wildcard:
                 raise BackendError("parquet-build-wildcard", key=key)
             # Last one wins, which is what overwriting means everywhere else in
             # the store. Silently keeping the first would make the result
             # depend on an iteration order the caller did not choose.
-            rows[parsed.key] = (parsed, decoded, resolved, updated_at or _now())
+            rows[parsed.key] = (parsed, decoded, resolved, stamped or _now())
 
         ordered = sorted(rows.values(), key=lambda row: keys.sort_form(row[0].key))
         table = pa.table(

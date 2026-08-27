@@ -1092,11 +1092,17 @@ class MountedStore(Store):
         *,
         title: str | None = None,
         encoding: str | None = None,
+        updated_at: str | None = None,
     ) -> str:
         found = self.resolve(key, allow_wildcard=True).writable()
         with _renamed(found.mount):
             written = found.store.store_document(
-                found.key, content, format, title=title, encoding=encoding
+                found.key,
+                content,
+                format,
+                title=title,
+                encoding=encoding,
+                updated_at=updated_at,
             )
         # The key actually written, which is how an allocated number gets back
         # to the caller -- and it has to come back in the caller's namespace,

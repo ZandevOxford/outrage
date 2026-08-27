@@ -162,6 +162,7 @@ class FilesystemStore(Store):
         *,
         log: EventLog | None = None,
         hidden: bool = True,
+        create: bool = True,
     ) -> None:
         """Open the tree at ``root``, creating it if it is not there.
 
@@ -171,6 +172,14 @@ class FilesystemStore(Store):
         the store file it is about. Omitted, it is :data:`DEFAULT_TREE_NAME`
         inside the store directory, which is the one case where the base's rule
         does fit.
+
+        ``create`` is whether opening one makes the directory. True, because a
+        store a first write can fill has to exist for the write to land in --
+        the same reason every other backend creates its file. False is for a
+        caller that must not leave a tree behind when it turns out to write
+        nothing: a dry run reporting what an export *would* do has no business
+        creating the directory it would have written into. A write still makes
+        the directories above it either way.
 
         ``hidden`` is whether a dotfile is a document. True by default, because
         a store reads back what it wrote and the root document is a dotfile.
@@ -201,7 +210,8 @@ class FilesystemStore(Store):
         # the one backend whose contents somebody else is expected to be
         # editing. Said plainly rather than papered over.
         self._allocating = threading.Lock()
-        self.root.mkdir(parents=True, exist_ok=True)
+        if create:
+            self.root.mkdir(parents=True, exist_ok=True)
 
     def close(self) -> None:
         """Nothing to release: a file is opened per read and closed by it.
@@ -261,6 +271,22 @@ class FilesystemStore(Store):
         found = self._files_for(key)
         return found[0] if found else None
 
+    def located(self, key: str, format: str | None = None) -> Path | None:
+        """The file ``key`` is kept in, which for this backend is the store.
+
+        The base answers None, because a row in a database has no file of its
+        own. Here every key has one and the mapping is public, so a transfer
+        into a tree reports key to path -- which is what an export has always
+        printed and the reason :class:`~outrage.store.Transfer` carries a path
+        at all.
+
+        The path a write *would* take, whether or not anything is there yet: a
+        report of a copy is about where each document lands. None where that
+        path would leave the tree, which is :meth:`_readable`'s answer rather
+        than a refusal, since a report is not the place to raise.
+        """
+        return self._readable(key, format)
+
     def _dir_for(self, key: str) -> Path:
         """The directory holding the keys immediately below ``key``."""
         parsed = keys.parse(key).key
@@ -279,6 +305,7 @@ class FilesystemStore(Store):
         *,
         title: str | None = None,
         encoding: str | None = None,
+        updated_at: str | None = None,
     ) -> str:
         """One file per key, written whole, with the title written beside it.
 
@@ -290,21 +317,28 @@ class FilesystemStore(Store):
         halfway leaves whole files and no half of one.
         """
         # Inside the logged method, deliberately: see `Store._validated`.
-        parsed, content, format, title = self._validated(
-            key, content, format, title=title, encoding=encoding
+        parsed, content, format, title, updated_at = self._validated(
+            key, content, format, title=title, encoding=encoding, updated_at=updated_at
         )
         if parsed.has_wildcard:
             with self._allocating:
                 allocated = self._next_number(parsed.wildcard_parent)
                 parsed = keys.parse(keys.substitute_wildcard(parsed.key, allocated))
-                self._write(parsed.key, content, format)
+                self._write(parsed.key, content, format, updated_at)
         else:
-            self._write(parsed.key, content, format)
+            self._write(parsed.key, content, format, updated_at)
         if title is not None:
-            self._write(f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}title", title, "markdown")
+            self._write(
+                f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}title",
+                title,
+                "markdown",
+                updated_at,
+            )
         return parsed.key
 
-    def _write(self, key: str, content: str, format: str) -> None:
+    def _write(
+        self, key: str, content: str, format: str, updated_at: str | None = None
+    ) -> None:
         """Write one key's file, and remove any other file claiming that key.
 
         **The order is the guarantee.** The new file is written first and the
@@ -314,7 +348,24 @@ class FilesystemStore(Store):
         exactly one file, or the key reads twice and one of the answers is old.
         """
         path = self._path_for(key, format)
+        if path.is_symlink():
+            # A link is not a document here -- `_children` passes over one and
+            # `_files_for` will not read one -- so `exists` says this key holds
+            # nothing, and writing would have `os.replace` destroy a link the
+            # store never held. Refused rather than resolved: what is on the
+            # other end is somebody else's, and an export into a working
+            # directory that quietly replaced a link would be a way to lose
+            # work that was never in a store to begin with.
+            raise bulk.UnmappableError("key-is-a-symlink", key=key, path=str(path))
         bulk._write_file(path, content)
+        if updated_at is not None:
+            # The mtime *is* this backend's ``updated_at`` -- there is nowhere
+            # else to put one, and a sidecar recording it would be a file in
+            # the corpus that is not a document. So a copy that carries a
+            # timestamp in sets the file's, and the tree reads back what it was
+            # told rather than when the copy happened.
+            moment = datetime.fromisoformat(updated_at).timestamp()
+            os.utime(path, (moment, moment))
         for other in self._files_for(key):
             if other != path:
                 other.unlink()

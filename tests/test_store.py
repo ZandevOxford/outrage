@@ -17,11 +17,12 @@ import json
 import pathlib
 import sqlite3
 import threading
+from datetime import UTC, datetime
 
 import pytest
 
 from conftest import in_threads, raises_rendered
-from outrage import keys
+from outrage import bulk, keys
 from outrage import store as store_module
 from outrage.eventlog import EventLog
 from outrage.keys import InvalidKeyError
@@ -330,10 +331,269 @@ def test_a_failed_title_write_leaves_no_document_behind(store):
         store.retrieve_document("a/b")
 
 
+def test_updated_at_is_carried_rather_than_restamped(store):
+    """The write that is a copy of a document that already exists.
+
+    Every other write means "now" by it, which is why the argument is not on
+    the MCP tool or on ``outrage set``: a client writing a document is writing
+    it now. A transfer between two stores is the caller that legitimately
+    knows better, and without this the copy says the whole corpus was written
+    the moment it was copied - the one fact about a document nothing else can
+    reconstruct.
+    """
+    store.store_document("a/b", "body", updated_at="2020-01-02T03:04:05+00:00")
+    assert store.retrieve_document("a/b").updated_at == "2020-01-02T03:04:05+00:00"
+
+
+def test_updated_at_is_normalised_to_utc(store):
+    """One spelling, so that a string comparison keeps meaning what it says.
+
+    A listing sorts on these and a check reads them. Half a corpus carrying an
+    offset would compare wrongly against the half that does not, and every
+    value the package writes itself is UTC at second precision.
+    """
+    store.store_document("a/b", "body", updated_at="2020-01-02T05:04:05+02:00")
+    assert store.retrieve_document("a/b").updated_at == "2020-01-02T03:04:05+00:00"
+
+
+def test_updated_at_without_an_offset_is_read_as_utc(store):
+    store.store_document("a/b", "body", updated_at="2020-01-02T03:04:05")
+    assert store.retrieve_document("a/b").updated_at == "2020-01-02T03:04:05+00:00"
+
+
+def test_updated_at_stamps_the_title_written_beside_it(store):
+    """The pair is written as one thing, so it is dated as one thing.
+
+    A title dated later than the document it titles would say an edit happened
+    that did not - and a copy that carried the document's timestamp and
+    stamped its title with the copy's would produce exactly that.
+    """
+    store.store_document("a/b", "body", title="A title", updated_at="2020-01-02T03:04:05+00:00")
+    assert store.retrieve_document("a/b/!title").updated_at == "2020-01-02T03:04:05+00:00"
+
+
+@pytest.mark.parametrize(
+    "updated_at, error, match",
+    [
+        ("yesterday", ValueError, "ISO 8601"),
+        ("", ValueError, "ISO 8601"),
+        (1735689600, TypeError, "updated_at must be a string"),
+    ],
+)
+def test_updated_at_must_be_a_timestamp(store, updated_at, error, match):
+    with pytest.raises(error, match=match):
+        store.store_document("a/b", "body", updated_at=updated_at)
+    with pytest.raises(KeyNotFoundError):
+        store.retrieve_document("a/b")
+
+
+def test_a_write_that_names_no_timestamp_is_now(store):
+    """None is the storage's own answer rather than one settled in front of it.
+
+    Checked as a range rather than against a clock read here, because the two
+    are the same second only most of the time.
+    """
+    before = _now()
+    store.store_document("a/b", "body")
+    assert before <= store.retrieve_document("a/b").updated_at <= _now()
+
+
+def _now():
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
 def test_a_key_may_mirror_a_file_path(store):
     store.store_document("notes/src/myfile.py", "Notes about myfile.")
     assert store.retrieve_document("notes/src/myfile.py").content == "Notes about myfile."
     assert [e.key for e in store.list_keys("notes/src").items] == ["notes/src/myfile.py"]
+
+
+# -- copying -------------------------------------------------------------
+
+
+@pytest.fixture
+def source(tmp_path):
+    """Somewhere to copy *from*, which is a store like any other.
+
+    A database rather than the fixture's own backend, so that every target
+    reads the same corpus: what varies in this section is the end doing the
+    writing, which is the end ``copy_from`` is a method on.
+    """
+    with SqliteStore(tmp_path / "source") as other:
+        yield _populate(other)
+
+
+def test_copy_from_carries_every_document_metadata_included(store, source):
+    """A copy that left every title behind is a store nothing can be surveyed by.
+
+    Which is the same argument the export makes, and it is why the walk is
+    ``list_keys`` all the way down: a subtree read selects documents *or*
+    named metadata, and there is no "all of it" read to build a copy on.
+    """
+    list(store.copy_from(source))
+    assert walk_keys(store) == walk_keys(source)
+    assert store.retrieve_document("context/a1b2/design/!title").content == "Store schema"
+
+
+def test_copy_from_carries_the_timestamp(store, source):
+    """A copy rather than a restamping, which is what ``updated_at`` is for."""
+    source.store_document("a/b", "body", updated_at="2020-01-02T03:04:05+00:00")
+    list(store.copy_from(source))
+    assert store.retrieve_document("a/b").updated_at == "2020-01-02T03:04:05+00:00"
+
+
+def test_copy_from_reports_each_document_as_it_crosses(store, source):
+    """One ``Transfer`` per document, as it happens rather than at the end.
+
+    So an interrupted copy has reported exactly what it did, which is the
+    property every transfer in this package streams to keep.
+    """
+    transfers = list(store.copy_from(source))
+    assert [t.key for t in transfers] == walk_keys(source)
+    assert {t.action for t in transfers} == {store_module.WROTE}
+    assert sum(t.characters for t in transfers) > 0
+
+
+def test_copy_from_skips_what_is_already_there(store, source):
+    store.store_document("context/a1b2/task", "Mine.")
+    actions = {t.key: t.action for t in store.copy_from(source)}
+    assert actions["context/a1b2/task"] == store_module.SKIPPED
+    assert store.retrieve_document("context/a1b2/task").content == "Mine."
+
+
+def test_copy_from_overwrites_when_asked(store, source):
+    store.store_document("context/a1b2/task", "Mine.")
+    actions = {t.key: t.action for t in store.copy_from(source, on_conflict=store_module.OVERWRITE)}
+    assert actions["context/a1b2/task"] == store_module.WROTE
+    assert store.retrieve_document("context/a1b2/task").content == "Add a delete tool."
+
+
+def test_copy_from_stops_at_the_first_collision_keeping_what_it_wrote(store, source):
+    store.store_document("context/a1b2/task", "Mine.")
+    transfers = list(store.copy_from(source, on_conflict=store_module.STOP))
+    assert transfers[-1].action == store_module.STOPPED
+    assert transfers[-1].key == "context/a1b2/task"
+    # What came before it crossed, and nothing after it was tried.
+    assert store.exists("context/a1b2/design")
+    assert not store.exists("project/reference/implementation")
+
+
+def test_copy_from_refuses_a_conflict_mode_it_does_not_have(store, source):
+    with pytest.raises(ValueError, match="on_conflict"):
+        list(store.copy_from(source, on_conflict="clobber"))
+
+
+def test_copy_from_bounds_by_subtree(store, source):
+    list(store.copy_from(source, BoundedSubtree("context/a1b2")))
+    assert walk_keys(store) == [
+        "context/a1b2/design",
+        "context/a1b2/design/!title",
+        "context/a1b2/task",
+        "context/a1b2/task/!title",
+    ]
+
+
+def test_copy_from_bounds_by_depth(store, source):
+    """Depth is the subtree's, counted as every other read counts it.
+
+    Metadata adds none, so a title crosses with the document it titles rather
+    than counting as a level below it.
+    """
+    list(store.copy_from(source, BoundedSubtree("context", depth=1)))
+    assert walk_keys(store) == []
+    list(store.copy_from(source, BoundedSubtree("context", depth=2)))
+    assert walk_keys(store) == [
+        "context/a1b2/design",
+        "context/a1b2/design/!title",
+        "context/a1b2/task",
+        "context/a1b2/task/!title",
+        "context/c3d4/design",
+        "context/c3d4/design/!title",
+    ]
+
+
+def test_copy_from_bounds_by_range(store, source):
+    """The same range a read is bounded by, over the same order."""
+    list(store.copy_from(source, key_range=KeyRange(after_subtree="context/a1b2")))
+    assert walk_keys(store) == [
+        "context/c3d4/design",
+        "context/c3d4/design/!title",
+        "project/reference/implementation",
+    ]
+
+
+def test_copy_from_grafts_under_a_prefix(store, source):
+    list(store.copy_from(source, BoundedSubtree("context/c3d4"), prefix="archive/old"))
+    assert walk_keys(store) == [
+        "archive/old/context/c3d4/design",
+        "archive/old/context/c3d4/design/!title",
+    ]
+
+
+def test_copy_from_dry_run_reports_without_writing(store, source):
+    transfers = list(store.copy_from(source, dry_run=True))
+    assert [t.key for t in transfers] == walk_keys(source)
+    assert walk_keys(store) == []
+
+
+def test_copy_from_a_key_the_far_end_cannot_hold_fails_on_its_own(store, source):
+    """One document that cannot cross does not end the transfer.
+
+    A segment of ``..`` is a legal key and an impossible path component, so a
+    tree refuses it and a database does not - which is the point: the copy
+    reports what the far end said and carries on, and the corpus that arrives
+    is the corpus that could.
+    """
+    source.store_document("notes/../escape", "Out.")
+    transfers = {t.key: t for t in store.copy_from(source)}
+    assert transfers["project/reference/implementation"].action == store_module.WROTE
+    refused = isinstance(store, FilesystemStore)
+    assert transfers["notes/../escape"].action == (
+        store_module.FAILED if refused else store_module.WROTE
+    )
+    if refused:
+        # The far end's own sentence, rendered, rather than "it did not work".
+        assert "notes/../escape" in transfers["notes/../escape"].reason
+
+
+def test_copy_from_names_the_file_where_one_end_keeps_files(store, source, tmp_path):
+    """Key to path, which is what an export report has always printed.
+
+    The store on the far end is the only thing that knows which path, so a
+    transfer asks it rather than mapping the key itself.
+    """
+    with FilesystemStore(tmp_path / "tree") as tree:
+        transfers = {t.key: t.path for t in tree.copy_from(source)}
+    assert transfers["context/a1b2/design"] == tmp_path / "tree/context/a1b2/design.md"
+    assert transfers["context/a1b2/design/!title"] == (
+        tmp_path / "tree/context/a1b2/design/!title.md"
+    )
+    # A database says nothing about where it keeps one document, because there
+    # is nothing there a caller could open. Asked of a store this test names
+    # rather than of the fixture, which is a tree in one of its three shapes.
+    with SqliteStore(tmp_path / "target") as database:
+        assert all(t.path is None for t in database.copy_from(source))
+
+
+def test_a_copy_is_a_round_trip_through_any_backend(store, source, tmp_path):
+    """Out to a tree and back, and the corpus is the one that left.
+
+    The differential this project keeps finding things with, in the one shape
+    a copy makes available: two backends and one corpus, compared key by key
+    rather than counted.
+    """
+    with FilesystemStore(tmp_path / "tree") as tree:
+        list(tree.copy_from(source))
+        list(store.copy_from(tree))
+    assert walk_keys(store) == walk_keys(source)
+    for key in walk_keys(source):
+        assert store.retrieve_document(key).content == source.retrieve_document(key).content
+        assert store.retrieve_document(key).updated_at == source.retrieve_document(key).updated_at
+
+
+def walk_keys(opened) -> list[str]:
+    """Every stored key in one store, in order, containers dropped."""
+    return [entry.key for entry in bulk.walk(opened, None) if entry.kind != "implicit"]
 
 
 # -- autonumbering -------------------------------------------------------
@@ -2059,7 +2319,7 @@ def test_validation_normalises_what_a_backend_then_writes():
     the wildcard is left to it, because which number a ``?`` becomes is read
     from the store inside the transaction that writes it.
     """
-    parsed, content, format, title = Store._validated(
+    parsed, content, format, title, updated_at = Store._validated(
         "notes/?", '"{\\"a\\": 1}"', None, title='"Numbers"', encoding="json-string"
     )
     assert parsed.has_wildcard
@@ -2068,6 +2328,10 @@ def test_validation_normalises_what_a_backend_then_writes():
     # is a string, and it is the document inside it that is an object.
     assert format == "json"
     assert title == "Numbers"
+    # None survives: what "now" means is the storage's own answer, and a
+    # timestamp settled here would be the moment the arguments were checked
+    # rather than the moment the document was written.
+    assert updated_at is None
 
 
 def test_every_backend_validates_by_calling_the_shared_check():
