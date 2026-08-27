@@ -1442,19 +1442,38 @@ def parse_spec(spec: str) -> tuple[str, Path]:
     ``Store`` makes its file on the way in, and a typo would otherwise leave an
     empty store behind as evidence of a server that never started.
     """
-    # The key is parsed with the default bound, ``keys.MAX_SEGMENTS``, which is
-    # half what the joined namespace allows. Load bearing here rather than
-    # incidental: a mount point admitted at the wider bound could name keys the
-    # namespace above it could not.
     prefix, delimiter, path = spec.partition(SPEC_DELIMITER)
     if not delimiter:
         raise MountError("mount-spec-malformed", spec=spec)
     if not path:
         raise MountError("mount-spec-has-no-file", spec=spec)
+    return mount_point(prefix, spec=spec), Path(path)
+
+
+def mount_point(prefix: str, *, spec: str | None = None) -> str:
+    """Validate a mount point, however it was written down.
+
+    Split out of :func:`parse_spec` so that a mount table read from a file
+    reaches exactly these refusals rather than growing a second set: a config
+    file that had its own idea of what a key is would be a second grammar over
+    the same namespace, and the project has one. ``spec`` is what the reader
+    wrote, when there is a spec to quote back at them; a file quotes the key it
+    used as its own field name.
+    """
+    # The key is parsed with the default bound, ``keys.MAX_SEGMENTS``, which is
+    # half what the joined namespace allows. Load bearing here rather than
+    # incidental: a mount point admitted at the wider bound could name keys the
+    # namespace above it could not.
     parsed = keys.parse(prefix)
     if parsed.key == keys.ROOT:
-        raise MountError("mount-spec-at-root", spec=spec)
-    return parsed.key, Path(path)
+        raise MountError("mount-spec-at-root", spec=spec if spec is not None else prefix)
+    # Here as well as in ``MountedStore.__init__``, which is the invariant for
+    # a table built directly, and here for the reason above: ``open_mounts``
+    # creates a store per spec *before* it builds the table, so a mount point
+    # refused only there leaves a database behind named after the mistake.
+    if parsed.is_metadata:
+        raise MountError("mount-point-is-metadata", mount=parsed.key)
+    return parsed.key
 
 
 def open_mounts(
@@ -1530,6 +1549,7 @@ __all__ = [
     "ReadOnlyMountError",
     "Resolved",
     "Segment",
+    "mount_point",
     "open_mounts",
     "parse_spec",
 ]

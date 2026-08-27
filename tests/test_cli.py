@@ -1453,3 +1453,153 @@ def test_last_with_nothing_below_it_is_a_message_and_a_status(tmp_path, capsys):
 
     assert status == 1
     assert "nothing below it" in capsys.readouterr().err
+
+
+# The command line across a mount table. Not a second implementation of the
+# server's: the same `open_mounts`, reached through the same options, so the
+# thing being checked here is that a person gets the *one* namespace an agent
+# gets -- a table typed differently from the server's is a different namespace
+# answering the same keys, and nothing would say so.
+
+
+def a_mounted_project(directory: Path, *, config: str | None = None) -> Path:
+    """A root store, a read-write mount, a read-only one, and a table naming them."""
+    from outrage.store_sqlite import SqliteStore
+
+    for filename, key, content in (
+        ("store.sqlite", "top", "at the root"),
+        ("team.sqlite", "plans/q3", "the plan"),
+        ("reference.sqlite", "python/asyncio", "the reference"),
+    ):
+        with SqliteStore(directory, filename=filename) as store:
+            store.store_document(key, content)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "mounts.toml").write_text(
+        config
+        if config is not None
+        else '[mount]\nteam = "team.sqlite"\n\n[mount-ro]\nref = "reference.sqlite"\n',
+        encoding="utf-8",
+    )
+    return directory
+
+
+def test_ls_reads_the_mount_table_from_the_default_file(tmp_path):
+    """The payoff: a table in the store directory, and no flag to type."""
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run("ls", "--dir", str(tmp_path / ".outrage"), "--recursive")
+
+    assert status == 0
+    assert "ref/python/asyncio" in output
+    assert "team/plans/q3" in output
+    assert "top" in output
+
+
+def test_get_crosses_a_mount_boundary(tmp_path):
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run("get", "--dir", str(tmp_path / ".outrage"), "ref/python/asyncio")
+
+    assert status == 0
+    assert output == "the reference"
+
+
+def test_set_reports_the_file_the_document_landed_in(tmp_path):
+    """Not the root: a key below a mount point is in that mount's store."""
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "set", "--dir", str(tmp_path / ".outrage"), "team/plans/q4", "--content", "next"
+    )
+
+    assert status == 0
+    assert "team.sqlite" in output
+
+
+def test_a_write_to_a_read_only_mount_is_refused(tmp_path, capsys):
+    """The flag's whole purpose, now reachable from the command line too."""
+    a_mounted_project(tmp_path / ".outrage")
+
+    status = main(
+        ["set", "--dir", str(tmp_path / ".outrage"), "ref/python/new", "--content", "x"],
+        io.StringIO(),
+    )
+
+    assert status == 1
+    assert "read-only" in capsys.readouterr().err
+
+
+def test_the_command_line_replaces_one_mount_from_the_file(tmp_path):
+    """The use case the file exists for: a committed table, one entry overridden.
+
+    Everything else in it stays as the repository says it is, which is the
+    property that makes the override safe to use in anger.
+    """
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "ls",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "--mount",
+        "ref=team.sqlite",
+        "--recursive",
+    )
+
+    assert status == 0
+    assert "ref/plans/q3" in output
+    assert "team/plans/q3" in output
+
+
+def test_a_mount_configuration_that_will_not_parse_is_a_message(tmp_path, capsys):
+    """Rendered like any other refusal rather than tracebacked out of argparse."""
+    a_mounted_project(tmp_path / ".outrage", config="{\n")
+
+    status = main(["ls", "--dir", str(tmp_path / ".outrage")], io.StringIO())
+
+    assert status == 1
+    assert "not valid TOML" in capsys.readouterr().err
+
+
+def test_a_subcommand_that_takes_no_mounts_ignores_the_file(tmp_path):
+    """``check`` is about a file -- its integrity -- and says which with --store.
+
+    It would also be handed options it has never heard of, which is why the
+    splice asks what the subcommand is before it happens.
+    """
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run("check", "--dir", str(tmp_path / ".outrage"))
+
+    assert status == 0
+    assert "store.sqlite" in output
+
+
+def test_a_read_only_backend_can_still_be_read_directly(tmp_path, capsys):
+    """A table needs a writable root, and reading a packed store must not.
+
+    Two halves of the same answer. A command with nothing mounted opens the
+    store itself rather than wrapping it in a table of one, and
+    ``--no-mount-config`` is how a project that *has* a table gets back to
+    nothing mounted. Without the pair, packing a store and then reading it --
+    which is what packing one is for -- would stop working the moment a project
+    wrote a mount table down.
+    """
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    a_mounted_project(tmp_path / ".outrage")
+    run("pack", str(tmp_path / ".outrage/packed.parquet"), "--dir",
+        str(tmp_path / ".outrage"), "--from-store", "store.sqlite")
+    capsys.readouterr()
+
+    status, output = run(
+        "ls",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "--store",
+        "packed.parquet",
+        "--no-mount-config",
+        "--recursive",
+    )
+
+    assert status == 0
+    assert "top" in output
