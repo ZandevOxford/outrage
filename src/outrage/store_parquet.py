@@ -94,6 +94,8 @@ from .store import (
     _now,
     _position,
     _scope,
+    entry_kind,
+    meta_reader,
 )
 
 #: What a parquet store's file is called when a caller names none. Beside
@@ -107,7 +109,12 @@ DEFAULT_STORE_FILE = "store.parquet"
 #: shape assumed. The same rule as :data:`outrage.store_sqlite.SCHEMA_VERSION`
 #: without the migrations: nothing here is ever updated in place, so an old
 #: file is repacked rather than upgraded.
-FORMAT_VERSION = 1
+#:
+#: **Version 1 is still read**, and nothing is rewritten to do it. It has no
+#: ``meta_path`` column and a ``meta_name`` written under the rule that a name
+#: swallowed everything below the first ``!``; both come off ``key``, which the
+#: file carries, so :meth:`ParquetStore._build` derives them on the way in.
+FORMAT_VERSION = 2
 
 #: Where that version is written.
 VERSION_KEY = b"outrage.format-version"
@@ -120,6 +127,7 @@ INDEX_COLUMNS = (
     "key",
     "doc_key",
     "meta_name",
+    "meta_path",
     "parent",
     "format",
     "updated_at",
@@ -171,6 +179,7 @@ class _Row:
     key: str
     doc_key: str
     meta_name: str | None
+    meta_path: str | None
     parent: str
     format: str | None
     updated_at: str
@@ -199,8 +208,10 @@ class _Index:
     SQLite backend recovers it with a ``DISTINCT`` over truncated parents, and
     here it is cheaper to record it while the rows are being read once anyway.
 
-    ``meta_names`` maps a document key to the metadata names attached to it,
-    which is what turns SQLite's ``NOT EXISTS`` self-join into a set test.
+    ``meta_names`` maps a key to the metadata names attached to it, which is
+    what turns SQLite's ``NOT EXISTS`` self-join into a set test. Keyed by the
+    key a value hangs from -- a value's own ``parent`` -- so it answers at any
+    scope, metadata namespaces included.
     """
 
     rows: list[_Row]
@@ -276,6 +287,11 @@ class ParquetStore(Store):
         written = metadata.get(VERSION_KEY)
         if written is None:
             raise BackendError("parquet-not-a-store", path=str(self.path))
+        # Kept, because an older file is read rather than refused and the
+        # reader has to know which layout it is looking at. Only a file
+        # *newer* than this build is refused -- the comparison is `>`, not
+        # `!=`, and the strict one belongs to backup verification.
+        self._written_version = int(written)
         if int(written) > FORMAT_VERSION:
             raise BackendError(
                 "parquet-format-newer",
@@ -343,8 +359,21 @@ class ParquetStore(Store):
         more than the conversion does, and everything below wants Python
         strings anyway.
         """
-        table = self._parquet.read(columns=list(INDEX_COLUMNS))
-        columns = {name: table.column(name).to_pylist() for name in INDEX_COLUMNS}
+        # A version 1 file has no `meta_path` column, and the `meta_name` it
+        # does have was written under the rule that a name swallowed everything
+        # below the first `!`. Both come off `key`, which every version
+        # carries, so the older file is read whole and re-split here rather
+        # than repacked. Nothing is written back: this backend has no
+        # migrations, and the derivation costs one parse per row on the one
+        # pass that builds the index anyway.
+        derive = self._written_version < 2
+        held = [name for name in INDEX_COLUMNS if not (derive and name == "meta_path")]
+        table = self._parquet.read(columns=held)
+        columns = {name: table.column(name).to_pylist() for name in held}
+        if derive:
+            split = [keys.parse(key) for key in columns["key"]]
+            columns["meta_name"] = [parsed.meta_name for parsed in split]
+            columns["meta_path"] = [parsed.meta_path for parsed in split]
 
         rows: list[_Row] = []
         by_key: dict[str, _Row] = {}
@@ -356,6 +385,7 @@ class ParquetStore(Store):
                 key=columns["key"][position],
                 doc_key=columns["doc_key"][position],
                 meta_name=columns["meta_name"][position],
+                meta_path=columns["meta_path"][position],
                 parent=columns["parent"][position],
                 format=columns["format"][position],
                 updated_at=columns["updated_at"][position],
@@ -365,8 +395,14 @@ class ParquetStore(Store):
             )
             rows.append(row)
             by_key[row.key] = row
-            if row.meta_name is not None:
-                meta_names.setdefault(row.doc_key, set()).add(row.meta_name)
+            # Recorded against the key's own parent, from its last segment.
+            # A value of `title` is the key `<document>/!title` and nothing
+            # else, at any scope, so this needs no reading of where the whole
+            # key first turned to metadata -- which from inside a metadata
+            # namespace is a segment above the question being asked.
+            name = row.key.rpartition(keys.DELIMITER)[2]
+            if name.startswith(keys.META_PREFIX):
+                meta_names.setdefault(row.parent, set()).add(name[len(keys.META_PREFIX) :])
             _record_ancestry(children, row.key)
 
         metadata = self._parquet.metadata
@@ -511,21 +547,25 @@ class ParquetStore(Store):
     def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
         """How many rows lie strictly below ``key``, within ``key_range``.
 
-        Counted over the index. A ``doc_key`` test is not a bound on the order,
-        so this cannot bisect the way a range can; the range half does, and
-        narrows what the ``doc_key`` half then has to look at.
+        Counted over the index. The subtree is a stretch of the order and the
+        range is bisected; what is left per row is whether the key is one a
+        plain delete of ``key`` would *keep*, which the bounds narrow but do
+        not answer.
         """
         index = self._index
+        parsed = keys.parse(key)
         lower, upper = _span(index.order, key_range)
-        # Narrowed by the subtree's own bounds first. It does not *answer* the
-        # question -- `k/!title` sorts inside them and is not below `k` -- but
-        # it is what keeps a count of one subtree from walking the corpus.
+        # Narrowed by the subtree's own bounds first. It does not answer the
+        # question -- `key` itself and its whole metadata unit sort inside them
+        # and are not counted -- but it keeps a count of one subtree from
+        # walking the corpus.
         inner, outer = _span(index.order, _subtree_range(key))
-        below = _below(keys.parse(key).doc_key)
+        below = _below(parsed.key)
+        lo, hi = keys.meta_range(parsed.key)
         return sum(
             1
             for row in index.rows[max(lower, inner) : min(upper, outer)]
-            if below(row.doc_key)
+            if below(row.key) and not lo <= row.key < hi
         )
 
     @_logged("retrieve_document")
@@ -549,7 +589,7 @@ class ParquetStore(Store):
         parsed = keys.parse(key)
         row = self._index.by_key.get(parsed.key)
         if row is None:
-            beneath = 0 if parsed.is_metadata else self.descendant_count(key)
+            beneath = self.descendant_count(key)
             if beneath:
                 raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
             raise KeyNotFoundError("key-not-found", key=key)
@@ -592,7 +632,9 @@ class ParquetStore(Store):
         whole level and so unaffected by the cursor, and the characters come
         from ``chars`` without any content being read.
         """
-        parent = keys.parse(_scope(key)).doc_key
+        # The whole key, not its document part: a metadata namespace is a
+        # level like any other and ``list_keys("a/!x")`` lists what is in it.
+        parent = keys.parse(_scope(key)).key
         names = self._index.children.get(parent, set())
         bound = _cursor_bound(cursor)
 
@@ -796,7 +838,8 @@ class ParquetStore(Store):
         intersected before either is sliced -- see :func:`_subtree_range` for
         why a subtree is a stretch of the order too. What is left to test per
         row is the depth budget, which is not a bound on the order at all, and
-        the metadata name.
+        the metadata name -- the latter read as it is seen from the key the
+        read was scoped at, which :func:`outrage.store.meta_reader` decides.
         """
         wanted = None if meta_name is None else _names(meta_name)
         index = self._index
@@ -805,12 +848,15 @@ class ParquetStore(Store):
         rows = index.rows[max(lower, inner) : min(upper, outer)]
 
         deep_enough = _depth_test(subtree)
-        return [
-            row
-            for row in rows
-            if deep_enough(row)
-            and (row.meta_name in wanted if wanted is not None else row.meta_name is None)
-        ]
+        seen_from = meta_reader(_scope(subtree.key))
+
+        def carries(row: _Row) -> bool:
+            name, path = seen_from(row.key, row.meta_name, row.meta_path)
+            if wanted is None:
+                return name is None
+            return name in wanted and path is None
+
+        return [row for row in rows if deep_enough(row) and carries(row)]
 
     def _missing(
         self, subtree: BoundedSubtree, key_range: KeyRange, names: list[str]
@@ -828,7 +874,7 @@ class ParquetStore(Store):
         return [
             row
             for row in self._selection(subtree, key_range, meta_name=None)
-            if not carried.get(row.doc_key, _NOTHING).intersection(names)
+            if not carried.get(row.key, _NOTHING).intersection(names)
         ]
 
     # -- maintenance -----------------------------------------------------
@@ -1052,6 +1098,7 @@ class ParquetStore(Store):
                 "key": [parsed.key for parsed, _, _, _ in ordered],
                 "doc_key": [parsed.doc_key for parsed, _, _, _ in ordered],
                 "meta_name": [parsed.meta_name for parsed, _, _, _ in ordered],
+                "meta_path": [parsed.meta_path for parsed, _, _, _ in ordered],
                 "parent": [parsed.parent for parsed, _, _, _ in ordered],
                 "content": [content for _, content, _, _ in ordered],
                 "format": [format for _, _, format, _ in ordered],
@@ -1079,9 +1126,10 @@ class ParquetStore(Store):
 def _schema(pa: Any) -> Any:
     """The columns a parquet store holds, and the version stamp on them.
 
-    Every column is a string but ``chars``, including ``format`` and
-    ``meta_name``, which are nullable because a document has no metadata name
-    and an unrecognised file has no format. The stamp is file-level key-value
+    Every column is a string but ``chars``, including ``format``, ``meta_name``
+    and ``meta_path``, which are nullable because a document has no metadata
+    name, a metadata value has nothing below it, and an unrecognised file has
+    no format. The stamp is file-level key-value
     metadata rather than a column: it is one fact about the file, and a column
     would repeat it per row and let two rows disagree.
     """
@@ -1090,6 +1138,7 @@ def _schema(pa: Any) -> Any:
             ("key", pa.string()),
             ("doc_key", pa.string()),
             ("meta_name", pa.string()),
+            ("meta_path", pa.string()),
             ("parent", pa.string()),
             ("content", pa.string()),
             ("format", pa.string()),
@@ -1185,14 +1234,14 @@ def _subtree_range(key: str | None) -> KeyRange:
     seek -- the one place the columnar layout was losing, and it was losing for
     a reason that had nothing to do with columns.
 
-    Careful: this is **not** what ``descendant_count`` asks. It counts keys
-    strictly *below* ``k``, and ``k/!title`` sorts inside these bounds while
-    sharing ``k``'s ``doc_key``. The bounds narrow that question; they do not
-    answer it.
+    Careful: this is **not** what ``descendant_count`` asks. It counts what a
+    plain delete of ``k`` would keep, and ``k`` itself and its whole metadata
+    unit sort inside these bounds without being any of it. The bounds narrow
+    that question; they do not answer it.
 
     The root has no such bounds, and needs none: everything is inside it.
     """
-    if key is None or keys.parse(key).doc_key == keys.ROOT:
+    if key is None or keys.parse(key).key == keys.ROOT:
         return UNBOUNDED
     return KeyRange(after_inclusive=key, final_subtree=key)
 
@@ -1239,8 +1288,8 @@ def _depth_test(subtree: BoundedSubtree) -> Callable[[_Row], bool]:
     return deep_enough
 
 
-def _below(doc_key: str) -> Callable[[str], bool]:
-    """A test for the keys strictly beneath ``doc_key``.
+def _below(scope: str) -> Callable[[str], bool]:
+    """A test for the keys strictly beneath ``scope``.
 
     A half-open string range for an ordinary key, since everything under ``a``
     starts with ``a/`` -- which is what keeps ``a/b`` from picking up
@@ -1248,9 +1297,9 @@ def _below(doc_key: str) -> Callable[[str], bool]:
     else is beneath it, and no string bounds every key from above, so
     ``keys.subtree_range`` refuses to invent one.
     """
-    if doc_key == keys.ROOT:
+    if scope == keys.ROOT:
         return lambda candidate: candidate != keys.ROOT
-    lo, hi = keys.subtree_range(doc_key)
+    lo, hi = keys.subtree_range(scope)
     return lambda candidate: lo <= candidate < hi
 
 
@@ -1285,7 +1334,7 @@ def _entry(row: _Row) -> Entry:
     """
     return Entry(
         key=row.key,
-        kind="metadata" if row.meta_name is not None else "document",
+        kind=entry_kind(row.key),
         size=row.chars,
         format=row.format,
         updated_at=row.updated_at,

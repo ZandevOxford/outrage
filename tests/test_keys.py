@@ -160,19 +160,20 @@ def test_the_root_has_no_subtree_bounds():
 
 
 @pytest.mark.parametrize(
-    ("key", "meta_name", "parent"),
+    ("key", "meta_name", "meta_path", "parent"),
     [
-        ("!title", "title", ""),
-        ("!summary", "summary", ""),
-        # A path may continue below a metadata segment, and `parent` stays what
-        # it is everywhere else: the key without its last segment.
-        ("!title/b", "title/b", "!title"),
+        ("!title", "title", None, ""),
+        ("!summary", "summary", None, ""),
+        # The root's metadata is a namespace like anything else's, and `parent`
+        # stays what it is everywhere else: the key without its last segment.
+        ("!title/b", "title", "b", "!title"),
     ],
 )
-def test_metadata_may_attach_to_the_root(key, meta_name, parent):
+def test_metadata_may_attach_to_the_root(key, meta_name, meta_path, parent):
     parsed = keys.parse(key)
     assert parsed.doc_key == keys.ROOT
     assert parsed.meta_name == meta_name
+    assert parsed.meta_path == meta_path
     assert parsed.parent == parent
 
 
@@ -248,39 +249,74 @@ def test_metadata_may_attach_to_an_implicit_key():
     assert keys.parse("context/!title").parent == "context"
 
 
-# -- metadata is not a leaf ----------------------------------------------
+# -- metadata is a namespace ---------------------------------------------
 
 
 @pytest.mark.parametrize(
-    ("key", "doc_key", "meta_name", "parent"),
+    ("key", "doc_key", "meta_name", "meta_path", "parent"),
     [
-        ("a/!title", "a", "title", "a"),
-        ("a/!title/b", "a", "title/b", "a/!title"),
-        ("a/!title/b/c", "a", "title/b/c", "a/!title/b"),
-        ("a/!a/!b", "a", "a/!b", "a/!a"),
-        ("a/b/!embedding/openai", "a/b", "embedding/openai", "a/b/!embedding"),
+        ("a/!title", "a", "title", None, "a"),
+        ("a/!changelog/22", "a", "changelog", "22", "a/!changelog"),
+        ("a/!changelog/22/!title", "a", "changelog", "22/!title", "a/!changelog/22"),
+        ("a/!a/!b", "a", "a", "!b", "a/!a"),
+        ("a/b/!embedding/openai", "a/b", "embedding", "openai", "a/b/!embedding"),
     ],
 )
-def test_a_path_may_continue_below_a_metadata_segment(key, doc_key, meta_name, parent):
+def test_a_metadata_name_is_one_segment_and_the_rest_is_a_path(
+    key, doc_key, meta_name, meta_path, parent
+):
     parsed = keys.parse(key)
     assert parsed.doc_key == doc_key
     assert parsed.meta_name == meta_name
+    assert parsed.meta_path == meta_path
     assert parsed.parent == parent
 
 
-def test_everything_below_a_metadata_segment_is_metadata():
-    # There is no document under a metadata path: the key splits at its *first*
-    # `!`, so `meta_name` is non-null for the whole subtree. That is what keeps
-    # `meta_name IS NULL` an honest test for "is a document".
-    assert keys.parse("a/!title/b").is_metadata
-    assert keys.parse("a/!title/b/c/d").is_metadata
+def test_the_split_is_at_the_first_metadata_segment_and_no_other():
+    # `!` opens a namespace and may repeat inside one, so a second one is part
+    # of the path rather than a second name: `a` carries `a`, whose entry `!b`
+    # is metadata on the namespace itself.
+    assert keys.parse("a/!a/!b").meta_name == "a"
+    assert keys.parse("a/!a/!b").doc_key == "a"
 
 
-def test_a_metadata_subtree_does_not_answer_to_its_parents_name():
-    # A survey asking for `title` must match the entry itself and not the
-    # documents hanging below it, or every sub-path would count as a title.
-    assert keys.parse("a/!title").meta_name == "title"
-    assert keys.parse("a/!title/b").meta_name != "title"
+def test_nothing_below_a_metadata_segment_adds_depth():
+    # The one thing metadata changes. It is what keeps depth across a mount
+    # boundary a constant offset.
+    for key in ("a", "a/!changelog", "a/!changelog/22", "a/!changelog/22/!title"):
+        assert keys.depth(key) == 1
+
+
+def test_is_metadata_covers_the_namespace_and_is_meta_value_the_entry():
+    # `is_metadata` says the key is somewhere inside a metadata namespace,
+    # which is the whole subtree. `is_meta_value` says it is the value itself,
+    # and that is the predicate a survey wants: a document kept inside `a`'s
+    # changelog is not one of `a`'s changelog values.
+    inside = keys.parse("a/!changelog/22")
+    assert inside.is_metadata
+    assert not inside.is_meta_value
+    assert keys.parse("a/!changelog").is_meta_value
+    assert not keys.parse("a/b").is_metadata
+
+
+def test_a_metadata_subtree_answers_to_the_name_but_is_not_the_value():
+    # A survey asking for `changelog` must match the entry itself and not the
+    # documents kept inside it. Both carry the name -- that is what says which
+    # metadata they belong to -- so what separates them is `meta_path`.
+    assert keys.parse("a/!changelog").meta_name == "changelog"
+    assert keys.parse("a/!changelog/22").meta_name == "changelog"
+    assert keys.parse("a/!changelog").meta_path is None
+    assert keys.parse("a/!changelog/22").meta_path == "22"
+
+
+def test_meta_sort_suffix_takes_one_segment_and_gives_one():
+    # Its contract, and now true by construction: a metadata name is one
+    # segment, so there is no name this can be handed that it would mark and
+    # pad as though it were single when it was not.
+    for name in ("title", "changelog", "2"):
+        assert keys.sort_form("a") + keys.meta_sort_suffix(name) == keys.sort_form(
+            f"a/!{name}"
+        )
 
 
 def test_parent_is_the_key_without_its_last_segment():
@@ -323,11 +359,13 @@ def test_two_wildcards_are_refused():
         keys.parse("tmp/?/?", allow_wildcard=True)
 
 
-def test_a_metadata_segment_cannot_be_allocated():
-    # Allocation numbers a document's children; a metadata name is chosen, not
-    # counted, so `?` there is a mistake worth naming.
-    with raises_rendered(InvalidKeyError, "document part"):
-        keys.parse("a/!title/?", allow_wildcard=True)
+def test_a_wildcard_may_stand_inside_a_metadata_namespace():
+    # Inside a metadata namespace everything is an ordinary namespace again,
+    # and `document/!changelog/?` allocating sequential notes is the use case
+    # the container reading exists for. The name itself is still chosen rather
+    # than counted -- `a/?` is what allocates, and it is not a metadata name.
+    parsed = keys.parse("a/!changelog/?", allow_wildcard=True)
+    assert parsed.wildcard_parent == "a/!changelog"
 
 
 @pytest.mark.parametrize(
@@ -407,9 +445,13 @@ def test_only_a_whole_segment_is_last():
         assert keys.is_valid(key)
 
 
-def test_a_metadata_segment_cannot_be_the_last_one():
-    with raises_rendered(InvalidKeyError, "document part"):
-        keys.parse("a/!title/?last", allow_last=True)
+def test_last_may_stand_inside_a_metadata_namespace():
+    # `?last` names the last key at a point, and a metadata namespace has
+    # levels like any other, so `a/!changelog/?last` is the newest note in it.
+    assert keys.parse("a/!changelog/?last", allow_last=True).has_last
+    assert keys.resolve_last("a/!changelog/?last", {"a/!changelog": "22"}.get) == (
+        "a/!changelog/22"
+    )
 
 
 def test_nothing_below_the_key_is_a_refusal_naming_it():
@@ -511,8 +553,33 @@ def test_subtree_bounds_are_adjacent_code_points():
     assert ord(keys._AFTER_DELIMITER) == ord(keys.DELIMITER) + 1
 
 
-def test_subtree_range_of_metadata_key_uses_the_document_key():
-    assert keys.subtree_range("a/b/!title") == keys.subtree_range("a/b")
+def test_subtree_range_of_a_metadata_key_bounds_its_own_subtree():
+    # It used to fall back to the document key, on the reading that nothing
+    # below a `!` was a place of its own. A metadata namespace has a subtree
+    # like anything else now, and this is what bounds it.
+    assert keys.subtree_range("a/b/!changelog") == ("a/b/!changelog/", "a/b/!changelog0")
+
+
+def test_meta_range_bounds_what_a_plain_delete_takes():
+    # Subtract it from the subtree and what is left is what the delete keeps.
+    lo, hi = keys.meta_range("a")
+    assert lo <= "a/!title" < hi
+    assert lo <= "a/!changelog/22" < hi
+    assert not lo <= "a/b" < hi
+    assert not lo <= "a/b/!title" < hi
+
+
+def test_meta_range_bounds_are_adjacent_code_points():
+    assert ord(keys._AFTER_META_PREFIX) == ord(keys.META_PREFIX) + 1
+
+
+def test_the_root_has_a_meta_range_though_it_has_no_subtree_bounds():
+    # Its metadata is spelled without a leading delimiter, so it is an
+    # ordinary contiguous stretch of the order even though nothing bounds the
+    # root's subtree from above.
+    lo, hi = keys.meta_range(keys.ROOT)
+    assert lo <= "!title" < hi
+    assert not lo <= "a" < hi
 
 
 # -- numeric segments ----------------------------------------------------

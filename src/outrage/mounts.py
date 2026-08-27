@@ -67,6 +67,7 @@ from .store import (
     Store,
     _cut,
     _within,
+    entry_kind,
     store_file,
 )
 
@@ -491,18 +492,30 @@ def _outward_keys(found: Resolved, names: list[str]) -> list[str]:
 
 
 def _rows_at(store: Store, key: str, key_range: KeyRange) -> int:
-    """The rows sitting *at* ``key``: its document, and its own metadata.
+    """The rows sitting *at* ``key``: its document, and its whole metadata subtree.
 
-    :meth:`~outrage.store.Store.descendant_count` counts neither of them -- a
-    key's metadata does not lie beneath the key -- so a caller measuring the
-    stretch from *outside* the store has to put them back. They are asked of a
-    level rather than of a count because that is where metadata appears, and
-    tested against the range here rather than by the store because a level takes
-    no range: this named the keys, so it can say which of them the range keeps.
+    :meth:`~outrage.store.Store.descendant_count` counts none of them -- it
+    reports what a plain delete would keep, and a plain delete takes the key's
+    metadata unit with it -- so a caller measuring the stretch from *outside*
+    the store has to put them back.
+
+    **Recursive, because a metadata namespace has a subtree.** ``a/!changelog``
+    may hold notes, and those are inside the unit too; what a walk into one
+    leaves out is exactly what ``descendant_count`` there does count, so the
+    two add up to everything at and below it. Asked of a level rather than of a
+    count because that is where metadata appears, and tested against the range
+    here rather than by the store because a level takes no range: this named
+    the keys, so it can say which of them the range keeps.
+
+    By the segment, not by ``kind``: a metadata namespace holding only things
+    below it is an *implicit* entry, and is no less part of the unit for it.
     """
-    at = [key] if store.exists(key) else []
-    at += [entry.key for entry in store.list_keys(key).items if entry.kind == "metadata"]
-    return sum(1 for name in at if _in_range(name, key_range))
+    at = 1 if store.exists(key) and _in_range(key, key_range) else 0
+    for entry in store.list_keys(key).items:
+        if entry_kind(entry.key) == "metadata":
+            at += _rows_at(store, entry.key, key_range)
+            at += store.descendant_count(entry.key, key_range=key_range)
+    return at
 
 
 def _kept_below(segment: Segment, found: Resolved) -> int:
@@ -1115,7 +1128,7 @@ class MountedStore(Store):
         rule as :meth:`level_entry`: where the answer is about the namespace
         rather than about a store, only the table can give it.
         """
-        beneath = 0 if keys.parse(key).is_metadata else self.descendant_count(key)
+        beneath = self.descendant_count(key)
         if beneath:
             return KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
         return KeyNotFoundError("key-not-found", key=key)

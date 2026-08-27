@@ -247,6 +247,104 @@ def test_schema_3_metadata_keys_migrate_to_a_segment(tmp_path):
     assert version == sqlite_module.SCHEMA_VERSION
 
 
+#: The table as it stood at schema 5, before a metadata name became one
+#: segment. Spelled out for the reason ``_SCHEMA_BEFORE_SORT_KEY`` is: building
+#: an old store out of the current definition tests the migration against a
+#: database that never existed.
+_SCHEMA_5 = """
+CREATE TABLE documents (
+  key        TEXT PRIMARY KEY,
+  doc_key    TEXT NOT NULL,
+  meta_name  TEXT,
+  parent     TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  format     TEXT,
+  updated_at TEXT NOT NULL,
+  sort_key   TEXT NOT NULL
+);
+"""
+
+
+def test_schema_5_metadata_names_are_re_split_at_the_first_segment(tmp_path):
+    # Schema 5 read everything below the first `!` as the name, so `a/!x/y` was
+    # metadata called `x/y`. Schema 6 makes the name one segment and puts the
+    # rest in `meta_path`. No key moves; the two derived columns are rebuilt.
+    def schema_5_meta_name(key):
+        head, sep, tail = key.partition("/!")
+        return tail if sep else None
+
+    written = ["a", "a/!title", "a/!changelog", "a/!changelog/22", "a/!changelog/22/!title"]
+    con = sqlite3.connect(tmp_path / "store.sqlite")
+    con.executescript(_SCHEMA_5)
+    con.executemany(
+        "INSERT INTO documents (key, doc_key, meta_name, parent, content, format, "
+        "updated_at, sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+            (
+                keys.parse(k).key,
+                keys.parse(k).doc_key,
+                schema_5_meta_name(k),
+                keys.parse(k).parent,
+                "body",
+                "markdown",
+                "2026-01-01T00:00:00+00:00",
+                keys.sort_form(k),
+            )
+            for k in written
+        ],
+    )
+    con.execute("PRAGMA user_version=5")
+    con.commit()
+    con.close()
+
+    opened = SqliteStore(tmp_path)
+
+    assert (
+        opened.connection.execute("PRAGMA user_version").fetchone()[0]
+        == sqlite_module.SCHEMA_VERSION
+    )
+    split = {
+        row[0]: (row[1], row[2])
+        for row in opened.connection.execute("SELECT key, meta_name, meta_path FROM documents")
+    }
+    assert split == {
+        "a": (None, None),
+        "a/!title": ("title", None),
+        "a/!changelog": ("changelog", None),
+        "a/!changelog/22": ("changelog", "22"),
+        "a/!changelog/22/!title": ("changelog", "22/!title"),
+    }
+    # And the store now answers about the namespace, which is what the columns
+    # are for: the note is a document inside the changelog, not a name on `a`.
+    assert [e.key for e in opened.list_keys("a/!changelog").items] == ["a/!changelog/22"]
+    survey = opened.get_documents(BoundedSubtree("a/!changelog"), meta_name="title")
+    assert [e.key for e in survey.items] == ["a/!changelog/22/!title"]
+
+
+def test_a_store_migrated_to_schema_6_has_the_schema_a_fresh_one_has(tmp_path):
+    # The reason `_migrate_meta_namespace` rebuilds rather than ALTERs: a file
+    # carrying a column a fresh store does not is one an older build writes a
+    # wrong `meta_name` into without complaint.
+    con = sqlite3.connect(tmp_path / "store.sqlite")
+    con.executescript(_SCHEMA_5)
+    con.execute("PRAGMA user_version=5")
+    con.commit()
+    con.close()
+    with SqliteStore(tmp_path):
+        pass
+
+    with SqliteStore(tmp_path / "fresh") as s:
+        s.store_document("a", "body")
+
+    def shape(directory):
+        conn = sqlite3.connect(directory / "store.sqlite")
+        columns = [tuple(row[1:5]) for row in conn.execute("PRAGMA table_info(documents)")]
+        indexes = sorted(row[1] for row in conn.execute("PRAGMA index_list(documents)"))
+        return columns, indexes
+
+    assert shape(tmp_path) == shape(tmp_path / "fresh")
+
+
 def test_schema_4_sort_keys_are_rebuilt_for_the_marked_sort_form(tmp_path):
     # Schema 4 joined the sort form with `/` and leaned on `!` sorting below
     # every character a segment could begin with. Schema 5 marks every segment
@@ -286,7 +384,10 @@ def test_schema_4_sort_keys_are_rebuilt_for_the_marked_sort_form(tmp_path):
 
     opened = SqliteStore(tmp_path)
 
-    assert opened.connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert (
+        opened.connection.execute("PRAGMA user_version").fetchone()[0]
+        == sqlite_module.SCHEMA_VERSION
+    )
     rows = dict(opened.connection.execute("SELECT key, sort_key FROM documents"))
     assert set(rows) == set(written)
     for key, sort_key in rows.items():

@@ -200,8 +200,8 @@ ESSENTIALS = """\
 A store for notes, designs and task context that outlives a single session.
 
 Keys are hierarchical, slash delimited strings such as `context/<id>/design`,
-and `/` is the only separator there is. A segment beginning with `!` is
-metadata about the document above it, such as `context/<id>/design/!title`.
+and `/` is the only separator there is. A segment beginning with `!` opens a
+metadata namespace on the key above it, such as `context/<id>/design/!title`.
 Intermediate keys exist implicitly; nothing needs creating before writing
 beneath one.
 
@@ -229,8 +229,12 @@ A segment may hold almost any text - the exclusions are `/`, the control
 characters below tab, and a leading `?`, which is reserved for `?` and `?last`
 and for the filters a key will grow - so a key can mirror a real name without
 transforming it. Keys are not file paths, but they read like them: notes about a file can
-live at `notes/src/myfile.py`. A path may continue below a metadata segment,
-and everything under one is metadata rather than a document.
+live at `notes/src/myfile.py`. Inside a metadata namespace everything is an
+ordinary namespace again - documents, `?`, `?last` and their own metadata - so
+`a/!changelog/22` is a document kept in `a`'s changelog, and `a` carries
+`changelog`, not `changelog/22`. Only the segments before the first `!` count
+towards depth, so a survey reaches a namespace's contents by being scoped
+inside it rather than by asking for more depth.
 
 A survey also reports the untitled documents under `without_meta`, as a count
 and a few examples covering the same stretch of the store as the page itself.
@@ -552,7 +556,8 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             Field(
                 description=(
                     "Short title, stored as the key's '!title' metadata in the "
-                    "same write. Omit only when key is itself metadata."
+                    "same write. A metadata key takes one too, and it becomes "
+                    "that namespace's own '!title'."
                 )
             ),
         ] = None,
@@ -807,7 +812,7 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
     @server.tool(
         annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=True),
         description=(
-            "Delete a key. A document key takes its metadata with it. Descendants "
+            "Delete a key. A key takes its whole metadata subtree with it. Descendants "
             "survive unless `recursive` is set. Note that storing an empty "
             "document does not delete anything."
         ),

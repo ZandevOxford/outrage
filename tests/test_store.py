@@ -316,9 +316,11 @@ def test_title_argument_overwrites_a_previous_title(store):
     assert store.retrieve_document("a/b/!title").content == "Second"
 
 
-def test_title_argument_is_rejected_on_a_metadata_key(store):
-    with pytest.raises(ValueError, match="cannot attach a title"):
-        store.store_document("a/b/!summary", "text", title="Nope")
+def test_title_argument_describes_a_metadata_namespace(store):
+    # Metadata used not to take a title, on the grounds that it did not nest.
+    # It nests now: `!` opens a namespace, and a namespace can be described.
+    store.store_document("a/b/!changelog", "text", title="What changed")
+    assert store.retrieve_document("a/b/!changelog/!title").content == "What changed"
 
 
 def test_a_failed_title_write_leaves_no_document_behind(store):
@@ -1849,6 +1851,137 @@ def test_a_title_on_the_root_with_no_document_is_named_in_a_check(file_store, tm
     report = maintenance.check(file_store)
     notes = [p for p in report.problems if p.summary == "some metadata has no document"]
     assert notes and notes[0].detail == "/"
+
+
+# -- a metadata namespace ------------------------------------------------
+
+
+@pytest.fixture
+def namespaced(store):
+    """A document carrying a metadata namespace with documents inside it.
+
+    The shape the whole section is about: ``a`` carries ``changelog``, the
+    changelog describes itself, and it holds numbered notes which carry titles
+    of their own.
+    """
+    store.store_document("a", "the document", title="A")
+    store.store_document("a/!changelog", "what this log is", title="Changelog")
+    store.store_document("a/!changelog/22", "the twenty-second note", title="Note 22")
+    store.store_document("a/b", "a child document", title="B")
+    return store
+
+
+def test_a_metadata_namespace_holds_documents_of_its_own(namespaced):
+    assert namespaced.retrieve_document("a/!changelog/22").content == "the twenty-second note"
+    assert namespaced.retrieve_document("a/!changelog").content == "what this log is"
+
+
+def test_a_metadata_namespace_lists_like_any_other_level(namespaced):
+    level = namespaced.list_keys("a/!changelog")
+    assert [(entry.key, entry.kind) for entry in level.items] == [
+        ("a/!changelog/!title", "metadata"),
+        ("a/!changelog/22", "document"),
+    ]
+
+
+def test_a_survey_does_not_descend_into_a_metadata_namespace(namespaced):
+    # The default John chose: from `a`, the changelog's own entries are not
+    # `a`'s titles, and the notes inside it are not `a`'s documents. Reaching
+    # them is a matter of *scope*, not of depth.
+    titles = namespaced.get_documents(meta_name=["title"])
+    assert [entry.key for entry in titles.items] == ["a/!title", "a/b/!title"]
+
+    documents = namespaced.get_documents()
+    assert [entry.key for entry in documents.items] == ["a", "a/b"]
+
+
+def test_a_survey_scoped_inside_a_metadata_namespace_reads_it(namespaced):
+    # Scoped there, the same two questions are asked *relative to the scope*:
+    # `22` is a document and its `!title` is a title. Every row in this subtree
+    # carries `changelog`, so the stored split cannot answer either one.
+    scoped = BoundedSubtree("a/!changelog")
+    assert [entry.key for entry in namespaced.get_documents(scoped).items] == [
+        "a/!changelog",
+        "a/!changelog/22",
+    ]
+    assert [
+        entry.key for entry in namespaced.get_documents(scoped, meta_name=["title"]).items
+    ] == ["a/!changelog/!title", "a/!changelog/22/!title"]
+
+
+def test_keys_missing_meta_reads_a_metadata_namespace_from_inside_it(namespaced):
+    namespaced.store_document("a/!changelog/23", "no title on this one")
+    assert namespaced.keys_missing_meta(BoundedSubtree("a/!changelog")).items == [
+        "a/!changelog/23"
+    ]
+    # And from outside it, the notes are not documents to be missing a title.
+    assert namespaced.keys_missing_meta().items == []
+
+
+def test_nothing_below_a_metadata_segment_adds_depth(namespaced):
+    # Levels and depth are decoupled: the namespace is reached by a level walk
+    # and never by asking for more depth. So a depth filter that reaches `a`
+    # reaches its whole metadata subtree, which is the cost that was accepted.
+    shallow = namespaced.get_documents(BoundedSubtree("a", depth=0), meta_name=["title"])
+    assert [entry.key for entry in shallow.items] == ["a/!title"]
+
+    inside = namespaced.get_documents(BoundedSubtree("a/!changelog", depth=0))
+    assert [entry.key for entry in inside.items] == ["a/!changelog", "a/!changelog/22"]
+
+
+def test_a_number_is_allocated_inside_a_metadata_namespace(namespaced):
+    # `document/!changelog/?` allocating sequential notes is the use case the
+    # container reading exists for. A metadata *name* is still chosen rather
+    # than counted -- what is numbered here is an ordinary child.
+    assert namespaced.store_document("a/!changelog/?", "the next note") == "a/!changelog/23"
+
+
+def test_last_child_skips_metadata_at_whatever_level_it_stands(namespaced):
+    # `?last` stands where an ordinary segment goes, so inside the changelog it
+    # names the newest note and never the changelog's own title.
+    assert namespaced.last_child("a/!changelog") == "22"
+    assert namespaced.last_child("a") == "b"
+
+
+def test_a_metadata_namespace_holding_only_documents_reads_as_a_container(store):
+    store.store_document("a/!changelog/22", "a note")
+    with raises_rendered(KeyNotFoundError, "lie beneath it"):
+        store.retrieve_document("a/!changelog")
+
+
+def test_descendant_count_of_a_metadata_namespace_counts_its_contents(namespaced):
+    # What a plain delete would keep. The changelog's own title goes with it,
+    # so it is not counted; the note and the note's title stay, so they are.
+    assert namespaced.descendant_count("a/!changelog") == 2
+    # And from `a`, the whole metadata unit goes, leaving only the child.
+    assert namespaced.descendant_count("a") == 2
+
+
+def test_a_plain_delete_of_a_metadata_namespace_keeps_what_is_inside_it(namespaced):
+    # The same rule as a document: the key and its own metadata are one unit
+    # and go together, and everything else below waits for `recursive`. That
+    # is what `descendant_count` reports, and what a front end refuses on.
+    assert namespaced.delete("a/!changelog") == ["a/!changelog", "a/!changelog/!title"]
+    assert [entry.key for entry in namespaced.get_documents().items] == ["a", "a/b"]
+    assert namespaced.descendant_count("a/!changelog") == 2
+
+    assert namespaced.delete("a/!changelog", recursive=True) == [
+        "a/!changelog/22",
+        "a/!changelog/22/!title",
+    ]
+
+
+def test_deleting_a_document_takes_its_whole_metadata_subtree(namespaced):
+    # One unit: what a delete leaves behind is what `descendant_count` reports.
+    assert namespaced.delete("a") == [
+        "a",
+        "a/!changelog",
+        "a/!changelog/!title",
+        "a/!changelog/22",
+        "a/!changelog/22/!title",
+        "a/!title",
+    ]
+    assert [entry.key for entry in namespaced.get_documents().items] == ["a/b"]
 
 
 # -- the interface -------------------------------------------------------

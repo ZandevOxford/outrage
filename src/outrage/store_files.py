@@ -94,6 +94,8 @@ from .store import (
     _logged,
     _scope,
     _within,
+    entry_kind,
+    meta_reader,
     resolve_directory,
 )
 
@@ -138,6 +140,7 @@ class _Row:
     key: str
     doc_key: str
     meta_name: str | None
+    meta_path: str | None
     format: str | None
     updated_at: str
     sort_key: str
@@ -332,11 +335,20 @@ class FilesystemStore(Store):
         return str(max(used) + 1) if used else "1"
 
     def _child_names(self, parent: str) -> list[str]:
-        """The final segments of the keys immediately below ``parent``."""
+        """The final segments of the keys immediately below ``parent``.
+
+        Metadata is left out by the **segment**, not by ``is_metadata``, which
+        says where the whole key first turns to metadata and not whether this
+        child does: every key inside ``a/!changelog`` is metadata by that
+        reading, and ``22`` there is an ordinary child a number is allocated
+        beside.
+        """
         return [
-            child.key.rpartition(keys.DELIMITER)[2] if child.key else child.key
+            name
             for child in self._level(parent)
-            if not keys.parse(child.key).is_metadata
+            if not (
+                name := child.key.rpartition(keys.DELIMITER)[2] if child.key else child.key
+            ).startswith(keys.META_PREFIX)
         ]
 
     @_logged("delete")
@@ -356,15 +368,20 @@ class FilesystemStore(Store):
         """
         parsed = keys.parse(key)
         within = _within(key_range)
-        rows = list(self._subtree_rows(parsed.doc_key, measure=False))
+        rows = list(self._subtree_rows(parsed.key, measure=False))
 
-        if parsed.is_metadata:
-            targets = [row for row in rows if row.key == parsed.key]
-        else:
-            targets = [row for row in rows if row.doc_key == parsed.doc_key]
-            if recursive:
-                below = _below(parsed.doc_key)
-                targets += [row for row in rows if below(row.doc_key)]
+        # The key's own row and its whole metadata subtree: one unit, whatever
+        # the key is, because metadata has no meaning once what it describes is
+        # gone. What ``recursive`` adds is everything else below.
+        lo, hi = keys.meta_range(parsed.key)
+        below = _below(parsed.key)
+        targets = [
+            row
+            for row in rows
+            if row.key == parsed.key
+            or lo <= row.key < hi
+            or (recursive and below(row.key))
+        ]
 
         removed = []
         for row in targets:
@@ -417,18 +434,23 @@ class FilesystemStore(Store):
 
     @_logged("descendant_count")
     def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
-        """The rows strictly below ``key``, counted over a walk of its subtree.
+        """What a plain delete of ``key`` would keep, counted over a walk.
+
+        Everything below ``key``, less the metadata unit a non-recursive delete
+        takes with it -- which is why a document's own title has never counted
+        here. See :func:`outrage.keys.meta_range`.
 
         Unmeasured: a count has no use for a document's length, and measuring
         would make asking how much is below a key cost reading all of it.
         """
-        doc_key = keys.parse(key).doc_key
-        below = _below(doc_key)
+        scope = keys.parse(key).key
+        below = _below(scope)
+        lo, hi = keys.meta_range(scope)
         within = _within(key_range)
         return sum(
             1
-            for row in self._subtree_rows(doc_key, measure=False)
-            if below(row.doc_key) and within(row.sort_key)
+            for row in self._subtree_rows(scope, measure=False)
+            if below(row.key) and not lo <= row.key < hi and within(row.sort_key)
         )
 
     @_logged("retrieve_document")
@@ -452,7 +474,7 @@ class FilesystemStore(Store):
         parsed = keys.parse(key)
         path = self._file_for(parsed.key)
         if path is None:
-            beneath = 0 if parsed.is_metadata else self.descendant_count(parsed.key)
+            beneath = self.descendant_count(parsed.key)
             if beneath:
                 raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
             raise KeyNotFoundError("key-not-found", key=key)
@@ -691,12 +713,18 @@ class FilesystemStore(Store):
         wanted = None if meta_name is None else _names(meta_name)
         deep_enough = _depth_test(subtree)
         within = _within(key_range)
+        seen_from = meta_reader(_scope(subtree.key))
+
+        def carries(row: _Row) -> bool:
+            name, path = seen_from(row.key, row.meta_name, row.meta_path)
+            if wanted is None:
+                return name is None
+            return name in wanted and path is None
+
         return [
             row
             for row in self._subtree_rows(_scope(subtree.key), measure=True)
-            if deep_enough(row)
-            and (row.meta_name in wanted if wanted is not None else row.meta_name is None)
-            and within(row.sort_key)
+            if deep_enough(row) and carries(row) and within(row.sort_key)
         ]
 
     def _missing(
@@ -712,12 +740,17 @@ class FilesystemStore(Store):
         """
         carried: dict[str, set[str]] = {}
         for row in self._subtree_rows(_scope(subtree.key), measure=False):
-            if row.meta_name is not None:
-                carried.setdefault(row.doc_key, set()).add(row.meta_name)
+            # From the last segment, against the key it hangs from. A value of
+            # `title` is the key `<document>/!title` and nothing else, at any
+            # scope, so this needs no reading of where the whole key first
+            # turned to metadata.
+            parent, _, name = row.key.rpartition(keys.DELIMITER)
+            if name.startswith(keys.META_PREFIX):
+                carried.setdefault(parent, set()).add(name[len(keys.META_PREFIX) :])
         return [
             row
             for row in self._selection(subtree, key_range, meta_name=None)
-            if not carried.get(row.doc_key, _NOTHING).intersection(names)
+            if not carried.get(row.key, _NOTHING).intersection(names)
         ]
 
     # -- walking ---------------------------------------------------------
@@ -778,6 +811,7 @@ class FilesystemStore(Store):
             key=parsed.key,
             doc_key=parsed.doc_key,
             meta_name=parsed.meta_name,
+            meta_path=parsed.meta_path,
             format=bulk.FORMAT_BY_EXTENSION.get(path.suffix),
             updated_at=datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds"),
             sort_key=keys.sort_form(parsed.key),
@@ -1041,17 +1075,17 @@ def _depth_test(subtree: BoundedSubtree) -> Callable[[_Row], bool]:
     return deep_enough
 
 
-def _below(doc_key: str) -> Callable[[str], bool]:
-    """A test for the keys strictly beneath ``doc_key``.
+def _below(scope: str) -> Callable[[str], bool]:
+    """A test for the keys strictly beneath ``scope``.
 
     A half-open string range for an ordinary key, since everything under ``a``
     starts with ``a/`` -- which is what keeps ``a/b`` from picking up
     ``a/beta``. For the root it is a test against the root itself: everything
     else is beneath it, and no string bounds every key from above.
     """
-    if doc_key == keys.ROOT:
+    if scope == keys.ROOT:
         return lambda candidate: candidate != keys.ROOT
-    lo, hi = keys.subtree_range(doc_key)
+    lo, hi = keys.subtree_range(scope)
     return lambda candidate: lo <= candidate < hi
 
 
@@ -1064,7 +1098,7 @@ def _entry(row: _Row) -> Entry:
     """A row as it appears in its parent's listing."""
     return Entry(
         key=row.key,
-        kind="metadata" if row.meta_name is not None else "document",
+        kind=entry_kind(row.key),
         size=row.chars,
         format=row.format,
         updated_at=row.updated_at,

@@ -40,7 +40,7 @@ from pathlib import Path
 
 from . import keys
 from .errors import OutrageError
-from .store import Store, store_file
+from .store import Store, entry_kind, store_file
 
 
 class CheckError(OutrageError, RuntimeError):
@@ -198,11 +198,19 @@ def _check_rows(store: Store, report: Report) -> None:
     attached: dict[str, None] = {}
 
     for row in store.audit_rows():
-        if row.meta_name is None:
+        # By the last segment, not by ``meta_name``: a metadata namespace holds
+        # documents of its own, and ``a/!changelog/22`` is one of them. The
+        # census counts what each row *is*; ``meta_name`` says where its key
+        # first turns to metadata, which is a different question.
+        if entry_kind(row.key) == "document":
             report.documents += 1
             documents.add(row.key)
         else:
             report.metadata += 1
+            # Against ``doc_key``, so the whole metadata subtree hangs from the
+            # document it describes. That is what keeps an implicit metadata
+            # key with content below it -- ``a/!changelog`` holding notes --
+            # from being reported as an orphan of its own.
             attached.setdefault(row.doc_key)
         report.characters += row.chars
 

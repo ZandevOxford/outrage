@@ -175,11 +175,10 @@ def test_store_document_titles_the_key_it_allocated(server):
     assert (stored["key"], stored["title_key"]) == ("tmp/1", "tmp/1/!title")
 
 
-def test_store_document_rejects_a_title_on_a_metadata_key(server):
-    message = call_expecting_error(
-        server, "store_document", key="a/b/!summary", content="text", title="Nope"
-    )
-    assert "cannot attach a title" in message
+def test_store_document_titles_a_metadata_namespace(server):
+    call(server, "store_document", key="a/b/!changelog", content="text", title="What changed")
+    title = call(server, "retrieve_document", key="a/b/!changelog/!title")
+    assert title["content"] == "What changed"
 
 
 def test_store_document_detects_json(server):

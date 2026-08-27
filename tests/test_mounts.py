@@ -1341,6 +1341,10 @@ _SPLIT_CORPUS = [
     ("!title", "The store itself"),
     ("a", "a body"),
     ("a/!title", "A"),
+    ("a/!changelog", "what changed"),
+    ("a/!changelog/!title", "Changelog"),
+    ("a/!changelog/22", "note twenty-two"),
+    ("a/!changelog/22/!title", "Note 22"),
     ("a/2", "a two"),
     ("a/10", "a ten"),
     ("a/10/!title", "A ten"),
@@ -1435,6 +1439,7 @@ def _read(store, key):
 _SPLIT_KEYS = [
     "", "a", "a/2", "a/10", "a/b", "a/b/c", "a/b/c/d", "a/z", "a-x",
     "b", "b/1", "context", "context/10", "z", "nope", "a/b/nope",
+    "a/!changelog", "a/!changelog/22",
 ]
 
 _SPLIT_RANGES = [
@@ -1455,6 +1460,7 @@ _SPLIT_RANGES = [
 _SPLIT_SUBTREES = [
     EVERYTHING,
     BoundedSubtree(key="a"),
+    BoundedSubtree(key="a/!changelog"),
     BoundedSubtree(key="a", depth=1),
     BoundedSubtree(key="a", depth=2),
     BoundedSubtree(key="a/b"),

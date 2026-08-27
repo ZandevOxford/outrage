@@ -373,7 +373,7 @@ that someone remembers it then.
 ## Key namespace
 
 The key namespace is an arbitrary string, and `/` is the only delimiter there
-is. A segment beginning with `!` is metadata about the document above it.
+is. A segment beginning with `!` opens a metadata namespace on the key above it.
 
 For example:
 
@@ -458,14 +458,27 @@ A key is a Unicode string naming a position in a hierarchy.
     `context/1` are one key rather than two. `0` normalises to itself, and a
     segment that merely contains digits - `v01`, `1.2` - is left alone. This
     applies to metadata names too.
-* A segment beginning with `!` names **metadata** about the document its
-  segment sits under. A key splits at its **first** `!` segment: everything
-  before it is the document key, everything from it onward is the metadata
-  name. A key that is *only* metadata segments is metadata on the root, so
-  `!title` is the store's own title. A path may continue below a metadata segment, so `a/!title/b` is an
-  entry on `a` named `title/b`. **Everything below a `!` is metadata** - there
-  is no document under a metadata path, which is what keeps `meta_name IS NULL`
-  an honest test for "is a document".
+* A segment beginning with `!` opens a **metadata namespace** on the key above
+  it. Inside that namespace everything is an ordinary namespace again -
+  documents, `?`, `?last` and their own metadata - so `a/!changelog/22` is a
+  document kept inside `a`'s changelog and `a/!changelog/22/!title` is that
+  document's title. A key that is *only* metadata segments is metadata on the
+  root, so `!title` is the store's own title.
+  * The **name is one segment**: a key splits at its first `!`, and what
+    follows that segment is a path within the namespace. So `a` carries
+    `changelog`, not `changelog/22`, and "is this the metadata value" is
+    `meta_name` set with `meta_path` empty rather than `meta_name` set alone.
+  * **Metadata changes exactly one thing, which is depth**: `!` and everything
+    after it counts none. Levels and depth are therefore decoupled - reaching
+    `a/!changelog/22` from `a` is two level walks and no depth - and that is
+    what keeps depth across a mount boundary a constant offset.
+  * A key and its whole metadata subtree are **one unit**: contiguous in the
+    order ahead of that key's siblings, picked up together by any depth filter,
+    and taken together by a plain delete. What a delete needs `recursive` for
+    is everything else below, a metadata namespace's own contents included.
+  * "Is this a document" is therefore **scope-relative**: it is the part of the
+    key below the key a read was scoped at that must hold no `!`. A survey so
+    descends into a metadata namespace only when it is scoped inside one.
 * Sort order is **lexicographic by Unicode code point**, over a derived sort
   form rather than over the key. See Sorting.
 * A segment **beginning** with `?` is reserved for the store to interpret
@@ -692,7 +705,8 @@ saved call matters less than the fact that a separate call is one that can be
 forgotten: the title is what makes a document findable later, so the convention
 has to be reachable without remembering it. It follows an allocated number, so
 `context/?/design` with a title titles `context/1/design`, not the wildcard. It
-is rejected on a key that is itself metadata, since metadata does not nest.
+is accepted on a metadata key too, where it becomes that namespace's own
+`!title`: a namespace can be described like anything else.
 
 **Get documents.** Matches the given key and everything beneath it at any depth,
 with an optional depth limit. Recursion is the default because the motivating
@@ -728,8 +742,9 @@ This can be stored in a single table, with an index on the key.
 ```sql
 CREATE TABLE documents (
   key        TEXT PRIMARY KEY,  -- full key, including any '!meta' segments
-  doc_key    TEXT NOT NULL,     -- key with the metadata segment removed
-  meta_name  TEXT,              -- metadata name, or NULL for a document
+  doc_key    TEXT NOT NULL,     -- key up to its first metadata segment
+  meta_name  TEXT,              -- first metadata name, or NULL for a document
+  meta_path  TEXT,              -- what follows it, or NULL for the value itself
   parent     TEXT NOT NULL,     -- derived: enclosing key
   content    TEXT NOT NULL,
   format     TEXT,              -- 'markdown' | 'json'
@@ -738,7 +753,7 @@ CREATE TABLE documents (
 );
 
 CREATE INDEX idx_documents_parent ON documents(parent);
-CREATE INDEX idx_documents_meta   ON documents(meta_name, doc_key);
+CREATE INDEX idx_documents_meta   ON documents(meta_name, meta_path, doc_key);
 CREATE INDEX idx_documents_sort   ON documents(sort_key);
 ```
 
@@ -756,7 +771,9 @@ access patterns are plain indexed lookups:
   reads `parent = ? AND key <> ?` against the same value. No other key is its
   own parent, so the second test excludes nothing anywhere else.
 * *Get one metadata name across a subtree* is a range scan on
-  `(meta_name, doc_key)`.
+  `(meta_name, meta_path, doc_key)`. A read scoped *inside* a metadata
+  namespace is the one case those columns cannot answer - every row there
+  carries the same `meta_name` - and it re-splits the key per row instead.
 
 Deriving these columns instead of using `LIKE 'A/B%'` also avoids the prefix
 collision where `A/B` would match `A/Beta`.

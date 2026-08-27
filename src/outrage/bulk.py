@@ -183,11 +183,17 @@ def walk(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
     It is also the only walk that reports metadata beside the documents, which
     is what an export needs: a survey by title is worth nothing if the export it
     came from left every title behind.
+
+    **It descends into a metadata entry too**, because a ``!`` segment opens a
+    namespace and there may be documents inside it. It used to stop at one, on
+    the reading that metadata was a leaf; an export then dropped ``a/!x/y``
+    without saying so. The shape on disk is the ordinary
+    document-with-children one -- ``!x.md`` beside the directory ``!x/`` --
+    which is what ``FilesystemStore`` already writes.
     """
     for entry in levels(opened, key):
         yield entry
-        if entry.kind != "metadata":
-            yield from walk(opened, entry.key)
+        yield from walk(opened, entry.key)
 
 
 # -- the mapping ---------------------------------------------------------
