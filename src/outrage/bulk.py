@@ -33,11 +33,21 @@ from __future__ import annotations
 import os
 import tempfile
 from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from . import keys, messages, store
 from .errors import OutrageError
+from .store import (
+    CONFLICTS,
+    FAILED,
+    READ,
+    SKIP,
+    SKIPPED,
+    STOP,
+    STOPPED,
+    WROTE,
+    Transfer,
+)
 
 #: How much of a collection one internal query asks for. The command line reads
 #: to the end regardless, so this only decides how many round trips that takes
@@ -82,61 +92,8 @@ TEMP_PREFIX = ".outrage-"
 #: the caller named.
 TRAVERSAL = (".", "..")
 
-#: Leave what is already there and carry on. The default, because a transfer
-#: that overwrites by accident cannot be undone from here.
-SKIP = "skip"
-
-#: Replace what is already there.
-OVERWRITE = "overwrite"
-
-#: Stop the whole transfer at the first collision, having written what came
-#: before it. What a caller wants when a collision means the wrong target.
-STOP = "stop"
-
-#: What to do about something already there, at the far end.
-CONFLICTS = (SKIP, OVERWRITE, STOP)
-
-#: The outcome recorded on a :class:`Transfer`: it crossed.
-WROTE = "wrote"
-
-#: Something was already there and ``SKIP`` was asked for.
-SKIPPED = "skipped"
-
-#: This one could not cross, and the rest were still tried. ``reason`` says why.
-FAILED = "failed"
-
-#: Read and held for a file that is not written yet. A pack cannot report a
-#: document as written while it goes -- nothing is written until the whole
-#: parquet file is -- and calling it ``wrote`` in the meantime would be a
-#: report an interrupted run made untrue. See :func:`pack_tree`.
-READ = "read"
-
-#: The collision that ended the run, under ``STOP``. Reported rather than
-#: swallowed, so a caller can see where the transfer stopped and why; nothing
-#: after it is yielded at all.
-STOPPED = "stopped"
-
-
 class UnmappableError(OutrageError, ValueError):
     """Raised when a key has no file it can be written to, or a file no key."""
-
-
-@dataclass(frozen=True, slots=True)
-class Transfer:
-    """One document crossing the boundary, or not, and why not.
-
-    Yielded per document rather than collected, so that a front end can print
-    an export as it happens and an interrupted one has reported exactly what it
-    did. ``action`` is what happened to the store or the file tree, and it says
-    nothing about a dry run: a caller that wrote nothing knows it, and it is the
-    only one that can render the difference honestly.
-    """
-
-    action: str
-    key: str | None
-    path: Path | None
-    reason: str | None = None
-    characters: int = 0
 
 
 #: One document as :meth:`outrage.store_parquet.ParquetStore.build` takes it:
@@ -300,7 +257,152 @@ def key_for_path(
     return keys.parse(candidate).key, format
 
 
-# -- out of the store ----------------------------------------------------
+# -- store to store ------------------------------------------------------
+
+
+def copied(
+    source: store.Store,
+    target: store.Store,
+    subtree: store.BoundedSubtree = store.EVERYTHING,
+    *,
+    key_range: store.KeyRange = store.UNBOUNDED,
+    prefix: str | None = None,
+    on_conflict: str = SKIP,
+    dry_run: bool = False,
+) -> Iterator[Transfer]:
+    """Every document ``subtree`` names, from one store into another.
+
+    What :meth:`outrage.store.Store.copy_from` does unless a backend has a
+    better way, and it is called through that rather than directly: a caller
+    naming both ends in one breath cannot be overridden by the end that knows
+    how it is written. Here because the walk is here -- a store's own reads
+    are pages and this is the caller that legitimately wants all of them.
+
+    Read with :func:`outrage.store.read_all` rather than through
+    ``get_documents``, for the reason ``context/11/decisions`` settled: a
+    subtree read selects documents *or* named metadata, so there is no "all of
+    it, metadata included" read, and a copy missing every ``!title`` leaves a
+    store nothing can be surveyed by. One read per document is what
+    completeness costs.
+
+    A collision is decided on the key at the far end, by asking the target,
+    which is the only thing that knows -- and the answer a *tree* gives is
+    about the key rather than about one spelling of its file, so a document
+    already there as ``a.md`` collides with one arriving as json.
+    """
+    _check_conflict(on_conflict)
+
+    for key, format in _selected(source, subtree, key_range):
+        landed = _grafted(key, prefix)
+        path = target.located(landed, format) or source.located(key, format)
+
+        if target.exists(landed):
+            if on_conflict == STOP:
+                yield Transfer(STOPPED, landed, path, "already stored")
+                return
+            if on_conflict == SKIP:
+                yield Transfer(SKIPPED, landed, path, "already stored")
+                continue
+
+        try:
+            excerpt = store.read_all(source, key)
+        except (OutrageError, OSError) as exc:
+            # A key can go between the listing and the read; the walk is not a
+            # snapshot and nothing here pretends it is.
+            yield Transfer(FAILED, landed, path, _reason(exc))
+            continue
+
+        if not dry_run:
+            try:
+                target.store_document(
+                    landed, excerpt.content, excerpt.format, updated_at=excerpt.updated_at
+                )
+            except (OutrageError, OSError) as exc:
+                # A key the far end cannot hold -- a segment no path can spell,
+                # a link where a file has to go, a store that refuses writes --
+                # fails on its own and the rest are still tried, which is what
+                # every transfer here does. ``OSError`` beside the store's own
+                # refusals because one end may be a directory of files, and
+                # "a plain file is in the way of this key's directory" is the
+                # far end answering rather than this one breaking.
+                yield Transfer(FAILED, landed, path, _reason(exc))
+                continue
+        yield Transfer(
+            READ if target.writes_deferred else WROTE,
+            landed,
+            path,
+            characters=len(excerpt.content),
+        )
+
+
+def _reason(exc: OutrageError | OSError) -> str:
+    """What to print beside a failed transfer, from either kind of refusal.
+
+    A store's own refusal has a written sentence and a code;
+    :func:`outrage.messages.render` is what turns one into report text. An
+    ``OSError`` has only what the operating system said, which is the honest
+    thing to pass on rather than dress up.
+    """
+    return messages.render(exc) if isinstance(exc, OutrageError) else str(exc)
+
+
+def _grafted(key: str, prefix: str | None) -> str:
+    """``key`` as it is spelled beneath ``prefix``, or unchanged without one.
+
+    An empty prefix is the root, which prefixes nothing, and is tested rather
+    than left to normalisation: joining it would spell a leading delimiter and
+    reach the same answer by tidying up after itself.
+    """
+    if not prefix or prefix == keys.ROOT:
+        return key
+    parsed = keys.parse(prefix).key
+    return parsed if key == keys.ROOT else f"{parsed}{keys.DELIMITER}{key}"
+
+
+def _selected(
+    opened: store.Store, subtree: store.BoundedSubtree, key_range: store.KeyRange
+) -> Iterator[tuple[str, str | None]]:
+    """The keys a transfer covers: the one asked for, then everything below it.
+
+    ``walk`` lists what is *below* a key, which is what a listing wants and not
+    what a copy does - a key is a document and a container at once, and copying
+    `project` without the document stored at `project` is the silent partial
+    answer wearing a transfer's clothes. Read at one character, so that asking
+    whether it is there costs no more than asking.
+
+    **A key holding nothing itself is dropped by its size rather than by its
+    kind**, which is the one thing this does not share with :func:`_exported`.
+    An implicit container holds nothing, and so does a *mount point* whose
+    store has no root document - and a mount point is not implicit, it is a
+    key of its own kind. Going by kind alone would report every empty mount as
+    a document that failed to read, which is a copy inventing a fault out of a
+    table's shape.
+
+    The two bounds are filtered over the walk rather than pushed into it,
+    because the walk is ``list_keys`` all the way down and a level listing
+    takes neither - which is exactly why it reports the containers and the
+    metadata that a subtree read does not.
+    """
+    inside = store._within(key_range)
+    scope = keys.ROOT if subtree.key is None else keys.parse(subtree.key).key
+    try:
+        # The key asked for is included like any other: `None` names the root
+        # rather than meaning "no key at all", so a store that titles itself is
+        # copied with its title.
+        root = opened.retrieve_document(scope, max_chars=1)
+    except store.KeyNotFoundError:
+        pass
+    else:
+        if inside(keys.sort_form(root.key)):
+            yield root.key, root.format
+
+    for entry in walk(opened, subtree.key):
+        if entry.size is None:
+            continue
+        if subtree.depth is not None and keys.depth(entry.key) - keys.depth(scope) > subtree.depth:
+            continue
+        if inside(keys.sort_form(entry.key)):
+            yield entry.key, entry.format
 
 
 def export_tree(
@@ -313,51 +415,33 @@ def export_tree(
 ) -> Iterator[Transfer]:
     """Write every document at and below ``key`` into ``target``, one per file.
 
-    Yields a ``Transfer`` per document as it goes. Nothing already in ``target``
-    is replaced unless ``on_conflict`` says so, because the directory belongs to
-    the caller rather than to the store: an export into a working directory is
-    otherwise a way to lose work that was never in the store to begin with.
+    A copy into a directory of files, which is what an export always was: the
+    mapping it is written by is :class:`~outrage.store_files.FilesystemStore`'s
+    now, so this is where the target directory becomes a store and nothing
+    more. Yields a ``Transfer`` per document as it goes.
+
+    Nothing already in ``target`` is replaced unless ``on_conflict`` says so,
+    because the directory belongs to the caller rather than to the store: an
+    export into a working directory is otherwise a way to lose work that was
+    never in the store to begin with. What is already there is decided **by
+    key** rather than by one spelling of its file, so a document held as
+    ``a.md`` collides with one arriving as json.
+
+    ``FilesystemStore`` is imported here rather than at the top of the module
+    because it is written in terms of this one -- the mapping lives here and
+    the store is expressed in it, not the other way round.
     """
-    _check_conflict(on_conflict)
-    target = Path(target).expanduser()
-    written: set[Path] = set()
+    from .store_files import FilesystemStore
 
-    for stored, format in _exported(opened, key):
-        try:
-            path = contained_path(target, path_for_key(stored, format), stored)
-        except UnmappableError as exc:
-            # `reason` is report text, like "already there" beside it, so it is
-            # rendered here. The default namer is the right one: bulk transfer
-            # is a command line operation over one store directory, and there
-            # is no mount table for a key to be named against.
-            yield Transfer(FAILED, stored, None, messages.render(exc))
-            continue
-
-        if path in written or path.exists() or path.is_symlink():
-            reason = "already there" if path not in written else "two keys, one path"
-            if on_conflict == STOP:
-                yield Transfer(STOPPED, stored, path, reason)
-                return
-            if on_conflict == SKIP:
-                yield Transfer(SKIPPED, stored, path, reason)
-                continue
-
-        try:
-            excerpt = store.read_all(opened, stored)
-        except OutrageError as exc:
-            # A key can go between the listing and the read; the walk is not a
-            # snapshot and nothing here pretends it is.
-            yield Transfer(FAILED, stored, path, messages.render(exc))
-            continue
-
-        if not dry_run:
-            try:
-                _write_file(path, excerpt.content)
-            except OSError as exc:
-                yield Transfer(FAILED, stored, path, str(exc))
-                continue
-        written.add(path)
-        yield Transfer(WROTE, stored, path, characters=len(excerpt.content))
+    # A dry run must leave no directory behind: it reports what an export
+    # *would* do, and creating the target is doing some of it.
+    with FilesystemStore(Path(target).expanduser(), create=not dry_run) as tree:
+        yield from tree.copy_from(
+            opened,
+            store.BoundedSubtree(key),
+            on_conflict=on_conflict,
+            dry_run=dry_run,
+        )
 
 
 def _exported(opened: store.Store, key: str | None) -> Iterator[tuple[str, str | None]]:
@@ -427,55 +511,44 @@ def import_tree(
 ) -> Iterator[Transfer]:
     """Store every file below ``source``, keyed by its path under ``key``.
 
-    Yields a ``Transfer`` per file as it goes. ``on_conflict`` decides what
-    happens to a key that already holds something, one key at a time: ``stop``
-    is the strictest available and stops at the first, having kept what it
-    already wrote. There is deliberately no mode that refuses the whole import
-    unless every key is free - a directory could be walked twice to promise
-    that, but a source that is a stream cannot be, and a guarantee that
-    quietly weakens when the source changes is worse than one never offered.
-    ``--dry-run`` is what answers the question that mode was reaching for.
+    The inverse of :func:`export_tree` and the same operation: a copy *out of*
+    a directory of files into a store. Yields a ``Transfer`` per file as it
+    goes.
+
+    ``hidden`` is whether a dotfile is a document. False by default, which is
+    the policy for a **foreign** tree -- one this package did not write, where
+    a ``.git`` or a ``.DS_Store`` is not a document and importing it as one is
+    a surprise. The root document is exempt either way, since it is named by
+    its extension alone.
+
+    What the tree does not hold as a document does not cross and is not
+    reported: a symlink, a half-written file, a name that is not a key, and the
+    second file claiming a key two of them claim. ``outrage check`` over the
+    tree is what names those, because deciding what a directory holds is the
+    store's question rather than the transfer's.
+
+    ``on_conflict`` decides what happens to a key that already holds something,
+    one key at a time: ``stop`` is the strictest available and stops at the
+    first, having kept what it already wrote. There is deliberately no mode
+    that refuses the whole import unless every key is free - a directory could
+    be walked twice to promise that, but a source that is a stream cannot be,
+    and a guarantee that quietly weakens when the source changes is worse than
+    one never offered. ``--dry-run`` is what answers the question that mode was
+    reaching for.
     """
-    _check_conflict(on_conflict)
+    from .store_files import FilesystemStore
+
     source = Path(source).expanduser()
     if not source.is_dir():
+        # Before a store is opened over it, because opening one *makes* the
+        # directory: an import from a mistyped path would otherwise succeed at
+        # importing nothing and leave the mistake behind as a new empty tree.
         raise SourceMissingError("import-source-missing", source=str(source))
-    seen: set[str] = set()
 
-    for path, kind in _entries(source, hidden=hidden):
-        relative = PurePosixPath(path.relative_to(source).as_posix())
-        if kind == "symlink":
-            # Not followed, in either sense: a link out of the tree imports
-            # something the caller did not name, and a link back into it
-            # imports the same documents twice under two keys.
-            yield Transfer(SKIPPED, None, path, "symlink")
-            continue
-        try:
-            stored, format = key_for_path(relative, key)
-        except keys.InvalidKeyError as exc:
-            yield Transfer(FAILED, None, path, messages.render(exc))
-            continue
-        try:
-            content = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as exc:
-            # The store holds text. A file that is not text is reported rather
-            # than mangled into it, and the run carries on around it.
-            yield Transfer(FAILED, stored, path, str(exc))
-            continue
-
-        if stored in seen or opened.exists(stored):
-            reason = "two files, one key" if stored in seen else "already stored"
-            if on_conflict == STOP:
-                yield Transfer(STOPPED, stored, path, reason)
-                return
-            if on_conflict == SKIP:
-                yield Transfer(SKIPPED, stored, path, reason)
-                continue
-
-        if not dry_run:
-            opened.store_document(stored, content, format)
-        seen.add(stored)
-        yield Transfer(WROTE, stored, path, characters=len(content))
+    with FilesystemStore(source, hidden=hidden, create=False) as tree:
+        yield from opened.copy_from(
+            tree, prefix=key, on_conflict=on_conflict, dry_run=dry_run
+        )
 
 
 def _entries(root: Path, *, hidden: bool, top: bool = True) -> Iterator[tuple[Path, str]]:
@@ -622,26 +695,17 @@ def _check_conflict(on_conflict: str) -> None:
 
 
 __all__ = [
-    "CONFLICTS",
     "Document",
     "EXTENSION_BY_FORMAT",
-    "FAILED",
     "FORMAT_BY_EXTENSION",
-    "OVERWRITE",
     "PAGE",
     "Packable",
-    "READ",
-    "SKIP",
-    "SKIPPED",
-    "STOP",
-    "STOPPED",
     "TEMP_PREFIX",
     "TRAVERSAL",
-    "WROTE",
     "SourceMissingError",
-    "Transfer",
     "UnmappableError",
     "contained_path",
+    "copied",
     "documents_from_store",
     "documents_from_tree",
     "export_tree",

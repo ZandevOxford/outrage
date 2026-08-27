@@ -611,8 +611,8 @@ def _conflict_option(parser: argparse.ArgumentParser, what: str) -> None:
     parser.add_argument(
         "--on-conflict",
         dest="on_conflict",
-        choices=bulk.CONFLICTS,
-        default=bulk.SKIP,
+        choices=store.CONFLICTS,
+        default=store.SKIP,
         help=(
             f"{what} left alone (skip, the default), replaced (overwrite), or "
             f"stops the run where it stands (stop)."
@@ -1072,7 +1072,7 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def _report_transfers(
-    transfers: Iterator[bulk.Transfer],
+    transfers: Iterator[store.Transfer],
     args: argparse.Namespace,
     out: TextIO,
     *,
@@ -1108,17 +1108,17 @@ def _report_transfers(
         print(f"outrage: {prefix}{counts}", file=sys.stderr)
     # A run that stopped or failed is not a run that worked, and the exit
     # status is the only part of that a script can see.
-    return 1 if counted.get(bulk.FAILED) or counted.get(bulk.STOPPED) else 0
+    return 1 if counted.get(store.FAILED) or counted.get(store.STOPPED) else 0
 
 
 #: What to call each action when counting them up, as against when reporting
 #: one as it happens: "5 written" rather than "5 wrote".
 _NOUNS = {
-    bulk.READ: "packed",
-    bulk.WROTE: "written",
-    bulk.SKIPPED: "skipped",
-    bulk.FAILED: "failed",
-    bulk.STOPPED: "stopped",
+    store.READ: "packed",
+    store.WROTE: "written",
+    store.SKIPPED: "skipped",
+    store.FAILED: "failed",
+    store.STOPPED: "stopped",
 }
 
 
@@ -1127,10 +1127,10 @@ def _verb(action: str, dry_run: bool) -> str:
     if not dry_run:
         return action
     return {
-        bulk.WROTE: "would write",
-        bulk.READ: "would pack",
-        bulk.SKIPPED: "would skip",
-        bulk.STOPPED: "would stop",
+        store.WROTE: "would write",
+        store.READ: "would pack",
+        store.SKIPPED: "would skip",
+        store.STOPPED: "would stop",
     }.get(
         action, action
     )

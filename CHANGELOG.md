@@ -4,6 +4,67 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## 0.3.0 - unreleased
 
+### `Store.copy_from`: every bulk move is a copy between two stores
+
+New, and the shape the export, the import, the repack and the backup are being
+folded onto. `store.copy_from(source, subtree, key_range=..., prefix=...,
+on_conflict=..., dry_run=...)` writes every document the source holds in that
+selection into `store`, yielding a `Transfer` per document as it goes.
+
+A method on the **target** rather than a function over a pair, because the
+target is what knows how it is written: a database takes a document at a time,
+a file written whole takes all of them and writes once. Either end may be any
+`Store`, so a copy out of a mount table spanning three files lands in one, and
+a copy into one is routed to the store that owns each key. Metadata crosses as
+the keys it is, and so does each document's `updated_at`.
+
+**Breaking for library callers:** `Transfer` and the transfer vocabulary -
+`SKIP`, `OVERWRITE`, `STOP`, `CONFLICTS`, `WROTE`, `SKIPPED`, `FAILED`, `READ`,
+`STOPPED` - have moved from `outrage.bulk` to `outrage.store`, which is where
+the operation they describe now lives. `outrage.bulk` keeps the file mapping
+and the walkers. `Store.located(key, format)` is new beside them: the file a
+store keeps a key in, or None where naming one would mean nothing, which is
+what lets a transfer report key to path when a directory of files is one end.
+
+### `outrage export` and `outrage import` are copies
+
+Both are now thin wrappers over `copy_from` with a `FilesystemStore` on one
+end, which is what they always were by hand. What changes for a user:
+
+* **An import carries each file's modification time** as the document's
+  `updated_at`, and an export sets each file's mtime from the document. The
+  export/import round trip is lossless over content, format *and* timestamp; it
+  used to stamp everything with the moment the import ran.
+* **An import reports in key order**, not in the file walk's name order.
+* **A conflict is decided by key**, at either end, so a document held as
+  `a.md` collides with one arriving as json.
+* **An export refuses to write through a symlink** at the target path rather
+  than replacing it, and says so per document. It used to skip one under
+  `skip` and replace it under `overwrite`.
+* **What a tree does not hold as a document is no longer reported.** A
+  symlink, a file that is not UTF-8 text, a name that no key spells, and the
+  second file of two claiming one key are passed over silently, where the old
+  file-by-file walk named each one. `FilesystemStore.check_file` knows all but
+  the first, and nothing a person can run reaches it over a foreign tree yet.
+
+`outrage pack` is unchanged and still builds through `ParquetStore.build`.
+
+### A write may carry the timestamp it is copying
+
+`Store.store_document` takes `updated_at`, an ISO 8601 timestamp normalised to
+UTC at second precision; left out, it is now, which is what every ordinary
+write means by it. It exists for the write that is a **copy** of a document
+that already exists: a transfer between two stores carries the timestamp
+across, or the copy says the whole corpus was written the moment it was
+copied - the one fact about a document that nothing else can reconstruct. A
+title written in the same call is stamped with it too.
+
+Every backend honours it: SQLite writes the column, `ParquetStore.build`
+records it, and a tree of files sets the file's mtime, which is what that
+backend's `updated_at` *is*. Deliberately **not** offered by the MCP
+`store_document` tool or by `outrage set` - a client writing a document is
+writing it now.
+
 ### A `!` segment opens a metadata namespace
 
 **Breaking**, and it changes what a metadata name *is*. A segment beginning

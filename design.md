@@ -52,6 +52,20 @@ mapping `outrage.bulk` writes a tree with, expressed as a store, so that moving
 documents between a database and a directory is a copy rather than a fourth
 hand-written walker.
 
+**Moving documents in bulk is one operation, and it is a method on the store
+being written to.** `Store.copy_from` takes a source store, the same subtree
+and range bounds a read takes, and yields a report per document as it crosses.
+It is on the target rather than a function over a pair because the target is
+what knows how it is written: a database takes a document at a time and a file
+written whole takes all of them and writes once, and each answers the same ask
+appropriately. Since any `Store` can be either end, an export is a copy into a
+directory of files, an import is a copy out of one, a repack is a copy into a
+file built whole, and a backup is a copy into a fresh store of the same class.
+A document's `updated_at` crosses with it, which is what makes a copy a copy
+rather than a restamping. `outrage export` and `outrage import` are wrappers
+over it; `outrage pack` still builds a parquet file its own way, because what a
+half-built file written whole looks like as a copy target is not settled.
+
 A backend is not the only kind of `Store`. `outrage.mounts.MountedStore` is one
 too, and it keeps nothing at all: it answers the same interface and routes to
 the stores behind it. That is what the abstraction bought - a mount table in
@@ -306,8 +320,12 @@ refuses them rather than climbing out of the directory it was given.
 
 Paths are written from the top of the namespace rather than from the key being
 exported, so an exported subtree imports back to where it came from and the
-import's key prefix is what grafts it elsewhere. This is not a backup: it
-carries documents and formats, and nothing else the database holds about them.
+import's key prefix is what grafts it elsewhere. Both directions are
+`copy_from` with a `FilesystemStore` on one end, so a document's `updated_at`
+crosses too - as the file's modification time, which is what a tree's
+`updated_at` *is*. What the round trip still does not carry is what only a
+database holds about a document, and what a tree does not hold as a document
+at all: a symlink, a file that is not text, a name that no key spells.
 
 The last of these removes most of the friction in first time setup. The server
 has to be launched by an absolute path into whichever environment it was

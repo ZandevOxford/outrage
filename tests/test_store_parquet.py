@@ -646,7 +646,7 @@ def test_packing_a_store_carries_metadata_and_timestamps_across(sqlite, tmp_path
     """
     target = tmp_path / "packed.parquet"
     transfers = list(bulk.pack(target, bulk.documents_from_store(sqlite)))
-    assert {t.action for t in transfers} == {bulk.READ}
+    assert {t.action for t in transfers} == {store_module.READ}
     assert len(transfers) == len(CORPUS)
 
     with ParquetStore(tmp_path, filename="packed.parquet") as store:
@@ -655,6 +655,63 @@ def test_packing_a_store_carries_metadata_and_timestamps_across(sqlite, tmp_path
             assert store.retrieve_document(key).updated_at == (
                 sqlite.retrieve_document(key).updated_at
             )
+
+
+def test_a_parquet_store_is_a_source_a_copy_reads_whole(sqlite, parquet, tmp_path):
+    """A reference base copied back out, key for key and stamp for stamp.
+
+    The direction that needs nothing new: a copy asks its source only for the
+    reads every store answers, so a file written whole is a source like any
+    other even though nothing can be written to it.
+    """
+    with SqliteStore(tmp_path / "back") as target:
+        transfers = list(target.copy_from(parquet))
+        assert {t.action for t in transfers} == {store_module.WROTE}
+        for key, content in CORPUS:
+            assert target.retrieve_document(key).content == content
+            assert target.retrieve_document(key).updated_at == (
+                sqlite.retrieve_document(key).updated_at
+            )
+
+
+def test_copying_into_a_parquet_store_is_refused_document_by_document(parquet, tmp_path):
+    """Read only is read only, and the copy says which end refused.
+
+    Not a hole in ``copy_from``: a parquet file is written whole and the way
+    in is a build, which is what ``pack`` is. What matters here is that the
+    refusal arrives per document with the backend's own sentence rather than
+    as an exception ending a transfer half way through.
+    """
+    with SqliteStore(tmp_path / "source") as source:
+        source.store_document("zzz/nothing-here", "body")
+        transfers = list(parquet.copy_from(source))
+    assert [t.action for t in transfers] == [store_module.FAILED]
+    assert "written whole rather than updated in place" in transfers[0].reason
+
+
+def test_a_built_timestamp_is_normalised_like_a_written_one(tmp_path):
+    """A build is a write, so the stamp it records has the one spelling too.
+
+    The rows are bisected in key order and read back as strings; a file whose
+    timestamps were whatever its caller happened to spell would compare
+    against a store's own by luck.
+    """
+    target = tmp_path / "built.parquet"
+    ParquetStore.build(
+        target,
+        [
+            ("a", "one", None, "2020-01-02T05:04:05+02:00"),
+            ("b", "two", None, "2020-01-02T03:04:05"),
+        ],
+    )
+    with ParquetStore(tmp_path, filename="built.parquet") as store:
+        assert store.retrieve_document("a").updated_at == "2020-01-02T03:04:05+00:00"
+        assert store.retrieve_document("b").updated_at == "2020-01-02T03:04:05+00:00"
+
+
+def test_a_built_timestamp_that_is_not_one_is_refused(tmp_path):
+    with pytest.raises(ValueError, match="ISO 8601"):
+        ParquetStore.build(tmp_path / "built.parquet", [("a", "one", None, "yesterday")])
 
 
 def test_packing_a_store_and_packing_its_export_reach_the_same_store(sqlite, tmp_path):
@@ -686,7 +743,7 @@ def test_a_pack_that_is_interrupted_leaves_no_store_behind(sqlite, tmp_path):
     """
     target = tmp_path / "partial.parquet"
     transfers = bulk.pack(target, bulk.documents_from_store(sqlite))
-    assert next(transfers).action == bulk.READ
+    assert next(transfers).action == store_module.READ
     transfers.close()
     assert not target.exists()
 
@@ -723,7 +780,7 @@ def test_packing_a_tree_reports_what_it_could_not_map(tmp_path):
 
     reported = list(bulk.documents_from_tree(source))
     actions = {transfer.action for transfer, _ in reported}
-    assert actions == {bulk.READ, bulk.SKIPPED, bulk.FAILED}
+    assert actions == {store_module.READ, store_module.SKIPPED, store_module.FAILED}
     assert [row for _, row in reported if row is not None] == [("good", "fine", "markdown", None)]
 
 

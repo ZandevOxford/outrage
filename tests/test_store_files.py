@@ -27,6 +27,7 @@ import pytest
 
 from conftest import answers_alike, page_facts, raises_rendered, walk_documents, walk_level
 from outrage import bulk, keys, maintenance
+from outrage import store as store_module
 from outrage.store import (
     EVERYTHING,
     UNBOUNDED,
@@ -230,14 +231,14 @@ def test_the_round_trip_through_an_export_is_the_same_store(sqlite, tmp_path):
     """
     out = tmp_path / "out"
     transfers = list(bulk.export_tree(sqlite, None, out))
-    assert [t.key for t in transfers if t.action != bulk.WROTE] == []
+    assert [t.key for t in transfers if t.action != store_module.WROTE] == []
 
     with FilesystemStore(out) as exported, SqliteStore(tmp_path / "back") as second:
         assert [(e.key, e.content) for e in exported.get_documents(limit=None).items] == [
             (e.key, e.content) for e in sqlite.get_documents(limit=None).items
         ]
         for transfer in bulk.import_tree(second, out):
-            assert transfer.action == bulk.WROTE
+            assert transfer.action == store_module.WROTE
         assert [(e.key, e.content, e.format) for e in second.get_documents(limit=None).items] == [
             (e.key, e.content, e.format) for e in sqlite.get_documents(limit=None).items
         ]

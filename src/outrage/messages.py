@@ -298,6 +298,15 @@ def _key_escapes_tree(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
     )
 
 
+@template("key-is-a-symlink")
+def _key_is_a_symlink(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
+    return (
+        f"key {name(key)!r} would be written to {path!r}, which is a symbolic "
+        f"link: a link is not a document here, so writing through it would "
+        f"replace something this store never held"
+    )
+
+
 @template("key-segment-is-traversal")
 def _key_segment_is_traversal(name: Namer, /, *, key: str, segment: str, **_: Any) -> str:
     return (

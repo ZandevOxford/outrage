@@ -9,11 +9,14 @@ status and the report are the only parts of that a caller ever sees.
 
 from __future__ import annotations
 
+import os
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 import pytest
 
 from outrage import bulk
+from outrage import store as store_module
 from outrage.keys import InvalidKeyError
 from outrage.store import FORMATS
 from outrage.store_sqlite import SqliteStore
@@ -168,6 +171,42 @@ def test_export_and_import_round_trip_every_key(populated, tmp_path):
     for key, excerpt in before.items():
         assert after[key].content == excerpt.content
         assert after[key].format == excerpt.format
+        # And the timestamp, which the round trip used to drop: an export
+        # dates each file by the document it holds and an import dates each
+        # document by the file it came from, so the corpus that comes back is
+        # the corpus that left.
+        assert after[key].updated_at == excerpt.updated_at
+
+
+def test_an_export_dates_each_file_by_the_document_it_holds(store, tmp_path):
+    """The mtime *is* a tree's ``updated_at``, so a copy into one sets it.
+
+    Which is what makes the round trip above lossless, and what makes an
+    exported tree sort by age the way the store does.
+    """
+    store.store_document("a/b", "body", updated_at="2020-01-02T03:04:05+00:00")
+    target = tmp_path / "out"
+
+    list(bulk.export_tree(store, None, target))
+
+    written = datetime.fromtimestamp((target / "a/b.md").stat().st_mtime, UTC)
+    assert written.isoformat(timespec="seconds") == "2020-01-02T03:04:05+00:00"
+
+
+def test_an_import_dates_each_document_by_the_file_it_came_from(store, tmp_path):
+    """A change of meaning, and a deliberate one.
+
+    An import used to stamp everything with the moment it ran. It carries the
+    file's own time now, for the same reason every other copy carries a
+    timestamp: the alternative says the whole corpus was written at once, and
+    that is the one fact about a document nothing can reconstruct afterwards.
+    """
+    source = a_tree(tmp_path / "in")
+    os.utime(source / "project.md", (1577934245, 1577934245))  # 2020-01-02T03:04:05Z
+
+    list(bulk.import_tree(store, source))
+
+    assert store.retrieve_document("project").updated_at == "2020-01-02T03:04:05+00:00"
 
 
 def test_export_leaves_a_file_that_is_already_there(populated, tmp_path):
@@ -177,7 +216,7 @@ def test_export_leaves_a_file_that_is_already_there(populated, tmp_path):
 
     moved = list(bulk.export_tree(populated, "project", target))
 
-    assert (bulk.SKIPPED, "project/!title") in actions(moved)
+    assert (store_module.SKIPPED, "project/!title") in actions(moved)
     assert (target / "project/!title.md").read_text() == "mine, not the store's"
 
 
@@ -186,9 +225,9 @@ def test_export_overwrites_when_asked(populated, tmp_path):
     (target / "project").mkdir(parents=True)
     (target / "project/!title.md").write_text("mine, not the store's")
 
-    moved = list(bulk.export_tree(populated, "project", target, on_conflict=bulk.OVERWRITE))
+    moved = list(bulk.export_tree(populated, "project", target, on_conflict=store_module.OVERWRITE))
 
-    assert (bulk.WROTE, "project/!title") in actions(moved)
+    assert (store_module.WROTE, "project/!title") in actions(moved)
     assert (target / "project/!title.md").read_text() == "The project"
 
 
@@ -197,9 +236,9 @@ def test_export_stops_at_the_first_conflict_and_says_where(populated, tmp_path):
     (target / "project").mkdir(parents=True)
     (target / "project/!title.md").write_text("mine")
 
-    moved = list(bulk.export_tree(populated, "project", target, on_conflict=bulk.STOP))
+    moved = list(bulk.export_tree(populated, "project", target, on_conflict=store_module.STOP))
 
-    assert moved[-1].action == bulk.STOPPED
+    assert moved[-1].action == store_module.STOPPED
     assert moved[-1].key == "project/!title"
     # Everything before the conflict stands, and nothing after it was tried:
     # what a stop can honestly promise, and all of it.
@@ -212,7 +251,7 @@ def test_export_dry_run_writes_nothing_and_reports_the_same(populated, tmp_path)
 
     moved = list(bulk.export_tree(populated, None, target, dry_run=True))
 
-    assert [transfer.action for transfer in moved] == [bulk.WROTE] * 5
+    assert [transfer.action for transfer in moved] == [store_module.WROTE] * 5
     assert not target.exists()
 
 
@@ -222,7 +261,7 @@ def test_export_refuses_to_write_outside_the_directory(store, tmp_path):
 
     moved = list(bulk.export_tree(store, None, target))
 
-    assert [transfer.action for transfer in moved] == [bulk.FAILED]
+    assert [transfer.action for transfer in moved] == [store_module.FAILED]
     assert not (tmp_path / "escaped.md").exists()
 
 
@@ -235,8 +274,8 @@ def test_export_reports_a_file_it_cannot_write_and_carries_on(populated, tmp_pat
 
     moved = list(bulk.export_tree(populated, None, target))
 
-    assert (bulk.FAILED, "project/!title") in actions(moved)
-    assert (bulk.WROTE, "notes/src/myfile.py") in actions(moved)
+    assert (store_module.FAILED, "project/!title") in actions(moved)
+    assert (store_module.WROTE, "notes/src/myfile.py") in actions(moved)
 
 
 def test_export_writes_as_it_goes(populated, tmp_path):
@@ -267,10 +306,13 @@ def test_import_stores_a_directory_as_documents(store, tmp_path):
 
     moved = list(bulk.import_tree(store, tmp_path / "in"))
 
+    # Key order, because an import is a copy out of a store now and a store
+    # walks its keys. It used to be the file walk's name order, which put
+    # `project.md` after the directory `project/` that sorts beside it.
     assert [transfer.key for transfer in moved] == [
+        "project",
         "project/!title",
         "project/reference/env",
-        "project",
     ]
     assert store.retrieve_document("project").content == "# Project"
     assert store.retrieve_document("project/reference/env").format == "json"
@@ -290,7 +332,7 @@ def test_import_leaves_a_key_that_already_holds_something(store, tmp_path):
 
     moved = list(bulk.import_tree(store, tmp_path / "in"))
 
-    assert (bulk.SKIPPED, "project") in actions(moved)
+    assert (store_module.SKIPPED, "project") in actions(moved)
     assert store.retrieve_document("project").content == "mine, not the file's"
 
 
@@ -298,22 +340,23 @@ def test_import_overwrites_when_asked(store, tmp_path):
     a_tree(tmp_path / "in")
     store.store_document("project", "mine, not the file's")
 
-    moved = list(bulk.import_tree(store, tmp_path / "in", on_conflict=bulk.OVERWRITE))
+    moved = list(bulk.import_tree(store, tmp_path / "in", on_conflict=store_module.OVERWRITE))
 
-    assert (bulk.WROTE, "project") in actions(moved)
+    assert (store_module.WROTE, "project") in actions(moved)
     assert store.retrieve_document("project").content == "# Project"
 
 
 def test_import_stops_at_the_first_conflict_keeping_what_it_wrote(store, tmp_path):
     a_tree(tmp_path / "in")
-    store.store_document("project", "mine")
+    store.store_document("project/reference/env", "mine")
 
-    moved = list(bulk.import_tree(store, tmp_path / "in", on_conflict=bulk.STOP))
+    moved = list(bulk.import_tree(store, tmp_path / "in", on_conflict=store_module.STOP))
 
-    assert moved[-1].action == bulk.STOPPED
-    assert moved[-1].key == "project"
-    # The two files before it in the walk are in, and stay in. A stop is not a
+    assert moved[-1].action == store_module.STOPPED
+    assert moved[-1].key == "project/reference/env"
+    # The two keys before it in the walk are in, and stay in. A stop is not a
     # rollback, and the report is what makes the difference visible.
+    assert store.exists("project")
     assert store.exists("project/!title")
 
 
@@ -322,7 +365,7 @@ def test_import_dry_run_stores_nothing(store, tmp_path):
 
     moved = list(bulk.import_tree(store, tmp_path / "in", dry_run=True))
 
-    assert [transfer.action for transfer in moved] == [bulk.WROTE] * 3
+    assert [transfer.action for transfer in moved] == [store_module.WROTE] * 3
     assert not store.exists("project")
 
 
@@ -344,43 +387,65 @@ def other_keys(transfers) -> set[str]:
     return {transfer.key for transfer in transfers if transfer.key is not None}
 
 
-def test_import_does_not_follow_a_symlink(store, tmp_path):
+@pytest.mark.parametrize(
+    "make, key",
+    [
+        pytest.param(
+            lambda source, outside: (source / "link").symlink_to(outside),
+            "link/elsewhere",
+            id="symlink",
+        ),
+        pytest.param(
+            lambda source, outside: (source / "binary.md").write_bytes(b"\xff\xfe\x00\x01"),
+            "binary",
+            id="not-text",
+        ),
+        pytest.param(
+            lambda source, outside: (source / "?.md").write_text("allocate me a number"),
+            # No key to ask about: `?` is not one, which is the whole reason
+            # the file cannot be a document.
+            None,
+            id="not-a-key",
+        ),
+    ],
+)
+def test_import_takes_what_the_tree_holds_as_a_document_and_nothing_else(
+    store, tmp_path, make, key
+):
+    """What is not a document does not cross, and the run is unharmed.
+
+    **And it is no longer reported**, which is what changed when an import
+    became a copy out of a ``FilesystemStore``. The old walk went file by file
+    and named each one it could not take; the store walks documents, and a
+    symlink, a file that is not UTF-8 text and a name no key spells are not
+    documents to it. ``FilesystemStore.check_file`` is what names the last two
+    today, and nothing a person can run reaches it over a foreign tree - so
+    this is a real loss in what an import tells you, pinned here rather than
+    left to be discovered.
+    """
     source = a_tree(tmp_path / "in")
     outside = tmp_path / "outside"
     outside.mkdir()
     (outside / "elsewhere.md").write_text("not in the tree")
-    (source / "link").symlink_to(outside)
+    make(source, outside)
 
     moved = list(bulk.import_tree(store, source))
 
-    # Reported rather than followed: a link out imports what nobody named, and
-    # a link back in imports the same documents twice under two keys.
-    assert (bulk.SKIPPED, None) in actions(moved)
-    assert not store.exists("link/elsewhere")
-
-
-def test_import_reports_a_file_it_cannot_read_and_carries_on(store, tmp_path):
-    source = a_tree(tmp_path / "in")
-    (source / "binary.md").write_bytes(b"\xff\xfe\x00\x01")
-
-    moved = list(bulk.import_tree(store, source))
-
-    assert (bulk.FAILED, "binary") in actions(moved)
+    if key is not None:
+        assert not store.exists(key)
+    assert other_keys(moved) == {"project", "project/!title", "project/reference/env"}
     # The failure bounds one file, not the run.
-    assert store.exists("project")
+    assert store.retrieve_document("project").content == "# Project"
 
 
-def test_import_reports_a_name_that_is_not_a_key(store, tmp_path):
-    source = a_tree(tmp_path / "in")
-    (source / "?.md").write_text("would ask the store to allocate a number")
+def test_import_takes_the_first_of_two_files_claiming_one_key(store, tmp_path):
+    """One key, one document, and the tree decides which file holds it.
 
-    moved = list(bulk.import_tree(store, source))
-
-    assert (bulk.FAILED, None) in actions(moved)
-    assert [entry.key for entry in bulk.levels(store, None)] == ["project"]
-
-
-def test_import_treats_two_files_landing_on_one_key_as_a_conflict(store, tmp_path):
+    The first in name order, which is the file every *read* of that tree
+    returns too - so an import of it stores what reading it would have shown.
+    The second used to be reported as a conflict; a store has no second
+    document to report.
+    """
     source = tmp_path / "in"
     source.mkdir()
     (source / "a.md").write_text("markdown")
@@ -388,7 +453,7 @@ def test_import_treats_two_files_landing_on_one_key_as_a_conflict(store, tmp_pat
 
     moved = list(bulk.import_tree(store, source))
 
-    assert [transfer.action for transfer in moved] == [bulk.WROTE, bulk.SKIPPED]
+    assert [transfer.action for transfer in moved] == [store_module.WROTE]
     assert store.retrieve_document("a").format == "json"
 
 
@@ -444,7 +509,7 @@ def test_the_root_document_survives_the_round_trip(populated, tmp_path):
     populated.store_document("", "the root body", title="This store")
     transfers = list(bulk.export_tree(populated, None, tmp_path / "out"))
 
-    assert [t.key for t in transfers if t.action == bulk.FAILED] == []
+    assert [t.key for t in transfers if t.action == store_module.FAILED] == []
     assert (tmp_path / "out" / ".md").read_text() == "the root body"
     assert (tmp_path / "out" / "!title.md").read_text() == "This store"
 
