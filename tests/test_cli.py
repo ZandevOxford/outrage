@@ -990,6 +990,35 @@ def test_rm_dry_run_preview_can_be_shortened(tmp_path):
     assert "and 17 more" in output
 
 
+def test_rm_dry_run_shortened_count_holds_the_key_s_own_metadata(tmp_path):
+    from outrage.store_sqlite import SqliteStore
+
+    with SqliteStore(tmp_path / ".outrage") as store:
+        store.store_document("notes", "the index", title="Notes")
+        for number in (1, 2, 3):
+            store.store_document(f"notes/{number}", "body", title=f"Note {number}")
+
+    _, output = run(
+        "rm", "--dir", str(tmp_path / ".outrage"), "notes",
+        "--recursive", "--dry-run", "--limit", "2",
+    )
+
+    # Seven keys are below `notes`: its own title, three documents and theirs.
+    # The preview walks all seven because a recursive delete takes all seven,
+    # so a shortened one has five left. Counting instead what a *plain* delete
+    # would keep left out `notes/!title` and said four -- and at --limit 6 the
+    # same subtraction printed "and -1 more".
+    assert output.count("and below:") == 2
+    assert "and 5 more" in output
+
+    _, output = run(
+        "rm", "--dir", str(tmp_path / ".outrage"), "notes",
+        "--recursive", "--dry-run", "--limit", "6",
+    )
+
+    assert "and 1 more" in output
+
+
 def test_a_malformed_key_is_one_line_and_not_a_traceback(tmp_path, capsys):
     # An invalid key is about the request, so it renders as one line rather
     # than reaching the top of main as a bug would. Two examples have been

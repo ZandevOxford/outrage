@@ -4,6 +4,53 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## 0.3.0 - unreleased
 
+### A `!` segment opens a metadata namespace
+
+**Breaking**, and it changes what a metadata name *is*. A segment beginning
+with `!` used to swallow everything below it: `a/!changelog/22` was metadata
+called `changelog/22`, a key every read returned, no listing showed, and an
+export dropped. It now opens a **namespace** on the key above it, inside which
+everything is an ordinary namespace again - documents, `?`, `?last` and their
+own metadata. So `a` carries `changelog`, `a/!changelog/22` is a document kept
+inside it, and `a/!changelog/22/!title` is that document's title.
+
+Metadata still changes exactly one thing, which is depth: `!` and everything
+after it adds none, so `a`, `a/!changelog` and `a/!changelog/22/!title` are all
+at depth 1. Levels and depth are therefore decoupled - a survey reaches a
+namespace's contents by being *scoped* inside it, not by asking for more depth,
+and that is what keeps depth across a mount boundary a constant offset.
+
+What follows from it:
+
+* **A survey descends into a metadata namespace only when scoped inside one.**
+  `get_documents(meta_name=["title"])` at the root returns document titles, not
+  the titles of things kept inside metadata. Scope it at `a/!changelog` to read
+  those, and there `22` is a document and its `!title` is a title.
+* `list_keys("a/!x")` lists what is in `a/!x`, and `?` and `?last` work at that
+  level: `document/!changelog/?` allocates sequential notes.
+* **A metadata key takes a `title`**, which becomes its own `!title`. Passing
+  one used to be refused, on the grounds that metadata did not nest.
+* **A delete of a key takes its whole metadata subtree** - one unit - and needs
+  `recursive` for anything else below, a metadata namespace's contents
+  included. `descendant_count` reports exactly what a plain delete would keep.
+* **An export round-trips `a/!x/y`.** The shape on disk is the ordinary
+  document-with-children one: `!x.md` beside the directory `!x/`.
+* `outrage.keys.Key.meta_name` is now the **first** metadata segment only, with
+  a new `meta_path` beside it carrying the remainder. **Breaking** for library
+  callers reading `meta_name` on a key with a path below its first `!`; "this
+  key is the metadata value" is `meta_name is not None and not meta_path`, and
+  `Key.is_meta_value` says it in one place.
+* `outrage.keys.relative(key, scope)` parses a key as it is named from inside a
+  scope, which is what makes those questions answerable at any scope, and
+  `outrage.keys.meta_range(key)` bounds the unit a plain delete takes.
+
+**Stores are migrated, and no key moves.** SQLite goes to schema 6 in place,
+rebuilding the table so a migrated file has exactly the schema a fresh one has.
+A parquet file goes to format 2, and **a version 1 file is still read** - both
+columns are derived from `key` on the way in, so nothing is repacked. A tree of
+files is not versioned at all, because there the layout is the format and the
+layout does not change.
+
 ### A mount table is now a `Store`, and `Mounts` is renamed
 
 `outrage.mounts.Mounts` is `outrage.mounts.MountedStore`, and it implements
@@ -84,6 +131,21 @@ colon, which becomes a drive letter.
 * **`level_entry` returned `None` for a key its own listing offers.** The same
   key: `list_keys` splices `lib` into the level above, and asking what that
   entry is got nothing back.
+
+### A shortened delete preview counts what it previews
+
+`outrage rm --recursive --dry-run --limit N` printed a trailing "and N more"
+that was short by the key's own metadata, and **went negative** once the limit
+reached past the ordinary children - "and -1 more" where one key was left. The
+preview walks what a recursive delete takes; the number it was subtracted from
+was `descendant_count`, which reports what a *plain* delete would keep and so
+leaves that unit out. Two questions, one variable.
+
+`outrage.store.Store.descendant_count` gains a keyword-only **`whole_subtree`**,
+false by default, which asks the second one: everything strictly below the key,
+its own metadata unit included. No existing call changes meaning, and the front
+end now counts the set it walks. **Breaking** only for a third-party `Store`
+implementation, which has to accept the keyword.
 
 ## 0.2.0 - 2026-08-24
 

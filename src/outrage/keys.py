@@ -13,11 +13,19 @@ the parent of every top level key. A ``None`` key arriving at a front end means
 the root, so that nothing below the boundary carries two spellings of
 "everywhere".
 
-A segment beginning with ``!`` names metadata about the document its segment
-sits under, so ``context/5/state/!title`` is the title of ``context/5/state``.
-Everything from the first ``!`` segment onward is metadata: paths may continue
-below one, and ``a/!title/b`` is a second metadata entry on ``a`` rather than a
-document.
+A segment beginning with ``!`` opens a **metadata namespace** on the key above
+it, so ``context/5/state/!title`` is the title of ``context/5/state``. Inside
+that namespace everything is an ordinary namespace again -- documents, ``?``,
+``?last`` and their own metadata -- so ``a/!changelog/22`` is a document kept
+inside the ``changelog`` metadata on ``a``, and ``a/!changelog/22/!title`` is
+that document's title. The metadata *name* is therefore one segment: ``a``
+carries ``changelog``, not ``changelog/22``.
+
+**Metadata changes exactly one thing, which is depth**: ``!`` and everything
+after it adds none, so ``a``, ``a/!changelog`` and ``a/!changelog/22/!title``
+are all at depth 1. Levels and depth are decoupled -- reaching that document
+from ``a`` is two level walks and no depth -- and that is what keeps depth
+across a mount boundary a constant offset.
 
 A key being written may use ``?`` as a whole segment to ask the store to
 allocate a number for it, and any key may use ``?last`` as a whole segment to
@@ -45,9 +53,10 @@ from .errors import OutrageError
 #: Separates the segments of a key, and the only separator in the namespace.
 DELIMITER = "/"
 
-#: Begins a segment naming metadata about the document above it. Nothing rests
-#: on where ``!`` sorts any more -- the sort form discriminates metadata
-#: explicitly -- so this is a spelling convention rather than a mechanism.
+#: Opens a metadata namespace on the key above it, inside which everything is
+#: an ordinary namespace again. Nothing rests on where ``!`` sorts any more --
+#: the sort form discriminates metadata explicitly -- so this is a spelling
+#: convention rather than a mechanism, and it may repeat at any level.
 META_PREFIX = "!"
 
 #: Stands in for a segment the store should allocate. Legal only when writing,
@@ -126,7 +135,7 @@ MAX_JOINED_SEGMENTS = 2 * MAX_SEGMENTS
 #: own listing -- which ``store`` does in one place.
 ROOT = ""
 
-#: Sorts immediately after ``/``. Used to bound subtree scans over ``doc_key``
+#: Sorts immediately after ``/``. Used to bound subtree scans over a key
 #: without resorting to LIKE, whose ``_`` wildcard would otherwise match the
 #: underscores that segments are allowed to contain. ``/`` and ``0`` are
 #: adjacent code points, so nothing can sort between ``k + "/"`` and
@@ -134,6 +143,14 @@ ROOT = ""
 #: made of. This bounds *stored keys*, not sort forms, so the markers below do
 #: not reach it.
 _AFTER_DELIMITER = "0"
+
+#: Sorts immediately after ``!``. What bounds a key's own metadata subtree from
+#: above, the way ``_AFTER_DELIMITER`` bounds a whole subtree: every key in
+#: that unit begins ``key/!``, and ``!`` and ``"`` are adjacent code points, so
+#: nothing sorts between the two bounds but the unit. Derived from
+#: :data:`META_PREFIX` rather than written out, so the two cannot drift.
+#: See :func:`meta_range`.
+_AFTER_META_PREFIX = chr(ord(META_PREFIX) + 1)
 
 #: Markers the sort form puts in front of every segment, and the delimiter it
 #: joins them with. All three sort below ``MIN_SEGMENT_CHAR``, so none of them
@@ -282,6 +299,11 @@ def meta_sort_suffix(meta_name: str) -> str:
     ``DELIMITER``, which silently stopped being the sort delimiter in schema 5
     and put every synthesised position in the wrong place.
 
+    **One segment in, one segment out.** That is the contract, and a metadata
+    name is now one segment by construction, so there is no longer a name this
+    can be handed that it would mark and pad as though it were single. It was
+    silently wrong for the multi-segment names the old grammar allowed.
+
     >>> sort_form("a") + meta_sort_suffix("title") == sort_form("a/!title")
     True
     """
@@ -315,10 +337,20 @@ class Key:
     """The key up to but excluding its first metadata segment."""
 
     meta_name: str | None
-    """Everything from the first metadata segment onward, without the leading
-    ``!``, or None if the key names a document. May itself contain ``/``, since
-    a path may continue below a metadata segment: ``a/!title/b`` has a
-    ``meta_name`` of ``title/b``."""
+    """The first metadata segment, without the leading ``!``, or None if the
+    key names a document. **One segment.** A metadata name is a name, so
+    ``a/!changelog/22`` says that ``a`` carries ``changelog``; the ``22`` is a
+    document kept inside that namespace and belongs to :attr:`meta_path`."""
+
+    meta_path: str | None
+    """What follows the first metadata segment, or None when nothing does.
+    ``a/!changelog/22/!title`` has a ``meta_name`` of ``changelog`` and a
+    ``meta_path`` of ``22/!title``.
+
+    Inside a metadata namespace everything is an ordinary namespace again, so
+    this may hold documents, their own metadata and whole subtrees. It is what
+    tells the metadata *value* from something kept inside it, which is the
+    distinction :attr:`is_meta_value` names."""
 
     parent: str
     """The enclosing key: this key without its last segment. A document's
@@ -336,6 +368,17 @@ class Key:
         return self.meta_name is not None
 
     @property
+    def is_meta_value(self) -> bool:
+        """Whether this key is a metadata value, not something kept inside one.
+
+        The predicate every survey needs, and the one :attr:`meta_name` alone
+        used to supply: when everything below a ``!`` was folded into the name
+        there was nothing to tell ``a/!title`` from ``a/!changelog/22``, and
+        the surveys that asked ``meta_name is not None`` were asking this.
+        """
+        return self.meta_name is not None and not self.meta_path
+
+    @property
     def has_wildcard(self) -> bool:
         return self.wildcard_parent is not None
 
@@ -348,7 +391,7 @@ class Key:
         resolved against the key the ones before it produced, so the parent
         only exists part way through :func:`resolve_last`.
         """
-        return LAST in self.doc_key.split(DELIMITER)
+        return LAST in self.key.split(DELIMITER)
 
 
 def migrate_legacy(key: str) -> str:
@@ -413,8 +456,9 @@ def parse(
             "key-too-many-segments", key=original, segments=len(segments), limit=max_segments
         )
 
-    # Everything from the first metadata segment onward is metadata, so a path
-    # may continue below one and nothing under it is a document.
+    # The first metadata segment is where the metadata namespace begins.
+    # Nothing below it adds depth, but a further ``!`` there opens a namespace
+    # of its own, so the split is at the *first* one and no other.
     meta_at = next(
         (i for i, segment in enumerate(segments) if segment.startswith(META_PREFIX)),
         None,
@@ -429,22 +473,20 @@ def parse(
 
     wildcard_parent = None
     for index, segment in enumerate(segments):
-        in_metadata = meta_at is not None and index >= meta_at
         if segment == LAST:
             if not allow_last:
                 raise InvalidKeyError("key-last-not-allowed", key=original)
-            if in_metadata:
-                raise InvalidKeyError("key-last-in-metadata", key=original)
             continue
         if segment != WILDCARD:
             continue
         if not allow_wildcard:
             raise InvalidKeyError("key-wildcard-not-allowed", key=original)
-        if in_metadata:
-            raise InvalidKeyError("key-wildcard-in-metadata", key=original)
         if wildcard_parent is not None:
             raise InvalidKeyError("key-multiple-wildcards", key=original)
-        wildcard_parent = DELIMITER.join(_normalise(p) for p in doc_segments[:index])
+        # Over ``segments`` and not ``doc_segments``: inside a metadata
+        # namespace everything is an ordinary namespace again, so a wildcard
+        # there has a parent like any other and it is the whole key up to it.
+        wildcard_parent = DELIMITER.join(_normalise(p) for p in segments[:index])
 
     # Normalised only after validation, so a complaint names the segment as it
     # was written rather than a tidied one the caller never typed.
@@ -457,10 +499,12 @@ def parse(
         # to something else on the next parse.
         parts = [doc_key, *meta_parts] if doc_key else meta_parts
         key = DELIMITER.join(parts)
-        meta_name = DELIMITER.join(meta_parts)[len(META_PREFIX) :]
+        meta_name = meta_parts[0][len(META_PREFIX) :]
+        meta_path = DELIMITER.join(meta_parts[1:]) or None
     else:
         key = doc_key
         meta_name = None
+        meta_path = None
 
     parent, _, _ = key.rpartition(DELIMITER)
 
@@ -468,6 +512,7 @@ def parse(
         key=key,
         doc_key=doc_key,
         meta_name=meta_name,
+        meta_path=meta_path,
         parent=parent,
         wildcard_parent=wildcard_parent,
     )
@@ -497,6 +542,49 @@ def _check_segment(segment: str, key: str) -> None:
                 segment=segment,
                 character=character,
             )
+
+
+def relative(key: str, scope: str) -> Key:
+    """``key`` parsed as it is named from inside ``scope``.
+
+    The same operation a mounted store performs on every key that reaches it,
+    and the answer to every question a read has to ask *relative to what it was
+    scoped at*. :func:`parse` splits a key at its **first** metadata segment,
+    which is the split seen from the root; a read scoped inside a metadata
+    namespace sees a different one, and this is it.
+
+    Three predicates come off the result, and between them they are what a
+    survey, a count and a delete each need:
+
+    * ``meta_name is None`` -- this key is a **document** at this scope. From
+      ``a`` that excludes ``a/!changelog/22``, which is why a survey descends
+      into a metadata namespace only when it is scoped inside one.
+    * :attr:`Key.is_meta_value` -- this key is a metadata **value** at this
+      scope, rather than something kept inside one.
+    * ``doc_key != ROOT`` -- a plain, non recursive delete of ``scope`` would
+      **keep** this key. What it takes is the scope's own metadata subtree,
+      and that is exactly the keys whose relative document part is empty.
+
+    ``key`` must be at or below ``scope``; a key outside it has no reading
+    from there and raises.
+
+    From a scope holding no ``!`` this agrees with :func:`parse` about the
+    metadata split, since the first metadata segment below such a scope is the
+    first one in the key. That is what lets a backend keep using its stored
+    columns for every ordinary scope and reach for this only when the scope is
+    itself metadata.
+
+    >>> relative("a/b/!title", "a").doc_key
+    'b'
+    >>> relative("a/!changelog/22/!title", "a/!changelog").meta_name
+    'title'
+    >>> relative("a/!changelog/22", "a/!changelog").is_metadata
+    False
+    """
+    within = strip_prefix(parse(scope).key, parse(key).key)
+    if within is None:
+        raise InvalidKeyError("key-not-below-scope", key=key, scope=scope)
+    return parse(within)
 
 
 def is_valid(
@@ -669,13 +757,38 @@ def subtree_range(key: str) -> tuple[str, str]:
     a confident zero from a store full of documents. Select with no range
     predicate instead, which is what ``store`` does.
     """
-    doc_key = parse(key).doc_key
-    if doc_key == ROOT:
+    scope = parse(key).key
+    if scope == ROOT:
         raise ValueError(
             "the root has no subtree bounds, since everything is beneath it; "
             "select without a range predicate instead"
         )
-    return doc_key + DELIMITER, doc_key + _AFTER_DELIMITER
+    return scope + DELIMITER, scope + _AFTER_DELIMITER
+
+
+def meta_range(key: str) -> tuple[str, str]:
+    """Half open bounds on ``key``'s own metadata subtree.
+
+    A key and its whole metadata subtree are one unit -- written together,
+    taken together by a plain delete, and contiguous in the order -- and this
+    is the stretch that unit occupies *below* the key itself. Every key in it
+    begins ``key/!`` and no other key does: a segment may begin with any
+    character from :data:`MIN_SEGMENT_CHAR` up, so the ones below ``!`` sort
+    beneath the low bound and the ones above it at or past the high one.
+
+    Subtracting this from :func:`subtree_range` leaves exactly what a plain
+    delete would keep, which is what ``descendant_count`` reports.
+
+    Unlike :func:`subtree_range` **the root has bounds here.** Its metadata is
+    spelled with no leading delimiter -- ``!title``, not ``/!title`` -- and is
+    an ordinary contiguous stretch of the order like anyone else's.
+
+    >>> meta_range("a"), meta_range(ROOT)
+    (('a/!', 'a/"'), ('!', '"'))
+    """
+    scope = parse(key).key
+    within = scope + DELIMITER if scope != ROOT else ROOT
+    return within + META_PREFIX, within + _AFTER_META_PREFIX
 
 
 def sort_subtree_end(key: str) -> str:
@@ -797,11 +910,13 @@ __all__ = [
     "displayed",
     "fits",
     "is_valid",
+    "meta_range",
     "meta_sort_suffix",
     "migrate_legacy",
     "normalise_key",
     "normalise_segment",
     "parse",
+    "relative",
     "remaining_depth",
     "resolve_last",
     "sort_form",

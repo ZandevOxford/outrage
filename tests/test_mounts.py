@@ -1341,6 +1341,10 @@ _SPLIT_CORPUS = [
     ("!title", "The store itself"),
     ("a", "a body"),
     ("a/!title", "A"),
+    ("a/!changelog", "what changed"),
+    ("a/!changelog/!title", "Changelog"),
+    ("a/!changelog/22", "note twenty-two"),
+    ("a/!changelog/22/!title", "Note 22"),
     ("a/2", "a two"),
     ("a/10", "a ten"),
     ("a/10/!title", "A ten"),
@@ -1435,6 +1439,7 @@ def _read(store, key):
 _SPLIT_KEYS = [
     "", "a", "a/2", "a/10", "a/b", "a/b/c", "a/b/c/d", "a/z", "a-x",
     "b", "b/1", "context", "context/10", "z", "nope", "a/b/nope",
+    "a/!changelog", "a/!changelog/22",
 ]
 
 _SPLIT_RANGES = [
@@ -1455,6 +1460,7 @@ _SPLIT_RANGES = [
 _SPLIT_SUBTREES = [
     EVERYTHING,
     BoundedSubtree(key="a"),
+    BoundedSubtree(key="a/!changelog"),
     BoundedSubtree(key="a", depth=1),
     BoundedSubtree(key="a", depth=2),
     BoundedSubtree(key="a/b"),
@@ -1568,6 +1574,40 @@ def test_a_count_across_a_boundary_includes_the_mount_point_and_its_metadata(tmp
         # a/b, a/b/!title, a/b/c.
         assert table.descendant_count("a") == 3
         assert table.descendant_count("a/b") == 1
+
+
+def test_a_whole_subtree_count_across_a_boundary_does_not_count_the_unit_twice(tmp_path):
+    """The two halves of a crossing count must not overlap.
+
+    From outside, a mounted store's own root row and its metadata are both
+    beneath the key being counted, so a count taken from the inside has to put
+    them back. Under ``whole_subtree`` the inside already reports the metadata
+    half -- that is what the flag asks for -- so only the root document row is
+    missing, and reaching for ``_rows_at`` there would count the title twice.
+    """
+    from outrage import bulk
+
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    outer.store_document("a", "a", title="A")
+    inner.store_document("", "mounted")
+    inner.store_document("!title", "Mounted")
+    inner.store_document("c", "below")
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        # a/b, a/b/!title, a/b/c -- and not a/!title, which a plain delete of
+        # `a` would take with it.
+        assert table.descendant_count("a") == 3
+        # The same three, plus a/!title: four, not the five a doubled title
+        # would give. Asserted against the walk rather than against a number,
+        # because agreeing with the walk is the whole property -- that is what
+        # a preview lists, and what the count is subtracted from.
+        assert [entry.key for entry in bulk.walk(table, "a")] == [
+            "a/!title",
+            "a/b",
+            "a/b/!title",
+            "a/b/c",
+        ]
+        assert table.descendant_count("a", whole_subtree=True) == 4
 
 
 def test_a_container_count_crosses_into_what_is_mounted_below_it(tmp_path):

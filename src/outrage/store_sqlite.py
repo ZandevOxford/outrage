@@ -61,6 +61,7 @@ from .store import (
     _now,
     _position,
     _scope,
+    entry_kind,
 )
 
 #: What a SQLite store's file is called when a caller names none. The name a
@@ -74,13 +75,14 @@ DEFAULT_STORE_FILE = "store.sqlite"
 #: it is opened. Every bump needs a migration that reads the version below it;
 #: an older store is upgraded in place, and a newer one is refused rather than
 #: read with the wrong shape assumed.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _TABLE = """
 CREATE TABLE IF NOT EXISTS {name} (
   key        TEXT PRIMARY KEY,
   doc_key    TEXT NOT NULL,
   meta_name  TEXT,
+  meta_path  TEXT,
   parent     TEXT NOT NULL,
   content    TEXT NOT NULL,
   format     TEXT,
@@ -91,7 +93,7 @@ CREATE TABLE IF NOT EXISTS {name} (
 
 _INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_documents_parent ON documents(parent);
-CREATE INDEX IF NOT EXISTS idx_documents_meta   ON documents(meta_name, doc_key);
+CREATE INDEX IF NOT EXISTS idx_documents_meta   ON documents(meta_name, meta_path, doc_key);
 CREATE INDEX IF NOT EXISTS idx_documents_sort   ON documents(sort_key);
 """
 
@@ -173,6 +175,12 @@ class SqliteStore(Store):
         # to order or bound them needs the same padding SQLite cannot express.
         # Registered per connection, because that is the scope SQLite gives it.
         conn.create_function("sort_form", 1, keys.sort_form, deterministic=True)
+        # The metadata split as seen from the key a read was scoped at, which
+        # is not the stored one when that scope is itself inside a metadata
+        # namespace. Only those reads use these: an ordinary scope sees the
+        # same split the columns already hold, and keeps its index.
+        conn.create_function("rel_meta_name", 2, _rel_meta_name, deterministic=True)
+        conn.create_function("rel_meta_path", 2, _rel_meta_path, deterministic=True)
         return conn
 
     @property
@@ -202,6 +210,8 @@ class SqliteStore(Store):
                     self._migrate_meta_segment()
                 if version < 5:
                     self._migrate_sort_form()
+                if version < 6:
+                    self._migrate_meta_namespace()
             if version != SCHEMA_VERSION:
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -255,26 +265,24 @@ class SqliteStore(Store):
                     f"leading zeros are stripped; remove or rename one, then reopen"
                 )
             normalised[parsed.key] = was
-            rebuilt.append(
-                (
-                    parsed.key,
-                    parsed.doc_key,
-                    parsed.meta_name,
-                    parsed.parent,
-                    row["content"],
-                    row["format"],
-                    row["updated_at"],
-                    keys.sort_form(parsed.key),
-                )
-            )
+            rebuilt.append(_row_values(parsed, row["content"], row["format"], row["updated_at"]))
 
-        # Statement by statement rather than executescript, which commits any
-        # pending transaction before it runs. The rebuild drops the live table,
-        # so it has to roll back as one thing if anything goes wrong.
+        self._rebuild_table(rebuilt)
+
+    def _rebuild_table(self, rebuilt: list[tuple[object, ...]]) -> None:
+        """Replace ``documents`` with ``rebuilt``, in the schema this build writes.
+
+        Statement by statement rather than executescript, which commits any
+        pending transaction before it runs. The rebuild drops the live table,
+        so it has to roll back as one thing if anything goes wrong.
+
+        Shared by the two migrations that rebuild, so that a column added to
+        ``_TABLE`` cannot reach one of them and not the other.
+        """
         self._conn.execute(_TABLE.format(name="documents_rebuilt"))
         self._conn.executemany(
-            "INSERT INTO documents_rebuilt (key, doc_key, meta_name, parent, content, "
-            "format, updated_at, sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO documents_rebuilt (key, doc_key, meta_name, meta_path, parent, "
+            "content, format, updated_at, sort_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             rebuilt,
         )
         self._conn.execute("DROP TABLE documents")
@@ -307,6 +315,36 @@ class SqliteStore(Store):
             f"UPDATE documents SET key = {rewritten}, sort_key = sort_form({rewritten}) "
             f"WHERE meta_name IS NOT NULL"
         )
+
+    def _migrate_meta_namespace(self) -> None:
+        """Schema 5 to 6: a metadata name became one segment, with a path below it.
+
+        ``!`` opens a namespace now rather than swallowing everything after
+        it, so ``a/!changelog/22`` is a document called ``22`` kept inside
+        ``a``'s ``changelog`` rather than metadata called ``changelog/22``.
+        No key changes; what changes is the two columns derived from one.
+
+        Both are recomputed from ``key`` through :func:`outrage.keys.parse`
+        rather than assuming ``meta_path`` starts out null everywhere. That is
+        true of a store nobody wrote such a key to and is not true of the
+        *format*, and a migration that reads its input is the one that stays
+        right when it is handed a store that did.
+
+        **The table is rebuilt rather than altered**, for the reason
+        :meth:`_migrate_add_sort_key` gives: ``ALTER TABLE ADD COLUMN`` would
+        leave the migrated file with a schema a fresh store does not have, and
+        an older build writing to it would then insert a wrong ``meta_name``
+        with no error at all.
+        """
+        rebuilt = [
+            _row_values(
+                keys.parse(row["key"]), row["content"], row["format"], row["updated_at"]
+            )
+            for row in self._conn.execute(
+                "SELECT key, content, format, updated_at FROM documents"
+            ).fetchall()
+        ]
+        self._rebuild_table(rebuilt)
 
     def _migrate_sort_form(self) -> None:
         """Schema 4 to 5: the sort form gained segment markers and its own delimiter.
@@ -408,24 +446,15 @@ class SqliteStore(Store):
         """Insert or replace one row. Caller holds the transaction."""
         self._conn.execute(
             """
-            INSERT INTO documents (key, doc_key, meta_name, parent, content, format,
-                                   updated_at, sort_key)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO documents (key, doc_key, meta_name, meta_path, parent, content,
+                                   format, updated_at, sort_key)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET
                 content = excluded.content,
                 format = excluded.format,
                 updated_at = excluded.updated_at
             """,
-            (
-                parsed.key,
-                parsed.doc_key,
-                parsed.meta_name,
-                parsed.parent,
-                content,
-                format,
-                _now(),
-                keys.sort_form(parsed.key),
-            ),
+            _row_values(parsed, content, format, _now()),
         )
 
     @contextmanager
@@ -463,13 +492,17 @@ class SqliteStore(Store):
         the key holding it has content only further down.
         """
         prefix_len = len(parent) + 1 if parent != keys.ROOT else 0
+        # By the segment rather than by ``meta_name``, which says where the
+        # *key* first turns to metadata and not whether this child does: every
+        # row inside ``a/!changelog`` carries that name, and ``22`` there is an
+        # ordinary child a number may be allocated beside.
         names = {
-            row["doc_key"][prefix_len:]
+            name
             for row in self._conn.execute(
-                f"SELECT DISTINCT doc_key FROM documents "
-                f"WHERE {_children_clause()} AND meta_name IS NULL",
+                f"SELECT key FROM documents WHERE {_children_clause()}",
                 (parent, parent),
             )
+            if not (name := row["key"][prefix_len:]).startswith(keys.META_PREFIX)
         }
         names.update(
             entry.key[prefix_len:]
@@ -491,50 +524,61 @@ class SqliteStore(Store):
         parsed = keys.parse(key)
         bounds, params = _range_clauses(key_range)
         within = "".join(f" AND {clause}" for clause in bounds)
-        if parsed.is_metadata:
-            targets = [
-                row["key"]
-                for row in self._conn.execute(
-                    f"SELECT key FROM documents WHERE key = ?{within}",
-                    [parsed.key, *params],
-                )
-            ]
-        else:
-            targets = [
-                row["key"]
-                for row in self._conn.execute(
-                    f"SELECT key FROM documents WHERE doc_key = ?{within}",
-                    [parsed.doc_key, *params],
-                )
-            ]
-            if recursive:
-                below, below_params = _below("doc_key", parsed.doc_key)
-                targets += [
-                    row["key"]
-                    for row in self._conn.execute(
-                        f"SELECT key FROM documents WHERE {below}{within}",
-                        [*below_params, *params],
-                    )
-                ]
+
+        # The key's own row and its whole metadata subtree: one unit, whatever
+        # the key is. A document's metadata has no meaning once the document
+        # is gone, and the same holds one level down for a metadata namespace's
+        # own title. What ``recursive`` adds is everything else below.
+        lo, hi = keys.meta_range(parsed.key)
+        taken = ["key = ?", "(key >= ? AND key < ?)"]
+        taken_params: list[object] = [parsed.key, lo, hi]
+        if recursive:
+            below, below_params = _below("key", parsed.key)
+            taken.append(below)
+            taken_params += below_params
+
+        # ORed rather than queried in turn, so the metadata unit and the
+        # subtree that contains it cannot report a key twice.
+        targets = [
+            row["key"]
+            for row in self._conn.execute(
+                f"SELECT key FROM documents WHERE ({' OR '.join(taken)}){within}",
+                [*taken_params, *params],
+            )
+        ]
 
         with self._conn:
             self._conn.executemany("DELETE FROM documents WHERE key = ?", [(k,) for k in targets])
         return sorted(targets, key=keys.sort_form)
 
     @_logged("descendant_count")
-    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
-        """A ``count(*)`` over the rows beneath ``key``'s ``doc_key``.
+    def descendant_count(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> int:
+        """A ``count(*)`` over the subtree, less the metadata unit inside it.
 
-        A range scan for an ordinary key, since everything under ``a`` starts
-        with ``a/``; for the root, a test against the root's own row. See
-        :func:`_below`.
+        Two range scans, both on the primary key: everything below ``key``, and
+        not the stretch a plain delete would take with it. That difference is
+        what this reports, and it is why a document's own title has never
+        counted here. See :func:`_below` and :func:`outrage.keys.meta_range`.
+
+        ``whole_subtree`` **drops** the second scan rather than adding a third:
+        the question is then the subtree itself, and one range scan is all of
+        it.
         """
-        below, bounds = _below("doc_key", keys.parse(key).doc_key)
+        parsed = keys.parse(key)
+        below, bounds = _below("key", parsed.key)
         clauses, params = _range_clauses(key_range)
         within = "".join(f" AND {clause}" for clause in clauses)
+        kept = ""
+        unit: list[str] = []
+        if not whole_subtree:
+            lo, hi = keys.meta_range(parsed.key)
+            kept = " AND NOT (key >= ? AND key < ?)"
+            unit = [lo, hi]
         row = self._conn.execute(
-            f"SELECT count(*) AS n FROM documents WHERE {below}{within}",
-            [*bounds, *params],
+            f"SELECT count(*) AS n FROM documents WHERE {below}{kept}{within}",
+            [*bounds, *unit, *params],
         ).fetchone()
         return row["n"]
 
@@ -601,8 +645,7 @@ class SqliteStore(Store):
         if row is None:
             # A key with descendants but no content of its own is a container,
             # not a mistake. Saying so turns a dead end into the next call.
-            parsed = keys.parse(key)
-            beneath = 0 if parsed.is_metadata else self.descendant_count(key)
+            beneath = self.descendant_count(key)
             if beneath:
                 raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
             raise KeyNotFoundError("key-not-found", key=key)
@@ -645,7 +688,9 @@ class SqliteStore(Store):
         the page ends: whichever half is denser near the cursor pushes the
         other's keys over the edge, and a cursor never looks back.
         """
-        parent = keys.parse(_scope(key)).doc_key
+        # The whole key, not its document part: a metadata namespace is a
+        # level like any other and ``list_keys("a/!x")`` lists what is in it.
+        parent = keys.parse(_scope(key)).key
         bound = _cursor_bound(cursor)
 
         # Both halves are taken past the same cursor and merged before either
@@ -775,14 +820,9 @@ class SqliteStore(Store):
         """
         where, params = _subtree_clauses(subtree)
 
-        if meta_name is None:
-            where.append("meta_name IS NULL")
-        else:
-            names = [meta_name] if isinstance(meta_name, str) else list(meta_name)
-            if not names:
-                raise ValueError("meta_name must not be an empty sequence")
-            where.append(f"meta_name IN ({', '.join('?' * len(names))})")
-            params += names
+        clauses, bounds = _meta_clauses(keys.parse(_scope(subtree.key)), meta_name)
+        where += clauses
+        params += bounds
 
         clauses, bounds = _range_clauses(key_range)
         where += clauses
@@ -869,18 +909,30 @@ class SqliteStore(Store):
         One NOT EXISTS over the same range predicate the survey itself uses, so
         the two agree about what was in range. Shared by the paged listing and
         the per-window stats, which must not be able to disagree either.
+
+        It correlates on the **exact key** a value would sit at, which is the
+        document's own key with ``/!name`` appended -- a primary key lookup,
+        and the one form that stays right at every scope. Correlating on
+        ``doc_key`` and ``meta_name`` would read the split as it is seen from
+        the root, and inside a metadata namespace that is not the split the
+        question is being asked at. The root spells its metadata without the
+        leading delimiter, which is what the CASE is for.
         """
         names = [meta_name] if isinstance(meta_name, str) else list(meta_name)
         if not names:
             raise ValueError("meta_name must not be an empty sequence")
 
         where, params = self._selection(subtree, key_range, meta_name=None)
-        where += (
-            f" AND NOT EXISTS (SELECT 1 FROM documents AS meta "
-            f"WHERE meta.doc_key = documents.doc_key "
-            f"AND meta.meta_name IN ({', '.join('?' * len(names))}))"
+        at = ", ".join(
+            "CASE WHEN documents.key = '' THEN ? ELSE documents.key || ? END" for _ in names
         )
-        return where, params + list(names), names
+        where += f" AND NOT EXISTS (SELECT 1 FROM documents AS meta WHERE meta.key IN ({at}))"
+        suffixes = [
+            value
+            for name in names
+            for value in (keys.META_PREFIX + name, keys.DELIMITER + keys.META_PREFIX + name)
+        ]
+        return where, params + suffixes, names
 
     @_logged("missing_meta_stats")
     def missing_meta_stats(
@@ -1212,25 +1264,34 @@ def _range_clauses(
 
 
 def _subtree_clauses(subtree: BoundedSubtree) -> tuple[list[str], list[object]]:
-    """``subtree`` as SQL predicates on ``doc_key``, with their parameters.
+    """``subtree`` as SQL predicates on ``key`` and depth, with their parameters.
 
-    On ``doc_key`` rather than on ``sort_key``, which is where a
-    :class:`~outrage.store.KeyRange` is measured: metadata shares its document's
-    ``doc_key``, so one range predicate takes a document and its metadata
-    together, and the depth of a metadata key is the depth of the document it
-    belongs to.
+    On ``key`` rather than on ``sort_key``, which is where a
+    :class:`~outrage.store.KeyRange` is measured: a key's metadata continues
+    its own key, so one range predicate takes a key and its metadata subtree
+    together, and it is the primary key besides.
+
+    On ``key`` rather than on ``doc_key``, which it used to be, because a scope
+    may now be a metadata namespace: every row inside ``a/!changelog`` has a
+    ``doc_key`` of ``a``, so a range over that column cannot name the namespace
+    at all. For a scope holding no ``!`` the two select exactly the same rows.
+
+    **Depth stays measured on ``doc_key``**, because that is what depth counts:
+    metadata adds none. So a depth filter reaches a key's whole metadata
+    subtree, which is the cost ``planned/metadata`` accepted, and inside a
+    metadata namespace it excludes nothing -- levels and depth are decoupled
+    there, and a level walk is what descends.
     """
     clauses: list[str] = []
     params: list[object] = []
 
     # The root needs no predicate at all: everything is at or below it.
-    # A clause that said so would still be evaluated per row, and against
-    # `doc_key`, which carries no index of its own.
+    # A clause that said so would still be evaluated per row.
     parsed = keys.parse(_scope(subtree.key))
-    if parsed.doc_key != keys.ROOT:
-        below, bounds = _below("doc_key", parsed.doc_key)
-        clauses.append(f"(doc_key = ? OR {below})")
-        params += [parsed.doc_key, *bounds]
+    if parsed.key != keys.ROOT:
+        below, bounds = _below("key", parsed.key)
+        clauses.append(f"(key = ? OR {below})")
+        params += [parsed.key, *bounds]
 
     if subtree.depth is not None:
         # A segment count SQLite can compute per row: the delimiters plus
@@ -1248,6 +1309,85 @@ def _subtree_clauses(subtree: BoundedSubtree) -> tuple[list[str], list[object]]:
     return clauses, params
 
 
+def _rel_meta_name(key: str, scope: str) -> str | None:
+    """``key``'s metadata name as seen from ``scope``, for SQL to call per row.
+
+    Registered on the connection rather than written out as an expression:
+    what the split *is* belongs to ``keys``, and a second spelling of it in SQL
+    is a second definition to keep right. Only a read scoped inside a metadata
+    namespace reaches these, so the per row call is not on the common path.
+    """
+    return keys.relative(key, scope).meta_name
+
+
+def _rel_meta_path(key: str, scope: str) -> str | None:
+    """``key``'s metadata path as seen from ``scope``. See :func:`_rel_meta_name`."""
+    return keys.relative(key, scope).meta_path
+
+
+def _row_values(
+    parsed: keys.Key, content: str, format: str | None, updated_at: str
+) -> tuple[object, ...]:
+    """One row's columns, in the order ``_TABLE`` declares them.
+
+    One place, so that a write and the migrations that rebuild the table
+    cannot disagree about what a column holds -- which is how ``meta_path``
+    could have been added to the schema and left null by one of them.
+    """
+    return (
+        parsed.key,
+        parsed.doc_key,
+        parsed.meta_name,
+        parsed.meta_path,
+        parsed.parent,
+        content,
+        format,
+        updated_at,
+        keys.sort_form(parsed.key),
+    )
+
+
+def _meta_clauses(
+    scope: keys.Key, meta_name: str | Sequence[str] | None
+) -> tuple[list[str], list[object]]:
+    """"Is this a document" and "is this the value of a name", at ``scope``.
+
+    Both questions are asked *relative to the key the read was scoped at*, and
+    the stored ``meta_name`` and ``meta_path`` answer them only when that scope
+    holds no ``!``: they record where the **key** first turns to metadata,
+    which from inside ``a/!changelog`` is a segment above the scope and not
+    part of the question. Every row there carries ``changelog``, so the stored
+    predicate would return nothing at all.
+
+    So: the columns for an ordinary scope, which is every survey anyone runs
+    and the one that keeps ``idx_documents_meta``; and the relative split,
+    per row, for a scope that is itself metadata. **This is where the rule that
+    a survey descends into a metadata namespace only when scoped inside one is
+    implemented** -- from ``a``, ``a/!changelog/22`` carries a name and a path
+    and so is neither a document nor a value.
+    """
+    names: list[str] | None = None
+    if meta_name is not None:
+        names = [meta_name] if isinstance(meta_name, str) else list(meta_name)
+        if not names:
+            raise ValueError("meta_name must not be an empty sequence")
+
+    if not scope.is_metadata:
+        if names is None:
+            return ["meta_name IS NULL"], []
+        return [
+            f"meta_name IN ({', '.join('?' * len(names))})",
+            "meta_path IS NULL",
+        ], list(names)
+
+    if names is None:
+        return ["rel_meta_name(key, ?) IS NULL"], [scope.key]
+    return [
+        f"rel_meta_name(key, ?) IN ({', '.join('?' * len(names))})",
+        "rel_meta_path(key, ?) IS NULL",
+    ], [scope.key, *names, scope.key]
+
+
 def _stored(row: sqlite3.Row) -> tuple[str, str, str | None, str]:
     """The four stored fields :func:`~outrage.store._excerpt` slices, from a row.
 
@@ -1261,7 +1401,7 @@ def _entry(row: sqlite3.Row) -> Entry:
     """A stored row as a listing entry."""
     return Entry(
         key=row["key"],
-        kind="metadata" if row["meta_name"] is not None else "document",
+        kind=entry_kind(row["key"]),
         size=len(row["content"]),
         format=row["format"],
         updated_at=row["updated_at"],

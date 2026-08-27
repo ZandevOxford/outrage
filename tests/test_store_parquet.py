@@ -58,14 +58,20 @@ pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra"
 #: A corpus chosen for the places the two backends could disagree rather than
 #: for size: numeric segments that sort wrong as text, a key whose sibling
 #: (``a-x``) sorts between it and its own children under a naive ordering, a
-#: document at the root, metadata on the root, JSON beside markdown, and a
-#: document with children so that a container read has something to be about.
+#: document at the root, metadata on the root, JSON beside markdown, a
+#: document with children so that a container read has something to be about,
+#: and a metadata namespace holding documents of its own -- the one shape whose
+#: split is not the one the stored columns record.
 CORPUS = [
     ("", "root document"),
     ("!title", "The store itself"),
     ("a", "a body"),
     ("a/!title", "A"),
     ("a/!summary", "sum of a"),
+    ("a/!changelog", "what changed"),
+    ("a/!changelog/!title", "Changelog"),
+    ("a/!changelog/22", "note twenty-two"),
+    ("a/!changelog/22/!title", "Note 22"),
     ("a/2", "a two"),
     ("a/10", "a ten"),
     ("a/10/!title", "A ten"),
@@ -125,7 +131,21 @@ def packed(tmp_path):
 #: Keys the battery asks about: the root, a document with children, one
 #: without, containers that hold nothing themselves, a key that is not there,
 #: and the numeric and adversarial ones.
-_KEYS = ["", "a", "a/b", "a/10", "context", "context/10", "notes", "z", "a-x", "nope", "a/b/c"]
+_KEYS = [
+    "",
+    "a",
+    "a/b",
+    "a/10",
+    "context",
+    "context/10",
+    "notes",
+    "z",
+    "a-x",
+    "nope",
+    "a/b/c",
+    "a/!changelog",
+    "a/!changelog/22",
+]
 
 #: One of each bound :class:`~outrage.store.KeyRange` can carry, then the pairs
 #: that matter: a stretch either side of an excluded subtree, and a bound
@@ -153,6 +173,8 @@ _SUBTREES = [
     BoundedSubtree(key=None, depth=1),
     BoundedSubtree(key="nope"),
     BoundedSubtree(key="", depth=0),
+    BoundedSubtree(key="a/!changelog"),
+    BoundedSubtree(key="a/!changelog", depth=0),
 ]
 
 _METAS = [None, "title", ["title"], ["title", "summary"], ["summary"]]
@@ -347,6 +369,66 @@ def test_a_file_from_a_later_build_is_refused_rather_than_read(tmp_path, monkeyp
     with raises_rendered(BackendError, "repack it or upgrade outrage") as raised:
         ParquetStore(tmp_path, filename="future.parquet")
     assert raised.value.code == "parquet-format-newer"
+
+
+def test_a_version_1_file_is_read_by_deriving_the_split_from_its_keys(tmp_path):
+    """The older layout, read whole and re-split -- not repacked.
+
+    Version 1 has no ``meta_path`` column and a ``meta_name`` written under the
+    rule that a name swallowed everything below the first ``!``. Both come off
+    ``key``, which every version carries, so the file opens and answers about
+    the namespace exactly as a repacked one would. Nothing is written back:
+    this backend has no migrations, and that stance is intact.
+    """
+    pa = pytest.importorskip("pyarrow")
+    pq = pytest.importorskip("pyarrow.parquet")
+    from outrage import store_parquet
+
+    written = ["a", "a/!title", "a/!changelog", "a/!changelog/22", "a/!changelog/22/!title"]
+
+    def version_1_meta_name(key):
+        _, sep, tail = key.partition("/!")
+        return tail if sep else None
+
+    schema = pa.schema(
+        [
+            ("key", pa.string()),
+            ("doc_key", pa.string()),
+            ("meta_name", pa.string()),
+            ("parent", pa.string()),
+            ("content", pa.string()),
+            ("format", pa.string()),
+            ("updated_at", pa.string()),
+            ("sort_key", pa.string()),
+            ("chars", pa.int64()),
+        ],
+        metadata={store_parquet.VERSION_KEY: b"1"},
+    )
+    ordered = sorted(written, key=keys.sort_form)
+    pq.write_table(
+        pa.table(
+            {
+                "key": ordered,
+                "doc_key": [keys.parse(k).doc_key for k in ordered],
+                "meta_name": [version_1_meta_name(k) for k in ordered],
+                "parent": [keys.parse(k).parent for k in ordered],
+                "content": ["body" for _ in ordered],
+                "format": ["markdown" for _ in ordered],
+                "updated_at": ["2026-01-01T00:00:00+00:00" for _ in ordered],
+                "sort_key": [keys.sort_form(k) for k in ordered],
+                "chars": [4 for _ in ordered],
+            },
+            schema=schema,
+        ),
+        tmp_path / "old.parquet",
+    )
+
+    with ParquetStore(tmp_path, filename="old.parquet") as store:
+        assert [e.key for e in store.list_keys("a/!changelog").items] == ["a/!changelog/22"]
+        survey = store.get_documents(BoundedSubtree("a/!changelog"), meta_name="title")
+        assert [e.key for e in survey.items] == ["a/!changelog/22/!title"]
+        # And from outside, the note is not one of `a`'s titles.
+        assert [e.key for e in store.get_documents(meta_name="title").items] == ["a/!title"]
 
 
 def test_building_refuses_a_wildcard_because_there_is_nothing_to_allocate_from(tmp_path):

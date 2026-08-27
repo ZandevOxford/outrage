@@ -50,6 +50,10 @@ CORPUS = [
     ("a", "a body"),
     ("a/!title", "A"),
     ("a/!summary", "sum of a"),
+    ("a/!changelog", "what changed"),
+    ("a/!changelog/!title", "Changelog"),
+    ("a/!changelog/22", "note twenty-two"),
+    ("a/!changelog/22/!title", "Note 22"),
     ("a/2", "a two"),
     ("a/10", "a ten"),
     ("a/10/!title", "A ten"),
@@ -68,7 +72,21 @@ CORPUS = [
     ("z", "last"),
 ]
 
-_KEYS = ["", "a", "a/b", "a/10", "context", "context/10", "notes", "z", "a-x", "nope", "a/b/c"]
+_KEYS = [
+    "",
+    "a",
+    "a/b",
+    "a/10",
+    "context",
+    "context/10",
+    "notes",
+    "z",
+    "a-x",
+    "nope",
+    "a/b/c",
+    "a/!changelog",
+    "a/!changelog/22",
+]
 
 _RANGES = [
     UNBOUNDED,
@@ -93,6 +111,8 @@ _SUBTREES = [
     BoundedSubtree(key=None, depth=1),
     BoundedSubtree(key="nope"),
     BoundedSubtree(key="", depth=0),
+    BoundedSubtree(key="a/!changelog"),
+    BoundedSubtree(key="a/!changelog", depth=0),
 ]
 
 _METAS = [None, "title", ["title"], ["title", "summary"], ["summary"]]

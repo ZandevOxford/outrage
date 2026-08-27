@@ -207,14 +207,6 @@ def _key_wildcard_not_allowed(name: Namer, /, *, key: str, **_: Any) -> str:
     return f"key {key!r} may not contain {keys.WILDCARD!r}; it is allowed only when storing"
 
 
-@template("key-wildcard-in-metadata")
-def _key_wildcard_in_metadata(name: Namer, /, *, key: str, **_: Any) -> str:
-    return (
-        f"key {key!r} may not allocate a metadata segment; "
-        f"{keys.WILDCARD!r} is allowed only in the document part of a key"
-    )
-
-
 @template("key-multiple-wildcards")
 def _key_multiple_wildcards(name: Namer, /, *, key: str, **_: Any) -> str:
     return f"key {key!r} has more than one {keys.WILDCARD!r} segment"
@@ -262,11 +254,11 @@ def _key_last_not_allowed(name: Namer, /, *, key: str, **_: Any) -> str:
     )
 
 
-@template("key-last-in-metadata")
-def _key_last_in_metadata(name: Namer, /, *, key: str, **_: Any) -> str:
+@template("key-not-below-scope")
+def _key_not_below_scope(name: Namer, /, *, key: str, scope: str, **_: Any) -> str:
     return (
-        f"key {key!r} may not name the last metadata segment; "
-        f"{keys.LAST!r} is allowed only in the document part of a key"
+        f"key {name(key)} is not at or below {name(scope)}, so it has no "
+        f"reading from there"
     )
 
 

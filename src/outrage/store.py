@@ -573,8 +573,10 @@ class Store(ABC):
         ``title`` writes the ``!title`` metadata alongside the document in the
         same transaction. It saves a second call, but it exists mainly because
         the title is what makes a document discoverable later, and a separate
-        call is one that can simply be forgotten. It may not be combined with a
-        ``key`` that is itself metadata, since metadata does not nest.
+        call is one that can simply be forgotten. It may be given for a
+        metadata key too, and becomes that key's own ``!title``: metadata is a
+        namespace and a namespace can be described, so ``a/!changelog`` may say
+        what its changelog is for at ``a/!changelog/!title``.
 
         ``encoding`` describes how ``content`` and ``title`` arrived, not what
         is stored: 'json-string' means each is a JSON string literal, quotes
@@ -620,6 +622,9 @@ class Store(ABC):
         The order is guarded, not incidental: the key parses first, then the
         content is a string, then the encoding decodes it, then the format is
         detected from what the decode produced, and the title is checked last.
+        A metadata key used to be refused a title here, on the grounds that
+        metadata does not nest; it nests now, so every key in a metadata
+        namespace takes a title like any other.
         Detecting a format before decoding would read the JSON *literal* rather
         than the document inside it. ``tests/test_store.py`` has a case per
         refusal.
@@ -640,8 +645,6 @@ class Store(ABC):
         elif format not in FORMATS:
             raise ValueError(f"format must be one of {FORMATS}, got {format!r}")
         if title is not None:
-            if parsed.is_metadata:
-                raise ValueError(f"cannot attach a title to metadata key {key!r}")
             if not isinstance(title, str):
                 raise TypeError(f"title must be a string, got {type(title).__name__}")
         return parsed, content, format, title
@@ -652,9 +655,17 @@ class Store(ABC):
     ) -> list[str]:
         """Delete ``key``, returning the keys actually removed.
 
-        A document key takes its metadata with it. Descendants are removed only
-        when ``recursive`` is set, so a mistyped key cannot silently discard a
-        whole subtree. Note that storing an empty document is not a deletion.
+        A document key takes its metadata with it -- the whole metadata
+        subtree, since a document and its metadata are one unit and contiguous
+        in the order. Descendants are removed only when ``recursive`` is set,
+        so a mistyped key cannot silently discard a whole subtree. Note that
+        storing an empty document is not a deletion.
+
+        **A metadata key is a container like any other.** Deleting one takes
+        what is inside it, so ``a/!changelog`` with notes below refuses without
+        ``recursive`` rather than quietly discarding them. It is only a
+        document's *own* delete that carries metadata away unasked, and that is
+        because the metadata has no meaning once the document is gone.
 
         ``key_range`` bounds which keys are in scope, exactly as it does for a
         read: a delete that steps over a mounted store's stretch of the order
@@ -669,15 +680,32 @@ class Store(ABC):
         """
 
     @abstractmethod
-    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
+    def descendant_count(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> int:
         """How many stored keys lie strictly below ``key``.
 
         Metadata counts: it is stored, and a caller deciding whether a subtree
         is empty is asking about everything that would have to go.
 
+        **A metadata key has a real subtree of its own**, and this counts it.
+        ``a/!changelog`` holding twenty notes reports twenty, exactly as a
+        document holding twenty children does, which is what makes the delete
+        below refuse it without ``recursive``.
+
         Exists so a caller can report what a non-recursive delete left behind:
         without it, deleting a key that holds nothing itself is indistinguishable
         from deleting a key that does not exist.
+
+        What it leaves out is ``key``'s **own** metadata unit, because a plain
+        delete takes that with the key -- so the default answers *what would a
+        plain delete keep*. **``whole_subtree`` asks the other question**:
+        everything strictly below ``key``, that unit included, which is what a
+        *recursive* delete takes and what :func:`outrage.bulk.walk` reports.
+        A caller previewing a recursive delete needs the second, and answering
+        it with the first prints a remainder short by the unit -- negative,
+        once the preview reaches past the ordinary children.
+        See :func:`outrage.keys.meta_range`.
 
         ``key_range`` bounds it for the reason it bounds ``delete``: a count
         that includes keys a mount has made unreachable tells a caller to pass
@@ -772,9 +800,12 @@ class Store(ABC):
         exists to name the newest thread of work whether or not somebody
         wrote a document at the top of it.
 
-        Metadata does not count. ``?last`` stands where a document segment
-        goes -- it can no more resolve to ``!title`` than ``?`` can allocate
-        one -- so a level holding a document and its title has one child here.
+        Metadata does not count, **at whatever level this stands**. ``?last``
+        stands where an ordinary segment goes -- it can no more resolve to
+        ``!title`` than ``?`` can allocate one -- so a level holding a document
+        and its title has one child here. Inside a metadata namespace the same
+        rule applies to that level: ``a/!changelog/?last`` is the newest note
+        kept in the changelog and never the changelog's own ``!title``.
 
         Concrete rather than abstract, on :meth:`list_keys`, because it asks
         nothing a backend answers differently. **It reads the whole level to
@@ -785,9 +816,11 @@ class Store(ABC):
         """
         level = self.list_keys(key)
         names = [
-            entry.key.rpartition(keys.DELIMITER)[2]
+            name
             for entry in level.items
-            if entry.kind != "metadata"
+            if not (name := entry.key.rpartition(keys.DELIMITER)[2]).startswith(
+                keys.META_PREFIX
+            )
         ]
         return names[-1] if names else None
 
@@ -1163,6 +1196,60 @@ def _scope(key: str | None) -> str:
     return keys.ROOT if key is None else key
 
 
+#: What :func:`meta_reader` returns: a row's key and its stored metadata split,
+#: in; the split as the scope sees it, out.
+MetaReader = Callable[[str, str | None, str | None], tuple[str | None, str | None]]
+
+
+def meta_reader(scope: str) -> MetaReader:
+    """How to read a row's metadata split from inside ``scope``.
+
+    "Is this a document" and "is this the value of a name" are asked *relative
+    to the key a read was scoped at*, and the stored ``meta_name`` and
+    ``meta_path`` answer them only when that scope holds no ``!``. They record
+    where the **key** first turns to metadata, which from inside
+    ``a/!changelog`` is a segment above the question: every row there carries
+    ``changelog``, so the stored reading would match nothing at all.
+
+    So the stored pair for an ordinary scope -- which is every survey anyone
+    runs -- and :func:`outrage.keys.relative` per row for a scope that is
+    itself metadata. **This is where the rule that a survey descends into a
+    metadata namespace only when scoped inside one lives** for the backends
+    that hold their rows in memory; ``store_sqlite._meta_clauses`` is the same
+    rule as SQL.
+    """
+    at = keys.parse(scope)
+    if not at.is_metadata:
+        return lambda key, meta_name, meta_path: (meta_name, meta_path)
+
+    def seen_from(
+        key: str, meta_name: str | None, meta_path: str | None
+    ) -> tuple[str | None, str | None]:
+        seen = keys.relative(key, at.key)
+        return seen.meta_name, seen.meta_path
+
+    return seen_from
+
+
+def entry_kind(key: str) -> str:
+    """Whether ``key`` lists as ``"metadata"`` or as ``"document"``.
+
+    Decided by the **last segment**, because a listing shows one level and a
+    ``!`` opens a namespace at whatever level it stands: ``a/!changelog`` lists
+    inside ``a`` as metadata, and the ``22`` inside it lists as the ordinary
+    document it is. The stored ``meta_name`` says where the whole key first
+    turns to metadata, which is a different question and the wrong one here.
+
+    Shared by all three backends, so a listing cannot mean one thing in SQL and
+    another on a filesystem.
+    """
+    return (
+        "metadata"
+        if key.rpartition(keys.DELIMITER)[2].startswith(keys.META_PREFIX)
+        else "document"
+    )
+
+
 def _position(key: str) -> str:
     """Where ``key`` sits in the order: the padded sort form of the parsed key.
 
@@ -1481,6 +1568,7 @@ __all__ = [
     "Excerpt",
     "KeyNotFoundError",
     "KeyRange",
+    "MetaReader",
     "MissingMeta",
     "Page",
     "PatternNotFoundError",
@@ -1489,6 +1577,8 @@ __all__ = [
     "StoreFileError",
     "default_store",
     "default_store_file",
+    "entry_kind",
+    "meta_reader",
     "open_store",
     "read_all",
     "resolve_directory",
