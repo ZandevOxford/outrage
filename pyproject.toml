@@ -52,6 +52,10 @@ outrage-server = "outrage.server:main"
 path = "src/outrage/__init__.py"
 
 [tool.hatch.build.targets.sdist]
+# PyPI rejected the 0.3.0 candidate when Hatchling's moving default emitted
+# Core Metadata 2.5. Pin the newest version needed here: 2.4 carries the PEP
+# 639 licence fields above and is accepted by the publication endpoint.
+core-metadata-version = "2.4"
 # Both lines exist for one bug, which shipped as 0.1.0: the sdist, and so the
 # wheel built from it, silently lost `src/outrage/skills/`.
 #
@@ -73,6 +77,7 @@ exclude = [".claude"]
 skip-excluded-dirs = true
 
 [tool.hatch.build.targets.wheel]
+core-metadata-version = "2.4"
 packages = ["src/outrage"]
 
 [tool.pytest.ini_options]
