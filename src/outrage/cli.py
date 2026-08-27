@@ -1219,7 +1219,13 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
         print(f"deleted {keys.displayed(key)}", file=out)
     if not removed:
         print(f"nothing stored at {keys.displayed(args.key)}", file=out)
-    _report_remainder(args, beneath - (len(removed) - 1 if args.recursive else 0), out)
+    # `beneath` unadjusted, and the same number the dry run above passes. It
+    # counts what a plain delete would *keep*, which is already what is left
+    # once one has happened; a recursive delete has no remainder to report at
+    # all, and `_report_remainder` decides that for itself. The `len(removed)`
+    # correction that stood here applied only when `recursive` -- which is
+    # exactly when nothing is printed -- so it never reached an output.
+    _report_remainder(args, beneath, out)
     return 0
 
 
