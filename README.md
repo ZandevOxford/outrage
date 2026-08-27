@@ -33,8 +33,9 @@ with LLM based tools.
 
 The store, the MCP server, the key handling, the skill and the command line tool
 are implemented. The tool covers the store operations (`outrage get`, `set`,
-`ls`, `dump`, `rm`), bulk export and import to a directory of files (`outrage
-export`, `outrage import`), building a read-only parquet store (`outrage pack`),
+`ls`, `dump`, `copy`, `rm`), bulk export and import to a directory of files
+(`outrage export`, `outrage import`), building a read-only parquet store
+(`outrage pack`),
 the MCP configuration (`outrage config`), a verified backup (`outrage backup`),
 the event log (`outrage log`), and setting a project up (`outrage init`). See
 [implementation.md](implementation.md) for what is done and what is next.
@@ -121,8 +122,10 @@ is how a committed table gets one entry overridden for a single run.
 `--unmount KEY` removes one the file declares, which is the one thing an
 override cannot do; `--no-mount-config` ignores the default file entirely.
 
-`outrage get`, `set`, `ls`, `dump`, `rm`, `export` and `import` all take the
-mount options, so a person sees the same namespace the MCP server serves.
+`outrage get`, `set`, `ls`, `dump`, `copy`, `rm`, `export` and `import` all take
+the mount options, so a person sees the same namespace the MCP server serves.
+`outrage copy SOURCE TARGET` copies a subtree or key-order range beneath another
+prefix in that namespace, including between mounted stores.
 `outrage check` and `backup` are about one file and say which with `--store`.
 
 `outrage mounts` reports the table a command line would open, without opening
