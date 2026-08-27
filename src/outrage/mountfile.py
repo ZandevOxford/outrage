@@ -164,6 +164,184 @@ class _Item:
     """
 
 
+@dataclass(frozen=True, slots=True)
+class Starter:
+    """What writing a project's mount table would do, or did."""
+
+    path: Path
+    action: str
+    """'created' or 'unchanged'."""
+    text: str
+    """The file's content: what a write made, or what is already there."""
+    missing: str
+    """The TOML a run named that the file does not already say, or ``""``.
+
+    Only ever set beside 'unchanged', and it is how the command stays useful
+    when it declines to write: the lines are the ones to paste in.
+    """
+
+    @property
+    def writes(self) -> bool:
+        return self.action == "created"
+
+
+def plan_starter(
+    directory: str | os.PathLike[str],
+    *,
+    root_mount: str | None = None,
+    mounts: Sequence[str] = (),
+    read_only_mounts: Sequence[str] = (),
+) -> Starter:
+    """Work out what writing this table into ``directory`` would do.
+
+    **Written once, by hand thereafter.** A file whose reason for existing is
+    comments must not be machine-rewritten, because a rewrite is exactly what
+    loses them - so a table that is already there is never touched, and a run
+    naming a mount it does not hold is told which lines to add rather than
+    having them written underneath the comments somebody wrote.
+
+    Nothing at all happens when no mount is named. `outrage config` and
+    `outrage init` exist to register a server and repair a project, and
+    creating a store directory to drop an empty file into it is not something
+    either was asked to do.
+
+    Every spec goes through :func:`outrage.mounts.parse_spec`, so a misspelled
+    mount point is refused while somebody is looking at the command that wrote
+    it rather than at a server that silently failed to start.
+    """
+    path = Path(directory).expanduser() / DEFAULT_NAME
+    wanted = MountTable(
+        path=path,
+        root=None if root_mount in (None, store_module.default_store_file()) else root_mount,
+        mounts=tuple(_parsed(spec) for spec in mounts),
+        read_only=tuple(_parsed(spec) for spec in read_only_mounts),
+    )
+    if wanted.root is None and not wanted.mounts and not wanted.read_only:
+        return Starter(path=path, action="unchanged", text="", missing="")
+    if not path.exists():
+        return Starter(path=path, action="created", text=starter_text(wanted), missing="")
+    # Read rather than assumed: a run naming exactly what the file already says
+    # has nothing to report, and a file that does not parse is an error here
+    # for the same reason a `.mcp.json` that does not parse is one.
+    return Starter(
+        path=path,
+        action="unchanged",
+        text=path.read_text(encoding="utf-8"),
+        missing=_missing(wanted, read(path)),
+    )
+
+
+def write_starter(starter: Starter) -> None:
+    """Create the file ``starter`` planned, and only if it is still not there.
+
+    Opened exclusively rather than checked and then written: "only when there
+    is none" is the whole promise, and it is the one thing a plan made a moment
+    earlier cannot still guarantee.
+    """
+    starter.path.parent.mkdir(parents=True, exist_ok=True)
+    with open(starter.path, "x", encoding="utf-8") as handle:
+        handle.write(starter.text)
+
+
+def _parsed(spec: str) -> tuple[str, str]:
+    point, file = parse_spec(spec)
+    return point, str(file)
+
+
+def _missing(wanted: MountTable, held: MountTable) -> str:
+    """The entries ``wanted`` asks for that ``held`` does not already say."""
+    lines = []
+    if wanted.root is not None and wanted.root != held.root:
+        lines.append(f"{ROOT_FIELD} = {_string(wanted.root)}")
+    for field, ours, theirs in (
+        (MOUNT_FIELD, wanted.mounts, held.mounts),
+        (READ_ONLY_FIELD, wanted.read_only, held.read_only),
+    ):
+        entries = [entry for entry in ours if entry not in theirs]
+        if entries:
+            lines.append(f"[{field}]")
+            lines += [f"{_key(point)} = {_string(file)}" for point, file in entries]
+    return "\n".join(lines)
+
+
+def starter_text(table: MountTable) -> str:
+    """A commented mount configuration holding ``table``.
+
+    The comments are the point of the file being TOML at all, and they are why
+    nothing rewrites it afterwards. What is not asked for is shown commented
+    out, so the shape of every field is on the page whether or not this project
+    uses it.
+    """
+    root = table.root or store_module.default_store_file()
+    lines = [
+        "# The stores outrage serves from this directory, and where each is mounted.",
+        "#",
+        "# Read by the MCP server and by `outrage get`, `set`, `ls`, `dump`, `rm`,",
+        "# `export` and `import` alike, so a project has one table rather than one",
+        "# per caller. Every FILE below is a store in this directory: only --dir is",
+        "# ever a path.",
+        "#",
+        "# Written once and maintained by hand thereafter. outrage will not rewrite",
+        "# this file, because a rewrite is what loses these comments.",
+        "#",
+        "# The command line reads as though these options had been typed at the",
+        "# front of it, so anything actually typed wins:",
+        "#",
+        "#   --mount KEY=FILE   mount another store for one run, or put a different",
+        "#                      store at a KEY named below",
+        "#   --unmount KEY      leave one of them out for one run",
+        "#   --no-mount-config  ignore this file entirely",
+        "",
+        "# The store answering for every key no mount claims.",
+        f"{'' if table.root else '# '}{ROOT_FIELD} = {_string(root)}",
+        "",
+        "# Mounted read-write.",
+        f"[{MOUNT_FIELD}]",
+    ]
+    lines += _entry_lines(table.mounts, 'notes = "notes.sqlite"')
+    lines += [
+        "",
+        "# Mounted read-only: a write routed here is refused before it reaches the",
+        "# store, and the store must already exist, since a mistyped name would",
+        "# otherwise be created and mount as an empty one.",
+        f"[{READ_ONLY_FIELD}]",
+    ]
+    lines += _entry_lines(table.read_only, 'ref = "reference.sqlite"')
+    return "\n".join(lines) + "\n"
+
+
+def _entry_lines(entries: Sequence[tuple[str, str]], example: str) -> list[str]:
+    if not entries:
+        return [f"# {example}"]
+    return [f"{_key(point)} = {_string(file)}" for point, file in entries]
+
+
+def _key(point: str) -> str:
+    """A mount point as a TOML key: bare where it can be, quoted where it cannot.
+
+    A key holds anything a segment holds, and TOML's bare keys hold rather
+    less - ``ref/notes`` is a perfectly ordinary mount point and not a bare
+    key.
+    """
+    bare = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+    return point if point and all(character in bare for character in point) else _string(point)
+
+
+def _string(value: str) -> str:
+    """``value`` as a TOML basic string.
+
+    A writer of four lines rather than a dependency, which is the trade
+    ``tomllib`` reading and not writing leaves: everything written here is a
+    flat table of strings.
+    """
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    escaped = "".join(
+        character if " " <= character < "\x7f" else f"\\u{ord(character):04X}"
+        for character in escaped
+    )
+    return f'"{escaped}"'
+
+
 def read(path: str | os.PathLike[str]) -> MountTable:
     """Read one mount configuration file.
 
@@ -465,7 +643,11 @@ __all__ = [
     "UNMOUNT_FLAG",
     "MountFileError",
     "MountTable",
+    "Starter",
     "directory_in",
+    "plan_starter",
     "read",
     "spliced",
+    "starter_text",
+    "write_starter",
 ]

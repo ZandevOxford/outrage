@@ -18,7 +18,7 @@ import pytest
 
 from conftest import raises_rendered
 from outrage import config as config_module
-from outrage import eventlog, store
+from outrage import eventlog, mountfile, store
 from outrage.config import (
     Change,
     ConfigError,
@@ -329,80 +329,110 @@ def test_server_name_is_the_key_that_gets_replaced():
     assert config_module.SERVERS_FIELD == "mcpServers"
 
 
-def test_a_mount_is_recorded_as_written(tmp_path):
-    """A mount names a file inside --dir, and only --dir is absolute.
+def test_the_entry_no_longer_carries_the_mounts(tmp_path):
+    """The payoff, and the thing this changed.
 
-    The opposite of what this used to assert. A mount was a directory of its
-    own and had to be absolute for the reason --dir is; now it is a file
-    beside the root mount, and resolving it would put back the absolute path
-    that stops being true the moment the project moves.
+    A mount table used to be a flat run of ``--mount`` strings in this array,
+    which made a client's JSON the place a table was maintained. It is
+    ``mounts.toml`` in the store directory now, and what is left here is the
+    one thing a file cannot hold - the directory it is in.
     """
-    entry = config_module.server_entry(
+    args = config_module.server_entry(tmp_path / "base", command=["outrage-server"])["args"]
+
+    assert args == ["--dir", str(tmp_path / "base")]
+
+
+def test_a_mount_is_written_to_the_table_beside_the_stores(tmp_path):
+    """A mount names a file inside --dir, and only --dir is a path.
+
+    The opposite of what this used to assert about a mount being absolute: it
+    is a store *in* the directory, and resolving it would put back the absolute
+    path that stops being true the moment the project moves.
+    """
+    table = mountfile.plan_starter(
         tmp_path / "base",
-        command=["outrage-server"],
         mounts=["ref=reference.sqlite", "lib/deep=stores/deep.sqlite"],
     )
-    args = entry["args"]
-    assert args.count("--mount") == 2
-    assert "ref=reference.sqlite" in args
-    assert "lib/deep=stores/deep.sqlite" in args
-    assert [a for a in args if Path(a).is_absolute()] == [str(tmp_path / "base")]
+    mountfile.write_starter(table)
+
+    written = mountfile.read(tmp_path / "base" / mountfile.DEFAULT_NAME)
+    assert written.mounts == (
+        ("ref", "reference.sqlite"),
+        ("lib/deep", "stores/deep.sqlite"),
+    )
+    assert "# Mounted read-write." in table.text
 
 
-def test_the_root_mount_is_recorded_only_when_it_is_not_the_default(tmp_path):
-    # An entry that never asked for one is not rewritten to say what it already
+def test_the_root_mount_is_written_only_when_it_is_not_the_default(tmp_path):
+    # An entry that never asked for one is not written to say what it already
     # meant -- which is what keeps a re-run reporting "already current".
-    plain = config_module.server_entry(tmp_path / "base", command=["outrage-server"])
-    assert "--root-mount" not in plain["args"]
+    assert not mountfile.plan_starter(tmp_path / "a").writes
+    assert not mountfile.plan_starter(tmp_path / "b", root_mount=store.default_store_file()).writes
 
-    same = config_module.server_entry(
-        tmp_path / "base", command=["outrage-server"], root_mount=store.default_store_file()
-    )
-    assert same["args"] == plain["args"]
-
-    named = config_module.server_entry(
-        tmp_path / "base", command=["outrage-server"], root_mount="main.sqlite"
-    )
-    assert named["args"][named["args"].index("--root-mount") + 1] == "main.sqlite"
+    named = mountfile.plan_starter(tmp_path / "c", root_mount="main.sqlite")
+    assert named.writes
+    mountfile.write_starter(named)
+    assert mountfile.read(named.path).root == "main.sqlite"
 
 
-def test_a_misspelled_mount_point_is_refused_while_writing_the_config(tmp_path):
+def test_a_misspelled_mount_point_is_refused_while_writing_the_table(tmp_path):
     """Refused here, where somebody is looking, rather than by a server nobody sees."""
     from outrage.mounts import MountError
 
     with pytest.raises(MountError):
-        config_module.server_entry(tmp_path, command=["outrage-server"], mounts=["no-delimiter"])
+        mountfile.plan_starter(tmp_path, mounts=["no-delimiter"])
     with raises_rendered(MountError, "no mount point"):
-        config_module.server_entry(tmp_path, command=["outrage-server"], mounts=["=/srv/x"])
+        mountfile.plan_starter(tmp_path, mounts=["=/srv/x"])
+    with pytest.raises(MountError):
+        mountfile.plan_starter(tmp_path, read_only_mounts=["no-delimiter"])
 
 
-def test_a_read_only_mount_is_recorded_as_mount_ro(tmp_path):
-    entry = config_module.server_entry(
+def test_a_read_only_mount_is_written_to_its_own_table(tmp_path):
+    table = mountfile.plan_starter(
         tmp_path / "base",
-        command=["outrage-server"],
         mounts=["lib=lib.sqlite"],
         read_only_mounts=["ref=reference.sqlite", "shared/base=shared.sqlite"],
     )
-    args = entry["args"]
-    assert args.count("--mount") == 1
-    assert args.count("--mount-ro") == 2
-    assert "ref=reference.sqlite" in args
-    assert "shared/base=shared.sqlite" in args
+    mountfile.write_starter(table)
+
+    written = mountfile.read(table.path)
+    assert written.mounts == (("lib", "lib.sqlite"),)
+    assert written.read_only == (
+        ("ref", "reference.sqlite"),
+        ("shared/base", "shared.sqlite"),
+    )
 
 
-def test_a_misspelled_read_only_mount_point_is_refused_too(tmp_path):
-    from outrage.mounts import MountError
+def test_a_table_already_there_is_reported_and_not_rewritten(tmp_path):
+    """The whole reason it is TOML is comments, and a rewrite loses them.
 
-    with pytest.raises(MountError):
-        config_module.server_entry(
-            tmp_path, command=["outrage-server"], read_only_mounts=["no-delimiter"]
-        )
+    So a run naming a mount the file does not hold says which lines to add.
+    One that names what the file already says has nothing to report at all.
+    """
+    mountfile.write_starter(mountfile.plan_starter(tmp_path, mounts=["ref=reference.sqlite"]))
+    before = (tmp_path / mountfile.DEFAULT_NAME).read_text()
+
+    same = mountfile.plan_starter(tmp_path, mounts=["ref=reference.sqlite"])
+    more = mountfile.plan_starter(tmp_path, mounts=["team=team.sqlite"])
+
+    assert not same.writes and same.missing == ""
+    assert not more.writes
+    assert more.missing == '[mount]\nteam = "team.sqlite"'
+    assert (tmp_path / mountfile.DEFAULT_NAME).read_text() == before
 
 
-def test_an_entry_without_mounts_is_unchanged(tmp_path):
-    args = config_module.server_entry(tmp_path, command=["outrage-server"])["args"]
-    assert "--mount" not in args
-    assert "--mount-ro" not in args
+def test_an_entry_that_still_names_mounts_is_reported_rather_than_migrated(tmp_path):
+    """Nothing migrates an installed configuration, deliberately.
+
+    Such an entry goes on working - `merge_entry` inherits what a new entry
+    does not mention, and the command line comes after the file, so it still
+    wins. But a table in two places with only one of them the place anybody
+    looks is worth a sentence.
+    """
+    assert config_module.mounts_in(["--dir", "/p/.outrage", "--log"]) == []
+    assert config_module.mounts_in(
+        ["--dir", "/p", "--mount", "a=a.sqlite", "--mount-ro", "r=r.sqlite"]
+    ) == ["--mount", "--mount-ro"]
 
 
 # -- keeping what a re-run was not told about ----------------------------
@@ -479,12 +509,23 @@ def test_nothing_to_merge_from_leaves_the_new_entry_alone():
 
 def test_init_twice_leaves_a_configured_project_untouched(tmp_path):
     """The whole bug, end to end: set a project up with mounts, then re-run the
-    plain command somebody would use to repair a hook."""
+    plain command somebody would use to repair a hook.
+
+    The entry is written by hand here because nothing writes one like it any
+    more - a mount table is a file now. Which is exactly why this still
+    matters: an entry an older release wrote is what an installed project has,
+    nothing migrates it, and a re-run must not be what takes its mounts away.
+    """
     path = tmp_path / ".mcp.json"
-    entry = config_module.server_entry(
-        tmp_path / ".outrage", ["/env/bin/outrage-server"],
-        log=eventlog.DEFAULT, mounts=["test=test.sqlite"], read_only_mounts=["ref=ref.sqlite"],
-    )
+    entry = {
+        "command": "/env/bin/outrage-server",
+        "args": [
+            "--dir", str(tmp_path / ".outrage"),
+            "--mount", "test=test.sqlite",
+            "--mount-ro", "ref=ref.sqlite",
+            "--log",
+        ],
+    }
     _, merged, _ = config_module.plan(path, "project", entry)
     config_module.write_config(path, merged)
     before = path.read_text()

@@ -26,8 +26,7 @@ from typing import Any
 
 from .errors import OutrageError
 from .eventlog import DEFAULT as LOG_BESIDE_STORE
-from .mounts import SPEC_DELIMITER, parse_spec
-from .store import DEFAULT_DIR_NAME, default_store_file
+from .store import DEFAULT_DIR_NAME
 
 #: The name this server is registered under. Also the key that a re-run
 #: replaces, which is what keeps unrelated servers in the file untouched.
@@ -101,9 +100,6 @@ def server_entry(
     *,
     log: Any = None,
     log_content: str | None = None,
-    root_mount: str | None = None,
-    mounts: Sequence[str] = (),
-    read_only_mounts: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Build the configuration entry for the stores in ``directory``.
 
@@ -119,28 +115,19 @@ def server_entry(
     asked for here rather than by hand because an entry edited by hand is the
     failure this module exists to prevent.
 
-    ``root_mount`` names the store answering for every key no mount claims, as
-    a file inside the directory. Recorded only when it is not the default, so
-    that an entry which never asked for one is not rewritten to say what it
-    already meant.
-
-    ``mounts`` are ``KEY=FILE`` specs, each recorded as a ``--mount``, and
-    ``read_only_mounts`` the same specs recorded as ``--mount-ro``. They go
-    through the same parse the server will do, so a misspelled mount point is
-    refused while somebody is looking at the command that wrote it rather than
-    at a client that silently failed to start a server. The file is written as
-    given: it names a store inside ``--dir``, and resolving it here would put
-    back the absolute path this shape exists to remove. A file that is not
-    relative is refused by ``store_file`` when the server opens it.
+    **The mounts are not here.** They were, as a flat run of ``--mount
+    ref=reference.sqlite`` strings in this array, which made a client's JSON the
+    place a mount table was maintained and hand-editing it the supported way to
+    change one. They live in ``mounts.toml`` in the store directory since
+    2026-08-27 - :mod:`outrage.mountfile` - which is what leaves ``--dir`` as
+    the only thing this entry has to carry. **An entry already naming mounts
+    keeps them**: :func:`merge_entry` inherits what a new entry does not
+    mention, and they still win, since the command line comes after the file.
+    Nothing migrates that automatically, deliberately; ``outrage config`` says
+    they are there.
     """
     argv = list(command) if command is not None else launch_command()
     args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
-    if root_mount is not None and root_mount != default_store_file():
-        args += ["--root-mount", root_mount]
-    for flag, specs in (("--mount", mounts), ("--mount-ro", read_only_mounts)):
-        for spec in specs:
-            prefix, path = parse_spec(spec)
-            args += [flag, f"{prefix}{SPEC_DELIMITER}{path}"]
     if log is not None:
         args.append("--log")
         # Absolute for the same reason the store directory is.
@@ -149,6 +136,19 @@ def server_entry(
         if log_content is not None:
             args += ["--log-content", log_content]
     return {"command": argv[0], "args": args}
+
+
+def mounts_in(args: Sequence[str]) -> list[str]:
+    """The mount options an existing server entry still carries, if any.
+
+    Nothing migrates these: an entry that names mounts goes on working, and
+    they win over ``mounts.toml`` because the command line comes after the
+    file. But an entry and a file both describing a table, with only one of
+    them the place anybody thinks to look, is worth a sentence - so this is
+    what ``outrage config`` reports.
+    """
+    named = ("--mount", "--mount-ro", "--root-mount")
+    return [flag for flag, _ in split_args(list(args)) if flag in named]
 
 
 def split_args(args: Sequence[str]) -> list[tuple[str, list[str]]]:
@@ -181,6 +181,11 @@ def merge_entry(previous: dict[str, Any] | None, entry: dict[str, Any]) -> dict[
     :func:`server_entry` builds an argument list from what the caller passed
     and nothing else. A re-run with no flags therefore wrote an entry with no
     mounts.
+
+    It is also what keeps an entry written before the mount table moved into
+    ``mounts.toml`` working: ``server_entry`` no longer builds a ``--mount``,
+    so the ones already in the file are inherited by every re-run rather than
+    quietly dropped.
 
     So: **an option the new entry does not mention is inherited from the old
     one.** Options it does mention replace the old ones outright, all of them
@@ -365,6 +370,7 @@ __all__ = [
     "default_store_dir",
     "launch_command",
     "merge_entry",
+    "mounts_in",
     "plan",
     "read_config",
     "server_entry",

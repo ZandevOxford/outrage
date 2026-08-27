@@ -460,8 +460,15 @@ def test_init_passes_logging_through_to_the_entry(tmp_path):
     assert "excerpt" in done.server.entry["args"]
 
 
-def test_init_passes_the_mounts_through_to_the_entry(tmp_path):
-    """The same argument as logging: a re-run must not drop what config wrote."""
+def test_init_writes_the_mounts_to_the_table_and_not_to_the_entry(tmp_path):
+    """The table is a file in the store directory, and the entry carries --dir.
+
+    Which is the payoff of the file existing: registering a server stops being
+    "write the whole table into a client's JSON, correctly, from a command" and
+    becomes "point at a directory".
+    """
+    from outrage import mountfile
+
     done = init(
         tmp_path,
         root_mount="main.sqlite",
@@ -469,10 +476,30 @@ def test_init_passes_the_mounts_through_to_the_entry(tmp_path):
         read_only_mounts=["ref=reference.sqlite"],
     )
 
-    args = done.server.entry["args"]
-    assert args[args.index("--root-mount") + 1] == "main.sqlite"
-    assert args[args.index("--mount") + 1] == "lib=lib.sqlite"
-    assert args[args.index("--mount-ro") + 1] == "ref=reference.sqlite"
+    assert done.server.entry["args"] == ["--dir", str(tmp_path / ".outrage")]
+    written = mountfile.read(tmp_path / ".outrage" / mountfile.DEFAULT_NAME)
+    assert written.root == "main.sqlite"
+    assert written.mounts == (("lib", "lib.sqlite"),)
+    assert written.read_only == (("ref", "reference.sqlite"),)
+
+
+def test_init_never_rewrites_a_table_that_is_already_there(tmp_path):
+    """A file whose reason for existing is comments is written once.
+
+    So a second init naming a different mount reports the lines to add rather
+    than writing them under somebody's comments.
+    """
+    from outrage import mountfile
+
+    init(tmp_path, mounts=["lib=lib.sqlite"])
+    table = tmp_path / ".outrage" / mountfile.DEFAULT_NAME
+    before = table.read_text()
+
+    done = init(tmp_path, mounts=["other=other.sqlite"])
+
+    assert table.read_text() == before
+    assert not done.table.writes
+    assert 'other = "other.sqlite"' in done.table.missing
 
 
 def test_a_second_init_changes_nothing_anywhere(tmp_path):

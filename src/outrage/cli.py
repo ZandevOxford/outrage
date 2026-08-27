@@ -91,10 +91,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "for Copilot CLI - and the packaged skill and agents in .claude/. "
             "Only the entries outrage owns are written; anything else in those "
             "files is left as it was, and a file already holding the current "
-            "content is not rewritten. An option already on an existing server "
-            "entry - a mount, --log - is kept even when this run does not "
-            "mention it. Safe to re-run, which is how a project is repaired "
-            "after outrage is upgraded or the environment moves."
+            "content is not rewritten. Mounts go in mounts.toml in the store "
+            "directory, which is written once and maintained by hand "
+            "thereafter; an option already on an existing server entry - "
+            "--log, or a mount an older release wrote there - is kept even "
+            "when this run does not mention it. Safe to re-run, which is how a "
+            "project is repaired after outrage is upgraded or the environment "
+            "moves."
         ),
     )
     init.add_argument(
@@ -134,10 +137,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "environment's entry point and to the store directory. Only the "
             "server's own entry is touched; anything else in the file is left "
             "as it was. Options already on that entry are kept unless this run "
-            "names the same one, so a re-run cannot silently drop mounts or "
-            "logging - which also means removing one is an edit to the file. "
-            "Safe to re-run, which is how the configuration is "
-            "repaired after the environment moves."
+            "names the same one, so a re-run cannot silently drop logging - "
+            "which also means removing one is an edit to the file. Mounts are "
+            "not written here at all: they go in mounts.toml in the store "
+            "directory, which both the server and the command line read, and "
+            "which is written once and maintained by hand thereafter. Safe to "
+            "re-run, which is how the configuration is repaired after the "
+            "environment moves."
         ),
     )
     config.add_argument(
@@ -690,7 +696,14 @@ def _log_options(parser: argparse.ArgumentParser) -> None:
 
 
 def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
-    """The stores a server entry records, spelled the same way on init and config.
+    """The stores a project's mount table holds, spelled once for init and config.
+
+    Not to be confused with :func:`_table_options`, which opens those stores
+    for one command. These *seed* the table - ``mounts.toml`` in the store
+    directory, which the server and the command line both read - and it is
+    written **once**: a file whose reason for existing is comments is not
+    machine-rewritten, so a run naming a mount a table already there does not
+    hold is told which lines to add.
 
     Every one of them is a file inside the store directory, so this is the one
     place that has to say so.
@@ -701,9 +714,10 @@ def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
         metavar="FILE",
         default=None,
         help=(
-            f"{verb} --root-mount for the server: the store answering for every "
-            f"key no mount claims, as a file inside --dir (default: "
-            f"{store.default_store_file()}). Written only when it is not the default."
+            f"{verb} root-mount in the project's mount table: the store "
+            f"answering for every key no mount claims, as a file inside --dir "
+            f"(default: {store.default_store_file()}). Written only when it is "
+            f"not the default."
         ),
     )
     parser.add_argument(
@@ -713,10 +727,10 @@ def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
         default=[],
         metavar="KEY=FILE",
         help=(
-            f"{verb} --mount for the server: another store under KEY, as in "
-            "ref=reference.sqlite. FILE is relative to --dir, like "
-            "--root-mount. Repeatable, and refused here if the mount point is "
-            "not a valid key."
+            f"{verb} mount in the project's mount table: another store under "
+            f"KEY, as in ref=reference.sqlite. FILE is relative to --dir, like "
+            f"--root-mount. Repeatable, and refused here if the mount point is "
+            f"not a valid key."
         ),
     )
     parser.add_argument(
@@ -726,8 +740,8 @@ def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
         default=[],
         metavar="KEY=FILE",
         help=(
-            f"{verb} --mount-ro for the server: as --mount, but the server "
-            "refuses every write routed there. Repeatable."
+            f"{verb} read-only mount: as --mount, but every write routed there "
+            "is refused before it reaches the store. Repeatable."
         ),
     )
 
@@ -863,6 +877,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
     )
 
     _report(done.server, out, dry_run=args.dry_run)
+    _report_table(done.table, out, dry_run=args.dry_run)
     for hook in done.hooks:
         _report_hook(hook, out, dry_run=args.dry_run)
     _report_assets(
@@ -896,10 +911,9 @@ def _config_command(args: argparse.Namespace, out: TextIO) -> int:
         else config_module.config_path(args.scope, project_dir)
     )
     directory = args.directory or config_module.default_store_dir(project_dir)
-    entry = config_module.server_entry(
+    entry = config_module.server_entry(directory, log=args.log, log_content=args.log_content)
+    table = mountfile.plan_starter(
         directory,
-        log=args.log,
-        log_content=args.log_content,
         root_mount=args.root_mount,
         mounts=args.mounts,
         read_only_mounts=args.read_only_mounts,
@@ -907,10 +921,37 @@ def _config_command(args: argparse.Namespace, out: TextIO) -> int:
 
     change, merged, original = config_module.plan(path, args.scope, entry, name=args.name)
     _report(change, out, dry_run=args.dry_run)
+    _report_table(table, out, dry_run=args.dry_run)
 
-    if change.writes and not args.dry_run:
-        config_module.write_config(path, merged, original)
+    if not args.dry_run:
+        if change.writes:
+            config_module.write_config(path, merged, original)
+        if table.writes:
+            mountfile.write_starter(table)
     return 0
+
+
+def _report_table(table: mountfile.Starter, out: TextIO, *, dry_run: bool) -> None:
+    """Say what happened to the project's mount table, including nothing.
+
+    Silent when no mount was named, because then there was no table to write
+    and a line about one would be noise on every ``outrage init``.
+
+    The two lines that earn their place are the other cases. **A table already
+    there is never rewritten** - a file whose reason for existing is comments
+    cannot be - so a run naming a mount it does not hold has to say so, and
+    printing the entries is what keeps the answer useful rather than a dead
+    end.
+    """
+    if not table.writes and not table.missing:
+        return
+    print(f"mount table: {table.path}", file=out)
+    if table.writes:
+        print(f"  {_said('created', dry_run)}", file=out)
+        return
+    print("  already there, and not rewritten: add these lines to it", file=out)
+    for line in table.missing.splitlines():
+        print(f"    {line}", file=out)
 
 
 def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -1562,6 +1603,19 @@ def _report(change: config_module.Change, out: TextIO, *, dry_run: bool) -> None
     if change.previous is not None and change.action == "updated":
         _print_command("  was:", change.previous, out)
     _print_command("  now:" if change.action == "updated" else "  ", change.entry, out)
+
+    still = config_module.mounts_in(change.entry.get("args", []))
+    if still:
+        # Not migrated, on purpose, and it goes on working: the entry's options
+        # come after the file's and so win. Said out loud because a table in
+        # two places, with only one of them the place anybody looks, is how
+        # somebody edits the file and wonders why nothing changed.
+        print(
+            f"  note: this entry names {', '.join(sorted(set(still)))} in its args, "
+            f"which is where a mount table used to live. What is there overrides "
+            f"{mountfile.DEFAULT_NAME}, and removing it is an edit to this file.",
+            file=out,
+        )
 
 
 def _report_hook(change: install.HookChange, out: TextIO, *, dry_run: bool) -> None:
