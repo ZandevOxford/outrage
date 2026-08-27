@@ -12,7 +12,7 @@ bulk operation between the two can become a copy.
 store follows from its file extension, and a tree has no extension to read; an
 option that forces the backend type is what will address one, and until then a
 filesystem store is constructed directly at a path. That is also why
-:meth:`~outrage.store.Store.__init__` is overridden rather than called: the
+:meth:`~outrage.store.FileStore.__init__` is overridden rather than called: the
 directory-plus-relative-filename rule is right for a file inside a store
 directory and wrong for an export target, which is an absolute path somebody
 typed.
@@ -59,12 +59,12 @@ the tree -- ``.md`` -- and closes the export gap ``planned/root-key`` left.
 from __future__ import annotations
 
 import os
-import shutil
 import threading
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Self
 
 from . import bulk, eventlog, keys
 from .errors import OutrageError
@@ -76,17 +76,15 @@ from .store import (
     EVERYTHING,
     UNBOUNDED,
     AuditRow,
-    Backup,
-    BackupError,
     BoundedSubtree,
     Entry,
     Excerpt,
+    FileStore,
     KeyNotFoundError,
     KeyRange,
     MissingMeta,
     Page,
     PatternNotFoundError,
-    Store,
     _cursor_bound,
     _detect_format,
     _excerpt,
@@ -148,7 +146,7 @@ class _Row:
     path: Path
 
 
-class FilesystemStore(Store):
+class FilesystemStore(FileStore):
     """A document store kept as a directory of files."""
 
     default_filename = DEFAULT_TREE_NAME
@@ -877,44 +875,24 @@ class FilesystemStore(Store):
 
     # -- maintenance -----------------------------------------------------
 
-    @_logged("backup")
-    def backup(
-        self,
-        destination: str | os.PathLike[str] | None = None,
-        *,
-        overwrite: bool = False,
-    ) -> Backup:
-        """Copy the tree, and read the copy back to prove it is one.
+    def opened_at(self, path: Path) -> Self:
+        """The tree at ``path``, reading dotfiles the way this store does.
 
-        The generic shape, and the one part 4 lifts onto the base for every
-        backend that has no native copy: write the same corpus into a fresh
-        store of the same class, then open it and compare. The comparison is
-        every key rather than a count of them -- a copy that lost one document
-        and gained another counts the same and is not a backup.
+        The base splits a path into a directory and a name within it, which is
+        what every other backend's constructor takes; this one's takes the
+        directory itself. ``hidden`` travels with it because the root document
+        *is* a dotfile: a copy opened without it would not see the key the
+        store it was copied from holds at the root, and would compare short
+        for a reason that is not a fault.
+
+        **A backup of a tree is a copy of its documents, not of its
+        directory.** Whatever the tree holds that is not a document -- a
+        symbolic link, a file that is not text, a name no key spells -- is
+        passed over, the same way every other read of this store passes it
+        over. :meth:`check_file` is what names those, and it is worth running
+        before trusting a backup of a tree somebody has been editing by hand.
         """
-        target = self.backup_path(destination, overwrite=overwrite)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if target.exists() and overwrite:
-            shutil.rmtree(target)
-        shutil.copytree(self.root, target, symlinks=True)
-
-        mine = [row.key for row in self._subtree_rows(keys.ROOT, measure=False)]
-        with FilesystemStore(target, hidden=self._hidden) as copy:
-            theirs = [row.key for row in copy._subtree_rows(keys.ROOT, measure=False)]
-        if mine != theirs:
-            lost = sorted(set(mine) - set(theirs))
-            gained = sorted(set(theirs) - set(mine))
-            raise BackupError(
-                "backup-incomplete",
-                target=str(target),
-                differs=f"{len(lost)} keys missing, {len(gained)} unexpected",
-            )
-        return Backup(
-            path=target,
-            bytes=sum(path.stat().st_size for path in target.rglob("*") if path.is_file()),
-            documents=len(theirs),
-            integrity="ok",
-        )
+        return type(self)(path, hidden=self._hidden)
 
     @property
     def stored_format_version(self) -> int:

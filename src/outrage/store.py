@@ -18,13 +18,20 @@ The vocabulary is the interesting part, and it is worth reading in this order:
 * :class:`Entry` is how one key appears in its parent's listing, which is the
   only place the difference between a stored key and an implicit one shows.
 
-:class:`Store` itself is abstract, and there are two implementations. The
-operations carry the contract both answer:
+:class:`Store` itself is abstract, and it says only what a store *does*.
+:class:`FileStore` is the half of that which needs a file to answer -- where it
+lives, what version wrote it, how it is copied and checked -- and the three
+backends are its implementations:
 :class:`outrage.store_sqlite.SqliteStore` is a read-write database accumulated a
-document at a time, and :class:`outrage.store_parquet.ParquetStore` is one
+document at a time, :class:`outrage.store_parquet.ParquetStore` is one
 columnar file written whole and read many times, for a reference base of tens
-of thousands of documents. They share none of the storage and every word of
+of thousands of documents, and
+:class:`outrage.store_files.FilesystemStore` is a directory of files, whose
+"file" is that directory. They share none of the storage and every word of
 the vocabulary below, which is the point of the split.
+:class:`outrage.mounts.MountedStore` is a :class:`Store` and not a
+:class:`FileStore`: it keeps nothing of its own and routes to the stores behind
+it, and that is what the two classes are for.
 
 :func:`_backend_for` is the one place in the package that chooses between
 them, and it chooses by the store file's extension. So nothing above here --
@@ -45,6 +52,7 @@ import inspect
 import json
 import os
 import re
+import shutil
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Sequence
@@ -523,23 +531,17 @@ class Store(ABC):
     What a subclass adds is how a key becomes a stored thing and back; what it
     may not add is a second way of saying which keys a call is about.
 
-    Two things are settled here rather than per backend, because they are the
-    same question whatever the storage is: **where the file lives**, which
-    :func:`store_file` decides from a directory and a name relative to it, and
-    **that a store is a file inside a directory** rather than a directory of
-    its own, so that several stores can share one -- see
-    ``project/reference/planned/mounts``.
+    **A store is not necessarily kept in a file.** Everything about one that
+    is -- where it lives, which version of its format wrote it, how it is
+    copied and checked -- is :class:`FileStore` below.
+    :class:`~outrage.mounts.MountedStore` is a store and not a file store: it
+    keeps nothing of its own and routes to the stores behind it. The split is
+    what says so, in place of the eight members it used to carry to refuse
+    them.
 
     :func:`default_store` is what a caller uses to get one of these without
     naming a backend.
     """
-
-    #: What this backend calls its store file when a caller names none. Set by
-    #: every concrete backend, and the only thing about the file a backend
-    #: decides: that it *is* a file inside a directory is settled above, by
-    #: :func:`store_file`. :func:`default_store_file` is how the rest of the
-    #: package asks for it without naming a backend to ask.
-    default_filename: ClassVar[str]
 
     #: Whether this backend can be written at all. False says the *storage*
     #: refuses, which is not the same as a store that was mounted read-only:
@@ -562,38 +564,11 @@ class Store(ABC):
     #: sentence about a store and the name of its file agree.
     backend_name: ClassVar[str]
 
-    #: The version of its own on-disk format this build writes. Compared
-    #: against :attr:`stored_format_version` by :func:`outrage.maintenance.check`,
-    #: which is why the comparison is written once rather than per backend --
-    #: "written by a newer outrage than this" is the same fault whatever wrote it,
-    #: even though each backend records the number somewhere different.
-    format_version: ClassVar[int]
-
-    def __init__(
-        self,
-        directory: str | os.PathLike[str] | None = None,
-        *,
-        filename: str | os.PathLike[str] | None = None,
-        log: EventLog | None = None,
-    ) -> None:
-        # A null log rather than None, so nothing below has to ask whether
-        # logging is on before recording anything.
+    def __init__(self, *, log: EventLog | None = None) -> None:
+        # The one thing every store has, file or no file. A null log rather
+        # than None, so nothing below has to ask whether logging is on before
+        # recording anything.
         self._log = log if log is not None else eventlog.NULL
-        # The directory holding this store, and the shared infrastructure
-        # beside it -- the event log and the backups.
-        self.directory = resolve_directory(directory)
-        # The file this store keeps its documents in, inside that directory.
-        # Settled before the directory is made, so a store file that will be
-        # refused leaves nothing behind to explain. A caller who named no file
-        # gets *this* backend's default rather than the package's, so a store
-        # constructed directly is never opened under another backend's name.
-        self.path = store_file(
-            self.directory,
-            type(self).default_filename if filename is None else filename,
-        )
-        self.directory.mkdir(parents=True, exist_ok=True)
-        # A store file may name a subdirectory, and nothing else creates it.
-        self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def __enter__(self) -> Self:
         return self
@@ -1078,9 +1053,87 @@ class Store(ABC):
         the same one.
         """
 
+
+class FileStore(Store):
+    """A store kept in a file of its own, and everything that follows from it.
+
+    The half of a store that needs somewhere on disk to answer from: where it
+    lives, which version of its format wrote it, how it is copied, and what a
+    check can say about the storage rather than about the keys. Every backend
+    is one of these. :class:`~outrage.mounts.MountedStore` is not, and that is
+    the whole reason the two are separate classes -- a table that keeps nothing
+    cannot answer any of it, and saying so by *not having* the members is
+    better than having eight that exist to refuse.
+
+    Two things are settled here rather than per backend, because they are the
+    same question whatever the storage is: **where the file lives**, which
+    :func:`store_file` decides from a directory and a name relative to it, and
+    **that a store is a file inside a directory** rather than a directory of
+    its own, so that several stores can share one -- see
+    ``project/reference/planned/mounts``.
+
+    A backend whose "file" is a *directory* is still one of these:
+    :class:`~outrage.store_files.FilesystemStore` sets :attr:`path` to the tree
+    and :attr:`directory` to its parent, so a backup of it lands beside the
+    corpus rather than inside it. The name means the same thing -- the one
+    place on disk this store *is* -- and only its kind differs.
+    """
+
+    #: What this backend calls its store file when a caller names none. Set by
+    #: every concrete backend, and the only thing about the file a backend
+    #: decides: that it *is* a file inside a directory is settled above, by
+    #: :func:`store_file`. :func:`default_store_file` is how the rest of the
+    #: package asks for it without naming a backend to ask.
+    default_filename: ClassVar[str]
+
+    #: The version of its own on-disk format this build writes. Compared
+    #: against :attr:`stored_format_version` by :func:`outrage.maintenance.check`,
+    #: which is why the comparison is written once rather than per backend --
+    #: "written by a newer outrage than this" is the same fault whatever wrote it,
+    #: even though each backend records the number somewhere different.
+    format_version: ClassVar[int]
+
+    def __init__(
+        self,
+        directory: str | os.PathLike[str] | None = None,
+        *,
+        filename: str | os.PathLike[str] | None = None,
+        log: EventLog | None = None,
+    ) -> None:
+        super().__init__(log=log)
+        # The directory holding this store, and the shared infrastructure
+        # beside it -- the event log and the backups.
+        self.directory = resolve_directory(directory)
+        # The file this store keeps its documents in, inside that directory.
+        # Settled before the directory is made, so a store file that will be
+        # refused leaves nothing behind to explain. A caller who named no file
+        # gets *this* backend's default rather than the package's, so a store
+        # constructed directly is never opened under another backend's name.
+        self.path = store_file(
+            self.directory,
+            type(self).default_filename if filename is None else filename,
+        )
+        self.directory.mkdir(parents=True, exist_ok=True)
+        # A store file may name a subdirectory, and nothing else creates it.
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def opened_at(self, path: Path) -> Self:
+        """Another store of this class, kept at ``path``.
+
+        The one thing a copy of a store cannot work out for itself. Every
+        backend's constructor takes a directory and a name within it, so the
+        default splits ``path`` that way; a backend whose "file" is a directory
+        overrides this rather than being spelled as a special case here.
+
+        Whatever else distinguishes *this* store from a bare one travels across
+        in the override, because only the backend knows what that is -- and a
+        copy opened under a different policy from the store it was copied from
+        would compare short against it for a reason that is not a fault.
+        """
+        return type(self)(path.parent, filename=path.name)
+
     # -- maintenance -----------------------------------------------------
 
-    @abstractmethod
     def backup(
         self,
         destination: str | os.PathLike[str] | None = None,
@@ -1098,7 +1151,79 @@ class Store(ABC):
         timestamped name under ``backups/`` in the store directory, taking the
         store file's own extension. Missing parents are created. An existing
         file is refused unless ``overwrite``.
+
+        **This is the copy every store can make of itself**: open a fresh one
+        of the same class at the target and :meth:`~Store.copy_from` this one
+        into it, which carries every document, its format, its metadata and its
+        ``updated_at``. A backend with a native copy of its file overrides
+        this and should -- :class:`~outrage.store_sqlite.SqliteStore` must,
+        because the file alone is not the store there, and
+        :class:`~outrage.store_parquet.ParquetStore` does because a byte copy
+        is faster and exact. What a backend may not do is skip the verifying.
+
+        The copy is written through a store that is then closed, and reopened
+        to check it: what a still-open handle says about a file is what it
+        believes it wrote, which is the thing in question.
         """
+        target = self.backup_path(destination, overwrite=overwrite)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Removed rather than written over: what is there need not be the same
+        # shape as what is going there, and a copy that landed *inside* a
+        # directory left behind would be a backup nothing could open.
+        _clear(target)
+
+        try:
+            with self.opened_at(target) as copy:
+                for transfer in copy.copy_from(self, on_conflict=OVERWRITE):
+                    if transfer.action in (FAILED, STOPPED):
+                        raise BackupError(
+                            "backup-unwritable",
+                            target=str(target),
+                            reason=f"{transfer.key}: {transfer.reason}",
+                        )
+        except OSError as exc:
+            _clear(target)
+            raise BackupError("backup-unwritable", target=str(target), reason=str(exc)) from exc
+
+        return self.verified_backup(target)
+
+    def verified_backup(self, target: Path) -> Backup:
+        """Read the copy at ``target`` back, and prove it holds what this does.
+
+        Every key, compared, rather than a count of them: a copy that lost one
+        document and gained another counts the same and is not a backup.
+        :meth:`~FileStore.audit_rows` is what both ends are asked, because it is
+        the one read that yields *every* row a store holds, metadata included,
+        and a backup missing every ``!title`` would open cleanly and be
+        useless.
+
+        Public because a backend with its own copy still owes the same
+        evidence, and the two that have one answer it their own way -- from
+        row counts and a version their storage records natively, which is
+        cheaper and says more. This is the answer for a backend with nothing
+        better to ask.
+
+        ``integrity`` is ``"ok"``: the keys agreeing *is* the check here, and
+        there is no second opinion to report. A backend whose storage has one
+        says what it said.
+        """
+        mine = sorted(row.key for row in self.audit_rows())
+        with self.opened_at(target) as copy:
+            theirs = sorted(row.key for row in copy.audit_rows())
+        if mine != theirs:
+            lost = set(mine) - set(theirs)
+            gained = set(theirs) - set(mine)
+            raise BackupError(
+                "backup-incomplete",
+                target=str(target),
+                differs=f"{len(lost)} keys missing, {len(gained)} unexpected",
+            )
+        return Backup(
+            path=target,
+            bytes=_stored_bytes(target),
+            documents=len(theirs),
+            integrity="ok",
+        )
 
     def backup_path(self, destination: str | os.PathLike[str] | None, *, overwrite: bool) -> Path:
         """Settle where the copy goes, and refuse the destinations that destroy.
@@ -1209,12 +1334,12 @@ _BACKENDS: dict[str, tuple[str, str]] = {
 DEFAULT_BACKEND = ".sqlite"
 
 
-def _backend() -> type[Store]:
+def _backend() -> type[FileStore]:
     """The backend class this build uses when nobody names one."""
     return _backend_for(None)
 
 
-def _backend_for(filename: str | os.PathLike[str] | None) -> type[Store]:
+def _backend_for(filename: str | os.PathLike[str] | None) -> type[FileStore]:
     """Which backend keeps a store file called ``filename``.
 
     ``None`` means the default. Everything else is read from the extension:
@@ -1244,7 +1369,7 @@ def _backend_for(filename: str | os.PathLike[str] | None) -> type[Store]:
             backend=class_name,
             reason=str(exc),
         ) from exc
-    backend: type[Store] = getattr(module, class_name)
+    backend: type[FileStore] = getattr(module, class_name)
     return backend
 
 
@@ -1269,7 +1394,7 @@ def default_store(
     *,
     filename: str | os.PathLike[str] | None = None,
     log: EventLog | None = None,
-) -> Store:
+) -> FileStore:
     """A store of the backend this build opens when nobody names one.
 
     ``filename`` of None means whatever that backend calls its store file.
@@ -1286,7 +1411,7 @@ def open_store(
     *,
     filename: str | os.PathLike[str] | None = None,
     log: EventLog | None = None,
-) -> Iterator[Store]:
+) -> Iterator[FileStore]:
     """Open a store, closing it on exit."""
     store = default_store(directory, filename=filename, log=log)
     try:
@@ -1557,6 +1682,34 @@ def _ms(started: int) -> float:
     return round((time.monotonic_ns() - started) / 1_000_000, 3)
 
 
+def _clear(target: Path) -> None:
+    """Remove whatever is at ``target``, file or directory, if anything is.
+
+    A backup writes to a path :meth:`FileStore.backup_path` has already agreed
+    to, so anything still there was asked to be overwritten. Removed rather
+    than written over, because the two shapes are not interchangeable: writing
+    a store file over a directory fails, and writing a tree into one that is
+    already there leaves whatever was in it beside what was copied.
+    """
+    if target.is_dir() and not target.is_symlink():
+        shutil.rmtree(target)
+    else:
+        target.unlink(missing_ok=True)
+
+
+def _stored_bytes(target: Path) -> int:
+    """How much disk a store takes, whether it is a file or a tree of them.
+
+    A directory's own size says nothing about what is in it, so a tree is the
+    sum of its files. Reported rather than checked: it is what a caller prints
+    beside a backup, and a number that means the same for both kinds is worth
+    more here than one that is exact about blocks.
+    """
+    if target.is_dir():
+        return sum(path.stat().st_size for path in target.rglob("*") if path.is_file())
+    return target.stat().st_size
+
+
 #: Cap on the keys named in one logged result. A log line has to stay small
 #: enough to be written in a single call, or two processes appending can
 #: interleave; a survey of a large subtree would otherwise be unbounded.
@@ -1766,6 +1919,7 @@ __all__ = [
     "BoundedSubtree",
     "Entry",
     "Excerpt",
+    "FileStore",
     "KeyNotFoundError",
     "KeyRange",
     "MetaReader",

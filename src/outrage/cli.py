@@ -1319,7 +1319,7 @@ def _print_report(report: maintenance.Report, out: TextIO) -> None:
 def _open_existing(args: argparse.Namespace):
     """Open a store that is already there, refusing to create one.
 
-    ``Store.__init__`` creates what is missing, so a command acting on an
+    ``FileStore.__init__`` creates what is missing, so a command acting on an
     existing store has to check first - otherwise a mistyped --dir reports a
     perfectly healthy empty store, which is a wrong answer delivered as a clean
     bill of health.

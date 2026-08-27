@@ -80,13 +80,13 @@ from .store import (
     BoundedSubtree,
     Entry,
     Excerpt,
+    FileStore,
     KeyNotFoundError,
     KeyRange,
     MissingMeta,
     Page,
     PatternNotFoundError,
     ReadOnlyStoreError,
-    Store,
     _cursor_bound,
     _excerpt,
     _find_occurrence,
@@ -232,7 +232,7 @@ class _Index:
     group_starts: list[int]
 
 
-class ParquetStore(Store):
+class ParquetStore(FileStore):
     """A document store held in a single parquet file, read only."""
 
     default_filename = DEFAULT_STORE_FILE

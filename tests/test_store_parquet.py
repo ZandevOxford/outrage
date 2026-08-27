@@ -618,13 +618,26 @@ def test_default_store_opens_a_parquet_file_without_naming_a_backend(tmp_path):
 
 def test_every_backend_states_whether_it_can_be_written():
     """Read from the source, because the failure it guards is a backend that
-    forgets to say -- which inherits ``True`` and reports itself writable."""
+    forgets to say -- which inherits ``True`` and reports itself writable.
+
+    A store that *answers* a write is one that defines ``store_document``,
+    which is what picks the concrete ones out here. ``FileStore`` is a base
+    and not a backend: it has no storage to have a policy about, and making it
+    state one would be a third place for the three that do to disagree with.
+    """
     stated = 0
     for path in sorted(pathlib.Path(store_module.__file__).parent.glob("*.py")):
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if not isinstance(node, ast.ClassDef):
                 continue
-            if not any(isinstance(b, ast.Name) and b.id == "Store" for b in node.bases):
+            if not any(
+                isinstance(b, ast.Name) and b.id in ("Store", "FileStore") for b in node.bases
+            ):
+                continue
+            if not any(
+                isinstance(item, ast.FunctionDef) and item.name == "store_document"
+                for item in node.body
+            ):
                 continue
             stated += 1
             assert any(
@@ -632,7 +645,7 @@ def test_every_backend_states_whether_it_can_be_written():
                 and any(getattr(t, "id", None) == "writable" for t in item.targets)
                 for item in node.body
             ), f"{path.name}: {node.name} does not say whether it is writable"
-    assert stated >= 2, "both backends should have been found"
+    assert stated >= 3, "every backend and the mount table should have been found"
 
 
 # -- packing -------------------------------------------------------------

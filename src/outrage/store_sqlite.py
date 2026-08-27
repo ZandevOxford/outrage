@@ -48,12 +48,12 @@ from .store import (
     BoundedSubtree,
     Entry,
     Excerpt,
+    FileStore,
     KeyNotFoundError,
     KeyRange,
     MissingMeta,
     Page,
     PatternNotFoundError,
-    Store,
     _cursor_bound,
     _excerpt,
     _find_occurrence,
@@ -116,7 +116,7 @@ WAL_RATIO = 1.0
 WAL_UNCHECKPOINTED = "most of the store is in the write-ahead log"
 
 
-class SqliteStore(Store):
+class SqliteStore(FileStore):
     """A document store held in a single SQLite database."""
 
     default_filename = DEFAULT_STORE_FILE

@@ -393,6 +393,85 @@ def test_a_backup_is_a_copy_that_was_read_back(files, tmp_path):
         assert restored.retrieve_document("a/b").content == "below"
 
 
+def test_a_backup_carries_the_metadata_and_the_timestamps(files, tmp_path):
+    """A copy that restamped the corpus would open cleanly and be a lie.
+
+    The three documents include a title, which is what a store is surveyed by:
+    a backup that dropped every ``!title`` is one nothing could be read back
+    from usefully, and it would still count three rows.
+    """
+    dated = "2019-03-04T05:06:07+00:00"
+    files.store_document("a/b", "below", updated_at=dated)
+    copy = files.backup(tmp_path / "copy")
+
+    with FilesystemStore(copy.path) as restored:
+        assert restored.retrieve_document("a/!title").content == "A"
+        assert restored.retrieve_document("a/b").updated_at == dated
+
+
+def test_a_backup_of_a_tree_carries_its_documents_and_not_its_directory(files, tmp_path):
+    """The one thing a tree gave up when it stopped copying itself with ``cp``.
+
+    ``FilesystemStore.backup`` was ``shutil.copytree`` until 2026-08-27, and a
+    backup was byte-faithful to the directory. It is the base's copy now -- the
+    same one every other store gets -- so what crosses is what this store holds
+    as a *document*, and a symbolic link is not one: ``exists`` says the key
+    holds nothing and every read passes it over.
+
+    Four things a tree can hold are not documents -- a link, a file that is not
+    text, a name no key spells, and the second of two files claiming one key.
+    :meth:`~outrage.store_files.FilesystemStore.check_file` names three of
+    them, and a link is the one it does not, so this is the least visible of
+    the four and the one worth pinning.
+    """
+    (files.root / "elsewhere.md").symlink_to(tmp_path / "nowhere.md")
+
+    copy = files.backup(tmp_path / "copy")
+
+    assert copy.documents == 3
+    assert not (copy.path / "elsewhere.md").exists()
+    # And the store agrees it never held it, which is why the copy is complete
+    # rather than short: the link is not a key that went missing.
+    assert not files.exists("elsewhere")
+    assert maintenance.check(files).sound
+
+
+def test_a_backup_that_came_up_short_is_refused_rather_than_returned(files, tmp_path, monkeypatch):
+    """Comparing keys is the check here, so it has to be able to fail.
+
+    Every key rather than a count of them, because a copy that lost one
+    document and gained another counts the same and is not a backup.
+    """
+    original = FilesystemStore.audit_rows
+    calls = itertools.count()
+
+    def short(self):
+        rows = list(original(self))
+        # The *copy* is read second, and it is the one made to come up short.
+        return iter(rows if next(calls) == 0 else rows[:-1])
+
+    monkeypatch.setattr(FilesystemStore, "audit_rows", short)
+    with raises_rendered(store_module.BackupError, "1 keys missing"):
+        files.backup(tmp_path / "copy")
+
+
+def test_a_backup_reads_its_copy_the_way_the_store_reads_itself(files, tmp_path):
+    """``opened_at`` carries ``hidden``, and the root document is a dotfile.
+
+    A copy opened under the default policy would read every key but the root's
+    own, and come up one short against a store that holds one -- a failure with
+    nothing wrong behind it. So the store that verifies is opened the way this
+    one was.
+    """
+    files.store_document("", "the tree itself")
+
+    copy = files.backup(tmp_path / "copy")
+
+    assert copy.documents == 4
+    with FilesystemStore(copy.path) as restored:
+        assert restored.retrieve_document("").content == "the tree itself"
+
+
 def test_a_check_reports_what_a_hand_edited_tree_can_hold(files):
     (files.root / "not a key" / "x.md").parent.mkdir()
     (files.root / "not a key" / "x.md").write_text("inside a name with spaces")
