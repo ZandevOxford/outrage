@@ -141,8 +141,11 @@ def test_config_can_turn_logging_on(tmp_path):
     assert "--log" in output
 
 
-def test_config_records_mounts_as_files_inside_the_store_directory(tmp_path):
-    status, _ = run(
+def test_config_writes_the_mounts_to_the_table_beside_the_stores(tmp_path):
+    """And leaves the entry carrying nothing but --dir, which is the payoff."""
+    from outrage import mountfile
+
+    status, output = run(
         "config",
         "--project-dir",
         str(tmp_path),
@@ -156,14 +159,46 @@ def test_config_records_mounts_as_files_inside_the_store_directory(tmp_path):
 
     assert status == 0
     args = servers(tmp_path / ".mcp.json")["outrage"]["args"]
-    assert args[args.index("--root-mount") + 1] == "main.sqlite"
-    assert args[args.index("--mount") + 1] == "lib=lib.sqlite"
-    assert args[args.index("--mount-ro") + 1] == "ref=reference.sqlite"
-    # Only --dir is absolute; everything else names a store inside it, which is
-    # what lets the project move with one line to fix.
-    assert [a for a in args if a.startswith("/")] == [
-        servers(tmp_path / ".mcp.json")["outrage"]["args"][args.index("--dir") + 1]
-    ]
+    assert args == ["--dir", str(tmp_path / ".outrage")]
+
+    table = tmp_path / ".outrage" / mountfile.DEFAULT_NAME
+    written = mountfile.read(table)
+    assert written.root == "main.sqlite"
+    assert written.mounts == (("lib", "lib.sqlite"),)
+    assert written.read_only == (("ref", "reference.sqlite"),)
+    assert str(table) in output
+    # A store is named relative to the directory, so only --dir is a path: it
+    # is what lets the project move with one line to fix.
+    assert "/" not in table.read_text().split("[mount]")[1]
+
+
+def test_config_declines_to_rewrite_a_table_and_says_what_to_add(tmp_path):
+    from outrage import mountfile
+
+    run("config", "--project-dir", str(tmp_path), "--mount", "lib=lib.sqlite")
+    table = tmp_path / ".outrage" / mountfile.DEFAULT_NAME
+    before = table.read_text()
+
+    status, output = run(
+        "config", "--project-dir", str(tmp_path), "--mount", "other=other.sqlite"
+    )
+
+    assert status == 0
+    assert table.read_text() == before
+    assert "not rewritten" in output
+    assert 'other = "other.sqlite"' in output
+
+
+def test_config_without_mounts_writes_no_table_at_all(tmp_path):
+    """`config` registers a server; creating a store directory to drop an empty
+    file into it is not something it was asked to do."""
+    from outrage import mountfile
+
+    status, output = run("config", "--project-dir", str(tmp_path))
+
+    assert status == 0
+    assert not (tmp_path / ".outrage" / mountfile.DEFAULT_NAME).exists()
+    assert "mount table" not in output
 
 
 def test_a_command_reaches_a_second_store_in_the_same_directory(tmp_path):

@@ -103,7 +103,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import config
+from . import config, mountfile
 from .config import ConfigError, read_config, write_config
 
 #: What gets written into the entry, minus the ``:vN`` the template adds. One
@@ -507,10 +507,14 @@ class Installation:
     codex_assets: tuple[FileChange, ...]
     """Codex skills."""
 
+    table: mountfile.Starter
+    """The project's mount table: written when there is none, never rewritten."""
+
     @property
     def writes(self) -> bool:
         return (
             self.server.writes
+            or self.table.writes
             or any(h.writes for h in self.hooks)
             or any(a.writes for a in self.assets)
             or any(a.writes for a in self.codex_assets)
@@ -537,8 +541,11 @@ def init(
     write would disagree with.
 
     ``outrage config`` writes the server entry alone and this calls it rather than
-    repeating it, which is also why ``log``, ``log_content``, ``root_mount``
-    and the two mount lists are passed through.
+    repeating it, which is also why ``log`` and ``log_content`` are passed
+    through. ``root_mount`` and the two mount lists no longer reach the entry
+    at all: a mount table lives in ``mounts.toml`` in the store directory, and
+    they seed it - see :func:`outrage.mountfile.plan_starter`, and note that a
+    table already there is reported and left alone rather than rewritten.
 
     Passing them through was never enough on its own, and a real project lost
     three mounts and its ``--log`` to a re-run of ``outrage init`` that was only
@@ -556,20 +563,22 @@ def init(
         path = target.path(project)
         hooks.append((path, *plan(path, target=target)))
 
+    store_dir = directory if directory is not None else config.default_store_dir(project)
     server_path = config.config_path("project", project)
-    entry = config.server_entry(
-        directory if directory is not None else config.default_store_dir(project),
-        log=log,
-        log_content=log_content,
+    entry = config.server_entry(store_dir, log=log, log_content=log_content)
+    server, servers, servers_text = config.plan(server_path, "project", entry)
+    table = mountfile.plan_starter(
+        store_dir,
         root_mount=root_mount,
         mounts=mounts,
         read_only_mounts=read_only_mounts,
     )
-    server, servers, servers_text = config.plan(server_path, "project", entry)
 
     if not dry_run:
         if server.writes:
             config.write_config(server_path, servers, servers_text)
+        if table.writes:
+            mountfile.write_starter(table)
         for path, hook, settings, settings_text in hooks:
             if hook.writes:
                 config.write_config(path, settings, settings_text)
@@ -579,6 +588,7 @@ def init(
     return Installation(
         project_dir=project,
         server=server,
+        table=table,
         hooks=tuple(hook for _, hook, _, _ in hooks),
         assets=tuple(assets),
         codex_assets=tuple(codex_assets),

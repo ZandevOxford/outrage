@@ -40,6 +40,28 @@ root store alone. `--store` is the root mount on those commands and
 `--root-mount` is an accepted alias for it. `outrage check` and `outrage
 backup` stay per-file by nature, and already say which file with `--store`.
 
+**`outrage init` and `outrage config` write the mounts to `mounts.toml`, not
+into `.mcp.json`.** That is the payoff: registering the server stops being
+"write the whole table into a client's JSON, correctly, from a command" and
+becomes "point at a directory", so the entry's `args` are `--dir` and whatever
+`--log` says. `config.server_entry` no longer takes `root_mount`, `mounts` or
+`read_only_mounts` - **breaking for library callers** - and
+`install.Installation` gained a `table` field saying what happened to the file.
+
+The table is written **once**, commented, and never rewritten: a file whose
+reason for existing is comments cannot be machine-rewritten, because a rewrite
+is what loses them. A run naming a mount an existing table does not hold prints
+the lines to add. A run naming no mount writes nothing at all - `config` and
+`init` register a server, and creating a store directory to drop an empty file
+into it is not something either was asked to do.
+
+**Nothing migrates an installed configuration.** An entry an earlier release
+wrote keeps its `--mount` arguments and goes on working: `merge_entry` inherits
+what a new entry does not mention, and those arguments still win because the
+command line comes after the file. `outrage config` reports that they are there
+and that removing them is an edit to `.mcp.json`, which is the migration, done
+by hand and only when somebody wants it.
+
 A mount point that is metadata is now refused when the spec is parsed rather
 than when the table is built, so a mistyped one no longer leaves a database
 behind named after the mistake.

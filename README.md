@@ -125,6 +125,13 @@ override cannot do; `--no-mount-config` ignores the default file entirely.
 mount options, so a person sees the same namespace the MCP server serves.
 `outrage check` and `backup` are about one file and say which with `--store`.
 
+`outrage init --mount KEY=FILE` and `outrage config --mount KEY=FILE` write
+that file, commented, when a project has none - and never rewrite one, since a
+rewrite is what would lose the comments. A run naming a mount an existing table
+does not hold prints the lines to add instead. So `.mcp.json` carries `--dir`
+and nothing else; an entry written by an earlier release keeps its `--mount`
+arguments and goes on working, and `outrage config` says they are there.
+
 `outrage-server --log` records requests and store accesses as JSON lines, by
 default in `log.jsonl` beside the store. It is off otherwise, since it records
 document text. `--log-content none|excerpt|full` controls how much of that text
