@@ -168,11 +168,15 @@ def test_the_artefacts_carry_the_running_version(artefacts, sdist_names, wheel_n
         member = next(name for name in archive.getnames() if name.endswith("/PKG-INFO"))
         pkg_info = _metadata(archive.extractfile(member).read())
     assert pkg_info["Version"] == version
+    assert pkg_info["Metadata-Version"] == "2.4"
+    assert pkg_info["License-Expression"] == "MIT"
 
     with zipfile.ZipFile(wheel) as archive:
         member = next(name for name in archive.namelist() if name.endswith(".dist-info/METADATA"))
         metadata = _metadata(archive.read(member))
     assert metadata["Version"] == version
+    assert metadata["Metadata-Version"] == "2.4"
+    assert metadata["License-Expression"] == "MIT"
 
 
 def test_the_version_has_one_source():
