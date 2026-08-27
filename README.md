@@ -118,7 +118,8 @@ named, so anything on the command line comes after it and wins - and a mount
 named again *replaces* the one in the file rather than colliding with it, which
 is how a committed table gets one entry overridden for a single run.
 `--mount-config FILE` reads another file where the flag appears;
-`--no-mount-config` ignores the default one.
+`--unmount KEY` removes one the file declares, which is the one thing an
+override cannot do; `--no-mount-config` ignores the default file entirely.
 
 `outrage get`, `set`, `ls`, `dump`, `rm`, `export` and `import` all take the
 mount options, so a person sees the same namespace the MCP server serves.

@@ -49,9 +49,10 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import keys
 from . import store as store_module
 from .errors import OutrageError
-from .mounts import SPEC_DELIMITER, mount_point, parse_spec
+from .mounts import SPEC_DELIMITER, MountError, mount_point, parse_spec
 
 #: The file read from inside ``--dir`` when nobody names one. The table is a
 #: property of the store directory it describes, which is also what makes every
@@ -63,6 +64,11 @@ DEFAULT_NAME = "mounts.toml"
 #: the ``outrage config`` subcommand -- that writes an MCP client's JSON, which
 #: is a different file for a different reader.
 CONFIG_FLAG = "--mount-config"
+
+#: Removes a mount some earlier source declared, which is the one thing an
+#: override cannot do: it can replace an entry or add one, and only this takes
+#: one away. Command line only -- a file has nothing before it to remove.
+UNMOUNT_FLAG = "--unmount"
 
 #: Ignores the default file for one run, so that only what is typed is
 #: mounted. The escape ``project/reference/planned/mounts/config`` leaves open,
@@ -90,7 +96,7 @@ READ_ONLY_FLAG = "--mount-ro"
 #: passes through untouched, including ``--store``: it shares a ``dest`` with
 #: ``--root-mount`` on the command line, so argparse's own last-one-wins is
 #: already the right answer for it and there is nothing here to decide.
-_FLAGS = (DIR_FLAG, MOUNT_FLAG, READ_ONLY_FLAG, CONFIG_FLAG, NO_CONFIG_FLAG)
+_FLAGS = (DIR_FLAG, MOUNT_FLAG, READ_ONLY_FLAG, UNMOUNT_FLAG, CONFIG_FLAG, NO_CONFIG_FLAG)
 
 #: The file's fields are named after the options they stand for, so that
 #: nothing here is a new word for anything: a table entry is ``KEY = "FILE"``,
@@ -150,6 +156,12 @@ class _Item:
     tokens: list[str]
     mount: str | None
     """The mount point this claims, when it is a mount at all."""
+    removes: bool = False
+    """Whether it claims that point in order to *unmount* it.
+
+    Such an item contributes no tokens: what it does happens here, by taking
+    the earlier ones away.
+    """
 
 
 def read(path: str | os.PathLike[str]) -> MountTable:
@@ -325,7 +337,7 @@ def _typed(argv: Sequence[str]) -> Iterator[_Item]:
             # already answered by the time a parser sees the list.
             index += 1
             continue
-        if canonical in (MOUNT_FLAG, READ_ONLY_FLAG, CONFIG_FLAG):
+        if canonical in (MOUNT_FLAG, READ_ONLY_FLAG, UNMOUNT_FLAG, CONFIG_FLAG):
             if delimiter:
                 value = inline
             elif index + 1 < len(argv):
@@ -338,8 +350,20 @@ def _typed(argv: Sequence[str]) -> Iterator[_Item]:
                 yield _Item(_TYPED, [token], None)
                 index += 1
                 continue
-            point = None if canonical == CONFIG_FLAG else parse_spec(value)[0]
-            yield _Item(_TYPED, [canonical, value], point)
+            if canonical == CONFIG_FLAG:
+                yield _Item(_TYPED, [canonical, value], None)
+            elif canonical == UNMOUNT_FLAG:
+                # A key, not a spec: there is no file to name in taking one
+                # away. Parsed the same way a mount point is, so that
+                # ``--unmount /ref/`` names what ``--mount ref=`` mounted --
+                # except at the root, which has its own sentence because
+                # ``mount_point`` would answer it as a *mount* missing its
+                # point, and nothing here is missing.
+                if keys.parse(value).key == keys.ROOT:
+                    raise MountError("mount-unmount-at-root")
+                yield _Item(_TYPED, [], mount_point(value), removes=True)
+            else:
+                yield _Item(_TYPED, [canonical, value], parse_spec(value)[0])
         else:
             yield _Item(_TYPED, [token], None)
         index += 1
@@ -365,13 +389,26 @@ def _items(table: MountTable, source: int) -> list[_Item]:
 
 
 def _overridden(items: Sequence[_Item]) -> list[_Item]:
-    """Drop each mount a later *source* claims, and keep every other repeat.
+    """Drop each mount a later claim replaces or removes, and keep the rest.
 
     The whole of what a file changes about duplicate handling, in one pass. A
     mount point claimed again from somewhere else is an override and the
     earlier one goes; claimed again from the same place it is a mistake, and it
     survives to be refused by ``MountedStore`` with the sentence it has always
     had.
+
+    **An unmount is not a claim of that kind and does not follow that rule.**
+    It is a deletion, so it takes away every earlier mount at that point
+    whatever source they came from -- including the command line it was typed
+    on, where two ``--mount`` at one key would have been the mistake the rule
+    exists to catch and ``--mount ref=... --unmount ref`` plainly is not. A
+    ``--mount`` written *after* it mounts again, which is the ordering rule
+    doing its usual work and needs nothing said about it.
+
+    An unmount that removed nothing is refused. The same argument
+    ``--mount-ro`` makes by refusing an unmatched mount point: it reads as
+    though it worked, and what is left behind is the mount somebody meant to
+    take away.
     """
     last: dict[str, int] = {}
     for index, item in enumerate(items):
@@ -381,7 +418,13 @@ def _overridden(items: Sequence[_Item]) -> list[_Item]:
     for index, item in enumerate(items):
         if item.mount is not None:
             winner = items[last[item.mount]]
-            if index != last[item.mount] and item.source != winner.source:
+            if index != last[item.mount] and (winner.removes or item.source != winner.source):
+                continue
+            if item.removes:
+                if not any(
+                    other.mount == item.mount and not other.removes for other in items[:index]
+                ):
+                    raise MountError("mount-unmount-unmatched", mount=item.mount)
                 continue
         kept.append(item)
     return kept
@@ -419,6 +462,7 @@ __all__ = [
     "READ_ONLY_FLAG",
     "ROOT_FIELD",
     "ROOT_FLAG",
+    "UNMOUNT_FLAG",
     "MountFileError",
     "MountTable",
     "directory_in",
