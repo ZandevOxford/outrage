@@ -2,7 +2,28 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## 0.3.0 - unreleased
+## 0.3.0 - 2026-08-27
+
+0.3.0 makes multiple stores and their mounted namespace first-class throughout
+the library and command line. The main additions are:
+
+* **Filesystem-backed stores.** `FilesystemStore` presents a directory with one
+  file per key through the same `Store` interface as SQLite, Parquet and a
+  mounted table. It can participate in a `MountedStore` through the library;
+  command-line mount specifications still select file backends by extension.
+* **File-based mount configuration.** `mounts.toml` records the root,
+  read-write and read-only mounts once for both the MCP server and CLI, with
+  command-line overrides, `--unmount`, additional config files and a safe
+  `outrage mounts` inspection command.
+* **Expanded database editing from the CLI.** `get`, `set`, `ls`, `dump`, `rm`,
+  `export` and `import` now operate across the mounted namespace, and the new
+  `copy` command transfers depth- and range-bounded document selections between
+  its prefixes without a filesystem round trip.
+
+This is a breaking release for library callers: the mount table is now
+`MountedStore(Store)`, `Store` and `FileStore` are separate interfaces, and
+metadata is a namespace rather than a leaf. The detailed changes and migration
+notes follow.
 
 ### A mount table in a file, and a command line that reads it
 
