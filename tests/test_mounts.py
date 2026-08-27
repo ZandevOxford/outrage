@@ -824,10 +824,18 @@ def test_a_malformed_mount_spec_is_refused_before_anything_is_opened(tmp_path):
 
 def test_the_server_takes_repeated_mount_arguments():
     args = parse_args(
-        ["--dir", "/tmp/root", "--mount", "ref=ref.sqlite", "--mount", "lib=lib.sqlite"]
+        [
+            "--no-mount-config",
+            "--dir",
+            "/tmp/root",
+            "--mount",
+            "ref=ref.sqlite",
+            "--mount",
+            "lib=lib.sqlite",
+        ]
     )
     assert args.mounts == ["ref=ref.sqlite", "lib=lib.sqlite"]
-    assert parse_args([]).mounts == []
+    assert parse_args(["--no-mount-config"]).mounts == []
 
 
 def test_the_root_mount_defaults_to_the_usual_store_file():
@@ -1129,7 +1137,15 @@ def test_the_same_mount_point_cannot_be_both(tmp_path):
 
 
 def test_the_server_takes_mount_ro_from_the_command_line():
-    args = parse_args(["--mount", "lib=lib.sqlite", "--mount-ro", "ref=ref.sqlite"])
+    args = parse_args(
+        [
+            "--no-mount-config",
+            "--mount",
+            "lib=lib.sqlite",
+            "--mount-ro",
+            "ref=ref.sqlite",
+        ]
+    )
     assert args.mounts == ["lib=lib.sqlite"]
     assert args.read_only_mounts == ["ref=ref.sqlite"]
 

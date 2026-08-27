@@ -5,12 +5,6 @@
       "args": [
         "--dir",
         "/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/.outrage",
-        "--mount",
-        "mount_test=mount-test.sqlite",
-        "--mount-ro",
-        "ref=ref.sqlite",
-        "--mount-ro",
-        "pyref=python.parquet",
         "--log"
       ]
     }
