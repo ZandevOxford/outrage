@@ -680,7 +680,9 @@ class Store(ABC):
         """
 
     @abstractmethod
-    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
+    def descendant_count(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> int:
         """How many stored keys lie strictly below ``key``.
 
         Metadata counts: it is stored, and a caller deciding whether a subtree
@@ -694,6 +696,16 @@ class Store(ABC):
         Exists so a caller can report what a non-recursive delete left behind:
         without it, deleting a key that holds nothing itself is indistinguishable
         from deleting a key that does not exist.
+
+        What it leaves out is ``key``'s **own** metadata unit, because a plain
+        delete takes that with the key -- so the default answers *what would a
+        plain delete keep*. **``whole_subtree`` asks the other question**:
+        everything strictly below ``key``, that unit included, which is what a
+        *recursive* delete takes and what :func:`outrage.bulk.walk` reports.
+        A caller previewing a recursive delete needs the second, and answering
+        it with the first prints a remainder short by the unit -- negative,
+        once the preview reaches past the ordinary children.
+        See :func:`outrage.keys.meta_range`.
 
         ``key_range`` bounds it for the reason it bounds ``delete``: a count
         that includes keys a mount has made unreachable tells a caller to pass

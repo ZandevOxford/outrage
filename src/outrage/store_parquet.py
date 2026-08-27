@@ -544,13 +544,16 @@ class ParquetStore(Store):
         return None
 
     @_logged("descendant_count")
-    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
+    def descendant_count(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> int:
         """How many rows lie strictly below ``key``, within ``key_range``.
 
         Counted over the index. The subtree is a stretch of the order and the
         range is bisected; what is left per row is whether the key is one a
         plain delete of ``key`` would *keep*, which the bounds narrow but do
-        not answer.
+        not answer -- and under ``whole_subtree`` there is nothing left to ask,
+        since the bisected stretch is the answer.
         """
         index = self._index
         parsed = keys.parse(key)
@@ -565,7 +568,7 @@ class ParquetStore(Store):
         return sum(
             1
             for row in index.rows[max(lower, inner) : min(upper, outer)]
-            if below(row.key) and not lo <= row.key < hi
+            if below(row.key) and (whole_subtree or not lo <= row.key < hi)
         )
 
     @_logged("retrieve_document")

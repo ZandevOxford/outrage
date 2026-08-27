@@ -132,6 +132,21 @@ colon, which becomes a drive letter.
   key: `list_keys` splices `lib` into the level above, and asking what that
   entry is got nothing back.
 
+### A shortened delete preview counts what it previews
+
+`outrage rm --recursive --dry-run --limit N` printed a trailing "and N more"
+that was short by the key's own metadata, and **went negative** once the limit
+reached past the ordinary children - "and -1 more" where one key was left. The
+preview walks what a recursive delete takes; the number it was subtracted from
+was `descendant_count`, which reports what a *plain* delete would keep and so
+leaves that unit out. Two questions, one variable.
+
+`outrage.store.Store.descendant_count` gains a keyword-only **`whole_subtree`**,
+false by default, which asks the second one: everything strictly below the key,
+its own metadata unit included. No existing call changes meaning, and the front
+end now counts the set it walks. **Breaking** only for a third-party `Store`
+implementation, which has to accept the keyword.
+
 ## 0.2.0 - 2026-08-24
 
 **Breaking.** Everything still called `rage` is now `outrage`, and one on-disk

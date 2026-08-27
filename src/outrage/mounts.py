@@ -491,6 +491,16 @@ def _outward_keys(found: Resolved, names: list[str]) -> list[str]:
     return [found.mount.outer(name) for name in names]
 
 
+def _document_row_at(store: Store, key: str, key_range: KeyRange) -> int:
+    """The one row sitting *at* ``key``: its document, if it holds one.
+
+    Split out of :func:`_rows_at` because a count taken with ``whole_subtree``
+    already holds the metadata half of that answer, and adding the whole of it
+    back would count the unit twice.
+    """
+    return 1 if store.exists(key) and _in_range(key, key_range) else 0
+
+
 def _rows_at(store: Store, key: str, key_range: KeyRange) -> int:
     """The rows sitting *at* ``key``: its document, and its whole metadata subtree.
 
@@ -510,7 +520,7 @@ def _rows_at(store: Store, key: str, key_range: KeyRange) -> int:
     By the segment, not by ``kind``: a metadata namespace holding only things
     below it is an *implicit* entry, and is no less part of the unit for it.
     """
-    at = 1 if store.exists(key) and _in_range(key, key_range) else 0
+    at = _document_row_at(store, key, key_range)
     for entry in store.list_keys(key).items:
         if entry_kind(entry.key) == "metadata":
             at += _rows_at(store, entry.key, key_range)
@@ -518,7 +528,7 @@ def _rows_at(store: Store, key: str, key_range: KeyRange) -> int:
     return at
 
 
-def _kept_below(segment: Segment, found: Resolved) -> int:
+def _kept_below(segment: Segment, found: Resolved, *, whole_subtree: bool = False) -> int:
     """How many rows this segment holds below the key a count was asked about.
 
     Two shapes of the same question, because "below" is measured from the key
@@ -531,10 +541,18 @@ def _kept_below(segment: Segment, found: Resolved) -> int:
     is beneath the key. So the two rows a count taken from the inside leaves out
     -- the root document and the root's metadata -- are exactly the two a count
     taken from the outside has to include.
+
+    Under ``whole_subtree`` the inner count already holds the root's metadata
+    unit, so the root document row is the only one left to put back. Reaching
+    for :func:`_rows_at` there would count that unit twice.
     """
-    counted = segment.store.descendant_count(segment.subtree.key, key_range=segment.key_range)
+    counted = segment.store.descendant_count(
+        segment.subtree.key, key_range=segment.key_range, whole_subtree=whole_subtree
+    )
     if segment.mount is found.mount:
         return counted
+    if whole_subtree:
+        return counted + _document_row_at(segment.store, segment.subtree.key, segment.key_range)
     return counted + _rows_at(segment.store, segment.subtree.key, segment.key_range)
 
 
@@ -1160,10 +1178,12 @@ class MountedStore(Store):
             return _implicit(found.outer) if self.children(found.outer) else None
         return dataclasses.replace(entry, key=found.outer)
 
-    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
+    def descendant_count(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> int:
         found = self.resolve(key)
         return sum(
-            _kept_below(segment, found)
+            _kept_below(segment, found, whole_subtree=whole_subtree)
             for segment in self.segments(found.outer, key_range=key_range)
         )
 

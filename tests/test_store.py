@@ -1957,6 +1957,28 @@ def test_descendant_count_of_a_metadata_namespace_counts_its_contents(namespaced
     assert namespaced.descendant_count("a") == 2
 
 
+def test_whole_subtree_counts_the_key_s_own_metadata_and_the_default_does_not(namespaced):
+    # Two questions, and a caller has to say which. The default is what a plain
+    # delete would *keep*; `whole_subtree` is what a recursive one takes, which
+    # is also what `bulk.walk` reports -- so a preview counting with the first
+    # and walking the second is short by the unit, and goes negative once it
+    # reaches past the ordinary children.
+    assert namespaced.descendant_count("a") == 2
+    assert namespaced.descendant_count("a", whole_subtree=True) == 7
+
+    # The same distinction inside a namespace: the changelog's own title is the
+    # unit here, and nothing else moves.
+    assert namespaced.descendant_count("a/!changelog") == 2
+    assert namespaced.descendant_count("a/!changelog", whole_subtree=True) == 3
+
+
+def test_whole_subtree_is_what_a_recursive_delete_takes(namespaced):
+    # Stated as the identity rather than as two numbers: whatever the corpus,
+    # a recursive delete returns the key itself plus everything this counts.
+    counted = namespaced.descendant_count("a", whole_subtree=True)
+    assert len(namespaced.delete("a", recursive=True)) == counted + 1
+
+
 def test_a_plain_delete_of_a_metadata_namespace_keeps_what_is_inside_it(namespaced):
     # The same rule as a document: the key and its own metadata are one unit
     # and go together, and everything else below waits for `recursive`. That

@@ -552,23 +552,33 @@ class SqliteStore(Store):
         return sorted(targets, key=keys.sort_form)
 
     @_logged("descendant_count")
-    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
+    def descendant_count(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> int:
         """A ``count(*)`` over the subtree, less the metadata unit inside it.
 
         Two range scans, both on the primary key: everything below ``key``, and
         not the stretch a plain delete would take with it. That difference is
         what this reports, and it is why a document's own title has never
         counted here. See :func:`_below` and :func:`outrage.keys.meta_range`.
+
+        ``whole_subtree`` **drops** the second scan rather than adding a third:
+        the question is then the subtree itself, and one range scan is all of
+        it.
         """
         parsed = keys.parse(key)
         below, bounds = _below("key", parsed.key)
-        lo, hi = keys.meta_range(parsed.key)
         clauses, params = _range_clauses(key_range)
         within = "".join(f" AND {clause}" for clause in clauses)
+        kept = ""
+        unit: list[str] = []
+        if not whole_subtree:
+            lo, hi = keys.meta_range(parsed.key)
+            kept = " AND NOT (key >= ? AND key < ?)"
+            unit = [lo, hi]
         row = self._conn.execute(
-            f"SELECT count(*) AS n FROM documents "
-            f"WHERE {below} AND NOT (key >= ? AND key < ?){within}",
-            [*bounds, lo, hi, *params],
+            f"SELECT count(*) AS n FROM documents WHERE {below}{kept}{within}",
+            [*bounds, *unit, *params],
         ).fetchone()
         return row["n"]
 

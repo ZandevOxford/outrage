@@ -1195,10 +1195,18 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
                 # The whole subtree, not one level of it: a preview that shows
                 # the first level of a deletion reaching five is not a preview
                 # of what --recursive takes.
+                #
+                # And counted the same way it is walked. `beneath` reports what
+                # a plain delete would *keep*, so it leaves out the key's own
+                # metadata unit -- which this walk reports, because a recursive
+                # delete takes it. Subtracting one from the other said "and 1
+                # more" where three were left, and went negative once the limit
+                # reached past the ordinary children.
+                taken = opened.descendant_count(args.key, whole_subtree=True)
                 previewed = 0
                 for entry in bulk.walk(opened, args.key):
                     if args.limit is not None and previewed >= args.limit:
-                        print(f"  and {beneath - previewed} more", file=out)
+                        print(f"  and {taken - previewed} more", file=out)
                         break
                     print(f"  and below: {entry.key}", file=out)
                     previewed += 1

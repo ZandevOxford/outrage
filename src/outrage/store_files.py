@@ -433,12 +433,15 @@ class FilesystemStore(Store):
         return None
 
     @_logged("descendant_count")
-    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
+    def descendant_count(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> int:
         """What a plain delete of ``key`` would keep, counted over a walk.
 
         Everything below ``key``, less the metadata unit a non-recursive delete
         takes with it -- which is why a document's own title has never counted
-        here. See :func:`outrage.keys.meta_range`.
+        here. ``whole_subtree`` keeps that unit, which is the walk itself and
+        no subtraction at all. See :func:`outrage.keys.meta_range`.
 
         Unmeasured: a count has no use for a document's length, and measuring
         would make asking how much is below a key cost reading all of it.
@@ -450,7 +453,9 @@ class FilesystemStore(Store):
         return sum(
             1
             for row in self._subtree_rows(scope, measure=False)
-            if below(row.key) and not lo <= row.key < hi and within(row.sort_key)
+            if below(row.key)
+            and (whole_subtree or not lo <= row.key < hi)
+            and within(row.sort_key)
         )
 
     @_logged("retrieve_document")
