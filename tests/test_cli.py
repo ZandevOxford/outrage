@@ -1660,3 +1660,99 @@ def test_unmounting_what_is_not_mounted_is_a_message(tmp_path, capsys):
 
     assert status == 1
     assert "removes nothing" in capsys.readouterr().err
+
+
+# `outrage mounts`: what a command line would open, said before it opens it.
+
+
+def test_mounts_reports_the_table_and_where_each_entry_came_from(tmp_path):
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run("mounts", "--dir", str(tmp_path / ".outrage"))
+
+    assert status == 0
+    rows = {line.split()[0]: line for line in output.splitlines()}
+    table = str(tmp_path / ".outrage" / "mounts.toml")
+    assert rows["/"].split()[1:4] == ["store.sqlite", "root", "ok"]
+    # The root is the one entry nobody named, and the column says so rather
+    # than crediting a file or a command line that never mentioned it.
+    assert rows["/"].endswith("default")
+    assert rows["ref"].split()[1] == "reference.sqlite"
+    assert "read-only mount" in rows["ref"]
+    assert rows["ref"].endswith(table) and rows["team"].endswith(table)
+
+
+def test_mounts_opens_nothing_and_so_creates_nothing(tmp_path):
+    """The gap this closes, and the reason it cannot just be `outrage ls`.
+
+    Opening a read-write mount is what *creates* it, so a mistyped name in a
+    committed table becomes an empty store that reads exactly like a store with
+    nothing in it yet - and looking is what does it. This looks without opening.
+    """
+    a_mounted_project(tmp_path / ".outrage")
+    before = sorted(p.name for p in (tmp_path / ".outrage").iterdir())
+
+    status, output = run(
+        "mounts", "--dir", str(tmp_path / ".outrage"), "--mount", "typo=teem.sqlite"
+    )
+
+    assert status == 0
+    assert "would create" in output
+    assert sorted(p.name for p in (tmp_path / ".outrage").iterdir()) == before
+
+
+def test_mounts_fails_on_a_table_that_would_not_open(tmp_path):
+    """A read-only mount that is not there is the refusal `open_mounts` makes,
+    said here rather than at the moment a server failed to start."""
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "mounts", "--dir", str(tmp_path / ".outrage"), "--mount-ro", "gone=gone.sqlite"
+    )
+
+    assert status == 1
+    assert "missing" in output
+
+
+def test_mounts_reports_a_duplicate_rather_than_stopping_at_it(tmp_path):
+    """Unlike everywhere else, and deliberately: a report that stopped at the
+    first thing wrong with a table would stop at the least useful moment."""
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "mounts",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "--mount",
+        "team=a.sqlite",
+        "--mount",
+        "team=b.sqlite",
+    )
+
+    assert status == 1
+    assert "duplicate" in output
+    assert "a.sqlite" in output and "b.sqlite" in output
+
+
+def test_mounts_answers_for_the_line_that_was_actually_written(tmp_path):
+    """Every option the other commands take, so it reports the real table.
+
+    Including which source won, which is the question the splice created: an
+    overridden entry is not shown, because it is not in the table either.
+    """
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "mounts",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "--unmount",
+        "ref",
+        "--mount",
+        "team=store.sqlite",
+    )
+
+    assert status == 0
+    assert "ref" not in output
+    assert "team.sqlite" not in output
+    assert "the command line" in output

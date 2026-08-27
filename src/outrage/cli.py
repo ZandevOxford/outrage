@@ -39,6 +39,7 @@ from . import (
 )
 from . import config as config_module
 from .errors import OutrageError
+from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND
 
 #: The subcommands that act across a whole mount table rather than on one
 #: store file. Everything that reads or writes documents is here; ``check`` and
@@ -46,9 +47,13 @@ from .errors import OutrageError
 #: its bytes -- and both already say which one they mean with ``--store``.
 #: ``pack`` is not either, for the same reason its target is one file.
 #:
+#: ``mounts`` is here for the options and the splice rather than for opening
+#: anything: it reports the table a command line would open, which is a
+#: question only worth asking of the same list every other one of these gets.
+#:
 #: Read by :func:`parse_args` to decide whether a mount configuration file is
 #: spliced in, and by the loop that adds the options, so the two cannot drift.
-MOUNTED = ("get", "set", "ls", "dump", "rm", "export", "import")
+MOUNTED = ("get", "set", "ls", "dump", "rm", "export", "import", "mounts")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -70,10 +75,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """
     argv = list(sys.argv[1:] if argv is None else argv)
     at = next((i for i, token in enumerate(argv) if not token.startswith("-")), None)
+    written = None
     if at is not None and argv[at] in MOUNTED:
         # After the subcommand, which is where the front of its line is: an
         # option belonging to `outrage ls` written before the word `ls` is an
         # option on the top level parser, which has never heard of it.
+        written = (list(argv), at + 1)
         argv = mountfile.spliced(argv, front=at + 1)
     parser = argparse.ArgumentParser(
         prog="outrage", description="Command line tool for the Outrage document store"
@@ -631,7 +638,33 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     check.set_defaults(handler=_check_command)
 
-    return parser.parse_args(argv)
+    mounts_ = subcommands.add_parser(
+        "mounts",
+        help="report the mount table a command line would open",
+        description=(
+            "Say which stores this command line names, and whether each one is "
+            "there. Nothing is opened, which is the point: opening a "
+            "read-write mount is what creates it, so a mistyped name in a "
+            "configuration file becomes an empty store that reads exactly like "
+            "a store with nothing in it yet. This reports that before it "
+            "happens, and is safe to run on a fresh checkout. Every option the "
+            "other commands take is taken here, so it answers for the line you "
+            "would really run - including which configuration file, or the "
+            "command line itself, each mount came from. What is *in* the "
+            "stores is `outrage ls`, which does open them."
+        ),
+    )
+    _store_option(mounts_)
+    _table_options(mounts_)
+    mounts_.set_defaults(handler=_mounts_command)
+
+    parsed = parser.parse_args(argv)
+    # The list as it was *written*, kept for the one command that reports where
+    # each mount came from. A namespace built from the spliced list cannot say:
+    # by then every source has been flattened into one argument list, which is
+    # the whole point of the splice and exactly what a reader needs undone.
+    parsed.written = written
+    return parsed
 
 
 def _limit_option(parser: argparse.ArgumentParser, what: str) -> None:
@@ -1432,6 +1465,113 @@ def _report_remainder(
     print(
         f"  {beneath} keys below {keys.displayed(args.key)} {verb}; --recursive to take them too",
         file=out,
+    )
+
+
+def _mounts_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Report the table this command line names, without opening any of it.
+
+    The gap this closes: **a read-write mount naming a store that is not there
+    is created**, empty, by the first command that opens the table - and then
+    reads exactly like a store with nothing in it yet. ``--mount-ro`` refuses
+    for that reason and the read-write half never could, because creating is
+    what a first write needs. A configuration file makes it likelier rather
+    than less: the name was typed on a different day, possibly by somebody
+    else, possibly for a different checkout.
+
+    So this opens nothing. It resolves the same table ``_open_table`` would,
+    asks the filesystem whether each store is there, and says where each mount
+    was written down - which is the other question the splice created, since a
+    table is now a merge of the default file, each ``--mount-config`` and what
+    was typed.
+
+    Non-zero when the table would not open: a read-only mount that is missing,
+    or two mounts at one point. A read-write mount that is not there is
+    reported and is not a failure - it is what a store looks like before its
+    first write, and telling the two apart is the whole job.
+    """
+    directory = store.resolve_directory(args.directory)
+    written, front = args.written or ([], 0)
+    sources = {
+        origin.mount: (origin.file, origin.source)
+        for origin in mountfile.origins(written, directory=directory, front=front)
+    }
+
+    # The root is the one entry nobody has to name, so it is the one whose
+    # source may be neither a file nor the line: "default" is a third answer
+    # and saying "the command line" instead would be a small lie in the column
+    # that exists to stop people guessing.
+    named = {"--store", mountfile.ROOT_FLAG}
+    typed = any(token.partition("=")[0] in named for token in written)
+    rows = [
+        _mount_row(
+            directory,
+            keys.ROOT,
+            args.filename,
+            MOUNT_KIND,
+            sources,
+            unnamed=mountfile.TYPED_SOURCE if typed else "default",
+        )
+    ]
+    seen = {keys.ROOT}
+    failed = False
+    for specs, kind in ((args.mounts, MOUNT_KIND), (args.read_only_mounts, READ_ONLY_MOUNT_KIND)):
+        for spec in specs:
+            point, filename = mounts.parse_spec(spec)
+            row = _mount_row(directory, point, str(filename), kind, sources)
+            if point in seen:
+                # Reported rather than raised, unlike everywhere else: a report
+                # that stopped at the first thing wrong with a table would be
+                # the least useful moment to stop.
+                row = (*row[:3], "duplicate", row[4])
+            seen.add(point)
+            rows.append(row)
+            # "would create" is not one of these. A store that is not there yet
+            # is what every store looks like before its first write, and a
+            # check that failed on the ordinary case is one people stop
+            # running. The column says it; the status does not.
+            failed = failed or row[3] in ("missing", "duplicate")
+
+    widths = [max(len(row[i]) for row in rows) for i in range(4)]
+    for point, filename, kind, state, source in sorted(rows, key=lambda r: keys.sort_form(r[0])):
+        line = (
+            f"{point:<{widths[0]}}  {filename:<{widths[1]}}  "
+            f"{kind:<{widths[2]}}  {state:<{widths[3]}}  {source}"
+        )
+        print(line.rstrip(), file=out)
+    return 1 if failed else 0
+
+
+def _mount_row(
+    directory: Path,
+    point: str,
+    filename: str,
+    kind: str,
+    sources: dict[str | None, tuple[str, str]],
+    *,
+    unnamed: str = mountfile.TYPED_SOURCE,
+) -> tuple[str, str, str, str, str]:
+    """One mount, as the five things worth knowing about it before it opens."""
+    if store.store_file(directory, filename).exists():
+        state = "ok"
+    elif kind == READ_ONLY_MOUNT_KIND:
+        # The refusal `open_mounts` would make, said here instead of at the
+        # moment a server failed to start inside somebody's client.
+        state = "missing"
+    else:
+        state = "would create"
+
+    # A file only accounts for this mount if it named the store this mount
+    # actually has: the root arrives as `--store`, which no file wrote, and an
+    # entry a later source replaced is not what is being reported.
+    wrote = sources.get(None if point == keys.ROOT else point)
+    source = wrote[1] if wrote is not None and wrote[0] == filename else unnamed
+    return (
+        keys.displayed(point),
+        filename,
+        "root" if point == keys.ROOT else kind,
+        state,
+        source,
     )
 
 

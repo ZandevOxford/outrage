@@ -125,6 +125,21 @@ override cannot do; `--no-mount-config` ignores the default file entirely.
 mount options, so a person sees the same namespace the MCP server serves.
 `outrage check` and `backup` are about one file and say which with `--store`.
 
+`outrage mounts` reports the table a command line would open, without opening
+any of it — which matters because opening a read-write mount is what *creates*
+it, so a mistyped name becomes an empty store that reads like one with nothing
+in it yet:
+
+```
+$ outrage mounts
+/     store.sqlite      root             ok            default
+notes notez.sqlite      mount            would create  the command line
+ref   reference.sqlite  read-only mount  ok            .outrage/mounts.toml
+```
+
+It takes every option the other commands take, so it answers for the line you
+would really run, and the last column says which source won.
+
 `outrage init --mount KEY=FILE` and `outrage config --mount KEY=FILE` write
 that file, commented, when a project has none - and never rewrite one, since a
 rewrite is what would lose the comments. A run naming a mount an existing table
