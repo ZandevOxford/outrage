@@ -393,3 +393,76 @@ def test_ignoring_the_default_file_keeps_a_file_that_was_named(tmp_path):
 
     assert "scratch=scratch.sqlite" in spliced
     assert "ref=reference.sqlite" not in spliced
+
+
+# --unmount: the one thing an override cannot do.
+
+
+def test_a_mount_the_file_declares_can_be_taken_away(tmp_path):
+    a_table(tmp_path / ".outrage", '[mount]\nref = "reference.sqlite"\n')
+
+    spliced = mountfile.spliced(
+        ["--dir", str(tmp_path / ".outrage"), mountfile.UNMOUNT_FLAG, "ref"]
+    )
+
+    assert spliced == ["--dir", str(tmp_path / ".outrage")]
+
+
+def test_a_mount_after_an_unmount_mounts_again(tmp_path):
+    """Nothing special: the ordering rule, doing its usual work."""
+    a_table(tmp_path / ".outrage", '[mount]\nref = "reference.sqlite"\n')
+
+    spliced = mountfile.spliced(
+        [
+            "--dir",
+            str(tmp_path / ".outrage"),
+            mountfile.UNMOUNT_FLAG,
+            "ref",
+            "--mount",
+            "ref=other.sqlite",
+        ]
+    )
+
+    assert "ref=other.sqlite" in spliced
+    assert "ref=reference.sqlite" not in spliced
+
+
+def test_an_unmount_takes_away_a_mount_typed_beside_it(tmp_path):
+    """An unmount is a deletion, not a second claim, so the duplicate rule
+    does not apply to it.
+
+    ``--mount ref=... --mount ref=...`` on one line is the mistake that rule
+    exists to catch. ``--mount ref=... --unmount ref`` is not one, however
+    pointless, and refusing it as a duplicate would be answering a question
+    nobody asked.
+    """
+    spliced = mountfile.spliced(
+        ["--dir", str(tmp_path), "--mount", "ref=r.sqlite", mountfile.UNMOUNT_FLAG, "ref"]
+    )
+
+    assert spliced == ["--dir", str(tmp_path)]
+
+
+def test_an_unmount_names_the_mount_point_however_it_is_spelled(tmp_path):
+    a_table(tmp_path / ".outrage", '[mount]\n"ref/notes" = "reference.sqlite"\n')
+
+    spliced = mountfile.spliced(
+        ["--dir", str(tmp_path / ".outrage"), mountfile.UNMOUNT_FLAG, "/ref/notes/"]
+    )
+
+    assert "--mount" not in spliced
+
+
+def test_an_unmount_that_removes_nothing_is_refused(tmp_path):
+    """It reads as though it worked, and what it leaves behind is the mount."""
+    a_table(tmp_path / ".outrage", '[mount]\nref = "reference.sqlite"\n')
+
+    with raises_rendered(MountError, "removes nothing"):
+        mountfile.spliced(
+            ["--dir", str(tmp_path / ".outrage"), mountfile.UNMOUNT_FLAG, "rf"]
+        )
+
+
+def test_the_root_cannot_be_unmounted(tmp_path):
+    with raises_rendered(MountError, "root cannot be unmounted"):
+        mountfile.spliced(["--dir", str(tmp_path), mountfile.UNMOUNT_FLAG, "/"])

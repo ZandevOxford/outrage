@@ -426,6 +426,24 @@ def _mount_read_only_missing(name: Namer, /, *, mount: str, path: str, **_: Any)
 # and quite possibly for a different checkout.
 
 
+@template("mount-unmount-at-root")
+def _mount_unmount_at_root(name: Namer, /, **_: Any) -> str:
+    return (
+        "the store at the root cannot be unmounted: it owns every key no "
+        "mount claims, so nothing would answer for them. --root-mount is how "
+        "a different store is put there."
+    )
+
+
+@template("mount-unmount-unmatched")
+def _mount_unmount_unmatched(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"nothing is mounted at {keys.displayed(mount)!r}, so --unmount there "
+        f"removes nothing. Refused rather than passed over, since what a "
+        f"mistyped one leaves behind is the mount it was meant to take away."
+    )
+
+
 @template("mount-config-missing")
 def _mount_config_missing(name: Namer, /, *, path: str, **_: Any) -> str:
     return f"there is no mount configuration at {path!r}"

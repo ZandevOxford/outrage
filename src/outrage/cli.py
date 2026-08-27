@@ -808,6 +808,20 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        mountfile.UNMOUNT_FLAG,
+        dest="unmount",
+        action="append",
+        default=None,
+        metavar="KEY",
+        help=(
+            "Do not mount the store a configuration file mounts at KEY. The "
+            "one thing an override cannot do -- naming a mount replaces it or "
+            "adds it, and only this takes one away. Repeatable, and refused if "
+            "nothing was mounted there to remove. A --mount for the same key "
+            "written after this one mounts it again."
+        ),
+    )
+    parser.add_argument(
         mountfile.CONFIG_FLAG,
         dest="mount_config",
         action="append",

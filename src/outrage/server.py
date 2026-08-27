@@ -1018,6 +1018,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        mountfile.UNMOUNT_FLAG,
+        dest="unmount",
+        action="append",
+        default=None,
+        metavar="KEY",
+        help=(
+            "Do not mount the store a configuration file mounts at KEY: the "
+            "one thing an override cannot do, since naming a mount replaces it "
+            "or adds it. Repeatable, and refused if nothing was mounted there."
+        ),
+    )
+    parser.add_argument(
         mountfile.CONFIG_FLAG,
         dest="mount_config",
         action="append",

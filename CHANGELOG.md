@@ -21,11 +21,20 @@ the flag appears. There is no separate notion of a merge: precedence and
 repetition are whatever argparse already does. The one deliberate exception is
 duplicates - a mount point claimed twice within one source is still refused,
 while claimed again from a later source it *replaces* the earlier one, which is
-what makes a committed table safe to override one entry of. `--no-mount-config`
-ignores the default file for a run.
+what makes a committed table safe to override one entry of.
+
+`--unmount KEY` removes a mount a file declares, which is the one thing an
+override cannot do - naming a mount replaces it or adds it. An unmount is a
+deletion rather than a second claim, so it takes away every earlier mount at
+that point whatever source it came from, and a `--mount` written after it
+mounts again. An unmount that removed nothing is refused, on the same ground
+`--mount-ro` refuses an unmatched mount point: it reads as though it worked,
+and what it leaves behind is the mount somebody meant to take away.
+`--no-mount-config` ignores the default file for a run.
 
 **`outrage get`, `set`, `ls`, `dump`, `rm`, `export` and `import` now take
-`--mount`, `--mount-ro` and `--mount-config`**, and act across the whole table,
+`--mount`, `--mount-ro`, `--unmount`, `--mount-config` and
+`--no-mount-config`**, and act across the whole table,
 so the command line sees the namespace the MCP server serves rather than the
 root store alone. `--store` is the root mount on those commands and
 `--root-mount` is an accepted alias for it. `outrage check` and `outrage

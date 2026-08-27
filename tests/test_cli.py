@@ -1603,3 +1603,25 @@ def test_a_read_only_backend_can_still_be_read_directly(tmp_path, capsys):
 
     assert status == 0
     assert "top" in output
+
+
+def test_a_mount_from_the_file_can_be_unmounted_for_one_run(tmp_path):
+    """Override can replace or add; only this takes an entry away."""
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "ls", "--dir", str(tmp_path / ".outrage"), "--unmount", "ref", "--recursive"
+    )
+
+    assert status == 0
+    assert "ref/python/asyncio" not in output
+    assert "team/plans/q3" in output
+
+
+def test_unmounting_what_is_not_mounted_is_a_message(tmp_path, capsys):
+    a_mounted_project(tmp_path / ".outrage")
+
+    status = main(["ls", "--dir", str(tmp_path / ".outrage"), "--unmount", "rf"], io.StringIO())
+
+    assert status == 1
+    assert "removes nothing" in capsys.readouterr().err
