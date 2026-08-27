@@ -62,6 +62,20 @@ command line comes after the file. `outrage config` reports that they are there
 and that removing them is an edit to `.mcp.json`, which is the migration, done
 by hand and only when somebody wants it.
 
+**`outrage mounts` reports the table a command line would open, and opens
+none of it.** Opening a read-write mount is what creates it, so a mistyped name
+in a committed table becomes an empty store that reads exactly like a store
+with nothing in it yet - `--mount-ro` refuses for that reason and the
+read-write half never could. This says so first, and is safe to run on a fresh
+checkout. It takes every option the other commands take, so it answers for the
+line you would really run, and names the source each mount came from - the
+question a table merged from a default file, each `--mount-config` and what was
+typed created. Non-zero when the table would not open: a read-only mount that
+is missing, or two mounts at one point. A read-write mount that is not there
+yet is reported and is not a failure.
+
+`mountfile.origins` is that provenance, and `mountfile.Origin` what it returns.
+
 A mount point that is metadata is now refused when the spec is parsed rather
 than when the table is built, so a mistyped one no longer leaves a database
 behind named after the mistake.

@@ -121,6 +121,9 @@ FIELDS = (ROOT_FIELD, MOUNT_FIELD, READ_ONLY_FIELD)
 #: with a ``--mount-config`` written between them.
 _TYPED = -1
 
+#: What a source that is not a file is called, when one is named to a reader.
+TYPED_SOURCE = "the command line"
+
 
 class MountFileError(OutrageError, ValueError):
     """Raised when a mount configuration file cannot be read as a mount table."""
@@ -141,6 +144,34 @@ class MountTable:
     def options(self) -> list[str]:
         """This table as the command line it stands for."""
         return [token for item in _items(self, _TYPED) for token in item.tokens]
+
+
+@dataclass(frozen=True, slots=True)
+class Origin:
+    """One mount in a spliced argument list, and where it came from.
+
+    What ``outrage mounts`` reports and nothing else needs. The table a command
+    ends up with is a merge of the default file, each ``--mount-config``, and
+    what was typed - so "which of them won" became a question the moment there
+    was more than one, and the argument list argparse is handed has the answer
+    beaten out of it.
+    """
+
+    mount: str | None
+    """The mount point, or None for the root."""
+    flag: str
+    value: str
+    source: str
+    """The file it was read from, or :data:`TYPED_SOURCE`."""
+
+    @property
+    def read_only(self) -> bool:
+        return self.flag == READ_ONLY_FLAG
+
+    @property
+    def file(self) -> str:
+        """The store file this names, whichever of the three options it is."""
+        return self.value if self.mount is None else self.value.partition(SPEC_DELIMITER)[2]
 
 
 @dataclass(frozen=True, slots=True)
@@ -480,22 +511,63 @@ def spliced(
     already there. Whether an escape from the default file is wanted is left
     open in ``project/reference/planned/mounts/config``.
     """
+    items, _ = _resolved(argv, directory, front)
+    return [token for item in items for token in item.tokens]
+
+
+def origins(
+    argv: Sequence[str],
+    *,
+    directory: str | os.PathLike[str] | None = None,
+    front: int = 0,
+) -> list[Origin]:
+    """The mounts ``argv`` ends up with, each named with where it came from.
+
+    The same pass :func:`spliced` makes, reported rather than rendered. An
+    entry a later source replaced is not here, because it is not in the table
+    either - this is what the command would open, not what it read on the way.
+    """
+    items, labels = _resolved(argv, directory, front)
+    found = []
+    for item in items:
+        if not item.tokens or item.tokens[0] not in (ROOT_FLAG, MOUNT_FLAG, READ_ONLY_FLAG):
+            continue
+        found.append(
+            Origin(
+                mount=item.mount,
+                flag=item.tokens[0],
+                value=item.tokens[1],
+                source=labels.get(item.source, TYPED_SOURCE),
+            )
+        )
+    return found
+
+
+def _resolved(
+    argv: Sequence[str],
+    directory: str | os.PathLike[str] | None,
+    front: int,
+) -> tuple[list[_Item], dict[int, str]]:
+    """The splice itself: the items that survive it, and what each source is called."""
     base = store_module.resolve_directory(
         directory if directory is not None else directory_in(argv)
     )
     items: list[_Item] = list(_typed(argv[:front]))
+    labels: dict[int, str] = {}
     source = 0
     default = base / DEFAULT_NAME
     if default.is_file() and not _suppressed(argv):
         items += _items(read(default), source)
+        labels[source] = str(default)
         source += 1
     for item in _typed(argv[front:]):
         if item.mount is None and item.tokens[0] == CONFIG_FLAG:
             items += _items(read(item.tokens[1]), source)
+            labels[source] = item.tokens[1]
             source += 1
         else:
             items.append(item)
-    return [token for item in _overridden(items) for token in item.tokens]
+    return _overridden(items), labels
 
 
 def _typed(argv: Sequence[str]) -> Iterator[_Item]:
@@ -640,11 +712,14 @@ __all__ = [
     "READ_ONLY_FLAG",
     "ROOT_FIELD",
     "ROOT_FLAG",
+    "TYPED_SOURCE",
     "UNMOUNT_FLAG",
     "MountFileError",
     "MountTable",
+    "Origin",
     "Starter",
     "directory_in",
+    "origins",
     "plan_starter",
     "read",
     "spliced",
