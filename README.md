@@ -28,6 +28,8 @@ with LLM based tools.
 * LLM search - LLM subagents add summary metadata to documents, and LLM subagents can
   search documents and metadata.
 * Multiple data stores including parquet based stores for large-scale reference material.
+* Explicit support for command-line coding agents: Claude Code, OpenAI Codex
+  CLI, and GitHub Copilot CLI.
 
 ## Status
 
@@ -41,11 +43,14 @@ the event log (`outrage log`), and setting a project up (`outrage init`). See
 [implementation.md](implementation.md) for what is done and what is next.
 
 `outrage init` is the way in: run it in a project and it registers the MCP
-server, installs the `SessionStart` hook, and copies the skill and the agents
-into `.claude/`. It writes only the entries outrage owns, leaves the rest of
-those files alone, and is safe to re-run - which is how a project is repaired
-after an upgrade or after the environment moves. `--dry-run` reports what it
-would change without writing.
+server, installs the Claude Code skill, agents and `SessionStart` hook, installs
+the project skill for OpenAI Codex CLI, and installs the session-start hook for
+GitHub Copilot CLI. Outrage explicitly supports these command-line clients; it
+does not claim integrations with similarly named desktop, web or IDE products.
+It writes only the entries outrage owns, leaves the rest of those files alone,
+and is safe to re-run - which is how a project is repaired after an upgrade or
+after the environment moves. `--dry-run` reports what it would change without
+writing.
 
 ## Documentation
 
@@ -69,12 +74,11 @@ would change without writing.
   storage rather than a setting. **Files** is a directory with one file per key,
   which is what `outrage export` already wrote: the tree a person edits by hand,
   readable as a store rather than only as a transfer.
-* **Skill** - `src/outrage/skills/outrage/SKILL.md`, initially for Claude Code,
-  covering when to store and retrieve and what key conventions to follow. It
-  ships inside the package so that an install carries it, and `outrage init`
-  copies it into a project. A `SessionStart` hook in `.claude/settings.json`,
-  installed by the same command, covers the moment a skill would not be reached
-  for on its own.
+* **Client integrations** - packaged project skills for Claude Code and OpenAI
+  Codex CLI, plus session-start hooks for Claude Code and GitHub Copilot CLI.
+  They cover when to store and retrieve, the key conventions, and the moment a
+  skill would not be reached on its own. `outrage init` installs each client's
+  files without replacing configuration it does not own.
 * **Event log** - an optional JSON lines record of the requests made and the
   store accesses beneath them, for answering afterwards what a session actually
   did. Off unless `outrage config --log` or `outrage-server --log` asks for it.
