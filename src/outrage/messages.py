@@ -688,4 +688,14 @@ def _content_missing(name: Namer, /, **_: Any) -> str:
     return "nothing to store: pass --content, --file, or pipe it in"
 
 
+@template("copy-target-inside-source")
+def _copy_target_inside_source(
+    name: Namer, /, *, source: str, target: str, **_: Any
+) -> str:
+    return (
+        f"cannot copy {name(source)!r} beneath {name(target)!r}: the target is "
+        "inside the source subtree, and a streaming copy would read what it just wrote"
+    )
+
+
 __all__ = ["Namer", "codes", "render", "template"]

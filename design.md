@@ -310,16 +310,19 @@ uses one.
 
 ### Command line tool
 
-Implemented, all five pieces, as of 2026-08-19: `outrage get`, `set`, `ls`,
-`dump`, `rm`, `check`, `export`, `import`, `config`, `backup`, `log` and
-`init` - the last of which writes the MCP entry, installs the `SessionStart`
-hook and copies the packaged skill and agents into a project.
+Implemented, all five original pieces, as of 2026-08-19: `outrage get`, `set`,
+`ls`, `dump`, `copy`, `rm`, `check`, `export`, `import`, `config`, `backup`,
+`log` and `init` - the last of which writes the MCP entry, installs the
+`SessionStart` hook and copies the packaged skill and agents into a project.
 
 A CLI over the same store library, covering everything the MCP server exposes
 plus the operations that only make sense from a shell:
 
 * Bulk import of documents, for example a directory of markdown files mapped
   onto a key prefix, and the corresponding bulk export.
+* Copying a subtree or key-order range beneath another prefix in the mounted
+  namespace, preserving metadata and timestamps and routing each write to the
+  store that owns its destination key.
 * Inspecting and repairing a store outside an agent session.
 * Writing the MCP server configuration for a project, filling in the interpreter
   or entry point location and the store location.

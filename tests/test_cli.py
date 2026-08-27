@@ -1539,6 +1539,134 @@ def test_get_crosses_a_mount_boundary(tmp_path):
     assert output == "the reference"
 
 
+def test_copy_moves_a_subtree_between_mounted_stores(tmp_path):
+    from outrage.store_sqlite import SqliteStore
+
+    directory = tmp_path / ".outrage"
+    a_mounted_project(
+        directory,
+        config=(
+            '[mount]\nteam = "team.sqlite"\narchive = "archive.sqlite"\n\n'
+            '[mount-ro]\nref = "reference.sqlite"\n'
+        ),
+    )
+    with SqliteStore(directory, filename="archive.sqlite"):
+        pass
+
+    status, output = run(
+        "copy", "--dir", str(directory), "team/plans", "archive/imported"
+    )
+
+    assert status == 0
+    assert "wrote       archive/imported/team/plans/q3" in output
+    _, copied = run(
+        "get", "--dir", str(directory), "archive/imported/team/plans/q3"
+    )
+    assert copied == "the plan"
+
+
+def test_copy_exposes_depth_and_the_whole_key_range(tmp_path):
+    from outrage.store_sqlite import SqliteStore
+
+    directory = tmp_path / ".outrage"
+    a_mounted_project(
+        directory,
+        config=(
+            '[mount]\nteam = "team.sqlite"\narchive = "archive.sqlite"\n\n'
+            '[mount-ro]\nref = "reference.sqlite"\n'
+        ),
+    )
+    with SqliteStore(directory, filename="team.sqlite") as team:
+        team.store_document("plans/q1", "first", title="Q1")
+        team.store_document("plans/q2", "second", title="Q2")
+    with SqliteStore(directory, filename="archive.sqlite"):
+        pass
+
+    status, _ = run(
+        "copy",
+        "--dir",
+        str(directory),
+        "team/plans",
+        "archive/window",
+        "--depth",
+        "1",
+        "--after-subtree",
+        "team/plans/q1",
+        "--final-subtree",
+        "team/plans/q2",
+    )
+
+    assert status == 0
+    _, listed = run("ls", "--dir", str(directory), "archive/window", "--recursive")
+    assert "archive/window/team/plans/q2" in listed
+    assert "archive/window/team/plans/q2/!title" in listed
+    assert "archive/window/team/plans/q1" not in listed
+    assert "archive/window/team/plans/q3" not in listed
+
+
+def test_copy_parser_exposes_every_key_range_cut():
+    args = parse_args(
+        [
+            "copy",
+            "source",
+            "target",
+            "--after",
+            "a",
+            "--after-inclusive",
+            "b",
+            "--after-subtree",
+            "c",
+            "--before",
+            "d",
+            "--before-inclusive",
+            "e",
+            "--final-subtree",
+            "f",
+        ]
+    )
+
+    assert (
+        args.after,
+        args.after_inclusive,
+        args.after_subtree,
+        args.before,
+        args.before_inclusive,
+        args.final_subtree,
+    ) == ("a", "b", "c", "d", "e", "f")
+
+
+def test_copy_dry_run_writes_nothing(tmp_path):
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "copy", "--dir", str(directory), "team/plans", "preview", "--dry-run"
+    )
+
+    assert status == 0
+    assert "would write preview/team/plans/q3" in output
+    _, listed = run("ls", "--dir", str(directory), "--recursive")
+    assert "preview/team/plans/q3" not in listed
+
+
+def test_copy_refuses_a_target_inside_its_streaming_source(tmp_path, capsys):
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    status = main(
+        ["copy", "--dir", str(directory), "team", "team/archive"], io.StringIO()
+    )
+
+    assert status == 1
+    assert "target is inside the source subtree" in capsys.readouterr().err
+
+
+def test_mount_help_says_surveys_and_recursive_deletes_cross(capsys):
+    with pytest.raises(SystemExit):
+        parse_args(["get", "--help"])
+
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert "surveys and recursive deletes cross mount boundaries" in help_text
+
+
 def test_set_reports_the_file_the_document_landed_in(tmp_path):
     """Not the root: a key below a mount point is in that mount's store."""
     a_mounted_project(tmp_path / ".outrage")

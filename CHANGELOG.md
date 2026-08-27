@@ -170,6 +170,23 @@ end, which is what they always were by hand. What changes for a user:
 
 `outrage pack` is unchanged and still builds through `ParquetStore.build`.
 
+### Copying ranges from the command line
+
+**`outrage copy SOURCE TARGET`** exposes `Store.copy_from` over the mounted
+namespace. It selects the subtree at `SOURCE`, optionally bounded by `--depth`
+and any combination of the six `KeyRange` cuts, and grafts every selected key
+beneath `TARGET`. That makes a copy between mounted stores a single command,
+with metadata and original timestamps crossing beside document content.
+
+The existing `skip`, `overwrite` and `stop` conflict modes and `--dry-run`
+apply unchanged. A target at or below the source is refused: the transfer is a
+live stream rather than a snapshot, so otherwise it could discover and copy
+what it had just written.
+
+The shared mount-option help now correctly says that surveys and recursive
+deletes cross mount boundaries; the previous text described the staging
+behaviour retired when boundary crossing landed.
+
 ### A write may carry the timestamp it is copying
 
 `Store.store_document` takes `updated_at`, an ISO 8601 timestamp normalised to

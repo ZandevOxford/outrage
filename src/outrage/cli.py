@@ -53,7 +53,16 @@ from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND
 #:
 #: Read by :func:`parse_args` to decide whether a mount configuration file is
 #: spliced in, and by the loop that adds the options, so the two cannot drift.
-MOUNTED = ("get", "set", "ls", "dump", "rm", "export", "import", "mounts")
+MOUNTED = ("get", "set", "ls", "dump", "copy", "rm", "export", "import", "mounts")
+
+_RANGE_ARGUMENTS = (
+    "after",
+    "after_inclusive",
+    "after_subtree",
+    "before",
+    "before_inclusive",
+    "final_subtree",
+)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -455,6 +464,42 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _limit_option(dump, "documents")
     dump.set_defaults(handler=_dump_command)
 
+    copy = subcommands.add_parser(
+        "copy",
+        help="copy a range of documents within the mounted namespace",
+        description=(
+            "Copy documents from one part of the mounted namespace to another. "
+            "SOURCE names the subtree to read and TARGET is a prefix grafted "
+            "onto every key written, so `outrage copy ref/python archive` "
+            "writes `ref/python/...` beneath `archive`. Documents may cross "
+            "between backing stores, and metadata and original timestamps "
+            "cross with them. The selection is the intersection of SOURCE, "
+            "--depth, and every range bound supplied."
+        ),
+    )
+    _store_option(copy)
+    _table_options(copy)
+    copy.add_argument("source", help="Key whose subtree to copy, or / for the root.")
+    copy.add_argument(
+        "target",
+        help=(
+            "Key prefix to graft the copied keys beneath. It must not be at "
+            "or below SOURCE, because a copy streams rather than snapshots."
+        ),
+    )
+    copy.add_argument(
+        "--depth",
+        type=int,
+        default=None,
+        help="Copy at most this many levels below SOURCE. Metadata adds no level.",
+    )
+    _range_options(copy)
+    _conflict_option(copy, "A key already holding a document is")
+    copy.add_argument(
+        "--dry-run", action="store_true", help="Report what would be copied without writing it."
+    )
+    copy.set_defaults(handler=_copy_command)
+
     export = subcommands.add_parser(
         "export",
         help="write a subtree out as a directory of files",
@@ -705,6 +750,46 @@ def _conflict_option(parser: argparse.ArgumentParser, what: str) -> None:
     )
 
 
+def _range_options(parser: argparse.ArgumentParser) -> None:
+    """The six cuts a :class:`store.KeyRange` can put in the key order."""
+    parser.add_argument(
+        "--after-inclusive",
+        default=None,
+        metavar="KEY",
+        help="Copy KEY and everything after it in the selection.",
+    )
+    parser.add_argument(
+        "--after",
+        default=None,
+        metavar="KEY",
+        help="Copy strictly after KEY, including keys beneath it.",
+    )
+    parser.add_argument(
+        "--after-subtree",
+        default=None,
+        metavar="KEY",
+        help="Copy strictly after KEY and its whole subtree.",
+    )
+    parser.add_argument(
+        "--before",
+        default=None,
+        metavar="KEY",
+        help="Copy strictly before KEY and its subtree.",
+    )
+    parser.add_argument(
+        "--before-inclusive",
+        default=None,
+        metavar="KEY",
+        help="Copy KEY and everything before it in the selection.",
+    )
+    parser.add_argument(
+        "--final-subtree",
+        default=None,
+        metavar="KEY",
+        help="Copy no later than the end of KEY's subtree.",
+    )
+
+
 def _log_options(parser: argparse.ArgumentParser) -> None:
     """Whether the server logs, spelled the same way wherever an entry is written."""
     parser.add_argument(
@@ -839,8 +924,8 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
         help=(
             "Also mount the store FILE under KEY for this command, as in "
             f"ref{mounts.SPEC_DELIMITER}reference.sqlite. FILE is relative to "
-            "--dir, like --store. Repeatable. Reads and writes cross a mount "
-            "boundary; a survey and a recursive delete stop at one and say so."
+            "--dir, like --store. Repeatable. Reads, writes, surveys and "
+            "recursive deletes cross mount boundaries."
         ),
     )
     parser.add_argument(
@@ -1101,6 +1186,29 @@ def _resolved(opened: store.Store, args: argparse.Namespace) -> None:
     print(f"outrage: {keys.LAST} is {keys.displayed(args.key)}", file=sys.stderr)
 
 
+def _resolved_copy(opened: store.Store, args: argparse.Namespace) -> None:
+    """Resolve every key-shaped argument accepted by ``outrage copy``."""
+    for name in ("source", "target", *_RANGE_ARGUMENTS):
+        value = getattr(args, name)
+        if value is None or keys.LAST not in value.split(keys.DELIMITER):
+            continue
+        resolved = keys.resolve_last(
+            value,
+            opened.last_child,
+            max_segments=(
+                keys.MAX_JOINED_SEGMENTS
+                if isinstance(opened, mounts.MountedStore)
+                else keys.MAX_SEGMENTS
+            ),
+        )
+        setattr(args, name, resolved)
+        print(
+            f"outrage: {keys.LAST} in {name.replace('_', '-')} is "
+            f"{keys.displayed(resolved)}",
+            file=sys.stderr,
+        )
+
+
 def _get_command(args: argparse.Namespace, out: TextIO) -> int:
     """Print a document, whole unless a slice was asked for."""
     with _open_table(args) as opened:
@@ -1292,12 +1400,39 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
     return status
 
 
+def _copy_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Copy a bounded selection beneath another key in the mounted namespace."""
+    with _open_table(args, create=True) as opened:
+        _resolved_copy(opened, args)
+        maximum = (
+            keys.MAX_JOINED_SEGMENTS
+            if isinstance(opened, mounts.MountedStore)
+            else keys.MAX_SEGMENTS
+        )
+        source = keys.parse(args.source, max_segments=maximum).key
+        target = keys.parse(args.target, max_segments=maximum).key
+        if keys.strip_prefix(source, target) is not None:
+            raise ConflictingSourceError(
+                "copy-target-inside-source", source=source, target=target
+            )
+        key_range = store.KeyRange(**{name: getattr(args, name) for name in _RANGE_ARGUMENTS})
+        transfers = opened.copy_from(
+            opened,
+            store.BoundedSubtree(source, args.depth),
+            key_range=key_range,
+            prefix=target,
+            on_conflict=args.on_conflict,
+            dry_run=args.dry_run,
+        )
+        return _report_transfers(transfers, args, out, source_first=None)
+
+
 def _report_transfers(
     transfers: Iterator[store.Transfer],
     args: argparse.Namespace,
     out: TextIO,
     *,
-    source_first: bool,
+    source_first: bool | None,
 ) -> int:
     """Print one line per document as it crosses, then a count, and say how it went.
 
@@ -1313,10 +1448,13 @@ def _report_transfers(
         # a key that mapped to no file. The root is a key, so it is spelled
         # rather than blanked: `key or "-"` would report it as absent.
         left = "-" if transfer.key is None else keys.displayed(transfer.key)
-        right = transfer.path or "-"
-        if source_first:
-            left, right = right, left
-        line = f"{_verb(transfer.action, args.dry_run):<11} {left}  ->  {right}"
+        if source_first is None:
+            line = f"{_verb(transfer.action, args.dry_run):<11} {left}"
+        else:
+            right = transfer.path or "-"
+            if source_first:
+                left, right = right, left
+            line = f"{_verb(transfer.action, args.dry_run):<11} {left}  ->  {right}"
         if transfer.reason is not None:
             line += f"  ({transfer.reason})"
         print(line, file=out)
