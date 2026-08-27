@@ -345,8 +345,8 @@ def _mount_key_too_deep(name: Namer, /, *, key: str, mount: str, **_: Any) -> st
 def _mount_read_only(name: Namer, /, *, key: str, mount: str, action: str, **_: Any) -> str:
     return (
         f"cannot {action} {keys.displayed(key)!r}: the store mounted at "
-        f"{keys.displayed(mount)!r} is read-only. It was mounted with --mount-ro; start "
-        f"the server with --mount instead to allow changes here."
+        f"{keys.displayed(mount)!r} is read-only. It was mounted with --mount-ro; mount "
+        f"it with --mount instead to allow changes here."
     )
 
 
@@ -417,6 +417,76 @@ def _mount_read_only_missing(name: Namer, /, *, mount: str, path: str, **_: Any)
         f"{path!r}. A read-only mount is not created, since a "
         f"mistyped name would mount as an empty store that no write could "
         f"ever contradict."
+    )
+
+
+# A mount configuration file. Every one of these names the file, because a
+# table read from disk is the one kind nobody was looking at when it broke:
+# unlike an option, it was written some other day, possibly by somebody else,
+# and quite possibly for a different checkout.
+
+
+@template("mount-config-missing")
+def _mount_config_missing(name: Namer, /, *, path: str, **_: Any) -> str:
+    return f"there is no mount configuration at {path!r}"
+
+
+@template("mount-config-unreadable")
+def _mount_config_unreadable(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
+    return f"the mount configuration at {path!r} could not be read: {reason}"
+
+
+@template("mount-config-not-toml")
+def _mount_config_not_toml(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
+    return f"the mount configuration at {path!r} is not valid TOML: {reason}"
+
+
+@template("mount-config-unknown-field")
+def _mount_config_unknown_field(
+    name: Namer, /, *, path: str, fields: object, known: object, **_: Any
+) -> str:
+    named = ", ".join(repr(field) for field in fields)  # type: ignore[union-attr]
+    expected = ", ".join(repr(field) for field in known)  # type: ignore[union-attr]
+    return (
+        f"the mount configuration at {path!r} sets {named}, which means "
+        f"nothing here; it holds {expected} and nothing else"
+    )
+
+
+@template("mount-config-not-a-table")
+def _mount_config_not_a_table(
+    name: Namer, /, *, path: str, field: str, got: str, **_: Any
+) -> str:
+    return (
+        f"{field!r} in the mount configuration at {path!r} is a {got} rather "
+        f"than a table of KEY = \"FILE\" entries"
+    )
+
+
+@template("mount-config-not-a-file")
+def _mount_config_not_a_file(name: Namer, /, *, path: str, field: str, got: str, **_: Any) -> str:
+    return (
+        f"{field!r} in the mount configuration at {path!r} is a {got} rather "
+        f"than the name of a store file"
+    )
+
+
+@template("mount-config-duplicate")
+def _mount_config_duplicate(name: Namer, /, *, path: str, mount: str, **_: Any) -> str:
+    return (
+        f"the mount configuration at {path!r} mounts {keys.displayed(mount)!r} "
+        f"twice; read-write and read-only mounts share one namespace"
+    )
+
+
+@template("mount-config-unspellable")
+def _mount_config_unspellable(
+    name: Namer, /, *, path: str, mount: str, delimiter: str, **_: Any
+) -> str:
+    return (
+        f"{mount!r} in the mount configuration at {path!r} cannot be a mount "
+        f"point: it holds {delimiter!r}, so it has no --mount spelling, and a "
+        f"configuration file is read as the options it stands for"
     )
 
 

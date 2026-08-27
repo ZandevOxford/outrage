@@ -17,15 +17,38 @@ orientation. The interface people actually use here is the command line, and
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TextIO
 
-from . import __version__, bulk, eventlog, install, keys, logread, maintenance, messages, store
+from . import (
+    __version__,
+    bulk,
+    eventlog,
+    install,
+    keys,
+    logread,
+    maintenance,
+    messages,
+    mountfile,
+    mounts,
+    store,
+)
 from . import config as config_module
 from .errors import OutrageError
+
+#: The subcommands that act across a whole mount table rather than on one
+#: store file. Everything that reads or writes documents is here; ``check`` and
+#: ``backup`` are not, and by nature: both are about a *file* -- its integrity,
+#: its bytes -- and both already say which one they mean with ``--store``.
+#: ``pack`` is not either, for the same reason its target is one file.
+#:
+#: Read by :func:`parse_args` to decide whether a mount configuration file is
+#: spliced in, and by the loop that adds the options, so the two cannot drift.
+MOUNTED = ("get", "set", "ls", "dump", "rm", "export", "import")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -35,7 +58,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     branch per command and this function is the only place the shape of the
     command line is written down. Separate from :func:`main` so that a test can
     ask what an argument list parses to without running anything.
+
+    The subcommands in :data:`MOUNTED` have their mount options spliced in
+    from a configuration file first -- see :mod:`outrage.mountfile`. Only
+    those, because a subcommand that does not take the options would be handed
+    ones it has never heard of; and the subcommand is read off the front of the
+    argument list rather than parsed, since parsing is what has not happened
+    yet. That is safe here for one reason worth keeping true: **no option on
+    the top level parser takes a value**, so the first token that is not a flag
+    is the subcommand.
     """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    at = next((i for i, token in enumerate(argv) if not token.startswith("-")), None)
+    if at is not None and argv[at] in MOUNTED:
+        # After the subcommand, which is where the front of its line is: an
+        # option belonging to `outrage ls` written before the word `ls` is an
+        # option on the top level parser, which has never heard of it.
+        argv = mountfile.spliced(argv, front=at + 1)
     parser = argparse.ArgumentParser(
         prog="outrage", description="Command line tool for the Outrage document store"
     )
@@ -268,6 +307,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(get)
+    _table_options(get)
     get.add_argument(
         "key",
         help=(
@@ -308,6 +348,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(set_)
+    _table_options(set_)
     set_.add_argument(
         "key",
         help=(
@@ -345,6 +386,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(ls)
+    _table_options(ls)
     ls.add_argument(
         "key",
         nargs="?",
@@ -375,6 +417,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(dump)
+    _table_options(dump)
     dump.add_argument("key", nargs="?", default=None, help="Key whose subtree to read.")
     dump.add_argument(
         "--meta",
@@ -417,6 +460,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(export)
+    _table_options(export)
     export.add_argument(
         "target", metavar="DIRECTORY", help="Directory to write into. Created if missing."
     )
@@ -445,6 +489,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(import_)
+    _table_options(import_)
     import_.add_argument(
         "source", metavar="DIRECTORY", help="Directory to read documents from."
     )
@@ -542,6 +587,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     _store_option(rm)
+    _table_options(rm)
     rm.add_argument("key", help="Key to delete, ?last for the newest.")
     rm.add_argument(
         "--recursive", "-r", action="store_true", help="Also delete everything beneath the key."
@@ -706,13 +752,84 @@ def _store_option(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--store",
+        # The server's name for the same thing, and an alias rather than a
+        # second option: a mount configuration file is defined as the options
+        # it stands for, and it has one spelling for the root mount whichever
+        # front end reads it.
+        "--root-mount",
         dest="filename",
         metavar="FILE",
         default=store.default_store_file(),
         help=(
             f"Which store in that directory, as a file relative to it "
-            f"(default: {store.default_store_file()}). The server's --mount and "
-            f"--root-mount name stores the same way."
+            f"(default: {store.default_store_file()}). On a command that takes "
+            f"mounts this is the root mount -- the store answering for every "
+            f"key no mount claims -- and --root-mount is the same option."
+        ),
+    )
+
+
+def _table_options(parser: argparse.ArgumentParser) -> None:
+    """The mounts a command acts *across*, spelled once for every command that can.
+
+    Not to be confused with :func:`_mount_options`, which records the same
+    three options into a server entry for a client to launch later. These open
+    the stores now: with them, ``outrage ls`` and ``outrage dump`` see the one
+    namespace the MCP server sees rather than the root store alone -- which is
+    what makes a table something a person can look at, and what stops a table
+    typed for the command line from being a *different* namespace answering the
+    same keys.
+
+    The root mount is ``--store``, from :func:`_store_option`, and is not
+    repeated here.
+    """
+    parser.add_argument(
+        "--mount",
+        dest="mounts",
+        action="append",
+        default=[],
+        metavar=f"KEY{mounts.SPEC_DELIMITER}FILE",
+        help=(
+            "Also mount the store FILE under KEY for this command, as in "
+            f"ref{mounts.SPEC_DELIMITER}reference.sqlite. FILE is relative to "
+            "--dir, like --store. Repeatable. Reads and writes cross a mount "
+            "boundary; a survey and a recursive delete stop at one and say so."
+        ),
+    )
+    parser.add_argument(
+        "--mount-ro",
+        dest="read_only_mounts",
+        action="append",
+        default=[],
+        metavar=f"KEY{mounts.SPEC_DELIMITER}FILE",
+        help=(
+            "As --mount, but every write routed there is refused before it "
+            "reaches the store. Repeatable. The store must already exist."
+        ),
+    )
+    parser.add_argument(
+        mountfile.CONFIG_FLAG,
+        dest="mount_config",
+        action="append",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Read the mount options from a TOML file, as though they had been "
+            "typed here: an option before it loses, an option after it wins, "
+            f"and a mount named again replaces the one it names. Repeatable. "
+            f"{mountfile.DEFAULT_NAME} in --dir is read first whenever it "
+            "exists, so a project's own table needs no flag at all."
+        ),
+    )
+    parser.add_argument(
+        mountfile.NO_CONFIG_FLAG,
+        dest="no_mount_config",
+        action="store_true",
+        help=(
+            f"Ignore {mountfile.DEFAULT_NAME} in --dir for this run, mounting "
+            "only what is named here. The way to read a store no table can "
+            "hold: a mount table needs a writable store at the root, and a "
+            "packed parquet one is not."
         ),
     )
 
@@ -881,13 +998,24 @@ def _resolved(opened: store.Store, args: argparse.Namespace) -> None:
     """
     if args.key is None or keys.LAST not in args.key.split(keys.DELIMITER):
         return
-    args.key = keys.resolve_last(args.key, opened.last_child)
+    # At the joined bound when a table answers, because a ``?last`` there may
+    # name a mount point and a key inside it -- the same reason the server
+    # resolves one at that bound. A single store keeps its own, tighter one.
+    args.key = keys.resolve_last(
+        args.key,
+        opened.last_child,
+        max_segments=(
+            keys.MAX_JOINED_SEGMENTS
+            if isinstance(opened, mounts.MountedStore)
+            else keys.MAX_SEGMENTS
+        ),
+    )
     print(f"outrage: {keys.LAST} is {keys.displayed(args.key)}", file=sys.stderr)
 
 
 def _get_command(args: argparse.Namespace, out: TextIO) -> int:
     """Print a document, whole unless a slice was asked for."""
-    with _open_existing(args) as opened:
+    with _open_table(args) as opened:
         _resolved(opened, args)
         slicing = {
             "offset": args.offset,
@@ -916,18 +1044,17 @@ def _get_command(args: argparse.Namespace, out: TextIO) -> int:
 def _set_command(args: argparse.Namespace, out: TextIO) -> int:
     """Write a document from an argument, a file, or standard input."""
     content = _content(args)
-    directory = store.resolve_directory(args.directory)
-    with store.open_store(directory, filename=args.filename) as opened:
+    with _open_table(args, create=True) as opened:
         _resolved(opened, args)
         written = opened.store_document(args.key, content, args.format, title=args.title)
+        # Which file, resolved through the table rather than assumed to be the
+        # root: a key below a mount point lands in that mount's store, and a
+        # report naming the root would be naming a store the document is not in.
+        where = _file_holding(opened, written)
 
-    # The resolved directory, not the one asked for: a mistyped --dir creates a
+    # The resolved path, not the one asked for: a mistyped --dir creates a
     # store rather than failing, so the only defence is saying where it went.
-    print(
-        f"{keys.displayed(written)}  {len(content)} characters in "
-        f"{store.store_file(directory, args.filename)}",
-        file=out,
-    )
+    print(f"{keys.displayed(written)}  {len(content)} characters in {where}", file=out)
     return 0
 
 
@@ -959,7 +1086,7 @@ class ConflictingSourceError(OutrageError):
 def _ls_command(args: argparse.Namespace, out: TextIO) -> int:
     """List one level, or the whole subtree, printing as it goes."""
     shown = 0
-    with _open_existing(args) as opened:
+    with _open_table(args) as opened:
         _resolved(opened, args)
         entries = bulk.walk(opened, args.key) if args.recursive else bulk.levels(opened, args.key)
         for entry in entries:
@@ -982,7 +1109,7 @@ def _ls_command(args: argparse.Namespace, out: TextIO) -> int:
 def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
     """Print a subtree, one document at a time, as each one arrives."""
     shown = 0
-    with _open_existing(args) as opened:
+    with _open_table(args) as opened:
         _resolved(opened, args)
         for excerpt in _documents(opened, args):
             if args.limit is not None and shown >= args.limit:
@@ -1036,7 +1163,7 @@ def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.
 
 def _export_command(args: argparse.Namespace, out: TextIO) -> int:
     """Write a subtree out as files, reporting each document as it lands."""
-    with _open_existing(args) as opened:
+    with _open_table(args) as opened:
         _resolved(opened, args)
         transfers = bulk.export_tree(
             opened,
@@ -1055,8 +1182,7 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
     # from a directory is that write in bulk. The resolved path is printed for
     # the same reason too - it is the only thing that makes a mistyped --dir
     # visible rather than silently successful.
-    directory = store.resolve_directory(args.directory)
-    with store.open_store(directory, filename=args.filename) as opened:
+    with _open_table(args, create=True) as opened:
         _resolved(opened, args)
         transfers = bulk.import_tree(
             opened,
@@ -1067,7 +1193,14 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
             hidden=args.hidden,
         )
         status = _report_transfers(transfers, args, out, source_first=True)
-    print(f"outrage: into {store.store_file(directory, args.filename)}", file=sys.stderr)
+        where = _file_holding(opened, keys.ROOT)
+        if isinstance(opened, mounts.MountedStore) and opened.multiple:
+            # An import spanning a table lands in more than one file, and which
+            # documents went where is a routing question this line cannot
+            # answer. It says how many stores were open instead, which is the
+            # part a reader can act on.
+            where += f", across {len(opened)} mounted stores"
+    print(f"outrage: into {where}", file=sys.stderr)
     return status
 
 
@@ -1184,7 +1317,7 @@ def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
 
 def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
     """Delete a key, saying what went and what stayed."""
-    with _open_existing(args) as opened:
+    with _open_table(args) as opened:
         _resolved(opened, args)
         beneath = opened.descendant_count(args.key)
         if args.dry_run:
@@ -1328,6 +1461,63 @@ def _open_existing(args: argparse.Namespace):
     return store.open_store(directory, filename=args.filename)
 
 
+@contextlib.contextmanager
+def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[store.Store]:
+    """Open every store this command acts across, as the one namespace.
+
+    What the mounted subcommands use in place of :func:`_open_existing`. With
+    nothing mounted it *is* :func:`_open_existing`, and deliberately, not as an
+    optimisation: a mount table requires a writable store at the root, since
+    the root owns every key no mount claims, so building one unconditionally
+    would make ``outrage ls --store ref.parquet`` -- reading a packed store,
+    which is what packing one is for -- fail on a table it never asked for.
+    ``MountedStore.__init__`` says as much where it refuses: to simply read
+    such a store, open it directly, which is what this does.
+
+    ``create`` is the same distinction ``_open_existing`` draws, and it is
+    about the *root* mount alone. A read of a store that is not there is a
+    mistyped ``--dir`` reported as an empty store; a first write has to be able
+    to make the store it writes to. Every other mount is opened the way
+    ``open_mounts`` opens it either way, which is to say a read-only one must
+    already exist and a read-write one is created.
+    """
+    directory = store.resolve_directory(args.directory)
+    if not create:
+        maintenance.require_store(directory, args.filename)
+    if not (args.mounts or args.read_only_mounts):
+        with store.open_store(directory, filename=args.filename) as opened:
+            yield opened
+        return
+    with mounts.open_mounts(
+        directory,
+        args.mounts,
+        args.read_only_mounts,
+        root_mount=args.filename,
+    ) as table:
+        for mount in table.shadowing():
+            # The server's warning, in the same words and for the same reason:
+            # the configuration is usable and the keys that vanish are in a
+            # store the operator can still reach, so refusing would be worse.
+            print(
+                f"outrage: warning: the store at {mount.name!r} shadows keys already "
+                f"held there; they are unreachable while it is mounted",
+                file=sys.stderr,
+            )
+        yield table
+
+
+def _file_holding(opened: store.Store, key: str) -> str:
+    """The store file a key lands in, for a command that reports where it went.
+
+    A table is several files, so "the store" is not a thing a report can name
+    without asking which key it means. Falls back to the store's own repr for
+    anything that is not a file, which nothing on this command line currently
+    is.
+    """
+    owner = opened.resolve(key).store if isinstance(opened, mounts.MountedStore) else opened
+    return str(owner.path) if isinstance(owner, store.FileStore) else repr(owner)
+
+
 #: What each action reads as, before it has happened and after. One vocabulary
 #: for the server entry, the hook and the copied files, so a report over all
 #: three does not describe the same outcome three ways.
@@ -1415,8 +1605,11 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     every test of this module -- gets the status without the interpreter
     stopping.
     """
-    args = parse_args(argv)
     try:
+        # Inside the try, because parsing now reads a mount configuration file
+        # and a file that will not parse is an answer about the configuration,
+        # rendered like any other rather than tracebacked.
+        args = parse_args(argv)
         return args.handler(args, out or sys.stdout)
     except OutrageError as exc:
         # One base rather than a tuple that grows with each command. A failure
@@ -1432,6 +1625,7 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
 
 
 __all__ = [
+    "MOUNTED",
     "ConflictingSourceError",
     "main",
     "parse_args",

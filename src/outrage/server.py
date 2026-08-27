@@ -38,7 +38,7 @@ from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from . import __version__, eventlog, keys, messages
+from . import __version__, eventlog, keys, messages, mountfile
 from . import mounts as mounts_module
 from . import store as store_module
 from .errors import OutrageError
@@ -947,9 +947,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     mounted where -- see ``project/reference/planned/mounts``. ``--log`` and
     ``--log-content`` say what is recorded about the calls that arrive.
 
+    The mount options may also be written in a file rather than typed --
+    :mod:`outrage.mountfile`, and the whole point of it here: with a table in
+    the store directory, the ``args`` a client's JSON has to carry come down to
+    ``--dir``. The file is spliced into ``argv`` before the parser sees it, so
+    everything below describes both.
+
     Separate from :func:`main` so that a test can ask what an argument list
     parses to without opening a store or starting a server.
     """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    argv = mountfile.spliced(argv)
     parser = argparse.ArgumentParser(
         prog="outrage-server", description="MCP server for the Outrage document store"
     )
@@ -1010,6 +1018,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        mountfile.CONFIG_FLAG,
+        dest="mount_config",
+        action="append",
+        default=None,
+        metavar="FILE",
+        help=(
+            "Read mount options from a TOML file, as though they had been "
+            "typed here: an option before it loses, an option after it wins. "
+            f"Repeatable. {mountfile.DEFAULT_NAME} in --dir is read first "
+            "whenever it exists, so a project's own table needs no flag at all."
+        ),
+    )
+    parser.add_argument(
+        mountfile.NO_CONFIG_FLAG,
+        dest="no_mount_config",
+        action="store_true",
+        help=(
+            f"Ignore {mountfile.DEFAULT_NAME} in --dir for this run, serving "
+            "only the stores named here."
+        ),
+    )
+    parser.add_argument(
         "--log",
         nargs="?",
         const=eventlog.DEFAULT,
@@ -1047,7 +1077,14 @@ def main(argv: list[str] | None = None) -> int:
 
     Returns rather than exits, for the same reason :func:`outrage.cli.main` does.
     """
-    args = parse_args(argv)
+    try:
+        args = parse_args(argv)
+    except OutrageError as exc:
+        # A mount configuration file that will not parse fails here, before
+        # there is a log to record it in. Same rule as the block below: it is
+        # an answer about the configuration, not a bug.
+        print(f"outrage: {messages.render(exc)}", file=sys.stderr)
+        return 1
     # Resolved here rather than left to the store, because the log defaults to
     # a file beside the database and so needs the same answer.
     directory = store_module.resolve_directory(args.directory)

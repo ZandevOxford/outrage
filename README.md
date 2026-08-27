@@ -99,6 +99,31 @@ defaulting to `./.outrage/` in the working directory, each as a file inside it:
 is always relative to the directory, so only `--dir` is a path. See
 [design.md](design.md#store-location).
 
+A table is usually written down rather than typed, in `mounts.toml` inside that
+directory, and read by the server and by the command line alike:
+
+```toml
+# Every FILE is relative to this directory, the one --dir names.
+root-mount = "store.sqlite"
+
+[mount]
+team = "team.sqlite"          # read-write
+
+[mount-ro]
+ref = "reference.sqlite"      # writes here are refused
+```
+
+The file behaves as if its options had been typed at the point where it is
+named, so anything on the command line comes after it and wins - and a mount
+named again *replaces* the one in the file rather than colliding with it, which
+is how a committed table gets one entry overridden for a single run.
+`--mount-config FILE` reads another file where the flag appears;
+`--no-mount-config` ignores the default one.
+
+`outrage get`, `set`, `ls`, `dump`, `rm`, `export` and `import` all take the
+mount options, so a person sees the same namespace the MCP server serves.
+`outrage check` and `backup` are about one file and say which with `--store`.
+
 `outrage-server --log` records requests and store accesses as JSON lines, by
 default in `log.jsonl` beside the store. It is off otherwise, since it records
 document text. `--log-content none|excerpt|full` controls how much of that text

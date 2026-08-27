@@ -4,6 +4,37 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## 0.3.0 - unreleased
 
+### A mount table in a file, and a command line that reads it
+
+`mounts.toml` in the store directory describes the mounts, so a table is
+maintained in one commented place rather than respelled on every command line -
+and, for the server, rather than living inside a client's `.mcp.json` in an
+array whose quoting belongs to argparse. It holds `root-mount`, a `[mount]`
+table and a `[mount-ro]` table, each entry a `KEY = "FILE"` naming a store
+inside `--dir`. TOML because a config file is the one place comments are
+wanted, and `tomllib` is in the standard library.
+
+**A file behaves as if its options had been typed at the point where it is
+named.** The default file is spelled at the very front, so everything actually
+typed comes after it and wins; `--mount-config FILE` splices another in where
+the flag appears. There is no separate notion of a merge: precedence and
+repetition are whatever argparse already does. The one deliberate exception is
+duplicates - a mount point claimed twice within one source is still refused,
+while claimed again from a later source it *replaces* the earlier one, which is
+what makes a committed table safe to override one entry of. `--no-mount-config`
+ignores the default file for a run.
+
+**`outrage get`, `set`, `ls`, `dump`, `rm`, `export` and `import` now take
+`--mount`, `--mount-ro` and `--mount-config`**, and act across the whole table,
+so the command line sees the namespace the MCP server serves rather than the
+root store alone. `--store` is the root mount on those commands and
+`--root-mount` is an accepted alias for it. `outrage check` and `outrage
+backup` stay per-file by nature, and already say which file with `--store`.
+
+A mount point that is metadata is now refused when the spec is parsed rather
+than when the table is built, so a mistyped one no longer leaves a database
+behind named after the mistake.
+
 ### `Store` and `FileStore`: a store, and a store kept in a file
 
 **Breaking for library callers.** `Store` now says only what a store *does* -

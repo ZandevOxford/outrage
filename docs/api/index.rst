@@ -42,6 +42,11 @@ Which storage a store *file* is kept in follows from its extension --
 a filesystem store is constructed directly at its path rather than opened by
 name.
 
+:mod:`outrage.mountfile` is the table written down rather than typed: a TOML
+file in the store directory, read as though its options had been given on the
+command line at the point where the file is named. Both front ends read it, so
+a project has one table rather than one per caller.
+
 .. toctree::
    :maxdepth: 1
 
@@ -50,6 +55,7 @@ name.
    store_parquet
    store_files
    mounts
+   mountfile
 
 Front ends
 ----------
