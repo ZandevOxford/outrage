@@ -152,6 +152,32 @@ below: `project/reference/planned` is now a short index over `planned/cli`,
 at the old key still lands somewhere useful, which is what makes a split safe
 to do late - but adding as you go is cheaper than splitting afterwards.
 
+## Editing a long document without reading it twice
+
+A document too long to hold comfortably in context does not have to pass
+through the conversation to be changed. `document_file` puts it on disk and
+takes it back:
+
+```
+document_file(key="context/1/state")        -> writes a file, returns its path
+document_file(key="context/1/state", path=...) -> stores that file back
+```
+
+Between the two, edit the file with the ordinary shell tools - `sed`, a
+heredoc, an editor. The direction is decided by `path` and nothing else.
+
+Two things worth knowing. The import stores at the key you name, whatever file
+the content came from, so exporting one key and importing to another is how to
+copy content across the store. And the answer reports the size written beside
+the size that was there before: an edit script that truncated a document shows
+up as a shrink, which is the only warning there is - nothing refuses a write
+that empties a key.
+
+The tool is offered when the server was told which directory it serves from.
+Where it is not there, `outrage get > file`, edit, `outrage set --file` does the
+same thing from the shell - chained with `&&`, and check the length before
+writing back.
+
 ## Before the end
 
 Whether the session is ending, being handed over, or about to be compacted:

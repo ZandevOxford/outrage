@@ -1,6 +1,7 @@
 """Tests driving the tools through the MCP server's own dispatch."""
 
 import json
+from pathlib import Path
 from typing import Any
 
 import anyio
@@ -60,6 +61,9 @@ def test_tools_are_registered(server):
         "keys_missing_meta",
         "delete_keys",
     }
+    # `document_file` is deliberately not in that set: it writes files under the
+    # store directory, and this server was built without being told where that
+    # is. See `test_the_file_tool_is_offered_only_when_there_is_somewhere_to_write`.
     assert tools["retrieve_document"].annotations.read_only_hint is True
     assert tools["delete_keys"].annotations.destructive_hint is True
     for tool in tools.values():
@@ -796,3 +800,124 @@ def test_a_key_spelled_last_can_no_longer_be_written(server):
     written = call(server, "store_document", key="context/?last", content="x")
     assert written["key"] == "context/c3d4"
     assert "?last" not in [e["key"] for e in call(server, "list_keys", key="context")["entries"]]
+
+
+# -- the single-document file round trip ---------------------------------
+
+
+@pytest.fixture
+def exporting(tmp_path):
+    """A server told where the store directory is, so `document_file` exists."""
+    with SqliteStore(tmp_path) as store:
+        store.store_document("context/a1b2/design", "# Store schema", title="Store schema")
+        store.store_document("notes/data", '{"a": 1}', format="json")
+        yield build_server(store, directory=tmp_path)
+
+
+@pytest.fixture
+def exports(tmp_path):
+    return tmp_path / "export"
+
+
+def test_the_file_tool_is_offered_only_when_there_is_somewhere_to_write(exporting, server):
+    assert "document_file" in list_tools(exporting)
+    assert "document_file" not in list_tools(server)
+
+
+def test_exporting_writes_the_document_under_the_store_directory(exporting, exports):
+    result = call(exporting, "document_file", key="context/a1b2/design")
+
+    assert result["path"] == str(exports / "context" / "a1b2" / "design.md")
+    assert Path(result["path"]).read_text() == "# Store schema"
+    assert result["exported"] == 14
+    assert result["replaced"] is False
+    assert "call again with its path" in result["note"]
+
+
+def test_a_file_edited_on_disk_is_stored_back(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    Path(exported["path"]).write_text("# Store schema, revised")
+
+    imported = call(exporting, "document_file", key="context/a1b2/design", path=exported["path"])
+
+    assert (imported["stored"], imported["previous"]) == (23, 14)
+    assert "note" not in imported
+    read = call(exporting, "retrieve_document", key="context/a1b2/design")
+    assert read["content"] == "# Store schema, revised"
+
+
+def test_a_document_that_shrank_is_said_to_have_shrunk(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    Path(exported["path"]).write_text("")
+
+    imported = call(exporting, "document_file", key="context/a1b2/design", path=exported["path"])
+
+    assert (imported["stored"], imported["previous"]) == (0, 14)
+    assert "shrank from 14 to 0" in imported["note"]
+
+
+def test_re_exporting_a_key_says_it_overwrote_the_file(exporting):
+    call(exporting, "document_file", key="context/a1b2/design")
+
+    again = call(exporting, "document_file", key="context/a1b2/design")
+
+    assert again["replaced"] is True
+    assert "overwritten" in again["note"]
+
+
+def test_an_export_and_an_import_may_name_different_keys(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+
+    imported = call(exporting, "document_file", key="context/c3d4/design", path=exported["path"])
+
+    assert imported == {
+        "key": "context/c3d4/design",
+        "path": exported["path"],
+        "stored": 14,
+        "previous": None,
+    }
+
+
+def test_the_file_name_is_what_says_what_format_came_back(exporting):
+    exported = call(exporting, "document_file", key="notes/data")
+    assert exported["format"] == "json"
+    Path(exported["path"]).write_text('{"a": 2}')
+
+    call(exporting, "document_file", key="notes/data", path=exported["path"])
+
+    assert call(exporting, "retrieve_document", key="notes/data")["format"] == "json"
+
+
+def test_a_file_outside_the_export_directory_is_refused(exporting, tmp_path):
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("never exported")
+
+    message = call_expecting_error(
+        exporting, "document_file", key="context/a1b2/design", path=str(outside)
+    )
+
+    assert "outside the export directory" in message
+    assert call(exporting, "retrieve_document", key="context/a1b2/design")["content"] == (
+        "# Store schema"
+    )
+
+
+def test_a_file_that_is_not_there_is_refused_by_name(exporting, exports):
+    message = call_expecting_error(
+        exporting, "document_file", key="context/a1b2/design", path=str(exports / "gone.md")
+    )
+
+    assert "no file at" in message
+
+
+def test_the_newest_context_can_be_exported_by_asking_for_it(exporting, exports):
+    result = call(exporting, "document_file", key="context/?last/design")
+
+    assert result["key"] == "context/a1b2/design"
+    assert result["path"] == str(exports / "context" / "a1b2" / "design.md")
+
+
+def test_a_wildcard_key_is_not_a_round_trip(exporting):
+    message = call_expecting_error(exporting, "document_file", key="context/?/design")
+
+    assert "?" in message
