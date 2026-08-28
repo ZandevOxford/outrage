@@ -15,7 +15,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from outrage import bulk
+from outrage import bulk, messages
 from outrage import store as store_module
 from outrage.keys import InvalidKeyError
 from outrage.store import FORMATS
@@ -675,6 +675,38 @@ def test_an_import_refuses_a_file_that_is_not_there(populated, tmp_path):
         )
 
     assert raised.value.code == "import-file-missing"
+
+
+def test_a_missing_file_named_relatively_says_what_it_was_relative_to(populated, tmp_path):
+    """The doubled path a relative one produces has to read as what it is.
+
+    ``.outrage/export/x.md`` typed where a person is standing is looked for
+    inside the export directory, so the joined path repeats the segment and
+    reads as a bug in the tool unless the sentence names the directory.
+    ``context/66/state``.
+    """
+    (tmp_path / "export").mkdir()
+
+    with pytest.raises(bulk.FileMissingError) as raised:
+        bulk.import_document(
+            populated, "project", PurePosixPath("export/gone.md"), tmp_path / "export"
+        )
+
+    rendered = messages.render(raised.value)
+    assert "'export/gone.md' is relative to the export directory" in rendered
+    assert str(tmp_path / "export") in rendered
+
+
+def test_a_missing_file_named_absolutely_is_reported_without_the_clause(populated, tmp_path):
+    """Nothing to explain: the path in the sentence is the path that was given."""
+    (tmp_path / "export").mkdir()
+
+    with pytest.raises(bulk.FileMissingError) as raised:
+        bulk.import_document(
+            populated, "project", tmp_path / "export" / "gone.md", tmp_path / "export"
+        )
+
+    assert "relative to" not in messages.render(raised.value)
 
 
 def test_an_import_refuses_a_file_that_is_not_text(populated, tmp_path):

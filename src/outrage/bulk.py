@@ -848,6 +848,11 @@ def import_document(
     that stored any file the caller named would read anything the server can
     read. See ``project/reference/planned/export-traversal``.
 
+    **A relative ``path`` is relative to ``root``**, not to the working
+    directory: it is relativised before it is checked, so the containment rule
+    is asked once. ``tmp/1.md`` is a good way to name an export; the same file
+    named ``.outrage/export/tmp/1.md`` from the repository root is not.
+
     **The key and the path do not have to agree.** The content is stored where
     the caller says, whatever file it came from, which is what makes an export,
     an edit and an import to a second key a way of copying content around the
@@ -864,7 +869,16 @@ def import_document(
     try:
         content = file.read_text(encoding="utf-8")
     except (FileNotFoundError, IsADirectoryError) as exc:
-        raise FileMissingError("import-file-missing", key=key, path=str(file)) from exc
+        # `given` and `root` beside the joined path, because the two disagree
+        # in the case most likely to be got wrong: a relative path is taken
+        # from `root`, and the message has to say so to be read correctly.
+        raise FileMissingError(
+            "import-file-missing",
+            key=key,
+            path=str(file),
+            given=str(path),
+            root=str(Path(root)),
+        ) from exc
     except UnicodeDecodeError as exc:
         raise NotTextError("files-not-text", key=key, path=str(file)) from exc
     try:

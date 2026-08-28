@@ -25,6 +25,8 @@ stored at `key`.
   importing to another copies content across the store.
 * **Only a file under the export directory can be imported**, which is the
   whole of the check: the same containment rule the bulk export is guarded by.
+  A relative path is taken from that directory rather than from the working
+  directory, and a file missing at one says so.
 * **An empty file is stored rather than refused**, and both sizes are reported
   instead - the characters written and the characters that were there before,
   with a note when the document shrank. Emptying a document is a thing a person

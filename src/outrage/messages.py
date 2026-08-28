@@ -25,6 +25,7 @@ sentence drift, and the drift is invisible until somebody compares them.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -322,8 +323,20 @@ def _import_source_missing(name: Namer, /, *, source: str, **_: Any) -> str:
 
 
 @template("import-file-missing")
-def _import_file_missing(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
-    return f"nothing to store at {name(key)!r}: no file at {path}"
+def _import_file_missing(
+    name: Namer, /, *, key: str, path: str, given: str, root: str, **_: Any
+) -> str:
+    missing = f"nothing to store at {name(key)!r}: no file at {path}"
+    if os.path.isabs(given):
+        return missing
+    # A relative path is taken from the export directory, not from wherever the
+    # caller is standing, and the joined result is the only thing this sentence
+    # would otherwise show: `.outrage/export/x.md` typed at the repository root
+    # is reported missing from `.../.outrage/export/.outrage/export/x.md`, and
+    # the doubled segment reads as a bug in the tool rather than as a path
+    # taken from somewhere else. Naming the directory is what makes it read as
+    # what it is. `context/66/state`.
+    return f"{missing} - {given!r} is relative to the export directory {root}"
 
 
 @template("import-file-escapes-tree")
