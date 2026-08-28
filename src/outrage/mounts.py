@@ -41,6 +41,7 @@ import os
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 from . import keys
@@ -1483,6 +1484,7 @@ def open_mounts(
     *,
     root_mount: str | os.PathLike[str] | None = None,
     log: EventLog | None = None,
+    attached: Mapping[str, Store] = MappingProxyType({}),
 ) -> MountedStore:
     """Open every store in ``directory``, as one table.
 
@@ -1511,9 +1513,28 @@ def open_mounts(
     protect it made it impossible to notice by writing. That is the same
     argument ``parse_spec`` makes for validating a mount point early, one step
     further along.
+
+    ``attached`` is the one way in for a store this call did not open: already
+    open, mounted read-only at the key it is given, and **not** subject to the
+    relative-to-``directory`` rule above, which it could not obey. That rule is
+    load bearing rather than incidental -- it is what makes a table relocatable
+    -- so the exception is a separate argument rather than an absolute path
+    quietly admitted into a spec. What needs it is a store shipped inside the
+    installed package, which lives in ``site-packages`` and is not expressible
+    as a ``KEY=FILE`` at all: :mod:`outrage.shipped`. It is mounted read-only
+    because the caller is lending a store rather than handing one over, and
+    everything else about it -- precedence, shadowing, how it lists -- is an
+    ordinary mount's. Duplicates are refused across all three sources together;
+    which of two claims at one point survives is settled before this, in
+    :func:`outrage.mountfile._overridden`.
+
+    A store passed here is closed with the table, like every other, so a caller
+    hands one over and does not close it twice -- and a failure part way
+    through closes it as well.
     """
     writable = [parse_spec(spec) for spec in specs]
     refusing = [parse_spec(spec) for spec in read_only_specs]
+    lent = {mount_point(prefix): store for prefix, store in attached.items()}
     # Resolved once, here, because the read-only check below and the stores
     # themselves have to agree about where a mount's file is; asking twice is
     # how they would come to disagree.
@@ -1525,14 +1546,20 @@ def open_mounts(
                 "mount-read-only-missing", mount=prefix, path=str(database)
             )
 
-    opened: dict[str, Store] = {}
+    # Lent stores go in first, so that anything opened here is closed by the
+    # failure path below whatever order the duplicate is found in -- and so
+    # that a second claim on a lent point is the same refusal as a second claim
+    # on any other.
+    opened: dict[str, Store] = dict(lent)
     try:
+        # The root is never among the lent stores: ``mount_point`` refuses it
+        # above, as it does for a spec, so this cannot overwrite one.
         opened[keys.ROOT] = store_module.default_store(base, filename=root_mount, log=log)
         for prefix, path in [*writable, *refusing]:
             if prefix in opened:
                 raise MountError("mount-duplicate", mount=prefix)
             opened[prefix] = store_module.default_store(base, filename=path, log=log)
-        return MountedStore(opened, read_only=[prefix for prefix, _ in refusing])
+        return MountedStore(opened, read_only=[prefix for prefix, _ in refusing] + list(lent))
     except Exception:
         for store in opened.values():
             store.close()

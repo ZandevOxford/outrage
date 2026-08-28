@@ -19,6 +19,11 @@ Listings are pages. Compare `returned` with `total`, follow `next_cursor` with
 `after`, and account for `without_meta`; a title survey cannot show documents
 without titles.
 
+`outrage/` is Outrage's own manual, mounted read-only from inside the package:
+a readme and documents on keys, the tools, the command line and the
+conventions. Read it for how Outrage works, not for anything about this
+project, and do not write there.
+
 ## Store conventions
 
 Use `context/<n>/…` for a thread of work, `project/reference/<topic>` for

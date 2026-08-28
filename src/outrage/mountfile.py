@@ -49,7 +49,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import keys
+from . import keys, shipped
 from . import store as store_module
 from .errors import OutrageError
 from .mounts import SPEC_DELIMITER, MountError, mount_point, parse_spec
@@ -92,11 +92,36 @@ MOUNT_FLAG = "--mount"
 #: The same, with every write routed there refused before it reaches the store.
 READ_ONLY_FLAG = "--mount-ro"
 
+#: The documentation shipped inside the package, mounted read-only at
+#: :data:`outrage.shipped.MOUNT_POINT`. It takes no value: there is no file to
+#: name, because the tree is in ``site-packages`` rather than in ``--dir`` and
+#: so is not expressible as a ``KEY=FILE`` at all -- which is why it is a flag
+#: of its own rather than a spelling of ``--mount-ro``.
+#:
+#: The **enable** half only. The server carries it by default and the command
+#: line does not, and turning it off is ``--unmount outrage``: an override
+#: cannot remove a mount, but that is the flag that already does, and a second
+#: spelling of it would be two ways to say one thing.
+DOCS_FLAG = "--mount-docs"
+
+#: The mount point :data:`DOCS_FLAG` claims. Named through
+#: :mod:`outrage.shipped`, which owns the answer, so that the splice and the
+#: store agree without either holding a second copy of the word.
+DOCS_MOUNT = shipped.MOUNT_POINT
+
 #: The flags this module has to recognise in an argument list. Everything else
 #: passes through untouched, including ``--store``: it shares a ``dest`` with
 #: ``--root-mount`` on the command line, so argparse's own last-one-wins is
 #: already the right answer for it and there is nothing here to decide.
-_FLAGS = (DIR_FLAG, MOUNT_FLAG, READ_ONLY_FLAG, UNMOUNT_FLAG, CONFIG_FLAG, NO_CONFIG_FLAG)
+_FLAGS = (
+    DIR_FLAG,
+    MOUNT_FLAG,
+    READ_ONLY_FLAG,
+    DOCS_FLAG,
+    UNMOUNT_FLAG,
+    CONFIG_FLAG,
+    NO_CONFIG_FLAG,
+)
 
 #: The file's fields are named after the options they stand for, so that
 #: nothing here is a new word for anything: a table entry is ``KEY = "FILE"``,
@@ -121,8 +146,18 @@ FIELDS = (ROOT_FIELD, MOUNT_FIELD, READ_ONLY_FIELD)
 #: with a ``--mount-config`` written between them.
 _TYPED = -1
 
+#: What a mount a front end carries *by default* counts as. A third source,
+#: distinct from every file and from the line, and it has to be: the same
+#: source is what makes two claims at one point a mistake, and a default the
+#: caller never typed being overridden by one they did is the whole point of
+#: it. Numbered below the command line so it also reads as the earliest.
+_BUILTIN = -2
+
 #: What a source that is not a file is called, when one is named to a reader.
 TYPED_SOURCE = "the command line"
+
+#: What the built-in default is called in the same column.
+BUILTIN_SOURCE = "built in"
 
 
 class MountFileError(OutrageError, ValueError):
@@ -489,6 +524,7 @@ def spliced(
     *,
     directory: str | os.PathLike[str] | None = None,
     front: int = 0,
+    builtin: bool = False,
 ) -> list[str]:
     """``argv`` with every mount configuration file's options written into it.
 
@@ -510,8 +546,19 @@ def spliced(
     file inserts its options, and inserting them says nothing about the ones
     already there. Whether an escape from the default file is wanted is left
     open in ``project/reference/planned/mounts/config``.
+
+    ``builtin`` is whether this front end carries the shipped documentation
+    without being asked -- the server does, the command line does not. It is
+    spliced in as :data:`DOCS_FLAG` at the very front, ahead of the default
+    file, so that it is an ordinary mount for every question that follows:
+    ``mounts.toml`` naming that point overrides it, ``--unmount`` there removes
+    it, and both by the rules already written rather than by a case for it.
+    Handled here rather than by the front end passing a pre-opened store,
+    because override is settled over this list -- a second claim reaching
+    ``open_mounts`` is a hard duplicate refusal, which is the opposite of what
+    overriding a default should do.
     """
-    items, _ = _resolved(argv, directory, front)
+    items, _ = _resolved(argv, directory, front, builtin)
     return [token for item in items for token in item.tokens]
 
 
@@ -520,6 +567,7 @@ def origins(
     *,
     directory: str | os.PathLike[str] | None = None,
     front: int = 0,
+    builtin: bool = False,
 ) -> list[Origin]:
     """The mounts ``argv`` ends up with, each named with where it came from.
 
@@ -527,32 +575,47 @@ def origins(
     entry a later source replaced is not here, because it is not in the table
     either - this is what the command would open, not what it read on the way.
     """
-    items, labels = _resolved(argv, directory, front)
+    items, labels = _resolved(argv, directory, front, builtin)
     found = []
+    known = (ROOT_FLAG, MOUNT_FLAG, READ_ONLY_FLAG, DOCS_FLAG)
     for item in items:
-        if not item.tokens or item.tokens[0] not in (ROOT_FLAG, MOUNT_FLAG, READ_ONLY_FLAG):
+        if not item.tokens or item.tokens[0] not in known:
             continue
         found.append(
             Origin(
                 mount=item.mount,
                 flag=item.tokens[0],
-                value=item.tokens[1],
-                source=labels.get(item.source, TYPED_SOURCE),
+                # The documentation flag names no file, so there is no second
+                # token to report and the empty string is the honest answer.
+                value=item.tokens[1] if len(item.tokens) > 1 else "",
+                source=labels.get(item.source, _unnamed(item.source)),
             )
         )
     return found
+
+
+def _unnamed(source: int) -> str:
+    """What a source with no file is called."""
+    return BUILTIN_SOURCE if source == _BUILTIN else TYPED_SOURCE
 
 
 def _resolved(
     argv: Sequence[str],
     directory: str | os.PathLike[str] | None,
     front: int,
+    builtin: bool = False,
 ) -> tuple[list[_Item], dict[int, str]]:
     """The splice itself: the items that survive it, and what each source is called."""
     base = store_module.resolve_directory(
         directory if directory is not None else directory_in(argv)
     )
     items: list[_Item] = list(_typed(argv[:front]))
+    if builtin:
+        # After the leading tokens rather than at index 0: on a command line
+        # with subcommands the front of the line is the front of the
+        # subcommand, and an option written before the word `ls` is an option
+        # on a parser that has never heard of it.
+        items.append(_Item(_BUILTIN, [DOCS_FLAG], DOCS_MOUNT))
     labels: dict[int, str] = {}
     source = 0
     default = base / DEFAULT_NAME
@@ -585,6 +648,13 @@ def _typed(argv: Sequence[str]) -> Iterator[_Item]:
         if canonical == NO_CONFIG_FLAG:
             # Consumed here: it says which files are read, which is a question
             # already answered by the time a parser sees the list.
+            index += 1
+            continue
+        if canonical == DOCS_FLAG and not delimiter:
+            # No value: what it mounts is not nameable as a file, which is the
+            # whole reason it is a flag. It claims a mount point all the same,
+            # so an override or an unmount at that point sees it.
+            yield _Item(_TYPED, [canonical], DOCS_MOUNT)
             index += 1
             continue
         if canonical in (MOUNT_FLAG, READ_ONLY_FLAG, UNMOUNT_FLAG, CONFIG_FLAG):
@@ -701,9 +771,12 @@ def _canonical(flag: str) -> str | None:
 
 
 __all__ = [
+    "BUILTIN_SOURCE",
     "CONFIG_FLAG",
     "DEFAULT_NAME",
     "DIR_FLAG",
+    "DOCS_FLAG",
+    "DOCS_MOUNT",
     "FIELDS",
     "MOUNT_FIELD",
     "MOUNT_FLAG",

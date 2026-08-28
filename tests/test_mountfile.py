@@ -466,3 +466,97 @@ def test_an_unmount_that_removes_nothing_is_refused(tmp_path):
 def test_the_root_cannot_be_unmounted(tmp_path):
     with raises_rendered(MountError, "root cannot be unmounted"):
         mountfile.spliced(["--dir", str(tmp_path), mountfile.UNMOUNT_FLAG, "/"])
+
+
+# The documentation shipped inside the package, and the one thing that makes it
+# different from every mount above: a front end may carry it without anybody
+# typing it. `project/reference/planned/mounts/default-store` is the argument,
+# and the whole of what these check is that "carried by default" costs the
+# splice no special case -- override, unmount and precedence are the rules
+# already written.
+
+
+def test_the_built_in_documentation_is_spliced_in_at_the_front(tmp_path):
+    spliced = mountfile.spliced(["--dir", str(tmp_path)], builtin=True)
+
+    assert spliced == [mountfile.DOCS_FLAG, "--dir", str(tmp_path)]
+
+
+def test_nothing_is_carried_unless_the_front_end_asks(tmp_path):
+    """The command line's half: a bare `outrage` is the project's own store."""
+    assert mountfile.spliced(["--dir", str(tmp_path)]) == ["--dir", str(tmp_path)]
+
+
+def test_the_built_in_documentation_goes_after_the_subcommand(tmp_path):
+    """The front of the line is the front of the subcommand, as for a file."""
+    spliced = mountfile.spliced(["ls", "--dir", str(tmp_path)], front=1, builtin=True)
+
+    assert spliced[0] == "ls"
+    assert spliced[1] == mountfile.DOCS_FLAG
+
+
+def test_a_typed_mount_replaces_the_built_in_documentation(tmp_path):
+    """Silently, and by the ordinary rule that a later source wins.
+
+    The behaviour this is really pinning is the one the obvious implementation
+    gets backwards: a store injected after the splice would collide with the
+    user's, and they would be refused rather than obeyed.
+    """
+    spliced = mountfile.spliced(
+        ["--dir", str(tmp_path), "--mount", f"{mountfile.DOCS_MOUNT}=mine.sqlite"],
+        builtin=True,
+    )
+
+    assert mountfile.DOCS_FLAG not in spliced
+    assert f"{mountfile.DOCS_MOUNT}=mine.sqlite" in spliced
+
+
+def test_a_table_replaces_the_built_in_documentation(tmp_path):
+    a_table(
+        tmp_path / ".outrage",
+        f'[mount]\n{mountfile.DOCS_MOUNT} = "mine.sqlite"\n',
+    )
+
+    spliced = mountfile.spliced(["--dir", str(tmp_path / ".outrage")], builtin=True)
+
+    assert mountfile.DOCS_FLAG not in spliced
+    assert f"{mountfile.DOCS_MOUNT}=mine.sqlite" in spliced
+
+
+def test_the_built_in_documentation_can_be_unmounted(tmp_path):
+    """The off switch, and it is the flag that already existed."""
+    spliced = mountfile.spliced(
+        ["--dir", str(tmp_path), mountfile.UNMOUNT_FLAG, mountfile.DOCS_MOUNT],
+        builtin=True,
+    )
+
+    assert spliced == ["--dir", str(tmp_path)]
+
+
+def test_unmounting_it_where_it_is_not_carried_is_refused(tmp_path):
+    """Right on the front end that does not carry it: there is nothing there."""
+    with raises_rendered(MountError, "removes nothing"):
+        mountfile.spliced(["--dir", str(tmp_path), mountfile.UNMOUNT_FLAG, mountfile.DOCS_MOUNT])
+
+
+def test_asking_for_it_where_it_is_already_carried_is_not_a_duplicate(tmp_path):
+    """Two sources, not one, so it is an override rather than the mistake."""
+    spliced = mountfile.spliced(["--dir", str(tmp_path), mountfile.DOCS_FLAG], builtin=True)
+
+    assert spliced.count(mountfile.DOCS_FLAG) == 1
+
+
+def test_the_default_file_is_not_what_carries_it(tmp_path):
+    """`--no-mount-config` is about the file, and this is not in the file."""
+    spliced = mountfile.spliced(["--dir", str(tmp_path), mountfile.NO_CONFIG_FLAG], builtin=True)
+
+    assert mountfile.DOCS_FLAG in spliced
+
+
+def test_a_carried_mount_says_where_it_came_from(tmp_path):
+    found = {
+        origin.mount: origin.source
+        for origin in mountfile.origins([], directory=tmp_path, builtin=True)
+    }
+
+    assert found[mountfile.DOCS_MOUNT] == mountfile.BUILTIN_SOURCE

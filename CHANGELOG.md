@@ -4,6 +4,34 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+### Outrage's own documentation, as a store
+
+A read-only store of documents about outrage itself ships inside the package
+and is mounted at `outrage`, so the manual is reached with the same tools as
+everything else rather than through a second retrieval path. It holds a readme,
+and documents on keys, the tools, the command line and the conventions.
+
+* **The MCP server mounts it unless told otherwise; the command line does not
+  unless `--mount-docs` asks for it.** A bare `outrage` command stays a clean
+  namespace over the project's own store.
+* **It is an ordinary mount once it is there.** It shadows, it appears in a
+  listing as a read-only mount, and a `mounts.toml` naming `outrage` overrides
+  it silently by the ordinary rule that a later source wins. `--unmount
+  outrage` is the off switch on either front end; there is no second flag for
+  it.
+* **It announces itself in a listing and is not delivered.** The server's
+  instructions still carry only the root store's readme, on the delivery-budget
+  argument that has always governed them.
+* **A build that dropped the tree warns on the server and refuses on the
+  command line.** Nobody asked for the mount on the server, so a missing tree
+  must not stop a session starting; `--mount-docs` was typed, so it is a
+  refusal there.
+
+`mounts.open_mounts` gains `attached`, a mapping of already-open stores mounted
+read-only at their keys - the one way in for a store that is not a file
+relative to `--dir`, which a tree in `site-packages` cannot be. New module
+`outrage.shipped` says where the tree is and opens it.
+
 ### One document through a file, as a tool
 
 The MCP server offers `document_file`, which moves a single document between

@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from outrage import mountfile, shipped
 from outrage.cli import main, parse_args
 
 
@@ -1884,3 +1885,76 @@ def test_mounts_answers_for_the_line_that_was_actually_written(tmp_path):
     assert "ref" not in output
     assert "team.sqlite" not in output
     assert "the command line" in output
+
+
+# The documentation shipped inside the package. The command line does not carry
+# it: a bare `outrage` is a clean namespace over the project's own store, and
+# `--mount-docs` is how a person asks for the manual.
+
+
+def test_the_documentation_is_not_mounted_unless_asked(tmp_path):
+    a_store(tmp_path / ".outrage")
+
+    status, output = run("ls", "--dir", str(tmp_path / ".outrage"))
+
+    assert status == 0
+    assert "outrage" not in output
+
+
+def test_the_documentation_mounts_when_asked(tmp_path):
+    a_store(tmp_path / ".outrage")
+
+    status, output = run("ls", "outrage", "--dir", str(tmp_path / ".outrage"), mountfile.DOCS_FLAG)
+
+    assert status == 0
+    assert "outrage/readme" in output
+
+
+def test_a_write_into_the_documentation_is_refused(tmp_path, capsys):
+    a_store(tmp_path / ".outrage")
+
+    status = main(
+        [
+            "set",
+            "outrage/readme",
+            "--dir",
+            str(tmp_path / ".outrage"),
+            mountfile.DOCS_FLAG,
+            "--content",
+            "no",
+        ],
+        io.StringIO(),
+    )
+
+    assert status == 1
+    assert "read-only" in capsys.readouterr().err
+
+
+def test_mounts_reports_the_documentation_where_it_really_is(tmp_path):
+    """Absolute, and not a file inside --dir: it is in the installation.
+
+    That is the whole reason it is a flag rather than a spec -- `store_file`
+    refuses an absolute path, correctly, and a mount configuration would not be
+    relocatable if it did not.
+    """
+    status, output = run("mounts", "--dir", str(tmp_path / ".outrage"), mountfile.DOCS_FLAG)
+
+    assert status == 0
+    row = next(line for line in output.splitlines() if line.startswith("outrage "))
+    assert str(shipped.tree()) in row
+    assert "read-only mount" in row and " ok " in row
+
+
+def test_asking_for_it_twice_over_is_reported_as_a_duplicate(tmp_path):
+    """Two claims on one point, typed on one line: the mistake, not an override."""
+    status, output = run(
+        "mounts",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        mountfile.DOCS_FLAG,
+        "--mount",
+        "outrage=mine.sqlite",
+    )
+
+    assert status == 1
+    assert "duplicate" in output
