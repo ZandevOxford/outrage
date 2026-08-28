@@ -1660,6 +1660,42 @@ def test_copy_refuses_a_target_inside_its_streaming_source(tmp_path, capsys):
     assert "target is inside the source subtree" in capsys.readouterr().err
 
 
+def test_copy_reroot_lands_the_subtree_at_the_target(tmp_path):
+    """What a restructure needs: the documents at a new key, not nested deeper.
+
+    Without the flag the same call writes `moved/team/plans/q3`, and no second
+    copy strips that prefix back off - ``context/68/findings``.
+    """
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "copy", "--dir", str(directory), "team/plans", "moved", "--reroot"
+    )
+
+    assert status == 0
+    assert "wrote       moved/q3" in output
+    _, copied = run("get", "--dir", str(directory), "moved/q3")
+    assert "the plan" in copied
+
+
+def test_copy_reroot_refuses_a_source_inside_its_target(tmp_path, capsys):
+    """The overlap a graft is safe with and a re-root is not.
+
+    Grafted, `team/plans` onto `team` writes `team/team/plans/...`, outside
+    the walk. Re-rooted it writes `team/...`, back inside it.
+    """
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    status = main(
+        ["copy", "--dir", str(directory), "team/plans", "team", "--reroot"],
+        io.StringIO(),
+    )
+
+    assert status == 1
+    assert "source is inside the target subtree" in capsys.readouterr().err
+    assert main(["copy", "--dir", str(directory), "team/plans", "team"], io.StringIO()) == 0
+
+
 def test_mount_help_says_surveys_and_recursive_deletes_cross(capsys):
     with pytest.raises(SystemExit):
         parse_args(["get", "--help"])

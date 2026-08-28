@@ -735,4 +735,15 @@ def _copy_target_inside_source(
     )
 
 
+@template("copy-source-inside-target")
+def _copy_source_inside_target(
+    name: Namer, /, *, source: str, target: str, **_: Any
+) -> str:
+    return (
+        f"cannot re-root {name(source)!r} onto {name(target)!r}: the source is "
+        "inside the target subtree, so a re-rooted copy would write back into "
+        "what it is still reading. Copy it to a key outside the target first"
+    )
+
+
 __all__ = ["Namer", "codes", "render", "template"]

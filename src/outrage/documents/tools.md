@@ -8,6 +8,9 @@
 * `delete_keys` - remove a key, or a subtree.
 * `document_file` - put one document on disk and take it back, so the shell can
   edit it without the content passing through the context window.
+* `copy_tree` - copy a subtree to another key, merging into whatever is there.
+  `reroot` is what lands it *at* the new key rather than beneath its own source
+  key, which is what moving a subtree means.
 
 Every listing is a page rather than the whole store: each reports `returned`
 beside `total`, and a `next_cursor` when more remains.

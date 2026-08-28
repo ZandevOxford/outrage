@@ -106,6 +106,47 @@ def test_a_file_named_for_the_wildcard_is_refused():
         bulk.key_for_path("a/?.md")
 
 
+# -- which trees a copy may stream between -------------------------------
+
+
+def test_a_graft_refuses_only_a_target_inside_the_source():
+    """One direction is dangerous and the other is shipped.
+
+    Grafted, everything lands beneath ``target`` *and* its own source key, so
+    only a target inside the source is inside the walk. ``copy a/b a`` writes
+    ``a/a/b/...``, which the walk of ``a/b`` never reaches, and refusing it
+    would widen the rule past the danger - ``context/68/decisions`` 1.
+    """
+    with pytest.raises(bulk.OverlappingCopyError):
+        bulk.overlapping("a/b", "a/b/inside")
+    with pytest.raises(bulk.OverlappingCopyError):
+        bulk.overlapping("a/b", "a/b")
+    bulk.overlapping("a/b", "a")
+    bulk.overlapping("a/b", "elsewhere")
+
+
+def test_a_reroot_refuses_an_overlap_in_either_direction():
+    """Stripping the source key puts the landing zone back inside the walk.
+
+    ``a/b`` re-rooted onto ``a`` sends ``a/b/b/x`` to ``a/b/x``: inside the
+    subtree still being read, and later in the order than the key that was
+    being copied when it was written.
+    """
+    with pytest.raises(bulk.OverlappingCopyError) as refused:
+        bulk.overlapping("a/b", "a", reroot=True)
+    assert "still reading" in messages.render(refused.value)
+
+    with pytest.raises(bulk.OverlappingCopyError):
+        bulk.overlapping("a/b", "a/b/inside", reroot=True)
+    bulk.overlapping("a/b", "elsewhere", reroot=True)
+
+
+def test_a_key_is_matched_by_segment_rather_than_by_characters():
+    """``a/b`` does not contain ``a/bb``, however alike the strings look."""
+    bulk.overlapping("a/b", "a/bb", reroot=True)
+    bulk.overlapping("a/bb", "a/b", reroot=True)
+
+
 # -- export --------------------------------------------------------------
 
 

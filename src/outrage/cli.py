@@ -472,7 +472,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Copy documents from one part of the mounted namespace to another. "
             "SOURCE names the subtree to read and TARGET is a prefix grafted "
             "onto every key written, so `outrage copy ref/python archive` "
-            "writes `ref/python/...` beneath `archive`. Documents may cross "
+            "writes `ref/python/...` beneath `archive`, and --reroot is what "
+            "lands them at `archive` itself instead. Documents may cross "
             "between backing stores, and metadata and original timestamps "
             "cross with them. The selection is the intersection of SOURCE, "
             "--depth, and every range bound supplied."
@@ -486,6 +487,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Key prefix to graft the copied keys beneath. It must not be at "
             "or below SOURCE, because a copy streams rather than snapshots."
+        ),
+    )
+    copy.add_argument(
+        "--reroot",
+        action="store_true",
+        help=(
+            "Land the copied keys at TARGET itself rather than beneath their "
+            "own source key, so `outrage copy ref/python archive --reroot` "
+            "writes `archive` and `archive/...` rather than "
+            "`archive/ref/python/...`. This is the spelling that moves a "
+            "subtree; without it a copy can only nest one deeper. SOURCE and "
+            "TARGET must then be wholly separate subtrees, in either "
+            "direction."
         ),
     )
     copy.add_argument(
@@ -1426,16 +1440,17 @@ def _copy_command(args: argparse.Namespace, out: TextIO) -> int:
         )
         source = keys.parse(args.source, max_segments=maximum).key
         target = keys.parse(args.target, max_segments=maximum).key
-        if keys.strip_prefix(source, target) is not None:
-            raise ConflictingSourceError(
-                "copy-target-inside-source", source=source, target=target
-            )
+        # Refused here rather than inside the copy, which is a generator and
+        # would raise on the first key rather than before the first write. The
+        # rule itself is `bulk`'s, so the server refuses the same pairs.
+        bulk.overlapping(source, target, reroot=args.reroot)
         key_range = store.KeyRange(**{name: getattr(args, name) for name in _RANGE_ARGUMENTS})
         transfers = opened.copy_from(
             opened,
             store.BoundedSubtree(source, args.depth),
             key_range=key_range,
             prefix=target,
+            reroot=args.reroot,
             on_conflict=args.on_conflict,
             dry_run=args.dry_run,
         )

@@ -29,7 +29,7 @@ import itertools
 import os
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -177,6 +177,20 @@ DEFAULT_ITEM_LIMIT = 100
 #: The character half of that pair: what one page may total before it stops,
 #: whatever the item count still allows.
 DEFAULT_PAGE_CHARS = 20000
+
+#: How many documents one `copy_tree` call carries before it stops and hands
+#: back a cursor. Larger than a page limit on purpose: this bounds a *run*
+#: rather than a result, since the caller is told counts however many crossed
+#: and pays nothing per document for the ones that did. What it protects is the
+#: length of one call, against a subtree nobody has counted.
+DEFAULT_COPY_LIMIT = 500
+
+#: Failed transfers named in a copy's result before it stops listing and only
+#: counts. A copy reports statistics because it may cross more keys than a
+#: result can hold, and a bare `failed: 12` is a number nobody can act on: the
+#: sample is what says *what* went wrong, at a size that cannot grow with the
+#: store.
+COPY_FAILURE_SAMPLE = 5
 
 #: Keys named in `without_meta` before it stops listing and only counts. Its
 #: job is to warn that a survey under-reports the store, and a count does that
@@ -880,6 +894,185 @@ def build_server(
             )
         return result
 
+    @server.tool(
+        # Idempotent as `store_document` is: the same call twice leaves the same
+        # store, whichever `on_conflict` was asked for. Not read-only and not
+        # declared non-destructive, because `overwrite` replaces documents.
+        annotations=ToolAnnotations(idempotent_hint=True),
+        description=(
+            "Copy a subtree to another key. `target` is a prefix the copied keys "
+            "are grafted beneath, so copy_tree('ref/python', 'archive') writes "
+            "`archive/ref/python/...`; pass `reroot` to land them at `target` "
+            "itself instead, which is what moving a subtree to a new key means. "
+            "Documents cross with their metadata and their original timestamps, "
+            "and may cross between mounted stores. **A copy never deletes**: it "
+            "merges into whatever is already there, and `on_conflict` decides "
+            "one key at a time. To move, copy and then delete_keys; to split one "
+            "document into two keys, use document_file rather than this. The "
+            "result is counts rather than a list of keys, since a copy may cross "
+            "more keys than a result can hold, with `next_cursor` when the limit "
+            "stopped it - call again with `cursor` set to that and everything "
+            "else unchanged. `target` may not be at or below `source`, and with "
+            "`reroot` the two subtrees must be wholly separate, because the copy "
+            "walks the source as it writes rather than snapshotting it."
+        ),
+    )
+    @_reported
+    def copy_tree(
+        source: Annotated[
+            str,
+            Field(description="Key whose subtree to copy, e.g. context/?last, or / for the root"),
+        ],
+        target: Annotated[
+            str,
+            Field(
+                description=(
+                    "Key to copy it to: a prefix to graft beneath, or the new "
+                    "key itself with `reroot`"
+                )
+            ),
+        ],
+        reroot: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Land the keys at `target` itself rather than beneath their "
+                    "own source key, so source/x arrives as target/x"
+                )
+            ),
+        ] = False,
+        depth: Annotated[
+            int | None,
+            Field(
+                description="How many levels below source to descend; unlimited when omitted",
+                ge=0,
+            ),
+        ] = None,
+        on_conflict: Annotated[
+            str,
+            Field(
+                description=(
+                    "What to do about a key already holding a document: 'skip' "
+                    "it, 'overwrite' it, or 'stop' the whole copy there"
+                )
+            ),
+        ] = store_module.SKIP,
+        dry_run: Annotated[
+            bool, Field(description="Report what would be copied without writing any of it")
+        ] = False,
+        limit: Annotated[
+            int, Field(description="Maximum documents to copy in this call", gt=0)
+        ] = DEFAULT_COPY_LIMIT,
+        cursor: Annotated[
+            str | None,
+            Field(description="Resume a copy after this key, from a previous result's next_cursor"),
+        ] = None,
+        after: Annotated[
+            str | None, Field(description="Copy only what is strictly after this key")
+        ] = None,
+        after_inclusive: Annotated[
+            str | None, Field(description="Copy only what is at or after this key")
+        ] = None,
+        after_subtree: Annotated[
+            str | None,
+            Field(description="Copy only what is after this key and everything below it"),
+        ] = None,
+        before: Annotated[
+            str | None, Field(description="Copy only what is strictly before this key")
+        ] = None,
+        before_inclusive: Annotated[
+            str | None, Field(description="Copy only what is at or before this key")
+        ] = None,
+        final_subtree: Annotated[
+            str | None,
+            Field(description="Copy nothing later than the end of this key's subtree"),
+        ] = None,
+    ) -> dict[str, Any]:
+        # Resolved before anything routes, exactly as every other tool does it:
+        # a `?last` in the part of a key that names a mount decides which store
+        # answers. The cursor is not resolved with them - it is this server's
+        # own output being handed back, and a `?last` in it would mean the
+        # selection had moved under the caller.
+        at_source = _named_key(table, source)
+        at_target = _named_key(table, target)
+        # The rule is `bulk`'s and not this module's, so the command line
+        # refuses the same pairs. Before the copy starts, because `copy_from`
+        # is a generator and a refusal from inside one arrives after the first
+        # write rather than instead of it.
+        bulk.overlapping(at_source, at_target, reroot=reroot)
+        key_range = KeyRange(
+            **{
+                name: None if value is None else _named_key(table, value)
+                for name, value in (
+                    ("after", after),
+                    ("after_inclusive", after_inclusive),
+                    ("after_subtree", after_subtree),
+                    ("before", before),
+                    ("before_inclusive", before_inclusive),
+                    ("final_subtree", final_subtree),
+                )
+            }
+        )
+        transfers = table.copy_from(
+            table,
+            BoundedSubtree(at_source, depth),
+            key_range=key_range,
+            prefix=at_target,
+            reroot=reroot,
+            on_conflict=on_conflict,
+            dry_run=dry_run,
+            cursor=cursor,
+            limit=limit,
+        )
+        result = _copied_result(transfers)
+        result = {"source": at_source, "target": at_target} | result
+        if dry_run:
+            result["dry_run"] = True
+            _add_note(result, "Nothing was written; this is what the copy would have done.")
+        if result["next_cursor"] is not None:
+            _add_note(
+                result,
+                f"The limit of {limit} stopped this call and more is left to "
+                f"copy; call again with cursor set to next_cursor and every "
+                f"other argument unchanged.",
+            )
+        failed = result["copied"].get(store_module.FAILED, 0)
+        if failed > len(result["failures"]):
+            # A sample presented as a list is a list that lies. The count is
+            # already there; this says which of the two the caller is reading.
+            _add_note(
+                result,
+                f"{failed} document(s) failed and the first "
+                f"{len(result['failures'])} are named; the rest are only counted.",
+            )
+        if result["copied"].get(store_module.STOPPED):
+            _add_note(
+                result,
+                "on_conflict='stop' ended the copy at a key that was already "
+                "stored; nothing after it was copied and next_cursor is not a "
+                "way back to it.",
+            )
+        # What a read-only mount kept back is not a failed key alone: the
+        # failures are sampled, and a caller reading a count needs to know that
+        # a whole stretch of what it wrote to refuses writes however often it
+        # tries. `delete_keys` reports the same thing for the same reason.
+        #
+        # Asked of where the documents actually land rather than of `target`,
+        # which under a graft is a level above them: a read-only mount beside
+        # the landing zone refuses nothing, and naming it would be a warning
+        # about a store this copy never touched.
+        landing = at_target if reroot else keys.with_prefix(at_target, at_source)
+        refused = table.read_only_below(landing)
+        if refused:
+            result["mounts_kept"] = refused
+            _add_note(
+                result,
+                f"{len(refused)} read-only mounted store(s) below {landing!r} refuse a "
+                f"write: {', '.join(repr(m) for m in refused)}. Nothing lands there; "
+                f"restart the server with --mount rather than --mount-ro to copy there too.",
+            )
+        return result
+
     if directory is not None:
         exports = Path(directory) / store_module.EXPORT_DIR_NAME
 
@@ -976,6 +1169,42 @@ def build_server(
             return result
 
     return server
+
+
+def _copied_result(
+    transfers: Generator[store_module.Transfer, None, str | None],
+) -> dict[str, Any]:
+    """A copy as counts, a sample of what failed, and where to resume.
+
+    Statistics rather than one line per document, which is the one place this
+    tool and ``outrage copy`` legitimately differ: the command line prints a
+    transfer as it happens, so an interrupted run has reported exactly what it
+    did, and a single return value cannot have that property at any size. What
+    it can do is stay the same size as the copy grows.
+
+    Consumed with ``next`` rather than a ``for`` loop because the resume cursor
+    is the generator's **return** value: it names a source key, and a transfer
+    carries the key written, which under a prefix or a reroot is a different
+    key.
+    """
+    counted: dict[str, int] = {}
+    characters = 0
+    failures: list[dict[str, str | None]] = []
+    while True:
+        try:
+            transfer = next(transfers)
+        except StopIteration as ended:
+            return {
+                "copied": counted,
+                "documents": sum(counted.values()),
+                "characters": characters,
+                "failures": failures,
+                "next_cursor": ended.value,
+            }
+        counted[transfer.action] = counted.get(transfer.action, 0) + 1
+        characters += transfer.characters
+        if transfer.action == store_module.FAILED and len(failures) < COPY_FAILURE_SAMPLE:
+            failures.append({"key": transfer.key, "reason": transfer.reason})
 
 
 def _excerpt_result(excerpt: Excerpt) -> dict[str, Any]:
@@ -1296,6 +1525,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 __all__ = [
+    "COPY_FAILURE_SAMPLE",
+    "DEFAULT_COPY_LIMIT",
     "DEFAULT_ITEM_LIMIT",
     "DEFAULT_PAGE_CHARS",
     "DELIVERY_BUDGET",

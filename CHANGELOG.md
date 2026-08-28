@@ -4,6 +4,48 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+### A subtree copy, as a tool
+
+The MCP server offers `copy_tree`, so a session working through the tools can
+move a subtree from one key to another without shelling out to `outrage copy`.
+It is the same call the command line makes - `Store.copy_from` over the mounted
+namespace - with the argument shaping and the result shaping a tool needs:
+
+* **The result is statistics, not keys.** A copy may cross more keys than a
+  result can hold, so it reports counts by action, the characters that crossed,
+  and a bounded sample of what failed. The command line still prints a line per
+  document, because a person reads it as it goes and an interrupted run has
+  then said exactly what it did - a property one return value cannot have.
+* **A `limit` and a `cursor`, so a copy resumes.** `next_cursor` is the source
+  key of the last document that crossed; call again with `cursor` set to it and
+  everything else unchanged. The cursor is a separate argument from the six
+  range cuts, which stay the selection.
+* **Read-only mounts under where the documents land are listed in full**, as
+  `delete_keys` already does: there are never many mount points, and a count
+  alone reads as a copy that mostly worked.
+* `Store.copy_from` and `outrage.bulk.copied` grew the same `cursor` and
+  `limit`. The copy stops in front of the key it would have written next, so a
+  bounded run crosses exactly `limit` documents, and the generator *returns*
+  the resume cursor - a source key, which is not what any transfer carries.
+
+### A copy can re-root a subtree, not only nest it deeper
+
+`Store.copy_from` and `outrage copy` take `reroot`/`--reroot`, which strips the
+source subtree's own key before grafting: `outrage copy a/b tmp --reroot` lands
+the documents at `tmp` and `tmp/one` rather than at `tmp/a/b` and
+`tmp/a/b/one`. Without it a copy could only nest a subtree deeper - "these
+documents now live at another key" was inexpressible, and a round trip through
+a temporary namespace did not come home, because the second hop grafted the
+temporary prefix along with everything else.
+
+Grafting the whole source key is still the default and still what an archive or
+a backup wants. What changes with the flag is which pairs of keys are safe: a
+copy streams a live walk, so grafted only a target inside the source is
+refused, while re-rooted the two subtrees must be disjoint in either direction
+- `a/b` re-rooted onto `a` would send `a/b/b/x` to `a/b/x`, back inside the walk
+that is still running. The rule is `bulk.overlapping`, applied by the front
+ends, so the command line and the server refuse the same pairs.
+
 ### Outrage's own documentation, as a store
 
 A read-only store of documents about outrage itself ships inside the package

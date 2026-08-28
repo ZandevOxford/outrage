@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Generator, Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -261,6 +261,41 @@ def key_for_path(
 # -- store to store ------------------------------------------------------
 
 
+class OverlappingCopyError(OutrageError, ValueError):
+    """Raised when a copy would write into the subtree it is still reading."""
+
+
+def overlapping(source: str, target: str, *, reroot: bool = False) -> None:
+    """Refuse a source and target pair a copy cannot safely stream between.
+
+    :func:`copied` walks the source live rather than snapshotting it, so a
+    document landing inside the selection can be found by the walk that is
+    still running and copied a second time. Which landings those are depends
+    on the spelling, and the two are not symmetrical:
+
+    * **grafted**, every key lands beneath ``target`` *and* its own source key,
+      so the landing zone is inside the selection exactly when ``target`` is at
+      or below ``source``. The other direction is safe and shipped:
+      ``copy a/b a`` writes ``a/a/b/...``, which the walk of ``a/b`` never
+      reaches. ``context/68/decisions`` 1 is the decision not to widen the rule
+      to cover it.
+    * **re-rooted**, the source key is stripped, so every key lands beneath
+      ``target`` alone and the two subtrees have to be disjoint. ``a/b``
+      re-rooted onto ``a`` sends ``a/b/b/x`` to ``a/b/x`` -- back inside the
+      walk it came from, and later in the order than the key being read.
+
+    Called by a front end before the copy starts, so that the refusal is a
+    refusal rather than an exception raised out of a generator half way
+    through. Both front ends call this one, because the command line and the
+    server disagreeing about which copies are allowed is exactly the split
+    ``mounts.toml`` was made to avoid.
+    """
+    if keys.strip_prefix(source, target) is not None:
+        raise OverlappingCopyError("copy-target-inside-source", source=source, target=target)
+    if reroot and keys.strip_prefix(target, source) is not None:
+        raise OverlappingCopyError("copy-source-inside-target", source=source, target=target)
+
+
 def copied(
     source: store.Store,
     target: store.Store,
@@ -268,9 +303,12 @@ def copied(
     *,
     key_range: store.KeyRange = store.UNBOUNDED,
     prefix: str | None = None,
+    reroot: bool = False,
     on_conflict: str = SKIP,
     dry_run: bool = False,
-) -> Iterator[Transfer]:
+    cursor: str | None = None,
+    limit: int | None = None,
+) -> Generator[Transfer, None, str | None]:
     """Every document ``subtree`` names, from one store into another.
 
     What :meth:`outrage.store.Store.copy_from` does unless a backend has a
@@ -290,17 +328,58 @@ def copied(
     which is the only thing that knows -- and the answer a *tree* gives is
     about the key rather than about one spelling of its file, so a document
     already there as ``a.md`` collides with one arriving as json.
+
+    ``reroot`` decides which of the two spellings ``prefix`` means, and the
+    difference is what a caller moving a subtree needs: grafted, every key
+    keeps its own name beneath the prefix, so ``a/b`` copied to ``tmp`` lands
+    at ``tmp/a/b``; re-rooted, the subtree's own key is stripped first and it
+    lands *at* ``tmp``. Both are wanted -- an archive keeps the whole key on
+    purpose -- but only the second can say "these documents now live at
+    another key", and without it no copy can express a move at all. See
+    :func:`overlapping`, which is why the safe pairs differ between them.
+
+    ``limit`` and ``cursor`` are how a copy too large for one call is taken in
+    pieces, and they are the pair a *front end* needs rather than a person at a
+    terminal: the command line reads to the end and prints as it goes. At most
+    ``limit`` documents cross, and the generator **returns** the source key of
+    the last one -- the resume cursor, None when the selection ran out and
+    there is nothing left to resume from. Returned rather than yielded because
+    it is a fact about the run and not a transfer, and because it is a *source*
+    key: a ``Transfer`` carries the key written, which under a prefix or a
+    reroot is not the key to come back with.
+
+    The stop is decided before the write, not after it, so a run stopped by
+    ``limit`` has copied exactly that many documents and the next call starts
+    where this one stopped rather than a document past it. ``cursor`` is what
+    it costs: the walk is filtered rather than sought, as every bound here is,
+    so resuming re-lists the keys already crossed. It does not re-read them,
+    which is where the expense in a copy is.
     """
     _check_conflict(on_conflict)
 
-    for key, format in _selected(source, subtree, key_range):
-        landed = _grafted(key, prefix)
+    # What re-rooting strips: the key the copy is *about*, so that what crosses
+    # lands at ``prefix`` rather than beneath its whole source key. The root
+    # strips nothing, which is why grafting needs no second branch here.
+    inner = keys.parse(subtree.key).key if reroot and subtree.key is not None else keys.ROOT
+
+    crossed: str | None = None
+    counted = 0
+    for key, format in _selected(source, subtree, key_range, cursor):
+        if limit is not None and counted >= limit:
+            # Stopped in front of a key rather than after it, so the count is
+            # the limit exactly and `crossed` names a document that really did.
+            return crossed
+        counted += 1
+        crossed = key
+        landed = _grafted(key, prefix, inner=inner)
         path = target.located(landed, format) or source.located(key, format)
 
         if target.exists(landed):
             if on_conflict == STOP:
                 yield Transfer(STOPPED, landed, path, "already stored")
-                return
+                # Nothing after the collision crosses, so there is nothing to
+                # resume: a caller that wants the rest asks for it differently.
+                return None
             if on_conflict == SKIP:
                 yield Transfer(SKIPPED, landed, path, "already stored")
                 continue
@@ -334,6 +413,7 @@ def copied(
             path,
             characters=len(excerpt.content),
         )
+    return None
 
 
 def _reason(exc: OutrageError | OSError) -> str:
@@ -347,21 +427,35 @@ def _reason(exc: OutrageError | OSError) -> str:
     return messages.render(exc) if isinstance(exc, OutrageError) else str(exc)
 
 
-def _grafted(key: str, prefix: str | None) -> str:
+def _grafted(key: str, prefix: str | None, *, inner: str = keys.ROOT) -> str:
     """``key`` as it is spelled beneath ``prefix``, or unchanged without one.
 
     An empty prefix is the root, which prefixes nothing, and is tested rather
     than left to normalisation: joining it would spell a leading delimiter and
     reach the same answer by tidying up after itself.
+
+    ``inner`` is the key the copy was scoped at, and it is stripped before the
+    graft: that is the re-rooting spelling, where ``a/b`` copied to ``tmp``
+    lands at ``tmp`` and ``a/b/one`` at ``tmp/one``. The root is the default
+    and strips nothing, so grafting the whole source key -- an archive, a
+    backup, the contract :meth:`outrage.store.Store.copy_from` has always had --
+    is this same call with nothing named.
     """
+    relative = keys.strip_prefix(inner, key)
+    # None where the key is not below the scope at all, which a selection
+    # cannot produce; unchanged rather than guessed if one ever does.
+    if relative is not None:
+        key = relative
     if not prefix or prefix == keys.ROOT:
         return key
-    parsed = keys.parse(prefix).key
-    return parsed if key == keys.ROOT else f"{parsed}{keys.DELIMITER}{key}"
+    return keys.with_prefix(keys.parse(prefix).key, key)
 
 
 def _selected(
-    opened: store.Store, subtree: store.BoundedSubtree, key_range: store.KeyRange
+    opened: store.Store,
+    subtree: store.BoundedSubtree,
+    key_range: store.KeyRange,
+    cursor: str | None = None,
 ) -> Iterator[tuple[str, str | None]]:
     """The keys a transfer covers: the one asked for, then everything below it.
 
@@ -382,9 +476,17 @@ def _selected(
     The two bounds are filtered over the walk rather than pushed into it,
     because the walk is ``list_keys`` all the way down and a level listing
     takes neither - which is exactly why it reports the containers and the
-    metadata that a subtree read does not.
+    metadata that a subtree read does not. ``cursor`` is filtered the same way
+    and for the same reason, which is what makes resuming cost a re-listing of
+    what was already crossed rather than nothing.
     """
     inside = store._within(key_range)
+    # A cursor is a bound like any other, and deliberately not one of the six:
+    # the cuts are the selection and this is where the reader had got to, which
+    # is the distinction ``KeyRange``'s own docstring draws. ``after`` is what
+    # it means -- past that key, its children included -- and an absent cursor
+    # is an unbounded range, so there is no branch to take here.
+    resumed = store._within(store.KeyRange(after=cursor))
     scope = keys.ROOT if subtree.key is None else keys.parse(subtree.key).key
     try:
         # The key asked for is included like any other: `None` names the root
@@ -394,7 +496,8 @@ def _selected(
     except store.KeyNotFoundError:
         pass
     else:
-        if inside(keys.sort_form(root.key)):
+        position = keys.sort_form(root.key)
+        if inside(position) and resumed(position):
             yield root.key, root.format
 
     for entry in walk(opened, subtree.key):
@@ -402,7 +505,8 @@ def _selected(
             continue
         if subtree.depth is not None and keys.depth(entry.key) - keys.depth(scope) > subtree.depth:
             continue
-        if inside(keys.sort_form(entry.key)):
+        position = keys.sort_form(entry.key)
+        if inside(position) and resumed(position):
             yield entry.key, entry.format
 
 
@@ -921,6 +1025,7 @@ __all__ = [
     "TRAVERSAL",
     "UNNAMEABLE",
     "FileMissingError",
+    "OverlappingCopyError",
     "SourceMissingError",
     "UnmappableError",
     "contained_file",
@@ -936,6 +1041,7 @@ __all__ = [
     "pack",
     "key_for_path",
     "levels",
+    "overlapping",
     "path_for_key",
     "walk",
 ]

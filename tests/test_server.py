@@ -61,6 +61,7 @@ def test_tools_are_registered(server):
         "get_documents",
         "keys_missing_meta",
         "delete_keys",
+        "copy_tree",
     }
     # `document_file` is deliberately not in that set: it writes files under the
     # store directory, and this server was built without being told where that
@@ -312,6 +313,162 @@ def test_delete_keys_says_nothing_extra_when_it_kept_nothing(server):
     assert "remaining" not in result
     result = call(server, "delete_keys", key="context/a1b2", recursive=True)
     assert "remaining" not in result
+
+
+def keys_below(server, key: str) -> list[str]:
+    """The documents under a key. Not the metadata: a subtree read is one or
+    the other, which is the same reason a copy reads one key at a time."""
+    return [entry["key"] for entry in call(server, "get_documents", key=key)["documents"]]
+
+
+def titles_below(server, key: str) -> list[str]:
+    surveyed = call(server, "get_documents", key=key, meta_name=["title"])
+    return [entry["key"] for entry in surveyed["documents"]]
+
+
+def test_copy_tree_grafts_the_whole_source_key(server):
+    """The shipped contract, and what an archive wants: the key is kept."""
+    result = call(server, "copy_tree", source="context/a1b2", target="archive")
+
+    assert result["copied"] == {"wrote": 2}
+    assert keys_below(server, "archive") == ["archive/context/a1b2/design"]
+    # The metadata crossed with it, which is what makes the copy a copy: a
+    # store arriving without its titles is one nothing can be surveyed by.
+    assert titles_below(server, "archive") == ["archive/context/a1b2/design/!title"]
+
+
+def test_copy_tree_reroots_onto_the_target(server):
+    """What a caller moving a subtree needs: the documents at the new key."""
+    call(server, "copy_tree", source="context/a1b2", target="archive", reroot=True)
+
+    assert keys_below(server, "archive") == ["archive/design"]
+    assert titles_below(server, "archive") == ["archive/design/!title"]
+
+
+def test_copy_tree_reports_counts_rather_than_the_keys_it_crossed(server):
+    """A copy may cross more keys than a result can hold - ``context/68`` 7.
+
+    So the second run says two documents were skipped and does not say which,
+    and the caller is told the size of what happened rather than a list that
+    grows with the store.
+    """
+    call(server, "copy_tree", source="context/a1b2", target="archive")
+    result = call(server, "copy_tree", source="context/a1b2", target="archive")
+
+    assert result["copied"] == {"skipped": 2}
+    assert result["documents"] == 2
+    assert result["next_cursor"] is None
+    assert "keys" not in result and "deleted" not in result
+
+
+def test_copy_tree_resumes_from_the_cursor_it_returns(server):
+    """The pair that makes a copy larger than one call expressible.
+
+    The cursor is a *source* key, which is why it cannot be read off the last
+    transfer: under a graft the key written is a different key.
+    """
+    first = call(server, "copy_tree", source="context", target="archive", limit=1)
+
+    assert first["documents"] == 1
+    assert first["next_cursor"] == "context/a1b2/design"
+    assert "cursor" in first["note"]
+
+    second = call(
+        server, "copy_tree", source="context", target="archive", limit=10,
+        cursor=first["next_cursor"],
+    )
+
+    assert second["documents"] == 3
+    assert second["next_cursor"] is None
+    assert keys_below(server, "archive") == [
+        "archive/context/a1b2/design",
+        "archive/context/c3d4/task",
+    ]
+    assert titles_below(server, "archive") == [
+        "archive/context/a1b2/design/!title",
+        "archive/context/c3d4/task/!title",
+    ]
+
+
+def test_copy_tree_dry_run_writes_nothing(server):
+    result = call(server, "copy_tree", source="context/a1b2", target="archive", dry_run=True)
+
+    assert result["copied"] == {"wrote": 2}
+    assert result["dry_run"] is True
+    assert keys_below(server, "archive") == []
+
+
+def test_copy_tree_refuses_a_target_inside_its_source(server):
+    message = call_expecting_error(
+        server, "copy_tree", source="context", target="context/archive"
+    )
+
+    assert "target is inside the source subtree" in message
+
+
+def test_copy_tree_refuses_a_reroot_into_an_ancestor_of_its_source(server):
+    """The overlap a graft is safe with and a re-root is not.
+
+    Grafted this pair writes `context/context/a1b2/...`, outside the walk.
+    Re-rooted it writes `context/...`, back inside it.
+    """
+    message = call_expecting_error(
+        server, "copy_tree", source="context/a1b2", target="context", reroot=True
+    )
+
+    assert "source is inside the target subtree" in message
+    assert call(server, "copy_tree", source="context/a1b2", target="context")["documents"] == 2
+
+
+def test_copy_tree_names_the_read_only_mounts_the_copy_could_not_reach(tmp_path):
+    """A count alone reads as a copy that mostly worked - ``context/68`` 7.
+
+    There are never many mount points, so this list is bounded by something
+    other than the size of the store, which is why it is a list where the
+    failures are a sample.
+    """
+    with SqliteStore(tmp_path, filename="ref.sqlite") as reference:
+        reference.store_document("asyncio", "the reference")
+    with SqliteStore(tmp_path) as root:
+        root.store_document("notes/ref/python", "mine")
+        root.store_document("notes/plain", "mine too")
+    with mounts_module.open_mounts(
+        tmp_path, read_only_specs=["archive/ref=ref.sqlite"]
+    ) as table:
+        server = build_server(table)
+        result = call(server, "copy_tree", source="notes", target="archive", reroot=True)
+
+        assert result["copied"] == {"wrote": 1, "failed": 1}
+        assert result["mounts_kept"] == ["archive/ref"]
+        assert result["failures"] == [
+            {"key": "archive/ref/python", "reason": result["failures"][0]["reason"]}
+        ]
+        assert "read-only" in result["failures"][0]["reason"]
+        assert "refuse a write" in result["note"]
+
+
+def test_copy_tree_says_when_the_failures_it_names_are_a_sample(tmp_path, monkeypatch):
+    """A sample presented as a list is a list that lies.
+
+    The cap is what keeps the result the same size as the store grows, so what
+    it costs is a caller who cannot see every failure - and the one thing that
+    makes that safe is saying so.
+    """
+    monkeypatch.setattr(server_module, "COPY_FAILURE_SAMPLE", 1)
+    with SqliteStore(tmp_path, filename="ref.sqlite") as reference:
+        reference.store_document("asyncio", "the reference")
+    with SqliteStore(tmp_path) as root:
+        root.store_document("notes/ref/python", "mine")
+        root.store_document("notes/ref/rust", "mine too")
+    with mounts_module.open_mounts(
+        tmp_path, read_only_specs=["archive/ref=ref.sqlite"]
+    ) as table:
+        server = build_server(table)
+        result = call(server, "copy_tree", source="notes", target="archive", reroot=True)
+
+    assert result["copied"] == {"failed": 2}
+    assert len(result["failures"]) == 1
+    assert "the rest are only counted" in result["note"]
 
 
 def test_parse_args():
