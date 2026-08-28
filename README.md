@@ -129,7 +129,9 @@ override cannot do; `--no-mount-config` ignores the default file entirely.
 `outrage get`, `set`, `ls`, `dump`, `copy`, `rm`, `export` and `import` all take
 the mount options, so a person sees the same namespace the MCP server serves.
 `outrage copy SOURCE TARGET` copies a subtree or key-order range beneath another
-prefix in that namespace, including between mounted stores.
+prefix in that namespace, including between mounted stores; `--reroot` lands it
+*at* TARGET instead of beneath its own source key, which is what moving a
+subtree to another key needs.
 `outrage check` and `backup` are about one file and say which with `--store`.
 
 Outrage ships its own documentation as a store inside the package - a readme,

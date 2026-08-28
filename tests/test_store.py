@@ -531,6 +531,98 @@ def test_copy_from_grafts_under_a_prefix(store, source):
     ]
 
 
+def test_copy_from_reroots_onto_the_prefix_when_asked(store, source):
+    """The spelling a move needs: the source key is stripped rather than kept.
+
+    Grafted, the same call lands the documents at
+    ``archive/old/context/c3d4/...``, and no second copy strips that back off
+    again - which is why "these documents now live at another key" needed a
+    flag rather than a second hop. ``context/68/findings``.
+    """
+    list(
+        store.copy_from(
+            source, BoundedSubtree("context/c3d4"), prefix="archive/old", reroot=True
+        )
+    )
+    assert walk_keys(store) == ["archive/old/design", "archive/old/design/!title"]
+
+
+def test_copy_from_rerooted_lands_the_source_key_at_the_prefix_itself(store, source):
+    """The subtree's own document goes *to* the target, not beneath it.
+
+    The root case of the strip, and the one a graft cannot express at all: a
+    document and the metadata below it arriving under one new name.
+    """
+    list(
+        store.copy_from(
+            source,
+            BoundedSubtree("context/a1b2/design"),
+            prefix="notes/schema",
+            reroot=True,
+        )
+    )
+    assert walk_keys(store) == ["notes/schema", "notes/schema/!title"]
+
+
+def test_copy_from_rerooted_without_a_prefix_lands_at_the_root(store, source):
+    """Stripping with nothing to graft onto is a subtree promoted to the top."""
+    list(store.copy_from(source, BoundedSubtree("context/a1b2"), reroot=True))
+    assert walk_keys(store) == ["design", "design/!title", "task", "task/!title"]
+
+
+def _drained(transfers):
+    """Every transfer, and the cursor the copy returned when it ran out.
+
+    A ``for`` loop over a generator throws its return value away, and the
+    resume cursor is that value: it is a fact about the run rather than a
+    transfer, and it names a *source* key, which no transfer carries.
+    """
+    crossed = []
+    while True:
+        try:
+            crossed.append(next(transfers))
+        except StopIteration as stop:
+            return crossed, stop.value
+
+
+def test_copy_from_stops_at_a_limit_and_names_where_to_resume(store, source):
+    crossed, cursor = _drained(store.copy_from(source, limit=3))
+
+    assert len(crossed) == 3
+    # The source key of the last document that crossed, not the key written
+    # and not the one it stopped in front of.
+    assert cursor == "context/a1b2/task"
+    assert walk_keys(store) == ["context/a1b2/design", "context/a1b2/design/!title"] + [
+        "context/a1b2/task"
+    ]
+
+
+def test_copy_from_resumed_from_its_cursor_copies_each_document_once(store, source):
+    """The property the pair exists for: the pages tile the copy.
+
+    Nothing crosses twice and nothing is stepped over, however the limit falls
+    - which is what a caller taking a large subtree in pieces is relying on.
+    """
+    crossed, cursor, pages = [], None, 0
+    while True:
+        transferred, cursor = _drained(store.copy_from(source, cursor=cursor, limit=2))
+        crossed += [t.key for t in transferred]
+        pages += 1
+        if cursor is None:
+            break
+
+    assert pages == 4
+    assert crossed == walk_keys(source)
+    assert walk_keys(store) == walk_keys(source)
+
+
+def test_copy_from_run_out_returns_no_cursor(store, source):
+    """A limit larger than what is left is not a page to come back for."""
+    _, cursor = _drained(store.copy_from(source, limit=500))
+
+    assert cursor is None
+
+
 def test_copy_from_dry_run_reports_without_writing(store, source):
     transfers = list(store.copy_from(source, dry_run=True))
     assert [t.key for t in transfers] == walk_keys(source)

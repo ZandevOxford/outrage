@@ -160,8 +160,8 @@ that is preferred to trusting a count nobody took.
 
 Stdio server built on `MCPServer` from the MCP Python SDK, exposing
 `retrieve_document`, `store_document`, `list_keys`, `get_documents`,
-`keys_missing_meta` and `delete_keys`, and `document_file` where the server was
-told which directory it is serving from. Argument shaping and result shaping
+`keys_missing_meta`, `delete_keys` and `copy_tree`, and `document_file` where
+the server was told which directory it is serving from. Argument shaping and result shaping
 only; all behaviour lives in the store. The three tools taking a scope resolve
 an omitted or null key to the root before echoing it, so a result names the
 scope that was used rather than the absence the caller sent. Argument constraints are declared with pydantic `Field`, so bad

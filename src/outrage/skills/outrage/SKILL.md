@@ -192,6 +192,32 @@ Where it is not there, `outrage get > file`, edit, `outrage set --file` does the
 same thing from the shell - chained with `&&`, and check the length before
 writing back.
 
+## Moving a subtree to another key
+
+`copy_tree` copies everything at and below a key to another key, metadata and
+timestamps included. Two things decide whether it is the tool you want.
+
+**It copies; it never moves and never deletes.** A move is `copy_tree` and then
+`delete_keys`, in that order and as two calls, which is also how a migration is
+done here: the new path built alongside first, the old keys removed once it is
+right.
+
+**`reroot` is what makes it a move at all.** By default the whole source key is
+grafted beneath the target, so `copy_tree("context/1", "archive")` writes
+`archive/context/1/...` - right for an archive, and no second copy strips that
+prefix off again. `reroot=true` lands the documents *at* the target instead:
+`context/1/design` arrives as `archive/design`. The source and target must then
+be wholly separate subtrees, in either direction.
+
+The result is counts rather than a list of keys, with `next_cursor` when the
+call's limit stopped it: call again with `cursor` set to that and everything
+else unchanged.
+
+**Splitting one document into two keys is not this.** Pushing part of `key`
+down to `key/part` is the shape the "one document, one question" rule asks for
+most often, and it is `document_file` work - export, cut the piece out with
+shell tools, store it at the new key, store the remainder back.
+
 ## Before the end
 
 Whether the session is ending, being handed over, or about to be compacted:

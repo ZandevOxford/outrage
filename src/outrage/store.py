@@ -55,7 +55,7 @@ import re
 import shutil
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Generator, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -722,9 +722,12 @@ class Store(ABC):
         *,
         key_range: KeyRange = UNBOUNDED,
         prefix: str | None = None,
+        reroot: bool = False,
         on_conflict: str = SKIP,
         dry_run: bool = False,
-    ) -> Iterator[Transfer]:
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> Generator[Transfer, None, str | None]:
         """Write every document ``source`` holds in ``subtree`` into this store.
 
         The one bulk operation, and it is a method on the **target** rather
@@ -740,12 +743,27 @@ class Store(ABC):
         ``key_range`` bound what crosses exactly as they bound a read, so a
         copy of part of a store is the same selection as a listing of it.
         ``prefix`` grafts what crosses under a key here, and left out, each
-        document keeps the key it had.
+        document keeps the key it had. ``reroot`` changes what the graft keeps:
+        the subtree's own key is stripped first, so ``a/b`` copied to ``tmp``
+        lands at ``tmp`` rather than at ``tmp/a/b`` and everything below it
+        keeps its position below that. Grafting the whole key is right for an
+        archive and is the default; re-rooting is the only spelling that says
+        "these documents now live at another key", which is what a caller
+        moving a subtree needs. Which pairs of keys are safe to stream between
+        differs between the two -- :func:`outrage.bulk.overlapping` is the rule,
+        and the front ends apply it.
 
         Metadata crosses as the keys it is: a copy that left every ``!title``
         behind would produce a store nothing can be surveyed by. So does each
         document's ``updated_at``, which is what makes this a copy rather than
         a restamping -- see :meth:`store_document`.
+
+        ``limit`` bounds how many documents cross, and the generator returns
+        the source key of the last one so that ``cursor`` can pick the copy up
+        there. That pair is what a front end returning one value needs -- a
+        tool result cannot stream, and a copy of a large subtree cannot be one
+        answer -- and the cursor is a *source* key, which is why it is returned
+        rather than read off the last transfer. See :func:`outrage.bulk.copied`.
 
         Yields a :class:`Transfer` per document as it goes, so that a front end
         can report the transfer while it happens and an interrupted one has
@@ -766,14 +784,19 @@ class Store(ABC):
         """
         from . import bulk
 
-        yield from bulk.copied(
-            source,
-            self,
-            subtree,
-            key_range=key_range,
-            prefix=prefix,
-            on_conflict=on_conflict,
-            dry_run=dry_run,
+        return (
+            yield from bulk.copied(
+                source,
+                self,
+                subtree,
+                key_range=key_range,
+                prefix=prefix,
+                reroot=reroot,
+                on_conflict=on_conflict,
+                dry_run=dry_run,
+                cursor=cursor,
+                limit=limit,
+            )
         )
 
     def located(self, key: str, format: str | None = None) -> Path | None:
