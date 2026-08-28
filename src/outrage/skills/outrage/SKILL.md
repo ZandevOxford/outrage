@@ -164,7 +164,9 @@ document_file(key="context/1/state", path=...) -> stores that file back
 ```
 
 Between the two, edit the file with the ordinary shell tools - `sed`, a
-heredoc, an editor. The direction is decided by `path` and nothing else.
+heredoc, an editor. The direction is decided by `path` and nothing else. Give
+the import the path the export handed back; a relative one is taken from the
+export directory, not from where you are standing.
 
 Two things worth knowing. The import stores at the key you name, whatever file
 the content came from, so exporting one key and importing to another is how to

@@ -918,7 +918,10 @@ def build_server(
                         "Omit to export the document to a file. Pass the path of "
                         "a file this tool exported to store its content at `key` "
                         "instead; the file may have been edited, and may be one "
-                        "exported for another key"
+                        "exported for another key. Give the path the export "
+                        "returned, or one relative to the export directory - a "
+                        "relative path is taken from there, not from the working "
+                        "directory"
                     )
                 ),
             ] = None,
