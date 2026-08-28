@@ -35,6 +35,7 @@ from . import (
     messages,
     mountfile,
     mounts,
+    shipped,
     store,
 )
 from . import config as config_module
@@ -940,16 +941,30 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        mountfile.DOCS_FLAG,
+        dest="mount_docs",
+        action="store_true",
+        help=(
+            "Also mount the documentation shipped with outrage, read-only, at "
+            f"{keys.displayed(mountfile.DOCS_MOUNT)!r}: what a key is, what "
+            f"the tools do, and the conventions worth following, as documents "
+            f"in the namespace. Off here and on in the MCP server, so a bare "
+            f"outrage command stays this project's own store."
+        ),
+    )
+    parser.add_argument(
         mountfile.UNMOUNT_FLAG,
         dest="unmount",
         action="append",
         default=None,
         metavar="KEY",
         help=(
-            "Do not mount the store a configuration file mounts at KEY. The "
-            "one thing an override cannot do -- naming a mount replaces it or "
-            "adds it, and only this takes one away. Repeatable, and refused if "
-            "nothing was mounted there to remove. A --mount for the same key "
+            "Do not mount the store mounted at KEY. The one thing an override "
+            "cannot do -- naming a mount replaces it or adds it, and only this "
+            "takes one away. Repeatable, and refused if nothing was mounted "
+            "there to remove: the documentation the MCP server carries at "
+            f"{mountfile.DOCS_MOUNT} is not mounted here unless "
+            f"{mountfile.DOCS_FLAG} asks for it. A --mount for the same key "
             "written after this one mounts it again."
         ),
     )
@@ -1653,6 +1668,24 @@ def _mounts_command(args: argparse.Namespace, out: TextIO) -> int:
     ]
     seen = {keys.ROOT}
     failed = False
+    if args.mount_docs:
+        # Named by where it really is, absolute, rather than by a file inside
+        # --dir: it is in the installation, which is the whole reason it is a
+        # flag rather than a spec. "missing" here is a build that dropped the
+        # tree, and it is a failure for the same reason a read-only mount that
+        # names nothing is one.
+        state = "ok" if shipped.available() else "missing"
+        rows.append(
+            (
+                mountfile.DOCS_MOUNT,
+                str(shipped.tree()),
+                READ_ONLY_MOUNT_KIND,
+                state,
+                sources.get(mountfile.DOCS_MOUNT, ("", mountfile.TYPED_SOURCE))[1],
+            )
+        )
+        seen.add(mountfile.DOCS_MOUNT)
+        failed = failed or state == "missing"
     for specs, kind in ((args.mounts, MOUNT_KIND), (args.read_only_mounts, READ_ONLY_MOUNT_KIND)):
         for spec in specs:
             point, filename = mounts.parse_spec(spec)
@@ -1817,7 +1850,7 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
     directory = store.resolve_directory(args.directory)
     if not create:
         maintenance.require_store(directory, args.filename)
-    if not (args.mounts or args.read_only_mounts):
+    if not (args.mounts or args.read_only_mounts or args.mount_docs):
         with store.open_store(directory, filename=args.filename) as opened:
             yield opened
         return
@@ -1826,6 +1859,10 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
         args.mounts,
         args.read_only_mounts,
         root_mount=args.filename,
+        # Refused rather than warned about when the tree is not there, unlike
+        # the server: here somebody typed the flag, and a mount that silently
+        # was not made is the failure `--mount-ro` refuses for.
+        attached=shipped.attached() if args.mount_docs else {},
     ) as table:
         for mount in table.shadowing():
             # The server's warning, in the same words and for the same reason:

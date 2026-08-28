@@ -40,7 +40,7 @@ from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from . import __version__, bulk, eventlog, keys, messages, mountfile
+from . import __version__, bulk, eventlog, keys, messages, mountfile, shipped
 from . import mounts as mounts_module
 from . import store as store_module
 from .errors import OutrageError
@@ -1065,7 +1065,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parses to without opening a store or starting a server.
     """
     argv = list(sys.argv[1:] if argv is None else argv)
-    argv = mountfile.spliced(argv)
+    # ``builtin``: the server carries the shipped documentation unless told
+    # otherwise, and it is spliced in as an option so that the table treats it
+    # as one. The command line does not -- a bare ``outrage`` stays a clean
+    # namespace over the project's own store.
+    argv = mountfile.spliced(argv, builtin=True)
     parser = argparse.ArgumentParser(
         prog="outrage-server", description="MCP server for the Outrage document store"
     )
@@ -1126,15 +1130,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        mountfile.DOCS_FLAG,
+        dest="mount_docs",
+        action="store_true",
+        help=(
+            "Mount the documentation shipped with outrage, read-only, at "
+            f"{keys.displayed(mountfile.DOCS_MOUNT)!r}. On by default here: "
+            f"this flag is for the command line, which does not carry it, and "
+            f"is accepted so that both front ends read one mount table the "
+            f"same way. {mountfile.UNMOUNT_FLAG} "
+            f"{mountfile.DOCS_MOUNT} turns it off."
+        ),
+    )
+    parser.add_argument(
         mountfile.UNMOUNT_FLAG,
         dest="unmount",
         action="append",
         default=None,
         metavar="KEY",
         help=(
-            "Do not mount the store a configuration file mounts at KEY: the "
-            "one thing an override cannot do, since naming a mount replaces it "
-            "or adds it. Repeatable, and refused if nothing was mounted there."
+            "Do not mount the store mounted at KEY: the one thing an override "
+            "cannot do, since naming a mount replaces it or adds it. "
+            "Repeatable, and refused if nothing was mounted there -- which "
+            f"includes {mountfile.DOCS_MOUNT}, mounted here by default and "
+            f"only on request on the command line."
         ),
     )
     parser.add_argument(
@@ -1185,6 +1204,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _documents(wanted: bool, log: EventLog | None = None) -> dict[str, Store]:
+    """The shipped documentation to attach, warning rather than failing without it.
+
+    A **warning**, and this is the one place the default differs from the flag.
+    The command line mounts this because somebody typed ``--mount-docs``, so a
+    tree that is not there is a refusal, exactly as a ``--mount-ro`` naming
+    nothing is. Here nobody asked: the mount arrives with the server, and a
+    build that dropped the tree would otherwise stop every session from
+    starting over documentation that is not what anybody's store is for. So the
+    server says so on stderr, beside the shadowing warning, and serves the rest.
+    """
+    if not wanted:
+        return {}
+    if not shipped.available():
+        print(
+            f"outrage: warning: the shipped documentation is not in this "
+            f"installation ({shipped.tree()}), so nothing is mounted at "
+            f"{keys.displayed(shipped.MOUNT_POINT)!r}",
+            file=sys.stderr,
+        )
+        return {}
+    return dict(shipped.attached(log=log))
+
+
 def main(argv: list[str] | None = None) -> int:
     """Open the configured stores and serve them over stdio until the client
     stops.
@@ -1220,6 +1263,7 @@ def main(argv: list[str] | None = None) -> int:
             args.read_only_mounts,
             root_mount=args.root_mount,
             log=log,
+            attached=_documents(args.mount_docs, log),
         ) as table:
             for mount in table.shadowing():
                 # Stderr, not a refusal: the configuration is usable, and the

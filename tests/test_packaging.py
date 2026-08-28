@@ -122,7 +122,21 @@ def test_there_are_data_files_to_lose():
     files = _data_files()
     assert "skills/outrage/SKILL.md" in files
     assert "codex/skills/outrage/SKILL.md" in files
+    # The documentation store, which is shipped for the same reason and is lost
+    # the same way. A tree rather than one file, so the *whole* of it has to
+    # travel: a wheel carrying the readme and nothing else would mount, read as
+    # a manual with four documents missing, and say nothing about it.
+    assert "documents/readme.md" in files
     assert len(files) >= 5, files
+
+
+def test_the_documentation_tree_travels_whole(sdist_names, wheel_names):
+    """Every file of it, not merely some. See the comment above."""
+    tree = [rel for rel in _data_files() if rel.startswith("documents/")]
+
+    assert len(tree) >= 5, tree
+    assert not [rel for rel in tree if f"src/outrage/{rel}" not in sdist_names]
+    assert not [rel for rel in tree if f"outrage/{rel}" not in wheel_names]
 
 
 def test_the_sdist_carries_every_data_file(sdist_names):

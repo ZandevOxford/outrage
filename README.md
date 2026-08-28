@@ -132,6 +132,15 @@ the mount options, so a person sees the same namespace the MCP server serves.
 prefix in that namespace, including between mounted stores.
 `outrage check` and `backup` are about one file and say which with `--store`.
 
+Outrage ships its own documentation as a store inside the package - a readme,
+and documents on keys, the tools, the command line and the conventions - mounted
+read-only at `outrage`. The MCP server mounts it unless told otherwise, so a
+session reads the manual with the same tools it reads everything else; the
+command line does not, unless `--mount-docs` asks for it, so a bare `outrage`
+stays a clean namespace over the project's own store. It behaves as an ordinary
+mount otherwise: `--unmount outrage` leaves it out, and mounting your own store
+at `outrage` replaces it by the same rule that overrides any other entry.
+
 `outrage mounts` reports the table a command line would open, without opening
 any of it — which matters because opening a read-write mount is what *creates*
 it, so a mistyped name becomes an empty store that reads like one with nothing

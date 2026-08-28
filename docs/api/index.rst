@@ -47,6 +47,12 @@ file in the store directory, read as though its options had been given on the
 command line at the point where the file is named. Both front ends read it, so
 a project has one table rather than one per caller.
 
+:mod:`outrage.shipped` is the one mount neither of them can name: outrage's own
+documentation, a filesystem store inside the installed package, mounted
+read-only at ``outrage``. A store file is relative to ``--dir`` and a tree in
+``site-packages`` is not, so it is opened by absolute path and lent to
+:func:`outrage.mounts.open_mounts` through its ``attached`` argument.
+
 .. toctree::
    :maxdepth: 1
 
@@ -56,6 +62,7 @@ a project has one table rather than one per caller.
    store_files
    mounts
    mountfile
+   shipped
 
 Front ends
 ----------

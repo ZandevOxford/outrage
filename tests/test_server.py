@@ -10,10 +10,11 @@ from mcp.client.session import ClientSession
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
-from outrage import eventlog
+from outrage import eventlog, mountfile, shipped
+from outrage import mounts as mounts_module
 from outrage import server as server_module
 from outrage.eventlog import EventLog
-from outrage.server import RequestLog, build_server, parse_args
+from outrage.server import RequestLog, build_server, instructions, parse_args
 from outrage.store_sqlite import SqliteStore
 
 
@@ -921,3 +922,66 @@ def test_a_wildcard_key_is_not_a_round_trip(exporting):
     message = call_expecting_error(exporting, "document_file", key="context/?/design")
 
     assert "?" in message
+
+
+# The documentation shipped inside the package. The server carries it and the
+# command line does not, which is the whole of what is different about it:
+# everything below asks whether "carried by default" is really an ordinary
+# mount. `project/reference/planned/mounts/default-store`.
+
+
+def test_the_shipped_documentation_is_mounted_unless_told_otherwise(tmp_path):
+    assert parse_args(["--dir", str(tmp_path)]).mount_docs is True
+
+
+def test_unmounting_the_documentation_is_the_off_switch(tmp_path):
+    args = parse_args(["--dir", str(tmp_path), mountfile.UNMOUNT_FLAG, mountfile.DOCS_MOUNT])
+
+    assert args.mount_docs is False
+
+
+def test_a_store_mounted_there_replaces_the_documentation(tmp_path):
+    """Silently, and without a duplicate refusal: the override rule, as asked."""
+    args = parse_args(["--dir", str(tmp_path), "--mount", f"{mountfile.DOCS_MOUNT}=mine.sqlite"])
+
+    assert args.mount_docs is False
+    assert args.mounts == [f"{mountfile.DOCS_MOUNT}=mine.sqlite"]
+
+
+def test_the_documentation_is_attached_read_only(tmp_path):
+    attached = server_module._documents(True)
+
+    assert list(attached) == [shipped.MOUNT_POINT]
+    with mounts_module.open_mounts(tmp_path, attached=attached) as table:
+        assert [mount.prefix for mount in table.read_only] == [shipped.MOUNT_POINT]
+
+
+def test_a_build_that_dropped_the_tree_warns_rather_than_refusing(tmp_path, monkeypatch, capsys):
+    """The one place the default differs from the flag.
+
+    Nobody asked for this mount, so a missing tree must not stop a session
+    starting over documentation that is not what their store is for. The
+    command line, where somebody typed --mount-docs, refuses instead.
+    """
+    monkeypatch.setattr(shipped, "tree", lambda: tmp_path / "gone")
+
+    assert server_module._documents(True) == {}
+    assert "not in this installation" in capsys.readouterr().err
+
+
+def test_nothing_is_attached_when_it_is_not_wanted():
+    assert server_module._documents(False) == {}
+
+
+def test_the_documentation_readme_is_not_delivered(tmp_path):
+    """Deliberate, and on the delivery budget: only the root store's is carried.
+
+    `planned/instructions-budget` is the margin, and it is a few dozen
+    characters. A second readme is hundreds, so carrying this one would push
+    the first past the client's silent cut -- the exact failure the ordering
+    exists to prevent.
+    """
+    with mounts_module.open_mounts(tmp_path, attached=shipped.attached()) as table:
+        text = instructions(table)
+
+    assert "outrage manual" not in text

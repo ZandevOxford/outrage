@@ -371,8 +371,10 @@ def _mount_key_too_deep(name: Namer, /, *, key: str, mount: str, **_: Any) -> st
 def _mount_read_only(name: Namer, /, *, key: str, mount: str, action: str, **_: Any) -> str:
     return (
         f"cannot {action} {keys.displayed(key)!r}: the store mounted at "
-        f"{keys.displayed(mount)!r} is read-only. It was mounted with --mount-ro; mount "
-        f"it with --mount instead to allow changes here."
+        f"{keys.displayed(mount)!r} is read-only. Either --mount-ro says so, and "
+        f"--mount instead allows changes here; or it is a store nothing can "
+        f"write - a packed parquet one, or the documentation shipped inside "
+        f"outrage, which the next upgrade would replace."
     )
 
 
@@ -443,6 +445,15 @@ def _mount_read_only_missing(name: Namer, /, *, mount: str, path: str, **_: Any)
         f"{path!r}. A read-only mount is not created, since a "
         f"mistyped name would mount as an empty store that no write could "
         f"ever contradict."
+    )
+
+
+@template("documents-not-installed")
+def _documents_not_installed(name: Namer, /, *, path: str, **_: Any) -> str:
+    return (
+        f"the outrage documentation is not in this installation: nothing at "
+        f"{path!r}. It ships inside the package, so a missing tree is a build "
+        f"that dropped it rather than anything to configure."
     )
 
 

@@ -313,6 +313,26 @@ otherwise create one, and `server.main` now renders a `OutrageError` as one line
 and exits 1 rather than tracebacking, which is the rule `cli.main` already
 followed.
 
+**The shipped documentation** - `src/outrage/shipped.py` and the tree at
+`src/outrage/documents/`, a `FilesystemStore` inside the installed package
+mounted read-only at `outrage`. It is the one mount that cannot be written as a
+`KEY=FILE`: a store file is relative to `--dir` and `site-packages` is not, and
+that rule is what makes a configuration relocatable rather than being incidental
+to it. So `open_mounts` grew `attached`, a mapping of already-open stores
+mounted read-only at their keys, and that is the whole of the change to the
+mount system - nothing about routing, crossing or ranges is touched.
+
+Carried by the server and not by the command line, which is one flag rather
+than two: `--mount-docs` asks for it where it is not carried, and `--unmount
+outrage` is the off switch on both. It is spliced into the argument list as
+that flag rather than injected as an opened store, and that is load bearing:
+override is settled by `mountfile._overridden` over the ordered item list,
+*before* `open_mounts` runs, so a store injected afterwards would collide with
+a user's own mount at `outrage` and be refused rather than replaced. The
+built-in item carries its own source (`_BUILTIN`), distinct from the command
+line and from every file, so a claim the caller actually typed overrides it
+instead of colliding with it.
+
 Deliberately not done, and recorded in `project/reference/planned/mounts`:
 aggregation across a boundary. The range bounds are the primitive it now needs:
 reading a subtree as ordered windows is what a merge across two stores would

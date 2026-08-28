@@ -57,6 +57,18 @@ titles instead of repeating a subtree-wide total on every page.
 It is a count, not a listing, and carries no cursor: `keys_missing_meta` is
 what enumerates them, and `outrage-backfill` fills them in.
 
+## `outrage/` is outrage's own manual, not this project's store
+
+A read-only store shipped inside the package is mounted at `outrage`: a readme,
+and documents on keys, the tools, the command line and the conventions. It is
+what to read when the question is how outrage itself works, and
+`get_documents(key="outrage", meta_name=["title"])` surveys it in one call.
+
+Everything outside `outrage/` is this project's own. Do not read a document
+under `outrage/` as a decision somebody made about this codebase, and do not
+try to write there - the mount refuses it, and the next upgrade would replace
+whatever landed.
+
 ## Key conventions
 
 Three top level namespaces. Nothing enforces them; they exist so that a later
