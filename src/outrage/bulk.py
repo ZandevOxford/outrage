@@ -33,6 +33,7 @@ from __future__ import annotations
 import os
 import tempfile
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from . import keys, messages, store
@@ -689,6 +690,205 @@ def pack(
         ParquetStore.build(target, rows, overwrite=overwrite)
 
 
+# -- one document, to a file and back ------------------------------------
+#
+# The single-document half of the same mapping the tree walkers use, for the
+# document that is edited by shell tools rather than moved in bulk: a read that
+# writes a file and a write that reads one, sharing every rule above about what
+# a key is called on disk. See ``context/66/decisions``.
+
+
+#: The mapping failures a single-document export answers with a random name
+#: instead of a refusal, and exactly those: a key that cannot be a path is
+#: still a key somebody wants to edit, and there is nowhere else for it to go.
+#: Anything else :func:`path_for_key` or :func:`contained_path` raises is a
+#: refusal, and stays one.
+UNNAMEABLE = ("key-segment-is-traversal", "key-escapes-tree")
+
+#: What a key with no path of its own is named instead. Not
+#: :data:`TEMP_PREFIX`, which marks a file that is half written and that a
+#: reader must skip: this one is the export, and it is finished.
+FALLBACK_PREFIX = "document-"
+
+
+class FileMissingError(OutrageError, FileNotFoundError):
+    """Raised when the file to import one document from is not there."""
+
+
+@dataclass(frozen=True, slots=True)
+class Exported:
+    """What exporting one document did: where it went, and what stood there."""
+
+    path: Path
+    """The file written."""
+    excerpt: store.Excerpt
+    """The document written to it, whole."""
+    replaced: bool
+    """Whether a file was already at that path. A fact, not a refusal:
+    overwriting on re-export is the point of a deterministic name, and the case
+    it costs is an edit that had not been imported back yet. See
+    ``context/66/decisions``, call 1."""
+
+
+@dataclass(frozen=True, slots=True)
+class Imported:
+    """What importing one file did: where it went, and what it displaced."""
+
+    key: str
+    """The key written, as it was asked for."""
+    stored: int
+    """Characters written."""
+    previous: int | None
+    """Characters the key held before, or None if it held nothing. The
+    distinction is kept because an empty document and no document are different
+    things to have overwritten."""
+
+
+def file_for_key(
+    root: str | os.PathLike[str], key: str, format: str | None = None
+) -> tuple[Path, bool]:
+    """The file under ``root`` that ``key`` is exported to, and whether it is the
+    key's own.
+
+    The key's own mapped path, so exporting a key twice reuses one file:
+    nothing accumulates, and a stale copy of an earlier export cannot be picked
+    up by mistake. The cost is taken deliberately - a second export overwrites
+    an edit that had not been imported back yet.
+
+    **A key with no path gets a random name here instead**, for the two cases
+    in :data:`UNNAMEABLE`. It still carries the format's extension, because
+    with the key and the path free to disagree the path is the only thing left
+    that says what the content is.
+
+    The root key is not one of those cases: it maps to the extension alone at
+    the top of ``root``, which is hidden and valid.
+
+    The flag says which of the two happened, because the answers differ in what
+    a caller may say about the file: a mapped path may already hold an earlier
+    export, and a fallback never does.
+    """
+    try:
+        return contained_path(root, path_for_key(key, format), key), True
+    except UnmappableError as exc:
+        if exc.code not in UNNAMEABLE:
+            raise
+    directory = Path(root)
+    directory.mkdir(parents=True, exist_ok=True)
+    # `mkstemp` rather than a name of our own, for the guarantee that the name
+    # is free: two unnameable keys must not land on one file, which is the one
+    # thing a random name is here to avoid.
+    handle, named = tempfile.mkstemp(
+        dir=directory,
+        prefix=FALLBACK_PREFIX,
+        suffix=EXTENSION_BY_FORMAT.get(format or "markdown", EXTENSION_BY_FORMAT["markdown"]),
+    )
+    os.close(handle)
+    return Path(named), False
+
+
+def contained_file(root: str | os.PathLike[str], path: str | os.PathLike[str], key: str) -> Path:
+    """``path`` as a file inside ``root``, refused unless it stays inside it.
+
+    The absolute-path end of :func:`contained_path`, which takes a path
+    *relative* to the root because that is what a key maps to. An import
+    arrives with the absolute path an export handed back, so it is relativised
+    and then checked by the one rule - rather than by a second containment
+    strategy that could disagree with the first.
+    """
+    given = Path(path).expanduser()
+    if given.is_absolute():
+        try:
+            # Lexical, and deliberately: whether the result is really inside is
+            # `contained_path`'s question, answered against the filesystem, and
+            # a `..` this produces is exactly what it is there to refuse.
+            relative = PurePosixPath(os.path.relpath(given, Path(root)))
+        except ValueError as exc:
+            # A different drive on Windows, where there is no relative path at
+            # all. Not inside the root, which is the answer either way.
+            raise UnmappableError("import-file-escapes-tree", key=key, path=str(given)) from exc
+    else:
+        relative = PurePosixPath(given)
+    try:
+        return contained_path(root, relative, key)
+    except UnmappableError as exc:
+        if exc.code != "key-escapes-tree":
+            raise
+        # The same containment rule and the other direction. `key-escapes-tree`
+        # says a key would be *written* somewhere it should not be, which is
+        # the wrong half of the story for a caller who asked to read a file.
+        raise UnmappableError("import-file-escapes-tree", key=key, path=str(given)) from exc
+
+
+def export_document(
+    opened: store.Store, key: str, root: str | os.PathLike[str]
+) -> Exported:
+    """Write the document at ``key`` to its file under ``root``, whole.
+
+    The whole document rather than a slice, which is the only readable size: a
+    slice edited and imported back is a silent truncation of everything the
+    read stopped short of.
+    """
+    excerpt = store.read_all(opened, key)
+    path, mapped = file_for_key(root, key, excerpt.format)
+    # Asked before the write, which is the only moment it can be asked:
+    # `_write_file` replaces, and afterwards the file is there either way. Only
+    # of a mapped path -- a fallback name is allocated by creating the file, so
+    # the file being there says nothing about what was.
+    replaced = mapped and path.exists()
+    _write_file(path, excerpt.content)
+    return Exported(path=path, excerpt=excerpt, replaced=replaced)
+
+
+def import_document(
+    opened: store.Store, key: str, path: str | os.PathLike[str], root: str | os.PathLike[str]
+) -> Imported:
+    """Store the content of ``path`` at ``key``, and say what it displaced.
+
+    ``path`` must be inside ``root``, which is the whole of the check: a tool
+    that stored any file the caller named would read anything the server can
+    read. See ``project/reference/planned/export-traversal``.
+
+    **The key and the path do not have to agree.** The content is stored where
+    the caller says, whatever file it came from, which is what makes an export,
+    an edit and an import to a second key a way of copying content around the
+    store.
+
+    An empty file is stored rather than refused - emptying a document is a
+    thing a person may legitimately mean. What guards the accident is the
+    report: both sizes come back, so an edit script that truncated is visible
+    to whoever asked. See ``context/66/decisions``, call 3.
+    """
+    from .store_files import NotTextError
+
+    file = contained_file(root, path, key)
+    try:
+        content = file.read_text(encoding="utf-8")
+    except (FileNotFoundError, IsADirectoryError) as exc:
+        raise FileMissingError("import-file-missing", key=key, path=str(file)) from exc
+    except UnicodeDecodeError as exc:
+        raise NotTextError("files-not-text", key=key, path=str(file)) from exc
+    try:
+        previous: int | None = opened.retrieve_document(key, max_chars=1).total
+    except store.KeyNotFoundError:
+        previous = None
+    written = opened.store_document(key, content, _format_of(file.name))
+    return Imported(key=written, stored=len(content), previous=previous)
+
+
+def _format_of(name: str) -> str | None:
+    """The format a file name declares, for a caller that already has the key.
+
+    The format half of :func:`key_for_path`, split out because an import of one
+    document is *told* its key: putting the name through the whole mapping
+    would let a file name that is not a key refuse a write to a key that is.
+    """
+    if name in FORMAT_BY_EXTENSION:
+        # The root document, the one file named by its extension alone.
+        return FORMAT_BY_EXTENSION[name]
+    return FORMAT_BY_EXTENSION.get(os.path.splitext(name)[1])
+
+
+
 def _check_conflict(on_conflict: str) -> None:
     if on_conflict not in CONFLICTS:
         raise ValueError(f"on_conflict must be one of {CONFLICTS}, got {on_conflict!r}")
@@ -697,18 +897,27 @@ def _check_conflict(on_conflict: str) -> None:
 __all__ = [
     "Document",
     "EXTENSION_BY_FORMAT",
+    "Exported",
+    "FALLBACK_PREFIX",
     "FORMAT_BY_EXTENSION",
+    "Imported",
     "PAGE",
     "Packable",
     "TEMP_PREFIX",
     "TRAVERSAL",
+    "UNNAMEABLE",
+    "FileMissingError",
     "SourceMissingError",
     "UnmappableError",
+    "contained_file",
     "contained_path",
     "copied",
     "documents_from_store",
     "documents_from_tree",
+    "export_document",
     "export_tree",
+    "file_for_key",
+    "import_document",
     "import_tree",
     "pack",
     "key_for_path",

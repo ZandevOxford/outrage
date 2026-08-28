@@ -532,3 +532,158 @@ def test_an_omitted_key_exports_from_the_root(populated, tmp_path):
     named = actions(bulk.export_tree(populated, "", tmp_path / "a", dry_run=True))
     omitted = actions(bulk.export_tree(populated, None, tmp_path / "b", dry_run=True))
     assert named == omitted
+
+
+# -- one document, to a file and back ------------------------------------
+
+
+def test_a_document_exports_to_the_file_its_key_maps_to(populated, tmp_path):
+    exported = bulk.export_document(populated, "project/reference/env", tmp_path / "export")
+
+    assert exported.path == tmp_path / "export" / "project" / "reference" / "env.json"
+    assert exported.path.read_text() == '{"python": "3.14"}'
+    assert exported.replaced is False
+
+
+def test_exporting_a_key_twice_reuses_one_file_and_says_it_replaced_one(populated, tmp_path):
+    first = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project", "# Project, edited")
+    second = bulk.export_document(populated, "project", tmp_path / "export")
+
+    assert second.path == first.path
+    assert second.replaced is True
+    assert second.path.read_text() == "# Project, edited"
+
+
+def test_a_document_longer_than_one_read_is_exported_whole(store, tmp_path):
+    store.store_document("long", "x" * (store_module.DEFAULT_MAX_CHARS * 3))
+
+    exported = bulk.export_document(store, "long", tmp_path / "export")
+
+    assert exported.path.read_text() == "x" * (store_module.DEFAULT_MAX_CHARS * 3)
+    assert exported.excerpt.total == store_module.DEFAULT_MAX_CHARS * 3
+
+
+def test_a_key_with_no_path_of_its_own_gets_a_name_that_keeps_its_format(store, tmp_path):
+    store.store_document("a/./b", '{"traversal": true}', format="json")
+
+    exported = bulk.export_document(store, "a/./b", tmp_path / "export")
+
+    assert exported.path.parent == tmp_path / "export"
+    assert exported.path.name.startswith(bulk.FALLBACK_PREFIX)
+    assert exported.path.suffix == ".json"
+    assert exported.replaced is False
+
+
+def test_two_unnameable_keys_do_not_land_on_one_file(store, tmp_path):
+    store.store_document("a/./b", "first")
+    store.store_document("c/./d", "second")
+
+    one = bulk.export_document(store, "a/./b", tmp_path / "export")
+    two = bulk.export_document(store, "c/./d", tmp_path / "export")
+
+    assert one.path != two.path
+    assert one.path.read_text() == "first"
+    assert two.path.read_text() == "second"
+
+
+def test_the_root_document_exports_to_the_extension_alone(store, tmp_path):
+    store.store_document("", "# The store")
+
+    exported = bulk.export_document(store, "", tmp_path / "export")
+
+    assert exported.path == tmp_path / "export" / ".md"
+
+
+def test_an_edited_file_imports_back_and_reports_both_sizes(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, edited by hand")
+
+    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert imported == bulk.Imported(key="project", stored=25, previous=9)
+    assert populated.retrieve_document("project").content == "# Project, edited by hand"
+
+
+def test_an_import_may_store_at_a_key_the_file_did_not_come_from(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+
+    imported = bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
+
+    assert imported.previous is None
+    assert populated.retrieve_document("project/copy").content == "# Project"
+
+
+def test_an_import_takes_its_format_from_the_file_name(populated, tmp_path):
+    exported = bulk.export_document(populated, "project/reference/env", tmp_path / "export")
+
+    bulk.import_document(populated, "project/reference/env", exported.path, tmp_path / "export")
+
+    assert populated.retrieve_document("project/reference/env").format == "json"
+
+
+def test_an_empty_file_is_stored_rather_than_refused(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("")
+
+    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert (imported.stored, imported.previous) == (0, 9)
+    assert populated.retrieve_document("project").content == ""
+
+
+def test_an_import_of_a_key_that_held_nothing_says_so(populated, tmp_path):
+    (tmp_path / "export").mkdir()
+    (tmp_path / "export" / "new.md").write_text("fresh")
+
+    imported = bulk.import_document(
+        populated, "new", tmp_path / "export" / "new.md", tmp_path / "export"
+    )
+
+    assert imported.previous is None
+
+
+def test_an_import_refuses_a_file_outside_the_export_directory(populated, tmp_path):
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("not exported")
+
+    with pytest.raises(bulk.UnmappableError) as raised:
+        bulk.import_document(populated, "project", outside, tmp_path / "export")
+
+    assert raised.value.code == "import-file-escapes-tree"
+    assert populated.retrieve_document("project").content == "# Project"
+
+
+def test_an_import_refuses_a_path_that_climbs_out_of_the_export_directory(populated, tmp_path):
+    (tmp_path / "export").mkdir()
+    (tmp_path / "elsewhere.md").write_text("not exported")
+
+    with pytest.raises(bulk.UnmappableError) as raised:
+        bulk.import_document(
+            populated, "project", PurePosixPath("../elsewhere.md"), tmp_path / "export"
+        )
+
+    assert raised.value.code == "import-file-escapes-tree"
+
+
+def test_an_import_refuses_a_file_that_is_not_there(populated, tmp_path):
+    (tmp_path / "export").mkdir()
+
+    with pytest.raises(bulk.FileMissingError) as raised:
+        bulk.import_document(
+            populated, "project", tmp_path / "export" / "gone.md", tmp_path / "export"
+        )
+
+    assert raised.value.code == "import-file-missing"
+
+
+def test_an_import_refuses_a_file_that_is_not_text(populated, tmp_path):
+    from outrage.store_files import NotTextError
+
+    (tmp_path / "export").mkdir()
+    (tmp_path / "export" / "binary.md").write_bytes(b"\xff\xfe\x00")
+
+    with pytest.raises(NotTextError):
+        bulk.import_document(
+            populated, "project", tmp_path / "export" / "binary.md", tmp_path / "export"
+        )

@@ -26,9 +26,11 @@ import argparse
 import dataclasses
 import functools
 import itertools
+import os
 import sys
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated, Any
 
 from mcp.server import MCPServer
@@ -38,7 +40,7 @@ from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
 from pydantic import Field
 
-from . import __version__, eventlog, keys, messages, mountfile
+from . import __version__, bulk, eventlog, keys, messages, mountfile
 from . import mounts as mounts_module
 from . import store as store_module
 from .errors import OutrageError
@@ -451,13 +453,24 @@ class RequestLog:
             eventlog.current_call.reset(token)
 
 
-def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
+def build_server(
+    store: Store, log: EventLog | None = None, directory: str | os.PathLike[str] | None = None
+) -> MCPServer:
     """Build a server exposing ``store``, which may be one store or a mount table.
 
     A lone ``Store`` is wrapped in a table of one rather than served by a
     second path through this module. There is then no routing that only runs
     when something is mounted, and the single store case exercises the same
     code every call takes.
+
+    ``directory`` is the store directory, and it has to be passed in: what is
+    served is a :class:`~outrage.mounts.MountedStore`, which is a ``Store`` and
+    not a :class:`~outrage.store.FileStore`, so it cannot be asked where it is.
+    :func:`main` has already resolved it for the event log. Given one,
+    ``document_file`` is registered and writes under
+    :data:`~outrage.store.EXPORT_DIR_NAME` inside it; without one there is
+    nowhere to put a file, and the tool is not offered rather than offered and
+    always failing.
     """
     log = log if log is not None else eventlog.NULL
     table = store if isinstance(store, MountedStore) else MountedStore.single(store)
@@ -867,6 +880,98 @@ def build_server(store: Store, log: EventLog | None = None) -> MCPServer:
             )
         return result
 
+    if directory is not None:
+        exports = Path(directory) / store_module.EXPORT_DIR_NAME
+
+        @server.tool(
+            annotations=ToolAnnotations(idempotent_hint=True),
+            description=(
+                "Move one document between the store and a file, so a long "
+                "document can be edited by shell tools without its unchanged "
+                "text passing through the conversation twice. **Omit `path` to "
+                "export**: the whole document at `key` is written to a file and "
+                "the path returned, ready to be edited in place with `sed`, a "
+                "heredoc or an editor. **Pass `path` to import**: that file's "
+                "content is stored at `key`, and the answer reports both the "
+                "size written and the size that was there before, so an edit "
+                "that truncated is visible. The path must be one this tool "
+                "exported. The key and the path need not be the same key's, so "
+                "exporting one key and importing to another copies content "
+                "across the store."
+            ),
+        )
+        @_reported
+        def document_file(
+            key: Annotated[
+                str,
+                Field(
+                    description=(
+                        "Key to export, or to import into, e.g. "
+                        "context/a1b2/design or context/?last/design for the newest"
+                    )
+                ),
+            ],
+            path: Annotated[
+                str | None,
+                Field(
+                    description=(
+                        "Omit to export the document to a file. Pass the path of "
+                        "a file this tool exported to store its content at `key` "
+                        "instead; the file may have been edited, and may be one "
+                        "exported for another key"
+                    )
+                ),
+            ] = None,
+        ) -> dict[str, Any]:
+            # No wildcard: `?` allocates a number, and a round trip is about a
+            # key that already exists on one end or the other. Allocating one
+            # is `store_document`'s business.
+            at = _named_key(table, key)
+            if path is None:
+                exported = bulk.export_document(table, at, exports)
+                result: dict[str, Any] = {
+                    "key": at,
+                    "path": str(exported.path),
+                    "exported": exported.excerpt.total,
+                    "format": exported.excerpt.format,
+                    "replaced": exported.replaced,
+                }
+                _add_note(
+                    result,
+                    "Edit this file in place and call again with its path to "
+                    "store it back.",
+                )
+                if exported.replaced:
+                    # The fact, not a refusal: one file per key is what stops
+                    # exports accumulating, and this is the edge it costs.
+                    _add_note(
+                        result,
+                        "A file was already there and has been overwritten; if it "
+                        "held an edit that was never stored back, that edit is gone.",
+                    )
+                return result
+            imported = bulk.import_document(table, at, path, exports)
+            result = {
+                "key": imported.key,
+                "path": str(path),
+                "stored": imported.stored,
+                "previous": imported.previous,
+            }
+            if imported.previous is not None and imported.stored < imported.previous:
+                # Reported rather than refused -- emptying a document is a thing
+                # a person may mean, and `planned/write-preconditions` is where
+                # enforcing anything is being considered. But the arithmetic is
+                # done here: this exact workflow through the command line wrote a
+                # 0-character document over a good one, and a shrink nobody
+                # subtracted is a shrink nobody saw. `context/60/findings`.
+                _add_note(
+                    result,
+                    f"the document shrank from {imported.previous} to "
+                    f"{imported.stored} characters; if that was not intended, the "
+                    f"previous content is gone.",
+                )
+            return result
+
     return server
 
 
@@ -1083,9 +1188,9 @@ def main(argv: list[str] | None = None) -> int:
 
     The console script ``outrage-server``, and the entry point an MCP client
     launches. It resolves the store directory once -- the event log defaults to
-    a file beside it and needs the same answer -- opens the mount table, warns
-    on stderr about any mount that shadows keys already held, and hands the
-    table to :func:`build_server`.
+    a file beside it, and ``document_file`` writes under it, so both need the
+    same answer -- opens the mount table, warns on stderr about any mount that
+    shadows keys already held, and hands the table to :func:`build_server`.
 
     Returns rather than exits, for the same reason :func:`outrage.cli.main` does.
     """
@@ -1122,7 +1227,7 @@ def main(argv: list[str] | None = None) -> int:
                     f"held there; they are unreachable while it is mounted",
                     file=sys.stderr,
                 )
-            build_server(table, log).run("stdio")
+            build_server(table, log, directory).run("stdio")
     except OutrageError as exc:
         # The same rule `cli.main` follows, and for the same reason: a mount
         # table that cannot be built is an answer about the configuration, not

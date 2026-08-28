@@ -2,6 +2,41 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+### One document through a file, as a tool
+
+The MCP server offers `document_file`, which moves a single document between
+the store and a file so that a long document can be edited with `sed`, a
+heredoc or an editor without its unchanged text passing through an agent's
+context twice. The direction is decided by one argument and nothing else: with
+no `path` the document at `key` is written to a file under `export/` in the
+store directory and the path returned; with a `path` that file's content is
+stored at `key`.
+
+* **The export path is the key's own**, by the same mapping `outrage export`
+  uses, so `context/60/state` is `export/context/60/state.md` and exporting a
+  key twice reuses one file rather than accumulating copies. The answer says
+  whether a file was already there. A key that has no path at all - one with a
+  `.` or `..` segment - gets a random name carrying the format's extension
+  instead.
+* **The key and the path need not agree.** An import stores at the key it is
+  given, whatever file the content came from, so exporting one key and
+  importing to another copies content across the store.
+* **Only a file under the export directory can be imported**, which is the
+  whole of the check: the same containment rule the bulk export is guarded by.
+* **An empty file is stored rather than refused**, and both sizes are reported
+  instead - the characters written and the characters that were there before,
+  with a note when the document shrank. Emptying a document is a thing a person
+  may mean; an edit script that truncated silently is not.
+
+`build_server` takes the store directory as a third argument to make this
+possible, since what it serves is a `MountedStore` and cannot be asked where it
+is. The tool is registered only when that directory is given.
+
+Library callers gain `bulk.export_document`, `bulk.import_document`,
+`bulk.file_for_key` and `bulk.contained_file`, and `store.EXPORT_DIR_NAME`.
+
 ## 0.3.0 - 2026-08-27
 
 0.3.0 makes multiple stores and their mounted namespace first-class throughout

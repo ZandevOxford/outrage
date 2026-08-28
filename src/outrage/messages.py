@@ -321,6 +321,19 @@ def _import_source_missing(name: Namer, /, *, source: str, **_: Any) -> str:
     return f"no directory at {source}"
 
 
+@template("import-file-missing")
+def _import_file_missing(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
+    return f"nothing to store at {name(key)!r}: no file at {path}"
+
+
+@template("import-file-escapes-tree")
+def _import_file_escapes_tree(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
+    return (
+        f"nothing to store at {name(key)!r}: the file at {path} is outside the "
+        f"export directory, and only a file exported into it can be stored back"
+    )
+
+
 # -- mounts ----------------------------------------------------------------
 #
 # A mount point is named with `keys.displayed` directly rather than through the
