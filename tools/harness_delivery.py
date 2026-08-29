@@ -98,11 +98,19 @@ TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 #: without one would read as a document that simply ended.
 TRUNCATION_MARKER = "… [truncated]"
 
-#: What the delivered block opens with once the readme is ordered first. Matched
-#: as a prefix of the heading rather than the whole of it, so rewording the rest
-#: of `README_HEADING` does not silently turn this into a check that always
-#: fails. Its absence is the one thing that distinguishes a server predating the
-#: instructions budget -- or one that has not restarted since -- from a live one.
+#: What the delivered block opens with since `context/74`: the sentence *naming*
+#: the readme, in its two forms. Matched as a prefix of each rather than the
+#: whole sentence, so rewording the rest of `READ_README` or `NO_README` does
+#: not silently turn this into a check that always fails. Copied rather than
+#: imported because the opener has to be recognisable without `mcp` on the path.
+READ_README_PREFIX = "This store has a `readme` document"
+NO_README_PREFIX = "This store has no `readme` document"
+
+#: What the block opened with while the readme was *carried*. That arrangement
+#: was reversed in `context/74` -- a cap is the wrong bound when every project
+#: has its own conventions -- so this heading now marks a session served an
+#: older server's text, not a current one. Kept because instructions are sent
+#: once at initialisation and old sessions stay readable.
 README_HEADING_PREFIX = "--- `readme`:"
 
 #: What became of one invocation's output. `quiet` means it printed nothing to
@@ -484,19 +492,32 @@ def report_instructions(newest: Session) -> None:
 
     Truncation on its own is not the question and never was. The composed text
     is half as long again as the budget, so the marker is always there; the
-    check a fix can pass is whether the *protected* part -- the readme and the
-    essentials -- landed ahead of the cut.
+    check a fix can pass is whether the *protected* part -- the sentence naming
+    the readme, and the essentials -- landed ahead of the cut.
     """
     body = newest.mcp_blocks[-1].partition("\n")[2]
     print(f"\nMCP instructions in the newest session ({newest.session_id[:8]}):")
-    if not body.startswith(README_HEADING_PREFIX):
-        print("  OLD ORDERING -- the block does not open with the readme. Either the")
-        print("  server predates the instructions budget, or the session was served")
-        print("  older text. Instructions are sent once at initialisation, and neither")
-        print("  /clear nor a resume replaces them: this needs a whole new session.")
+    if body.startswith(READ_README_PREFIX):
+        print("  readme NAMED -- the block opens with the sentence naming it, so the")
+        print("  ordering is live and the readme itself is read from the store.")
+    elif body.startswith(NO_README_PREFIX):
+        print("  no readme in the store -- the block opens with the line saying so,")
+        print("  which is the same ordering. Store one at `readme` and it is named.")
+    elif body.startswith(README_HEADING_PREFIX):
+        print("  SUPERSEDED ORDERING -- the block opens with the readme's *content*,")
+        print("  inlined, which is the arrangement `context/74` reversed. The session")
+        print("  was served an older server's text. Instructions are sent once at")
+        print("  initialisation, and neither /clear nor a resume replaces them: this")
+        print("  needs a whole new session.")
+        return
+    else:
+        print("  OLD ORDERING -- the block does not open with the readme at all.")
+        print("  Either the server predates the instructions budget, or the session")
+        print("  was served older text. Instructions are sent once at initialisation,")
+        print("  and neither /clear nor a resume replaces them: this needs a whole")
+        print("  new session.")
         return
 
-    print("  readme DELIVERED -- the block opens with it, so the ordering is live.")
     server = server_constants()
     if server is None:
         print("  Run under the project interpreter to check the essentials too;")

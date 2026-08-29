@@ -25,10 +25,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 from harness_delivery import (  # noqa: E402
     DELIVERED,
     DISCARDED,
+    NO_README_PREFIX,
     QUIET,
+    READ_README_PREFIX,
+    README_HEADING_PREFIX,
     REPEAT,
+    TRUNCATION_MARKER,
     hook_context,
     read_session,
+    report_instructions,
+    server_constants,
 )
 
 
@@ -180,3 +186,81 @@ def test_a_truncated_last_line_does_not_lose_the_rest(tmp_path):
     path.write_text("\n".join([ran("startup", "A"), got("A")]) + '\n{"type": "atta')
 
     assert [run.status for run in read_session(path).session_start_runs] == [DELIVERED]
+
+
+def instructions_block(body: str) -> str:
+    """One `mcp_instructions_delta`, shaped as the client writes it.
+
+    The server's name is the first line and is not part of the instructions --
+    `report_instructions` drops it -- so what the header says is immaterial.
+    """
+    return attachment("mcp_instructions_delta", addedBlocks=[f"## outrage\n{body}"])
+
+
+def reported(tmp_path: Path, body: str, capsys) -> str:
+    session = session_from(tmp_path, instructions_block(body))
+    report_instructions(session)
+    return capsys.readouterr().out
+
+
+# The ordering branches. The first of these is the test that was missing when
+# `context/74` reversed the readme from carried to named: the check still read
+# for the inlined heading, so it called a correct delivery `OLD ORDERING` and
+# would have passed a server that had not been fixed. A verdict nothing
+# exercises is a verdict that can invert without failing.
+
+
+def test_the_readme_sentence_is_the_live_ordering(tmp_path, capsys):
+    out = reported(tmp_path, f"{READ_README_PREFIX} - its own introduction.", capsys)
+
+    assert "readme NAMED" in out
+    assert "ORDERING" not in out
+
+
+def test_a_store_with_no_readme_is_the_same_ordering(tmp_path, capsys):
+    """Not having one is not a delivery failure: the line saying so is the fix."""
+    out = reported(tmp_path, f"{NO_README_PREFIX}. If you work out how it is", capsys)
+
+    assert "no readme in the store" in out
+    assert "ORDERING" not in out
+
+
+def test_the_inlined_readme_is_a_superseded_ordering(tmp_path, capsys):
+    """A session served the pre-`context/74` text -- old, but not pre-budget."""
+    out = reported(tmp_path, f"{README_HEADING_PREFIX} # The Outrage store", capsys)
+
+    assert "SUPERSEDED ORDERING" in out
+    assert "readme NAMED" not in out
+
+
+def test_a_block_opening_with_neither_predates_the_budget(tmp_path, capsys):
+    out = reported(tmp_path, "A store for notes, designs and task context.", capsys)
+
+    assert "OLD ORDERING" in out
+    assert "SUPERSEDED" not in out
+
+
+# What the branch goes on to check, against the text the server really composes
+# rather than a sketch of it, so that the budget moving is what fails these.
+
+
+def composed() -> str:
+    server = server_constants()
+    return f"{server.READ_README}\n\n{server.static_instructions()}"
+
+
+def test_the_delivered_shape_reports_the_essentials_whole(tmp_path, capsys):
+    """The live delivery: cut at the budget, with the tail wearing the loss."""
+    body = composed()[: server_constants().DELIVERY_BUDGET] + TRUNCATION_MARKER
+    out = reported(tmp_path, body, capsys)
+
+    assert "readme NAMED" in out
+    assert "essentials WHOLE" in out
+
+
+def test_a_cut_that_reaches_the_essentials_is_reported(tmp_path, capsys):
+    """The failure the ordering exists to prevent: the protected part cut."""
+    body = composed()[: server_constants().PROTECTED_CHARS - 100] + TRUNCATION_MARKER
+    out = reported(tmp_path, body, capsys)
+
+    assert "essentials CUT" in out
