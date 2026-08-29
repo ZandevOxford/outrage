@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "outrage": {
-      "command": "/Users/john/miniforge3/envs/rage/bin/outrage-server",
+      "command": "/Users/john/miniforge3/envs/outrage/bin/outrage-server",
       "args": [
         "--dir",
         "/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/.outrage",
