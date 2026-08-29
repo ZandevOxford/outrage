@@ -39,7 +39,9 @@ segment. Create these as needed.
   Also archived notes on already implemented features. Carry a `!status` so
   that a survey separates what is still open from what has been built.
 * `issues/?` - Notes on bugs or other issues, with a `!status` likewise.
-* `reference/<topic>` - durable facts about the project.
+* `reference/<topic>` - durable facts about the project: the conventions and
+  processes the work follows, its history and releases, which environment to
+  build and test in, and how the implementation actually works.
 * `glossary/<term>` - definitions and notes on terms and keywords used in the
   project.
 * `file_notes/<path>` - <path> will mirror the project filesystem, so use this
