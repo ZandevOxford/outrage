@@ -11,6 +11,10 @@ title for `reference/store.md` goes in `reference/store/!title.md`, whether or
 not that directory already exists -- which is the same rule for a page with
 children and a page without.
 
+A title is matched by its *key*, not by its filename: a hand-written
+`!title.txt` is the same key as a generated `!title.md` and is left alone
+rather than written beside. See `title_file`.
+
 **Existing titles are left alone.** Every hand-written document in
 `src/outrage/documents` has a title that is deliberately not its heading:
 `keys.md` leads with "What a key is" and is titled "Keys: the grammar of the
@@ -29,10 +33,29 @@ import argparse
 import sys
 from pathlib import Path
 
-#: The metadata segment written, as a filename. A leading `!` opens a metadata
-#: namespace on the key above it, which is what makes this a title rather than
-#: a document called "!title".
-TITLE_FILE = "!title.md"
+#: The metadata segment this writes. A leading `!` opens a metadata namespace on
+#: the key above it, which is what makes this a title rather than a document
+#: called "!title".
+TITLE_KEY = "!title"
+
+#: The extension used when writing a title that is not there yet. An existing
+#: one keeps whatever extension it has -- see `title_file`.
+TITLE_FORMAT = ".md"
+
+
+def title_file(directory: Path) -> Path:
+    """Where `directory`'s title goes: the file already claiming that key, or a new one.
+
+    **The extension is not part of the key.** `!title.md` and `!title.txt` are
+    both the key `!title`, differing only in the format they name, so a tree
+    holding both holds one key twice -- which `FilesystemStore.check_file`
+    reports as "keys held by more than one file", resolving it silently to the
+    first in name order. Matching on `!title.md` alone is how this function got
+    written the first time, and it wrote a second file beside a hand-written
+    `!title.txt` rather than leaving it alone.
+    """
+    claimed = sorted(directory.glob(f"{TITLE_KEY}.*")) if directory.is_dir() else []
+    return claimed[0] if claimed else directory / (TITLE_KEY + TITLE_FORMAT)
 
 
 def heading(text: str) -> str | None:
@@ -85,7 +108,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  no heading: {path.relative_to(args.tree)}", file=sys.stderr)
             untitled += 1
             continue
-        target = path.with_suffix("") / TITLE_FILE
+        target = title_file(path.with_suffix(""))
         if target.exists() and not args.overwrite:
             skipped += 1
             continue
