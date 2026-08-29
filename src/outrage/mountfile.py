@@ -35,7 +35,7 @@ source exactly where it was, for ``open_mounts`` to refuse as it always did.
 **TOML, and read only.** A config file is the one place people want comments,
 which JSON has none of, and YAML would have cost a second required runtime
 dependency where ``mcp`` is the only one today. ``tomllib`` has been in the
-standard library since 3.11 and this package requires 3.14. It reads and does
+standard library since 3.11 and this package requires 3.12. It reads and does
 not write, which is less of a problem than it looks: a file whose reason for
 existing is comments should not be machine-rewritten, because a rewrite is
 exactly what loses them.
