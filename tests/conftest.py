@@ -1,5 +1,10 @@
 """Shared test helpers.
 
+Not to be confused with the ``conftest.py`` at the repository root, which is a
+different job entirely: that one decides **which copy of outrage** the suite
+imports, before anything imports it, and holds no helpers. This one holds only
+helpers and touches no paths.
+
 ``raises_rendered`` exists because an error no longer carries its own message.
 ``pytest.raises(cls, match=...)`` matches against ``str(exc)``, which is now a
 developer rendering - the class, the code and the details - so a test that
