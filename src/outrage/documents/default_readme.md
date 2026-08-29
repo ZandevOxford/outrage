@@ -16,6 +16,12 @@ Where possible, avoid significant edits to documents, and instead use the ?
 path segment to add additional notes rather than appending more information
 to a document.
 
+When an edit is worth making anyway, prefer `document_file` to rewriting the
+document whole, and to the `outrage` command line: export the key to a file,
+change it there with the ordinary shell tools, and import it back. The
+unchanged text then never passes through the conversation twice, and the
+import reports the size it replaced, so an edit that truncated is visible.
+
 ## Where to store information
 
 Suggested namespace for documents - where ? represents an auto-incremented path
