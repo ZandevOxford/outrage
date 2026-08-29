@@ -5,6 +5,20 @@ do, the conventions worth following -- mounted at ``outrage`` so that a session
 can read them the same way it reads anything else. No second retrieval path, no
 second vocabulary: the manual is documents in the namespace.
 
+**Two halves, and only one of them is written by hand.** The documents at the
+top of the tree are prose, edited in place like any other file in the
+repository. ``reference/`` is the API documentation, rendered from the
+docstrings in ``src/outrage`` by ``make markdown`` in ``docs/`` and copied in --
+one page per module, reached as ``outrage/reference/<module>``. Editing a page
+there is editing build output: the change is lost at the next render, and the
+source is the docstring. ``context/71`` in the outrage store is the design and
+the three ways the render is silently wrong if it is done by hand.
+
+Nothing in this module knows the difference, and that is on purpose. A
+generated page is a file in a directory of files, so it mounts, lists, reads
+and is surveyed exactly as the hand-written ones are, and neither
+:func:`open_documents` nor the mount has a case for it.
+
 **Why this is its own module.** The tree lives in ``site-packages`` once
 installed, and every mount a table opens is a file *relative to* ``--dir`` --
 :func:`outrage.store.store_file`, which refuses an absolute path on purpose,
@@ -43,9 +57,10 @@ from .store_files import FilesystemStore
 MOUNT_POINT = "outrage"
 
 #: The directory inside the installed package holding the tree. A directory of
-#: files rather than a database, so it is diffable in the repository, editable
-#: without a tool, and shipped by the same wheel rule that already carries
-#: ``skills/`` and ``codex/``.
+#: files rather than a database, so it is diffable in the repository and
+#: shipped by the same wheel rule that already carries ``skills/`` and
+#: ``codex/``. Editable without a tool as well -- but of the hand-written half
+#: only, and the module docstring says which that is.
 TREE_NAME = "documents"
 
 
