@@ -52,7 +52,18 @@ from pathlib import Path
 from . import keys, shipped
 from . import store as store_module
 from .errors import OutrageError
-from .mounts import SPEC_DELIMITER, MountError, mount_point, parse_spec
+from .mounts import (
+    OPTION_DELIMITER,
+    OPTIONS,
+    SPEC_DELIMITER,
+    TYPE_OPTION,
+    MountError,
+    Spec,
+    mount_point,
+    parse_options,
+    parse_spec,
+    unparse,
+)
 
 #: The file read from inside ``--dir`` when nobody names one. The table is a
 #: property of the store directory it describes, which is also what makes every
@@ -135,6 +146,17 @@ MOUNT_FIELD = "mount"
 #: The ``[mount-ro]`` table: the same, read-only.
 READ_ONLY_FIELD = "mount-ro"
 
+#: The field naming the store file in an entry's table form, and the one field
+#: that is not an option: ``{ path = "docs", type = "files" }`` is a store and
+#: how to open it. Spelled ``path`` rather than ``file`` because that is what a
+#: mount option would have called it, and the other fields *are* options.
+PATH_FIELD = "path"
+
+#: Every field an entry's table form may hold: the store file, and each option
+#: a spec may carry. One vocabulary, in one place -- an option added to
+#: :data:`outrage.mounts.OPTIONS` is a field here without another edit.
+_ENTRY_FIELDS = (PATH_FIELD, *OPTIONS)
+
 #: Every field a mount configuration may hold. Anything else in one is refused
 #: rather than ignored -- ``--log`` and the rest would splice in for free, and
 #: whether the file grows that far is a call to make on purpose.
@@ -169,11 +191,11 @@ class MountTable:
     """What one file says, parsed, with every mount point already validated."""
 
     path: Path
-    root: str | None
+    root: Spec | None
     """``--root-mount``: the store answering for every key no mount claims."""
-    mounts: tuple[tuple[str, str], ...]
-    """``(mount point, file)`` pairs, mounted read-write."""
-    read_only: tuple[tuple[str, str], ...]
+    mounts: tuple[tuple[str, Spec], ...]
+    """``(mount point, store)`` pairs, mounted read-write."""
+    read_only: tuple[tuple[str, Spec], ...]
     """The same, mounted read-only."""
 
     def options(self) -> list[str]:
@@ -205,8 +227,19 @@ class Origin:
 
     @property
     def file(self) -> str:
-        """The store file this names, whichever of the three options it is."""
+        """The store this names, whichever of the three options it is.
+
+        The value half of the argument, options and all -- what a mount *says*,
+        rather than only where it points, so that two entries differing in
+        ``type`` are not reported as the same mount written twice.
+        :attr:`store` is the same thing parsed.
+        """
         return self.value if self.mount is None else self.value.partition(SPEC_DELIMITER)[2]
+
+    @property
+    def store(self) -> Spec:
+        """The store this names, parsed: its file and its options."""
+        return parse_options(self.file)
 
 
 @dataclass(frozen=True, slots=True)
@@ -278,7 +311,11 @@ def plan_starter(
     path = Path(directory).expanduser() / DEFAULT_NAME
     wanted = MountTable(
         path=path,
-        root=None if root_mount in (None, store_module.default_store_file()) else root_mount,
+        root=(
+            None
+            if root_mount in (None, store_module.default_store_file())
+            else parse_options(root_mount)
+        ),
         mounts=tuple(_parsed(spec) for spec in mounts),
         read_only=tuple(_parsed(spec) for spec in read_only_mounts),
     )
@@ -309,16 +346,15 @@ def write_starter(starter: Starter) -> None:
         handle.write(starter.text)
 
 
-def _parsed(spec: str) -> tuple[str, str]:
-    point, file = parse_spec(spec)
-    return point, str(file)
+def _parsed(spec: str) -> tuple[str, Spec]:
+    return parse_spec(spec)
 
 
 def _missing(wanted: MountTable, held: MountTable) -> str:
     """The entries ``wanted`` asks for that ``held`` does not already say."""
     lines = []
     if wanted.root is not None and wanted.root != held.root:
-        lines.append(f"{ROOT_FIELD} = {_string(wanted.root)}")
+        lines.append(f"{ROOT_FIELD} = {_value(wanted.root)}")
     for field, ours, theirs in (
         (MOUNT_FIELD, wanted.mounts, held.mounts),
         (READ_ONLY_FIELD, wanted.read_only, held.read_only),
@@ -326,7 +362,7 @@ def _missing(wanted: MountTable, held: MountTable) -> str:
         entries = [entry for entry in ours if entry not in theirs]
         if entries:
             lines.append(f"[{field}]")
-            lines += [f"{_key(point)} = {_string(file)}" for point, file in entries]
+            lines += [f"{_key(point)} = {_value(spec)}" for point, spec in entries]
     return "\n".join(lines)
 
 
@@ -338,7 +374,8 @@ def starter_text(table: MountTable) -> str:
     out, so the shape of every field is on the page whether or not this project
     uses it.
     """
-    root = table.root or store_module.default_store_file()
+    root = table.root or Spec(Path(store_module.default_store_file()))
+    types = ", ".join(store_module.backend_names())
     lines = [
         "# The stores outrage serves from this directory, and where each is mounted.",
         "#",
@@ -357,9 +394,16 @@ def starter_text(table: MountTable) -> str:
         "#                      store at a KEY named below",
         "#   --unmount KEY      leave one of them out for one run",
         "#   --no-mount-config  ignore this file entirely",
+        "#",
+        "# An entry is a store file, or a table saying more about one:",
+        "#",
+        '#   notes = "notes.sqlite"                     kept in the file it names',
+        '#   docs = { path = "docs", type = "files" }   a directory of files, since',
+        "#                                              a directory has no extension",
+        f"#                                              to read. Types: {types}.",
         "",
         "# The store answering for every key no mount claims.",
-        f"{'' if table.root else '# '}{ROOT_FIELD} = {_string(root)}",
+        f"{'' if table.root else '# '}{ROOT_FIELD} = {_value(root)}",
         "",
         "# Mounted read-write.",
         f"[{MOUNT_FIELD}]",
@@ -376,10 +420,29 @@ def starter_text(table: MountTable) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _entry_lines(entries: Sequence[tuple[str, str]], example: str) -> list[str]:
+def _entry_lines(entries: Sequence[tuple[str, Spec]], example: str) -> list[str]:
     if not entries:
         return [f"# {example}"]
-    return [f"{_key(point)} = {_string(file)}" for point, file in entries]
+    return [f"{_key(point)} = {_value(spec)}" for point, spec in entries]
+
+
+def _value(spec: Spec) -> str:
+    """One entry's value: a string where that says everything, a table where
+    it does not.
+
+    The two spellings the file has, and which one is written follows from what
+    there is to say rather than from a preference: ``"notes.sqlite"`` is a
+    store file and nothing else, and an entry carrying an option has to be a
+    table to carry it. Both are the same spec -- ``mounts.parse_options`` reads
+    the string form as the value of a ``--mount``, options and all -- so
+    nothing is expressible in one and not the other.
+    """
+    if spec.type is None:
+        return _string(str(spec.path))
+    return (
+        f"{{ path = {_string(str(spec.path))}, "
+        f"{TYPE_OPTION} = {_string(spec.type)} }}"
+    )
 
 
 def _key(point: str) -> str:
@@ -440,18 +503,9 @@ def read(path: str | os.PathLike[str]) -> MountTable:
             "mount-config-unknown-field", path=str(path), fields=unknown, known=list(FIELDS)
         )
 
-    root = loaded.get(ROOT_FIELD)
-    if root is not None and not isinstance(root, str):
-        raise MountFileError(
-            "mount-config-not-a-file",
-            path=str(path),
-            field=ROOT_FIELD,
-            got=type(root).__name__,
-        )
-
     table = MountTable(
         path=path,
-        root=root,
+        root=_spec(loaded.get(ROOT_FIELD), field=ROOT_FIELD, path=path),
         mounts=_entries(loaded, MOUNT_FIELD, path),
         read_only=_entries(loaded, READ_ONLY_FIELD, path),
     )
@@ -466,22 +520,25 @@ def read(path: str | os.PathLike[str]) -> MountTable:
     return table
 
 
-def _entries(loaded: dict[str, object], field: str, path: Path) -> tuple[tuple[str, str], ...]:
-    """One ``[mount]``-shaped table, as validated ``(mount point, file)`` pairs."""
+def _entries(loaded: dict[str, object], field: str, path: Path) -> tuple[tuple[str, Spec], ...]:
+    """One ``[mount]``-shaped table, as validated ``(mount point, store)`` pairs."""
     section = loaded.get(field, {})
     if not isinstance(section, dict):
         raise MountFileError(
             "mount-config-not-a-table", path=str(path), field=field, got=type(section).__name__
         )
+    if _is_entry(section):
+        raise MountFileError(
+            "mount-config-section-is-an-entry",
+            path=str(path),
+            field=field,
+            key=PATH_FIELD,
+        )
     entries = []
-    for point, file in section.items():
-        if not isinstance(file, str):
-            raise MountFileError(
-                "mount-config-not-a-file",
-                path=str(path),
-                field=f"{field}.{point}",
-                got=type(file).__name__,
-            )
+    for point, value in section.items():
+        spec = _spec(value, field=f"{field}.{point}", path=path)
+        if spec is None:  # pragma: no cover - a TOML value is never None
+            continue
         if SPEC_DELIMITER in point:
             # A mount point holding the delimiter has no `--mount` spelling,
             # and the file is defined as the options it stands for. Refused
@@ -493,8 +550,85 @@ def _entries(loaded: dict[str, object], field: str, path: Path) -> tuple[tuple[s
                 mount=point,
                 delimiter=SPEC_DELIMITER,
             )
-        entries.append((mount_point(point), file))
+        entries.append((mount_point(point), spec))
     return tuple(entries)
+
+
+def _is_entry(section: dict[str, object]) -> bool:
+    """Whether a ``[mount]``-shaped table is in fact one entry's inline table.
+
+    An entry's fields written at section level -- ``[mount]`` then ``path =
+    "documents"`` -- is TOML that parses as mount points spelled ``path`` and
+    ``type``, which are legal keys and almost certainly a person who meant one
+    entry. Told apart by shape, since that is all there is to read.
+
+    **The cost is that a mount point really called ``path`` cannot be written
+    in a file**, and it is worth paying: the mistake is easy to make and its
+    result is a store mounted where nobody meant and nothing reads, while a
+    mount point named after the field that names store files is a thing nobody
+    has wanted. ``--mount path=...`` still says it.
+    """
+    return bool(section) and set(section) <= set(_ENTRY_FIELDS) and PATH_FIELD in section
+
+
+def _spec(value: object, *, field: str, path: Path) -> Spec | None:
+    """One entry's value as a :class:`~outrage.mounts.Spec`, in either spelling.
+
+    ``None`` for an entry that is not there, which is only ever the root.
+
+    **A string is the argument, unchanged**: it is the value half of a
+    ``--mount``, read by the same :func:`~outrage.mounts.parse_options` the
+    command line is read by, so ``"ref.sqlite"`` and ``"docs,type=files"`` mean
+    in the file exactly what they mean typed. That is the file's whole fiction
+    -- an entry is the option it stands for -- and it is why nothing here is a
+    second grammar. Its refusals are that parser's, unwrapped, exactly as a
+    mount point's are :func:`~outrage.mounts.mount_point`'s: a sentence about
+    the grammar is the same sentence wherever the argument was written down.
+
+    **A table is that spelled out**, and is what a file maintained by hand
+    should say: ``{ path = "docs", type = "files" }`` needs no reader to know
+    where a comma binds. Its fields are the option names, so there is one
+    vocabulary and not two, and an unknown one is refused exactly as an unknown
+    option in a string is.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return parse_options(value)
+    if not isinstance(value, dict):
+        raise MountFileError(
+            "mount-config-not-a-file",
+            path=str(path),
+            field=field,
+            got=type(value).__name__,
+        )
+    unknown = sorted(set(value) - set(_ENTRY_FIELDS))
+    if unknown:
+        raise MountFileError(
+            "mount-config-unknown-option",
+            path=str(path),
+            field=field,
+            options=unknown,
+            known=list(_ENTRY_FIELDS),
+        )
+    for setting_name, setting in value.items():
+        if not isinstance(setting, str):
+            raise MountFileError(
+                "mount-config-not-a-file",
+                path=str(path),
+                field=f"{field}.{setting_name}",
+                got=type(setting).__name__,
+            )
+    file = value.get(PATH_FIELD)
+    if not file:
+        raise MountFileError("mount-config-no-path", path=str(path), field=field, key=PATH_FIELD)
+    if OPTION_DELIMITER in file:
+        # The one refusal a table form earns from the *other* spelling: an
+        # entry is defined as the option it stands for, and this one has no
+        # spelling that reads back as itself. Refused where it is written
+        # rather than where it is rendered, which is a splice away from here.
+        raise MountError("mount-file-unspellable", file=file, delimiter=OPTION_DELIMITER)
+    return Spec(Path(file), value.get(TYPE_OPTION))
 
 
 def directory_in(argv: Sequence[str]) -> str | None:
@@ -701,10 +835,12 @@ def _items(table: MountTable, source: int) -> list[_Item]:
     """One file's table as the options it stands for, in order."""
     items = []
     if table.root is not None:
-        items.append(_Item(source, [ROOT_FLAG, table.root], None))
+        items.append(_Item(source, [ROOT_FLAG, unparse(table.root)], None))
     for flag, entries in ((MOUNT_FLAG, table.mounts), (READ_ONLY_FLAG, table.read_only)):
-        for point, file in entries:
-            items.append(_Item(source, [flag, f"{point}{SPEC_DELIMITER}{file}"], point))
+        for point, spec in entries:
+            items.append(
+                _Item(source, [flag, f"{point}{SPEC_DELIMITER}{unparse(spec)}"], point)
+            )
     return items
 
 
@@ -779,6 +915,7 @@ __all__ = [
     "DOCS_MOUNT",
     "FIELDS",
     "MOUNT_FIELD",
+    "PATH_FIELD",
     "MOUNT_FLAG",
     "NO_CONFIG_FLAG",
     "READ_ONLY_FIELD",

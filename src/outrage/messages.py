@@ -433,6 +433,40 @@ def _mount_spec_has_no_file(name: Namer, /, *, spec: str, **_: Any) -> str:
     return f"mount {spec!r} names no store file"
 
 
+@template("mount-option-malformed")
+def _mount_option_malformed(
+    name: Namer, /, *, spec: str, option: str, assignment: str = "=", **_: Any
+) -> str:
+    return (
+        f"{option!r} in mount {spec!r} is not an option: an option after the "
+        f"store file is written NAME{assignment}VALUE, as in type{assignment}files"
+    )
+
+
+@template("mount-option-unknown")
+def _mount_option_unknown(name: Namer, /, *, spec: str, option: str, known: Any, **_: Any) -> str:
+    listed = ", ".join(str(one) for one in known)
+    return (
+        f"mount {spec!r} sets {option!r}, which is not a mount option. "
+        f"There is: {listed}. A comma in the argument starts an option, so a "
+        f"store file cannot hold one."
+    )
+
+
+@template("mount-option-repeated")
+def _mount_option_repeated(name: Namer, /, *, spec: str, option: str, **_: Any) -> str:
+    return f"mount {spec!r} sets {option!r} twice, and only one of them can be meant"
+
+
+@template("mount-file-unspellable")
+def _mount_file_unspellable(name: Namer, /, *, file: str, delimiter: str = ",", **_: Any) -> str:
+    return (
+        f"the store file {file!r} cannot be named on a command line: a "
+        f"{delimiter!r} in a mount argument starts an option, so a store file "
+        f"holding one has no spelling that reads back as itself"
+    )
+
+
 @template("mount-spec-at-root")
 def _mount_spec_at_root(name: Namer, /, *, spec: str, **_: Any) -> str:
     return f"mount {spec!r} has no mount point; the store at the root is the one --root-mount names"
@@ -523,6 +557,37 @@ def _mount_config_not_a_file(name: Namer, /, *, path: str, field: str, got: str,
     return (
         f"{field!r} in the mount configuration at {path!r} is a {got} rather "
         f"than the name of a store file"
+    )
+
+
+@template("mount-config-section-is-an-entry")
+def _mount_config_section_is_an_entry(
+    name: Namer, /, *, path: str, field: str, key: str, **_: Any
+) -> str:
+    return (
+        f"[{field}] in the mount configuration at {path!r} is one entry's "
+        f"fields rather than a table of mounts: {key!r} belongs inside an "
+        f"entry, as in docs = {{ {key} = \"documents\", type = \"files\" }}"
+    )
+
+
+@template("mount-config-unknown-option")
+def _mount_config_unknown_option(
+    name: Namer, /, *, path: str, field: str, options: object, known: object, **_: Any
+) -> str:
+    named = ", ".join(repr(option) for option in options)  # type: ignore[union-attr]
+    expected = ", ".join(repr(option) for option in known)  # type: ignore[union-attr]
+    return (
+        f"{field!r} in the mount configuration at {path!r} sets {named}, which "
+        f"is not something a mount can say; an entry holds {expected}"
+    )
+
+
+@template("mount-config-no-path")
+def _mount_config_no_path(name: Namer, /, *, path: str, field: str, key: str, **_: Any) -> str:
+    return (
+        f"{field!r} in the mount configuration at {path!r} names no store "
+        f"file: an entry written as a table needs {key!r}"
     )
 
 
@@ -658,6 +723,18 @@ def _backend_unavailable(
     name: Namer, /, *, filename: str, backend: str, reason: str, **_: Any
 ) -> str:
     return f"{filename} needs the {backend} backend, which will not load: {reason}"
+
+
+@template("backend-unknown")
+def _backend_unknown(name: Namer, /, *, backend: str, filename: str, known: Any, **_: Any) -> str:
+    listed = ", ".join(str(one) for one in known)
+    about = f" for {filename!r}" if filename else ""
+    return (
+        f"there is no {backend!r} backend{about}. The types a mount may ask "
+        f"for are: {listed}. Asked for rather than guessed at, so a name "
+        f"nobody recognises is refused instead of quietly opening an empty "
+        f"store of some other kind."
+    )
 
 
 @template("parquet-needs-pyarrow")

@@ -1336,7 +1336,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Mount another store under KEY, as in "
             f"ref{mounts_module.SPEC_DELIMITER}reference.sqlite. FILE is "
-            "relative to --dir, like --root-mount. Repeatable. The root mount "
+            "relative to --dir, like --root-mount, and may carry options "
+            f"after a comma: docs,{mounts_module.TYPE_OPTION}=files says which "
+            "backend keeps the store, for a store whose name cannot -- a "
+            "directory of files has no extension to read. Types: "
+            f"{', '.join(store_module.backend_names())}. "
+            "Repeatable. The root mount "
             "holds everything no mount claims, and a mount takes precedence "
             "over it for the keys below its mount point. Reads and writes "
             "cross a mount boundary; a query, a survey and a recursive delete "

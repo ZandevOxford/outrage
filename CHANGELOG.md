@@ -4,6 +4,43 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+### A mount can say which backend keeps it, so a directory of files is mountable
+
+Which backend keeps a store followed from its file extension, and a directory
+has none - so `FilesystemStore`, the backend whose store *is* a directory, was
+the one thing a mount table could not describe. A mount argument now takes
+options after its store file, and `type` is the first of them:
+
+```sh
+outrage ls --mount docs=documents,type=files
+outrage export DIR --store documents,type=files
+```
+
+```toml
+[mount]
+docs = { path = "documents", type = "files" }
+short = "documents,type=files"   # the same thing, as the argument it stands for
+```
+
+* **`KEY=FILE[,NAME=VALUE]...`**, which is `mount(8)`'s own shape. The option
+  lives inside the argument's value rather than in a second flag beside it, so
+  one mount stays one option occurrence and overriding an entry from a mount
+  table remains a matter of replacing it whole. The price is a comma, which a
+  store file may no longer hold; it is refused in both directions rather than
+  being quietly the first option's name.
+* **An entry in `mounts.toml` may be a table**, `{ path = "...", type = "..." }`,
+  whose fields are the option names. A string entry is still the value half of
+  a `--mount`, options and all, so nothing is expressible typed and not in a
+  file.
+* **The type is a backend's own name** - `sqlite`, `parquet`, `files` - which
+  is the word a report already uses for it. An unrecognised *extension* still
+  falls back to the default backend; an unrecognised *name* is refused, because
+  one is a guess at what somebody meant and the other is what they said.
+* `--root-mount`/`--store` takes the same options, so a tree can be the whole
+  store: `outrage check --store documents,type=files`.
+* `outrage mounts` reports the type in the file column, since it is the one
+  thing about a mount that cannot be read off the name.
+
 ### A subtree copy, as a tool
 
 The MCP server offers `copy_tree`, so a session working through the tools can

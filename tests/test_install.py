@@ -467,7 +467,7 @@ def test_init_writes_the_mounts_to_the_table_and_not_to_the_entry(tmp_path):
     "write the whole table into a client's JSON, correctly, from a command" and
     becomes "point at a directory".
     """
-    from outrage import mountfile
+    from outrage import mountfile, mounts
 
     done = init(
         tmp_path,
@@ -478,9 +478,9 @@ def test_init_writes_the_mounts_to_the_table_and_not_to_the_entry(tmp_path):
 
     assert done.server.entry["args"] == ["--dir", str(tmp_path / ".outrage")]
     written = mountfile.read(tmp_path / ".outrage" / mountfile.DEFAULT_NAME)
-    assert written.root == "main.sqlite"
-    assert written.mounts == (("lib", "lib.sqlite"),)
-    assert written.read_only == (("ref", "reference.sqlite"),)
+    assert written.root == mounts.Spec(Path("main.sqlite"))
+    assert written.mounts == (("lib", mounts.Spec(Path("lib.sqlite"))),)
+    assert written.read_only == (("ref", mounts.Spec(Path("reference.sqlite"))),)
 
 
 def test_init_never_rewrites_a_table_that_is_already_there(tmp_path):

@@ -8,14 +8,21 @@ tree walkers; this is the same rule expressed as a :class:`~outrage.store.Store`
 so a directory can answer the reading surface that a database answers and every
 bulk operation between the two can become a copy.
 
-**Not registered in** :data:`outrage.store._BACKENDS`. Which backend keeps a
-store follows from its file extension, and a tree has no extension to read; an
-option that forces the backend type is what will address one, and until then a
-filesystem store is constructed directly at a path. That is also why
-:meth:`~outrage.store.FileStore.__init__` is overridden rather than called: the
-directory-plus-relative-filename rule is right for a file inside a store
-directory and wrong for an export target, which is an absolute path somebody
-typed.
+**Registered in** :data:`outrage.store._BACKENDS` under ``files``, and
+**nameable rather than inferable**. Which backend keeps a store otherwise
+follows from its file extension, and a tree has no extension to read -- so this
+is the backend a mount has to ask for, as ``--mount export=tree,type=files`` or
+the ``type`` of an entry in ``mounts.toml``. That is what the option grammar in
+:func:`outrage.mounts.parse_spec` exists for.
+
+Two ways in, because there are two kinds of caller.
+:meth:`~outrage.store.FileStore.__init__` is overridden to take the tree
+itself: an export target is an absolute path somebody typed, and
+:func:`outrage.store.store_file` refuses those, correctly, for the store file it
+is about. :meth:`FilesystemStore.in_directory` is the other, and it is the
+base's rule unchanged -- a mount is a name relative to ``--dir`` like every
+other store, and a tree mounted from a table has to obey exactly the refusals
+a database mounted beside it obeys.
 
 ## What it costs
 
@@ -95,6 +102,7 @@ from .store import (
     entry_kind,
     meta_reader,
     resolve_directory,
+    store_file,
 )
 
 #: What a tree is called when a caller names a store directory and no tree
@@ -874,6 +882,34 @@ class FilesystemStore(FileStore):
         )
 
     # -- maintenance -----------------------------------------------------
+
+    @classmethod
+    def in_directory(
+        cls,
+        directory: str | os.PathLike[str] | None = None,
+        *,
+        filename: str | os.PathLike[str] | None = None,
+        log: EventLog | None = None,
+    ) -> Self:
+        """The tree ``filename`` names inside a store directory.
+
+        The base's rule, reached the long way round: this constructor takes the
+        tree itself, so the directory-plus-relative-name one is applied here
+        with :func:`~outrage.store.store_file` and the result handed over as a
+        path. A mount is a name inside ``--dir`` whatever backend answers it,
+        and every refusal that rule makes -- an absolute path, a ``..`` out of
+        the directory -- is made for a tree as it is for a database.
+
+        ``filename`` of None is :data:`DEFAULT_TREE_NAME`, so a tree mounted
+        without a name sits beside the store files rather than being one.
+        """
+        return cls(
+            store_file(
+                resolve_directory(directory),
+                cls.default_filename if filename is None else filename,
+            ),
+            log=log,
+        )
 
     def opened_at(self, path: Path) -> Self:
         """The tree at ``path``, reading dotfiles the way this store does.

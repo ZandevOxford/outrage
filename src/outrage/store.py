@@ -1145,6 +1145,31 @@ class FileStore(Store):
         # A store file may name a subdirectory, and nothing else creates it.
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
+    @classmethod
+    def in_directory(
+        cls,
+        directory: str | os.PathLike[str] | None = None,
+        *,
+        filename: str | os.PathLike[str] | None = None,
+        log: EventLog | None = None,
+    ) -> Self:
+        """This backend's store, named as a file inside a store directory.
+
+        The constructor, for every backend whose store *is* a file: the
+        signature above is already the directory-plus-name one. It is a
+        classmethod of its own so that a backend whose store is a **directory**
+        has somewhere to spell the same thing --
+        :class:`~outrage.store_files.FilesystemStore` takes the tree itself,
+        because an export target is a path a person typed, and a mount is not:
+        a mount is a name inside ``--dir`` like every other store, and
+        :func:`store_file` is the rule for both.
+
+        :func:`default_store` opens every store through here, so which of the
+        two shapes a backend has stays the backend's business rather than
+        something a mount table has to know.
+        """
+        return cls(directory, filename=filename, log=log)
+
     def opened_at(self, path: Path) -> Self:
         """Another store of this class, kept at ``path``.
 
@@ -1339,27 +1364,43 @@ class FileStore(Store):
         """
 
 
-#: The extension each backend claims, and the class behind it. The **single
-#: place** the package decides which storage a store file is kept in.
+#: Every backend, by the name it answers to, and the class behind it. The
+#: **single place** the package decides which storage a store is kept in.
 #:
 #: A registry rather than a ``backend=`` argument threaded through the server,
 #: the command line and the mount table, because a store is already addressed
 #: as a *file* and a backend already names its own -- so if a backend names its
 #: file, the file can name the backend, and ``--mount-ro ref=python.parquet``
-#: needs no new grammar to say what it obviously means.
+#: needs no new grammar to say what it obviously means. The name is
+#: :attr:`FileStore.backend_name`, which is what a report or a refusal already
+#: calls it, so ``type=files`` in a mount spec is not a second word for
+#: anything.
 #:
 #: Named by module and class rather than holding the classes, because each
 #: backend is written in terms of this module and importing one at module scope
 #: would be a cycle. :func:`_backend_for` resolves an entry on use.
 _BACKENDS: dict[str, tuple[str, str]] = {
-    ".sqlite": (".store_sqlite", "SqliteStore"),
-    ".parquet": (".store_parquet", "ParquetStore"),
+    "sqlite": (".store_sqlite", "SqliteStore"),
+    "parquet": (".store_parquet", "ParquetStore"),
+    "files": (".store_files", "FilesystemStore"),
 }
 
-#: The extension a store file has when nobody says otherwise, and so the
-#: backend an unrecognised name falls back to. See :func:`_backend_for` for why
-#: the fallback is a fallback rather than a refusal.
-DEFAULT_BACKEND = ".sqlite"
+#: The extension each backend claims, as the name it resolves to. A store file
+#: names its own backend, which is what keeps a mount spec free of one.
+#:
+#: **Not every backend is here, and that is the point of a mount option.** A
+#: directory of files has no extension to read, so ``files`` is nameable and
+#: not inferable -- see :func:`_backend_for` and
+#: ``outrage.mounts.parse_spec``.
+_BY_EXTENSION: dict[str, str] = {
+    ".sqlite": "sqlite",
+    ".parquet": "parquet",
+}
+
+#: The backend a store is kept in when nobody says otherwise, and so the one an
+#: unrecognised extension falls back to. See :func:`_backend_for` for why the
+#: fallback is a fallback rather than a refusal.
+DEFAULT_BACKEND = "sqlite"
 
 
 def _backend() -> type[FileStore]:
@@ -1367,11 +1408,16 @@ def _backend() -> type[FileStore]:
     return _backend_for(None)
 
 
-def _backend_for(filename: str | os.PathLike[str] | None) -> type[FileStore]:
-    """Which backend keeps a store file called ``filename``.
+def _backend_for(
+    filename: str | os.PathLike[str] | None,
+    backend: str | None = None,
+) -> type[FileStore]:
+    """Which backend keeps a store called ``filename``.
 
-    ``None`` means the default. Everything else is read from the extension:
-    ``ref.parquet`` is a parquet store and ``ref.sqlite`` is a SQLite one.
+    ``backend`` names one outright, as a mount option does; ``None`` reads it
+    from the file. ``filename`` of None with no ``backend`` is the default.
+    Everything else is read from the extension: ``ref.parquet`` is a parquet
+    store and ``ref.sqlite`` is a SQLite one.
 
     **An unrecognised extension is the default backend, not an error.** A store
     file has always been free to be called anything -- ``ref.db`` and
@@ -1382,12 +1428,30 @@ def _backend_for(filename: str | os.PathLike[str] | None) -> type[FileStore]:
     and is spelled ``ref.parq`` opens as SQLite, which is the cost of that, and
     the store it opens is empty rather than wrong.
 
+    **A name that was asked for is refused, and for the same reason.** An
+    extension is a guess at what somebody meant and a ``type=`` is what they
+    said, so a misspelling of one falls back and a misspelling of the other
+    cannot: a mount that silently opened under a backend nobody named would
+    read as a store that is simply empty.
+
     The import failing is not a bug here: pyarrow is an optional extra, so a
     ``.parquet`` mount on an install without it has to say so in a sentence
     rather than raise ``ModuleNotFoundError`` at whoever is watching.
     """
-    extension = DEFAULT_BACKEND if filename is None else Path(filename).suffix
-    module_name, class_name = _BACKENDS.get(extension, _BACKENDS[DEFAULT_BACKEND])
+    if backend is not None:
+        if backend not in _BACKENDS:
+            raise BackendError(
+                "backend-unknown",
+                backend=backend,
+                filename="" if filename is None else str(filename),
+                known=sorted(_BACKENDS),
+            )
+        name = backend
+    elif filename is None:
+        name = DEFAULT_BACKEND
+    else:
+        name = _BY_EXTENSION.get(Path(filename).suffix, DEFAULT_BACKEND)
+    module_name, class_name = _BACKENDS[name]
     try:
         module = importlib.import_module(module_name, __package__)
     except ImportError as exc:
@@ -1397,8 +1461,18 @@ def _backend_for(filename: str | os.PathLike[str] | None) -> type[FileStore]:
             backend=class_name,
             reason=str(exc),
         ) from exc
-    backend: type[FileStore] = getattr(module, class_name)
-    return backend
+    resolved: type[FileStore] = getattr(module, class_name)
+    return resolved
+
+
+def backend_names() -> tuple[str, ...]:
+    """Every backend a store may be opened as, by name.
+
+    What a ``type=`` option may say, for the front ends that document it and
+    the refusal that lists it -- one answer from the registry rather than a
+    list retyped in each place that needs to name them.
+    """
+    return tuple(sorted(_BACKENDS))
 
 
 def default_store_file() -> str:
@@ -1421,6 +1495,7 @@ def default_store(
     directory: str | os.PathLike[str] | None = None,
     *,
     filename: str | os.PathLike[str] | None = None,
+    backend: str | None = None,
     log: EventLog | None = None,
 ) -> FileStore:
     """A store of the backend this build opens when nobody names one.
@@ -1429,8 +1504,15 @@ def default_store(
     Any other name picks the backend that claims its extension, so a caller
     holding a mount's file name opens the right storage without naming one --
     see :func:`_backend_for`.
+
+    ``backend`` names one instead of reading it from the file, which is what a
+    mount's ``type=`` option and ``--store FILE,type=NAME`` reach: a directory
+    of files has no extension for the rule above to read, so the only way to
+    say ``files`` is to say it. Opening goes through
+    :meth:`FileStore.in_directory` rather than the constructor, because that is
+    the one thing a backend whose store is a directory spells differently.
     """
-    return _backend_for(filename)(directory, filename=filename, log=log)
+    return _backend_for(filename, backend).in_directory(directory, filename=filename, log=log)
 
 
 @contextmanager
@@ -1438,10 +1520,11 @@ def open_store(
     directory: str | os.PathLike[str] | None = None,
     *,
     filename: str | os.PathLike[str] | None = None,
+    backend: str | None = None,
     log: EventLog | None = None,
 ) -> Iterator[FileStore]:
     """Open a store, closing it on exit."""
-    store = default_store(directory, filename=filename, log=log)
+    store = default_store(directory, filename=filename, backend=backend, log=log)
     try:
         yield store
     finally:
@@ -1924,6 +2007,7 @@ __all__ = [
     "BACKUP_STAMP",
     "CONFLICTS",
     "DEFAULT_BACKEND",
+    "backend_names",
     "DEFAULT_BULK_MAX_CHARS",
     "DEFAULT_DIR_NAME",
     "DEFAULT_MAX_CHARS",
