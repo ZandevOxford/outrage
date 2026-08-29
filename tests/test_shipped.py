@@ -20,12 +20,19 @@ import pytest
 from conftest import raises_rendered
 from outrage import keys, mounts, shipped
 from outrage.mounts import ReadOnlyMountError
+from outrage.store import BoundedSubtree
 from outrage.store_files import FilesystemStore
 
 #: The documents the tree is expected to hold. Named rather than counted: a
 #: test that only counted would pass on a tree that had lost the readme and
 #: gained something else.
-EXPECTED = ("cli", "default_readme", "keys", "readme", "tools")
+#:
+#: ``reference`` is the generated API section -- one page per module beneath
+#: it, rendered by ``make markdown`` and ``tools/render_reference.py``. It is
+#: named here like the rest because a build that dropped it should fail, and
+#: only its own key is listed: the pages below it come and go with the modules,
+#: so pinning them would make this a test of what ``src/outrage`` contains.
+EXPECTED = ("cli", "default_readme", "keys", "readme", "reference", "tools")
 
 
 def test_the_tree_is_in_the_checkout():
@@ -47,10 +54,15 @@ def test_every_document_has_a_title():
     does not appear in the first thing anybody does.
     """
     with shipped.open_documents() as store:
-        page = store.get_documents(meta_name=["title"])
+        top = store.get_documents(BoundedSubtree(depth=1), meta_name=["title"])
         missing = store.keys_missing_meta(meta_name="title")
 
-    titled = {item.key.rpartition("/")[0] for item in page.items}
+    # Bounded to the top level, because the survey descends and the generated
+    # `reference` section carries a titled page per module below it. Those are
+    # covered by `missing`, which is unbounded: the claim being made is that
+    # *nothing* in the tree lacks a title, and separately that the documents at
+    # the top are exactly the ones named.
+    titled = {item.key.rpartition("/")[0] for item in top.items}
     assert titled == set(EXPECTED)
     assert missing.items == []
 
