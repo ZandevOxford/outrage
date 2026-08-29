@@ -89,11 +89,9 @@ Default directory name, relative to the working directory, when neither
 Cap on a single retrieve, so one oversized document cannot flood an agent's
 context window. The caller pages with the returned next_offset.
 
-### outrage.store.ENCODINGS *= ('json-string',)*
+### outrage.store.ENCODINGS *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...]* *= ('json-string',)*
 
-Encodings a caller may use for the content and title it passes in. These
-describe the argument in transit, not the stored document, which is always
-decoded back to plain text before it is written. See `_decode`.
+The same, as a tuple. See [`FORMATS`](#outrage.store.FORMATS) for why it is derived.
 
 ### outrage.store.ENV_DIR *= 'OUTRAGE_DIR'*
 
@@ -116,14 +114,12 @@ about the stores rather than one store's own file. See `context/66`.
 
 This one could not cross, and the rest were still tried. `reason` says why.
 
-### outrage.store.FORMATS *= ('markdown', 'json', 'text', 'html')*
+### outrage.store.FORMATS *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...]* *= ('markdown', 'json', 'text', 'html')*
 
-What a document may be stored as, and the only thing the store knows about
-a document's text. Detected from the content when a caller names none, but
-only two of the four can be: JSON and HTML each open with something no other
-format plausibly opens with, while 'text' and 'markdown' are the same
-characters and only the caller knows which was meant. So plain text is asked
-for, never inferred. See `_detect_format()`.
+The same four as a tuple, for membership tests and for argparse `choices`.
+Derived from [`Format`](#outrage.store.Format) rather than written twice: a front end validates
+against the type and this is what lists it, and the two drifting apart is a
+schema that advertises a format the store then refuses.
 
 ### outrage.store.OVERWRITE *= 'overwrite'*
 
@@ -250,6 +246,14 @@ segments from `key`, and None is unlimited.
 #### key *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
 
 #### depth *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+### outrage.store.Encoding
+
+Encodings a caller may use for the content and title it passes in. These
+describe the argument in transit, not the stored document, which is always
+decoded back to plain text before it is written. See `_decode`.
+
+alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['json-string']
 
 ### *class* outrage.store.Entry(key: [str](https://docs.python.org/3/library/stdtypes.html#str), kind: [str](https://docs.python.org/3/library/stdtypes.html#str), size: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None))
 
@@ -495,6 +499,41 @@ nothing that *could* need repairing, the other that nothing does.
 Nothing here may lose a document. A repair moves bytes about; one that
 could discard content would need a backup taken first, and no backend
 offers such a repair.
+
+### outrage.store.Format
+
+What a document may be stored as, and the only thing the store knows about
+a document's text. Detected from the content when a caller names none, but
+only two of the four can be: JSON and HTML each open with something no other
+format plausibly opens with, while 'text' and 'markdown' are the same
+characters and only the caller knows which was meant. So plain text is asked
+for, never inferred. See `_detect_format()`.
+
+alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['markdown', 'json', 'text', 'html']
+
+### *exception* outrage.store.InvalidArgumentError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+
+Raised when an argument's *value* is one the caller can correct.
+
+The distinction [`outrage.errors`](errors.md#module-outrage.errors) draws, applied to arguments. Most of
+the value checks in this package guard against a caller that cannot fix
+anything -- a negative `offset` reaching a backend means the front end
+let it through, and a bare `ValueError` and its traceback are the right
+output for that. These are the other kind: a person or a model sent
+something they can send again differently, and they need a sentence saying
+so.
+
+Reaching for this one is a claim about **reachability**. A check a front
+end already makes -- argparse `choices`, a schema constraint -- cannot be
+reached by a caller and stays a bare `ValueError`; only what no front end
+can express in its own argument layer belongs here.
+
+Kept a `ValueError` too, so `except ValueError` around a store call
+goes on working. That matters more here than elsewhere: these sites were
+bare `ValueError` until 2026-08-29, and the mcp SDK's own boundary
+catches on the class.
 
 ### *exception* outrage.store.KeyNotFoundError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 

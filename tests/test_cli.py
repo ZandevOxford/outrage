@@ -271,6 +271,21 @@ def test_backup_dry_run_names_the_destination_without_writing(tmp_path):
     assert not (tmp_path / ".outrage" / "backups").exists()
 
 
+def test_an_empty_pattern_is_a_message_and_a_status(tmp_path, capsys):
+    # It was a traceback until 2026-08-29 - `issues/1`. An empty --pattern is
+    # something the person typing it can correct, so by `errors.OutrageError`'s
+    # rule it is a sentence, and a traceback would be claiming outrage has a bug.
+    from outrage.store_sqlite import SqliteStore
+
+    with SqliteStore(tmp_path) as store:
+        store.store_document("notes/one", "hello")
+
+    status = main(["get", "--dir", str(tmp_path), "--pattern", "", "notes/one"], io.StringIO())
+
+    assert status == 1
+    assert "must not be empty" in capsys.readouterr().err
+
+
 def test_backing_up_a_store_that_is_not_there_is_refused(tmp_path, capsys):
     status = main(["backup", "--dir", str(tmp_path / "absent")], io.StringIO())
 

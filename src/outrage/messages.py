@@ -111,6 +111,41 @@ def _pattern_not_found(
     )
 
 
+@template("pattern-empty")
+def _pattern_empty(name: Namer, /, **_: Any) -> str:
+    return "a pattern must not be empty; omit it to read from the offset instead"
+
+
+# -- store: arguments in transit -------------------------------------------
+#
+# What ``json-string`` exists to catch, said to the caller who can act on it.
+# A model that emitted its own closing scaffolding into a value has to be told
+# to send the call again, and told what shape the value should have had; the
+# sentence is the entire mechanism, so it is the one thing that must not be
+# swallowed.
+
+
+@template("encoding-not-a-json-string")
+def _encoding_not_a_json_string(
+    name: Namer, /, *, what: str, encoding: str, reason: str, **_: Any
+) -> str:
+    return (
+        f"{what} is not a valid JSON string literal under encoding {encoding!r}: "
+        f"{reason}. Send it as a JSON string, quotes included, with nothing after "
+        f"the closing quote."
+    )
+
+
+@template("encoding-not-a-string")
+def _encoding_not_a_string(
+    name: Namer, /, *, what: str, encoding: str, decoded: str, **_: Any
+) -> str:
+    return (
+        f"{what} decoded to {decoded} under encoding {encoding!r}, not a string. "
+        f"Send a JSON string literal, not an object or an array."
+    )
+
+
 # -- store: the store file -------------------------------------------------
 
 

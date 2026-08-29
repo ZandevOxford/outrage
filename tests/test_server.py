@@ -7,7 +7,7 @@ from typing import Any
 import anyio
 import pytest
 from mcp.client.session import ClientSession
-from mcp.server.mcpserver.exceptions import ToolError
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
 from outrage import eventlog, mountfile, shipped
@@ -221,6 +221,69 @@ def test_store_document_rejects_scaffolding_under_a_json_string_encoding(server)
     assert "nothing is stored" in call_expecting_error(
         server, "retrieve_document", key="a/b/!summary"
     )
+
+
+# Six of the seven cases below had no test through the server until 2026-08-29,
+# which is why a single failing test stood for a seven-way problem. Each is a
+# failure a *caller* can correct, so each has to reach them as a sentence. See
+# `issues/1` in the outrage store: mcp 2.1.1 withholds the text of anything that
+# is not a `ToolError`, and these were bare `ValueError`s.
+
+
+def test_store_document_rejects_an_unknown_encoding(server):
+    message = call_expecting_error(
+        server, "store_document", key="a/b", content="x", encoding="bogus"
+    )
+    assert "json-string" in message
+
+
+def test_store_document_rejects_a_json_string_that_is_not_a_string(server):
+    message = call_expecting_error(
+        server,
+        "store_document",
+        key="a/b/!summary",
+        content='{"summary": "A summary."}',
+        encoding="json-string",
+    )
+    assert "decoded to dict" in message
+
+
+def test_store_document_rejects_an_unknown_format(server):
+    message = call_expecting_error(server, "store_document", key="a/b", content="x", format="bogus")
+    assert "markdown" in message
+
+
+def test_retrieve_document_rejects_an_empty_pattern(server):
+    message = call_expecting_error(
+        server, "retrieve_document", key="context/a1b2/design", pattern=""
+    )
+    assert "must not be empty" in message
+
+
+@pytest.mark.parametrize("tool", ["get_documents", "keys_missing_meta"])
+def test_a_survey_rejects_an_empty_meta_name(server, tool):
+    message = call_expecting_error(server, tool, key="context", meta_name=[])
+    assert "at least 1 item" in message
+
+
+def test_a_crash_still_reaches_the_caller_with_nothing_in_it(server, monkeypatch):
+    """The other half of the rule, and the reason `_reported` stays narrow.
+
+    Every test above wants its message carried through. This one wants the
+    opposite, and both come from the same distinction: a caller who can correct
+    something is told what, and a bug in outrage is not described to them at all.
+    Widening `_reported` to catch `ValueError` would pass all six above and
+    break this one, which is exactly the trade it must not make.
+    """
+    def boom(*args, **kwargs):
+        raise ValueError("a detail from inside outrage")
+
+    monkeypatch.setattr(SqliteStore, "retrieve_document", boom)
+
+    with pytest.raises(UnexpectedToolError) as raised:
+        anyio.run(server.call_tool, "retrieve_document", {"key": "context/a1b2/design"})
+    assert "a detail from inside outrage" not in str(raised.value)
+    assert isinstance(raised.value.__cause__, ValueError)
 
 
 def test_list_keys_at_the_top_level(server):

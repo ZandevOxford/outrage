@@ -87,6 +87,7 @@ from .store import (
     Entry,
     Excerpt,
     FileStore,
+    InvalidArgumentError,
     KeyNotFoundError,
     KeyRange,
     MissingMeta,
@@ -549,7 +550,7 @@ class FilesystemStore(FileStore):
         start = offset
         if pattern is not None:
             if not pattern:
-                raise ValueError("pattern must not be empty")
+                raise InvalidArgumentError("pattern-empty")
             if occurrence < 0:
                 raise ValueError("occurrence must not be negative")
             start = _find_occurrence(content, pattern, occurrence, offset)

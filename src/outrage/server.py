@@ -50,7 +50,9 @@ from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
     BoundedSubtree,
+    Encoding,
     Excerpt,
+    Format,
     KeyRange,
     Store,
 )
@@ -531,7 +533,7 @@ def build_server(
         ],
         content: Annotated[str, Field(description="Document content")],
         format: Annotated[
-            str | None,
+            Format | None,
             Field(
                 description=(
                     "'markdown', 'json', 'text' or 'html'; detected from the content "
@@ -550,7 +552,7 @@ def build_server(
             ),
         ] = None,
         encoding: Annotated[
-            str | None,
+            Encoding | None,
             Field(
                 description=(
                     "How `content` and `title` are encoded in this call, not how "
@@ -676,7 +678,10 @@ def build_server(
         ] = None,
         meta_name: Annotated[
             list[str] | None,
-            Field(description="Metadata names to return instead of documents, e.g. ['title']"),
+            Field(
+                description="Metadata names to return instead of documents, e.g. ['title']",
+                min_length=1,
+            ),
         ] = None,
         depth: Annotated[
             int | None,
@@ -767,7 +772,10 @@ def build_server(
         ] = None,
         meta_name: Annotated[
             list[str] | None,
-            Field(description="Metadata names to look for; defaults to ['title']"),
+            Field(
+                description="Metadata names to look for; defaults to ['title']",
+                min_length=1,
+            ),
         ] = None,
         depth: Annotated[
             int | None,

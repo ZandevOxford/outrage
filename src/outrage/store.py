@@ -60,7 +60,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Self, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Literal, Self, TypeVar, get_args
 
 from . import eventlog, keys
 from .errors import OutrageError
@@ -109,12 +109,21 @@ DEFAULT_BULK_MAX_CHARS = 2000
 #: format plausibly opens with, while 'text' and 'markdown' are the same
 #: characters and only the caller knows which was meant. So plain text is asked
 #: for, never inferred. See :func:`_detect_format`.
-FORMATS = ("markdown", "json", "text", "html")
+Format = Literal["markdown", "json", "text", "html"]
+
+#: The same four as a tuple, for membership tests and for argparse ``choices``.
+#: Derived from :data:`Format` rather than written twice: a front end validates
+#: against the type and this is what lists it, and the two drifting apart is a
+#: schema that advertises a format the store then refuses.
+FORMATS: tuple[str, ...] = get_args(Format)
 
 #: Encodings a caller may use for the content and title it passes in. These
 #: describe the argument in transit, not the stored document, which is always
 #: decoded back to plain text before it is written. See ``_decode``.
-ENCODINGS = ("json-string",)
+Encoding = Literal["json-string"]
+
+#: The same, as a tuple. See :data:`FORMATS` for why it is derived.
+ENCODINGS: tuple[str, ...] = get_args(Encoding)
 
 
 class StoreFileError(OutrageError, ValueError):
@@ -125,6 +134,29 @@ class StoreFileError(OutrageError, ValueError):
     free of absolute paths that stop being true when a project moves. An
     absolute path, or one climbing out with ``..``, is refused here rather than
     quietly opening a database somewhere nobody was looking.
+    """
+
+
+class InvalidArgumentError(OutrageError, ValueError):
+    """Raised when an argument's *value* is one the caller can correct.
+
+    The distinction :mod:`outrage.errors` draws, applied to arguments. Most of
+    the value checks in this package guard against a caller that cannot fix
+    anything -- a negative ``offset`` reaching a backend means the front end
+    let it through, and a bare ``ValueError`` and its traceback are the right
+    output for that. These are the other kind: a person or a model sent
+    something they can send again differently, and they need a sentence saying
+    so.
+
+    Reaching for this one is a claim about **reachability**. A check a front
+    end already makes -- argparse ``choices``, a schema constraint -- cannot be
+    reached by a caller and stays a bare ``ValueError``; only what no front end
+    can express in its own argument layer belongs here.
+
+    Kept a ``ValueError`` too, so ``except ValueError`` around a store call
+    goes on working. That matters more here than elsewhere: these sites were
+    bare ``ValueError`` until 2026-08-29, and the mcp SDK's own boundary
+    catches on the class.
     """
 
 
@@ -1913,16 +1945,15 @@ def _decode(value: str, encoding: str, what: str) -> str:
     try:
         decoded = json.loads(value)
     except ValueError as exc:
-        raise ValueError(
-            f"{what} is not a valid JSON string literal under encoding "
-            f"{encoding!r}: {exc}. Send it as a JSON string, quotes included, "
-            f"with nothing after the closing quote."
+        raise InvalidArgumentError(
+            "encoding-not-a-json-string", what=what, encoding=encoding, reason=str(exc)
         ) from exc
     if not isinstance(decoded, str):
-        raise ValueError(
-            f"{what} decoded to {type(decoded).__name__} under encoding "
-            f"{encoding!r}, not a string. Send a JSON string literal, not an "
-            f"object or an array."
+        raise InvalidArgumentError(
+            "encoding-not-a-string",
+            what=what,
+            encoding=encoding,
+            decoded=type(decoded).__name__,
         )
     return decoded
 
@@ -2030,9 +2061,12 @@ __all__ = [
     "BackendError",
     "BackupError",
     "BoundedSubtree",
+    "Encoding",
     "Entry",
     "Excerpt",
     "FileStore",
+    "Format",
+    "InvalidArgumentError",
     "KeyNotFoundError",
     "KeyRange",
     "MetaReader",
