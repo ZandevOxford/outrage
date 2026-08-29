@@ -504,7 +504,7 @@ def report_instructions(newest: Session) -> None:
         return
 
     kept = body.removesuffix(TRUNCATION_MARKER)
-    essentials = server.ESSENTIALS.rstrip()
+    essentials = server.skill("essentials").rstrip()
     if essentials in kept:
         into_tail = len(kept) - kept.index(essentials) - len(essentials)
         print(f"  essentials WHOLE -- the cut fell {into_tail} chars past them,")

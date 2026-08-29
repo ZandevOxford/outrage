@@ -18,8 +18,10 @@ At this level:
 * [cli](cli.md) contains the documentation for the command line.
 * [reference](reference.md) contains the API documentation, generated from the
   source, with a page per module below it.
-
-And 
+* [skills](skills.md) is the text the MCP server sends as its instructions when
+  a client connects, kept as the two documents it is delivered in rather than
+  inline in the server: read `outrage/skills/tail` there for the half a client
+  may have cut off before it reached you.
 
 You are reading a store. It ships inside the `outrage` package, is mounted
 read-only at `outrage`, and holds what outrage itself has to say about how it
@@ -32,7 +34,10 @@ to learn.
 * `outrage/keys` - what a key is: the grammar, metadata, `?` and `?last`.
 * `outrage/tools` - the tool surface, and which one answers which question.
 * `outrage/cli` - the `outrage` command, for the shell rather than the tools.
-* `outrage/conventions` - what is worth storing, and where to put it.
+* `outrage/default_readme` - what is worth storing, and where to put it.
+* `outrage/reference` - the API documentation, a page per module below it.
+* `outrage/skills` - the instructions the server itself delivers, in the two
+  documents it delivers them in.
 
 `get_documents(key="outrage", meta_name=["title"])` surveys the lot in one call.
 

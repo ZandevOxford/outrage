@@ -8,8 +8,8 @@ can read them the same way it reads anything else. No second retrieval path, no
 second vocabulary: the manual is documents in the namespace.
 
 **Two halves, and only one of them is written by hand.** The documents at the
-top of the tree are prose, edited in place like any other file in the
-repository. `reference/` is the API documentation, rendered from the
+top of the tree, `skills/` among them, are prose, edited in place like any
+other file in the repository. `reference/` is the API documentation, rendered from the
 docstrings in `src/outrage` by `make markdown` in `docs/` and copied in --
 one page per module, reached as `outrage/reference/<module>`. Editing a page
 there is editing build output: the change is lost at the next render, and the
@@ -38,7 +38,15 @@ ordinary rule that a later source wins. The only thing special about it is that
 the server mounts it without being asked and the command line does not --
 `--mount-docs`.
 
-**It is not delivered in the server's instructions.** Only the root store's
+**One directory here is delivered, and it is not the readme.** `skills/`
+holds the static text [`outrage.server.instructions()`](server.md#outrage.server.instructions) sends when a client
+connects, as the two documents it is delivered in -- so editing a file there
+edits what every session is told, and the budget arithmetic in
+[`outrage.server`](server.md#module-outrage.server) is what bounds it. The server reads those files directly
+rather than through this mount: it needs them at import, and a mount table
+naming `outrage` would otherwise decide what the server says about itself.
+
+Nothing else here is delivered, the readme included. Only the *root* store's
 readme is, on the delivery-budget argument in
 [`outrage.server.instructions()`](server.md#outrage.server.instructions); this store announces itself as a mount in
 a listing and is read on demand. That is deliberate and belongs to the session
@@ -54,9 +62,11 @@ itself say about this" -- the same word somebody would type to ask.
 
 The directory inside the installed package holding the tree. A directory of
 files rather than a database, so it is diffable in the repository and
-shipped by the same wheel rule that already carries `skills/` and
-`codex/`. Editable without a tool as well -- but of the hand-written half
-only, and the module docstring says which that is.
+shipped by the same wheel rule that already carries `src/outrage/skills/`
+-- the packaged agent skill, a different thing from the `skills/`
+directory *inside* this tree -- and `codex/`. Editable without a tool as
+well -- but of the hand-written half only, and the module docstring says
+which that is.
 
 ### *exception* outrage.shipped.DocumentsError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 

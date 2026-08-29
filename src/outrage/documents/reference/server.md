@@ -56,6 +56,18 @@ the whole store for the session-scale case these defaults are mostly serving.
 The character half of that pair: what one page may total before it stops,
 whatever the item count still allows.
 
+### outrage.server.DELIVERED *= ('essentials', 'tail')*
+
+The documents delivered, in the order they are sent. The split is a delivery
+order and not a subject: a client cuts these instructions at a length it does
+not announce, so essentials is what has to survive the cut -- the grammar of
+a key, how one is allocated, and that a listing is a page -- and tail is
+chosen so that every part of it is recoverable somewhere a session reaches
+anyway: a tool description, the packaged agent skill, or a failure that
+explains itself. That test is the whole of what decides which document a
+sentence belongs in, and outrage/skills is where it is written down for
+whoever edits them.
+
 ### outrage.server.DELIVERY_BUDGET *= 2048*
 
 What a client is assumed to deliver of a server's instructions before it
@@ -66,20 +78,6 @@ fixed, shared between servers, or really a token count is unestablished -
 2047 characters landing on a power of two is the argument for characters.
 Everything ordered before this point survives on that client; everything
 after it may not, and nothing may be *only* said after it.
-
-### outrage.server.ESSENTIALS *= 'A store for notes, designs and task context that outlives a single session.\\n\\nKeys are hierarchical, slash delimited strings such as \`context/<id>/design\`,\\nand \`/\` is the only separator there is. A segment beginning with \`!\` opens a\\nmetadata namespace on the key above it, such as \`context/<id>/design/!title\`.\\nIntermediate keys exist implicitly; nothing needs creating before writing\\nbeneath one.\\n\\nWhen storing, a \`?\` in place of a whole segment asks the store to allocate a\\nnumber for it, at any depth: \`context/?/design\` writes to \`context/1/design\` in\\nan empty store. The result reports the key actually written, which is what to\\nuse for anything else belonging with it, such as \`context/1/task\`.\\n\\nStore a document under a descriptive key and pass a \`title\`, so that later\\nsessions can survey what is here with \`get_documents(meta_name=["title"])\`\\nbefore reading anything in full.\\n\\nEvery listing is a page, not the whole store. Each one reports \`returned\`\\nbeside \`total\`, and a \`next_cursor\` when more remains: pass it back as \`after\`\\nto continue from exactly where the page stopped. Read \`total\` before treating a\\nresult as everything there is - 20 of 22 is a listing, 20 of 40000 is a sample.\\n'*
-
-The half that has to survive truncation: the grammar of a key, how one is
-allocated, and that a listing is a page. Ordered second, after the store's
-own readme, because a session that gets this and nothing else can still read
-and write correctly, while one that gets the protocol and no routing does
-not know where anything is.
-
-### outrage.server.INSTRUCTIONS *= 'A store for notes, designs and task context that outlives a single session.\\n\\nKeys are hierarchical, slash delimited strings such as \`context/<id>/design\`,\\nand \`/\` is the only separator there is. A segment beginning with \`!\` opens a\\nmetadata namespace on the key above it, such as \`context/<id>/design/!title\`.\\nIntermediate keys exist implicitly; nothing needs creating before writing\\nbeneath one.\\n\\nWhen storing, a \`?\` in place of a whole segment asks the store to allocate a\\nnumber for it, at any depth: \`context/?/design\` writes to \`context/1/design\` in\\nan empty store. The result reports the key actually written, which is what to\\nuse for anything else belonging with it, such as \`context/1/task\`.\\n\\nStore a document under a descriptive key and pass a \`title\`, so that later\\nsessions can survey what is here with \`get_documents(meta_name=["title"])\`\\nbefore reading anything in full.\\n\\nEvery listing is a page, not the whole store. Each one reports \`returned\`\\nbeside \`total\`, and a \`next_cursor\` when more remains: pass it back as \`after\`\\nto continue from exactly where the page stopped. Read \`total\` before treating a\\nresult as everything there is - 20 of 22 is a listing, 20 of 40000 is a sample.\\n\\nA segment may hold almost any text - the exclusions are \`/\`, the control\\ncharacters below tab, and a leading \`?\`, which is reserved for \`?\` and \`?last\`\\nand for the filters a key will grow - so a key can mirror a real name without\\ntransforming it. Keys are not file paths, but they read like them: notes about a file can\\nlive at \`notes/src/myfile.py\`. Inside a metadata namespace everything is an\\nordinary namespace again - documents, \`?\`, \`?last\` and their own metadata - so\\n\`a/!changelog/22\` is a document kept in \`a\`\\'s changelog, and \`a\` carries\\n\`changelog\`, not \`changelog/22\`. Only the segments before the first \`!\` count\\ntowards depth, so a survey reaches a namespace\\'s contents by being scoped\\ninside it rather than by asking for more depth.\\n\\nA survey also reports the untitled documents under \`without_meta\`, as a count\\nand a few examples covering the same stretch of the store as the page itself.\\nIt is stats, not a listing, so it carries no cursor: page the survey and the\\nwindows tile; to enumerate what it counts, call \`keys_missing_meta\`.\\n\\nPrefer several small documents to one large one. A document should answer one\\nquestion and be readable in a single call, and a key can hold content \*and\*\\nhave keys beneath it, so a general document can stay where it is with the\\ndetail below it. When there is more to add, add a document rather than growing\\none - \`?\` allocates the key, so this costs no naming decision.\\n\\nA key that holds nothing itself but has keys beneath it is a container: reading\\nit fails, listing it does not.\\n\\n\`?last\` in place of a whole segment names the key that sorts last there, so\\n\`context/?last/state\` reads the newest context without looking the number up\\nfirst. It works on any key a tool takes, counts containers, and the result says\\nwhich key it resolved to.\\n\\nThe empty key is the root, and omitting a key means the same thing. It holds a\\ndocument like any other key and carries metadata as \`!title\`, so a store can\\ntitle itself. Nothing else about it is special, and by convention nothing much\\nis kept there.\\n\\nThe document at \`readme\` is a store\\'s entry point: what that particular store\\nholds, and what to read before anything else. It is carried at the top of these\\ninstructions when there is one, so a session starts with it rather than having\\nto know to ask. If you work out how a store is organised, or what a later\\nsession should read first, \`readme\` is where that belongs.\\n'*
-
-The static text entire, in delivery order. Kept as one name because it is
-what a client that does not truncate receives, and what anything documenting
-the server should quote.
 
 ### outrage.server.NO_README *= 'This store has no \`readme\` document. If you work out how it is organised, or what a later session should read first, store that there.'*
 
@@ -100,7 +98,7 @@ How the readme is introduced, and the one thing about it a session cannot
 work out for itself. Both are paid for out of the same budget as the readme
 they wrap, so both say the least that is still true: the heading carries why
 the document is here, the note carries when it was read. Everything else
-about the convention is in `TAIL`, where it can afford to be.
+about the convention is in the tail document, where it can afford to be.
 
 ### outrage.server.README_KEY *= 'readme'*
 
@@ -128,12 +126,13 @@ What the readme's own block costs before a word of it is written: the
 heading, the note below it, the blank lines between, and the essentials that
 follow. Measured from the real strings, so editing any of them moves the cap.
 
-### outrage.server.TAIL *= "A segment may hold almost any text - the exclusions are \`/\`, the control\\ncharacters below tab, and a leading \`?\`, which is reserved for \`?\` and \`?last\`\\nand for the filters a key will grow - so a key can mirror a real name without\\ntransforming it. Keys are not file paths, but they read like them: notes about a file can\\nlive at \`notes/src/myfile.py\`. Inside a metadata namespace everything is an\\nordinary namespace again - documents, \`?\`, \`?last\` and their own metadata - so\\n\`a/!changelog/22\` is a document kept in \`a\`'s changelog, and \`a\` carries\\n\`changelog\`, not \`changelog/22\`. Only the segments before the first \`!\` count\\ntowards depth, so a survey reaches a namespace's contents by being scoped\\ninside it rather than by asking for more depth.\\n\\nA survey also reports the untitled documents under \`without_meta\`, as a count\\nand a few examples covering the same stretch of the store as the page itself.\\nIt is stats, not a listing, so it carries no cursor: page the survey and the\\nwindows tile; to enumerate what it counts, call \`keys_missing_meta\`.\\n\\nPrefer several small documents to one large one. A document should answer one\\nquestion and be readable in a single call, and a key can hold content \*and\*\\nhave keys beneath it, so a general document can stay where it is with the\\ndetail below it. When there is more to add, add a document rather than growing\\none - \`?\` allocates the key, so this costs no naming decision.\\n\\nA key that holds nothing itself but has keys beneath it is a container: reading\\nit fails, listing it does not.\\n\\n\`?last\` in place of a whole segment names the key that sorts last there, so\\n\`context/?last/state\` reads the newest context without looking the number up\\nfirst. It works on any key a tool takes, counts containers, and the result says\\nwhich key it resolved to.\\n\\nThe empty key is the root, and omitting a key means the same thing. It holds a\\ndocument like any other key and carries metadata as \`!title\`, so a store can\\ntitle itself. Nothing else about it is special, and by convention nothing much\\nis kept there.\\n\\nThe document at \`readme\` is a store's entry point: what that particular store\\nholds, and what to read before anything else. It is carried at the top of these\\ninstructions when there is one, so a session starts with it rather than having\\nto know to ask. If you work out how a store is organised, or what a later\\nsession should read first, \`readme\` is where that belongs.\\n"*
+### outrage.server.SKILLS *= 'skills'*
 
-The half that can be lost. Not one word of it is unimportant; every part is
-recoverable somewhere a session reaches anyway - the tool descriptions, the
-packaged skill, or a failure that explains itself when it happens. That is
-the whole test for putting something here rather than in ESSENTIALS.
+Where the delivered text is kept, below the shipped documentation's root.
+Prose in a document rather than a string literal here: it is diffable,
+carries a title, and is readable with retrieve_document like anything else
+-- including by a session that was cut off mid-instructions and wants the
+rest of them. The document at outrage/skills says which file is which.
 
 ### outrage.server.WITHOUT_META_SAMPLE *= 10*
 
@@ -199,7 +198,7 @@ The order is the whole point. A client cuts this text at some length it
 does not announce -- `DELIVERY_BUDGET` records the one measurement there
 is -- so what is written first is what survives, and the readme was last
 for long enough that it never arrived once. What is at risk now is
-`TAIL`, which is chosen to be the recoverable half.
+the tail document, which is chosen to be the recoverable half.
 
 Over `README_MAX_CHARS` nothing is inlined and the length is reported
 instead. A silently shortened entry point would be the project's own
@@ -245,3 +244,32 @@ everything below describes both.
 
 Separate from [`main()`](#outrage.server.main) so that a test can ask what an argument list
 parses to without opening a store or starting a server.
+
+### outrage.server.skill(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+The text of one delivered document, read from the installed files.
+
+The files rather than the mount, for two reasons. This is needed at import,
+to size the readme against `DELIVERY_BUDGET`, which is before any store
+is opened; and a mount table naming `outrage` overrides the shipped
+documentation silently, which would otherwise let a project's own store
+decide what this server says about itself.
+[`outrage.shipped.tree()`](shipped.md#outrage.shipped.tree) is the same directory the mount reads, so the
+two never disagree about what the text is.
+
+Read once per process, which is what the text itself promises a session:
+instructions are sent when a client connects, so a file edited afterwards
+reaches the next server rather than this one.
+
+A missing file is the build failure [`outrage.shipped.available()`](shipped.md#outrage.shipped.available)
+exists to notice, and is raised rather than served as instructions with a
+hole in them.
+
+### outrage.server.static_instructions() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+Every delivered document, in order: what a client that does not truncate gets.
+
+A function rather than a constant, and not only because the text is read
+from files now. A module constant holding it is rendered *by value* into
+the API reference, which put the whole of both documents back into the
+generated page they had just been taken out of.

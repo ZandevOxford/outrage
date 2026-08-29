@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 
 from conftest import raises_rendered
-from outrage import keys, mounts, shipped
+from outrage import keys, mounts, server, shipped
 from outrage.mounts import ReadOnlyMountError
 from outrage.store import BoundedSubtree
 from outrage.store_files import FilesystemStore
@@ -32,7 +32,19 @@ from outrage.store_files import FilesystemStore
 #: named here like the rest because a build that dropped it should fail, and
 #: only its own key is listed: the pages below it come and go with the modules,
 #: so pinning them would make this a test of what ``src/outrage`` contains.
-EXPECTED = ("cli", "default_readme", "keys", "readme", "reference", "tools")
+#: ``skills`` is the text the server delivers as its instructions, kept as
+#: documents here rather than inline in ``outrage.server``. It is named for the
+#: same reason: a build that dropped it would leave the server with nothing to
+#: say.
+EXPECTED = (
+    "cli",
+    "default_readme",
+    "keys",
+    "readme",
+    "reference",
+    "skills",
+    "tools",
+)
 
 
 def test_the_tree_is_in_the_checkout():
@@ -65,6 +77,23 @@ def test_every_document_has_a_title():
     titled = {item.key.rpartition("/")[0] for item in top.items}
     assert titled == set(EXPECTED)
     assert missing.items == []
+
+
+def test_the_delivered_instructions_are_the_documents_here():
+    """What the server sends is these files, read as documents and unaltered.
+
+    ``outrage.server`` reads them off the filesystem rather than through this
+    mount -- it needs them at import, before a store exists -- so the two paths
+    to the same bytes are only known to agree by asserting it. A stray heading
+    or a stripped trailing newline in either direction shows up here, and the
+    delivered text is measured against ``DELIVERY_BUDGET`` to the character.
+    """
+    with shipped.open_documents() as store:
+        essentials = store.retrieve_document("skills/essentials").content
+        tail = store.retrieve_document("skills/tail").content
+
+    assert essentials == server.skill("essentials")
+    assert tail == server.skill("tail")
 
 
 def test_the_readme_says_what_the_mount_is_not():
