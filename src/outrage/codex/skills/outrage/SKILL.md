@@ -8,8 +8,8 @@ description: Recover and preserve a project's working knowledge in its Outrage M
 Outrage keeps decisions, findings, and task state that would otherwise be lost
 between sessions. It is reached through the `mcp__outrage__*` tools.
 
-Read `readme` when it has not already arrived with the MCP server, then read
-`project` when the store directs you there. Survey cheaply before reading:
+Read `readme` first - the server names it but does not carry it - then read
+where it directs you. Survey cheaply before reading:
 
 ```
 get_documents(meta_name=["title"])

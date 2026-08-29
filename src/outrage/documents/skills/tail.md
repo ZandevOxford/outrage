@@ -35,7 +35,8 @@ title itself. Nothing else about it is special, and by convention nothing much
 is kept there.
 
 The document at `readme` is a store's entry point: what that particular store
-holds, and what to read before anything else. It is carried at the top of these
-instructions when there is one, so a session starts with it rather than having
-to know to ask. If you work out how a store is organised, or what a later
-session should read first, `readme` is where that belongs.
+holds, and what to read before anything else. These instructions name it but do
+not carry it, so reading it is the first thing to do in a store you do not
+already know - its conventions are not derivable from anything here. If you
+work out how a store is organised, or what a later session should read first,
+`readme` is where that belongs, at whatever length it takes.

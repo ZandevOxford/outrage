@@ -51,7 +51,6 @@ from .store import (
     DEFAULT_MAX_CHARS,
     BoundedSubtree,
     Excerpt,
-    KeyNotFoundError,
     KeyRange,
     Store,
 )
@@ -270,18 +269,12 @@ def static_instructions() -> str:
 #: session that learns how one is organised has somewhere to write it.
 README_KEY = "readme"
 
-#: How the readme is introduced, and the one thing about it a session cannot
-#: work out for itself. Both are paid for out of the same budget as the readme
-#: they wrap, so both say the least that is still true: the heading carries why
-#: the document is here, the note carries when it was read. Everything else
-#: about the convention is in the `tail` document, where it can afford to be.
-README_HEADING = f"--- `{README_KEY}`: this store's own introduction, so you start with it ---"
-
-#: The second half of that pair: when the readme was read, which is the one
-#: thing about it a session cannot work out from the text itself.
-README_NOTE = (
-    f"Read once, when the server started - a `{README_KEY}` changed during a "
-    f"session reaches the next one, not this one."
+#: What is said about the readme instead of carrying it: that there is one, and
+#: to read it before anything else. A fixed cost, where the document itself cost
+#: whatever that project's conventions happened to run to.
+READ_README = (
+    f"This store has a `{README_KEY}` document - its own introduction, saying what it "
+    f"holds and what to read first. Read it before starting."
 )
 
 #: What is said when the store has no readme. The empty store is exactly where
@@ -308,74 +301,65 @@ def _protected(opening: str) -> str:
     return _compose(opening).removesuffix(f"\n{skill(DELIVERED[-1])}")
 
 
-#: What the readme's own block costs before a word of it is written: the
-#: heading, the note below it, the blank lines between, and the essentials that
-#: follow. Measured from the real strings, so editing any of them moves the cap.
-SCAFFOLDING_CHARS = len(_protected(f"{README_HEADING}\n\n\n\n{README_NOTE}"))
-
-#: How much of the readme is carried, computed rather than chosen: whatever the
-#: budget has left once the scaffolding is paid for. The old constant bounded
-#: the wrong thing - it asked how long a routing document ought to be, when the
-#: question the client actually answers is how much room is left before the
-#: cut. That number was negative, so no readme of any length was ever
-#: delivered. See `project/reference/planned/instructions-budget`.
-README_MAX_CHARS = DELIVERY_BUDGET - SCAFFOLDING_CHARS
-
-#: The smallest readme worth having a mechanism for: enough to name what a
-#: store holds and point at two or three keys. ``test_the_essentials_leave_room``
-#: fails if the static text grows back over the cut, which is the failure that
-#: produced all of this.
-README_FLOOR_CHARS = 600
+#: What is delivered ahead of the tail, and so everything that has to survive
+#: the client's cut: the readme line and the essentials. Measured from the real
+#: strings rather than estimated, so editing either moves it, and
+#: ``test_the_delivered_text_fits_the_budget`` fails when it passes
+#: ``DELIVERY_BUDGET``. It no longer varies with the store: what the readme
+#: costs here is the length of the sentence naming it.
+PROTECTED_CHARS = len(_protected(READ_README))
 
 
 def instructions(store: Store) -> str:
-    """The root store's own readme, then the essentials, then the tail.
+    """A line naming the root store's readme, then the essentials, then the tail.
 
-    Delivered rather than requested. A line telling a session to go and read a
-    key is a line that can be read past, and this project has two records of
-    exactly that happening -- see `planned/agents` on trap 2, and
-    `project/reference/agents` on the search cascade. The readme costs no tool
-    call and cannot be skipped, which is the same argument that puts `title` in
-    the tool signature: reachable at the moment it applies, rather than
-    depending on somebody remembering it then.
+    The readme is **named, not carried**. Inlining it was the older answer, and
+    the argument for it still holds as far as it goes: a line telling a session
+    to go and read a key is a line that can be read past, and this project has
+    two records of exactly that happening -- see `plans/agents` on trap 2, and
+    `reference/agents` on the search cascade.
 
-    The order is the whole point. A client cuts this text at some length it
-    does not announce -- ``DELIVERY_BUDGET`` records the one measurement there
-    is -- so what is written first is what survives, and the readme was last
-    for long enough that it never arrived once. What is at risk now is
-    the `tail` document, which is chosen to be the recoverable half.
+    What settled it the other way is that the length of a store's entry point
+    is the project's business, not this server's. Carrying it means capping it,
+    and the cap was ``DELIVERY_BUDGET`` minus whatever the static text happened
+    to cost -- 667 characters when this changed. No conventions worth writing
+    down fit that reliably, and different projects' will not fit the same
+    number at all: this store's own readme went to 1898 characters the moment
+    it listed its namespaces, and the readme shipped as the default is 2560.
+    Over the cap nothing was inlined and the length was reported instead, which
+    is a failure mode that arrives *silently* at the one document meant to
+    prevent silent failure -- it looks like delivery until somebody starts a
+    fresh session and reads what came. See `context/74`, and `context/73/5` for
+    the session that found it.
 
-    Over ``README_MAX_CHARS`` nothing is inlined and the length is reported
-    instead. A silently shortened entry point would be the project's own
-    recurring failure at the one document meant to prevent it, and a reader
-    told the size can decide to go and read the rest.
+    So the cost is fixed and small, the readme can be whatever the project needs,
+    and what makes the line hard to read past is that it is first and the
+    session has not yet done anything. Two things carry the risk that it is
+    read past anyway: the `tail` document says what a readme is for, and a
+    host that loads project instructions of its own can say it a second time.
 
-    The **root** store's readme, when there is a mount table. A mounted
-    store's own readme is not carried: the budget is spent to within a few
-    dozen characters -- see `project/reference/planned/instructions-budget`
-    for what the margin is today -- and a second readme is hundreds, so it
-    would push the first over the client's cut, which is the exact failure
-    that ordering exists to prevent. A mount announces itself in a listing
-    instead, where it costs nothing until somebody looks.
+    The order still decides what survives. A client cuts this text at some
+    length it does not announce, so what is written first is what a session
+    gets, and the `tail` document is last because it is the recoverable half.
+    ``PROTECTED_CHARS`` is what everything ahead of it costs.
+
+    The **root** store's readme, when there is a mount table. A mounted store's
+    own is not named either: a session that has not yet read the root's cannot
+    act on a second, and a mount announces itself in a listing instead, where
+    it costs nothing until somebody looks.
     """
     # The root mount's, when this is a table. Not a routed read of the key:
     # a mount at `readme` would then decide what a store introduces itself
-    # with, and the reason only the root's is carried is a budget rather than
+    # with, and the reason only the root's is named is a budget rather than
     # a routing question. A bare store is its own root.
     root = store.root.store if isinstance(store, MountedStore) else store
-    try:
-        excerpt = root.retrieve_document(README_KEY, max_chars=README_MAX_CHARS)
-    except KeyNotFoundError:
-        # Also the container case: a key with documents beneath it and nothing
-        # of its own introduces nothing.
-        return _compose(NO_README)
 
-    if excerpt.truncated:
-        return _compose(
-            f"The `{README_KEY}` document here is {excerpt.total} characters, too long to "
-            f"carry in these instructions. Read it before starting."
-        )
-    return _compose(f"{README_HEADING}\n\n{excerpt.content.rstrip()}\n\n{README_NOTE}")
+    # `exists` rather than a read: the text no longer depends on the content,
+    # only on whether there is any. It is also the container case -- a key with
+    # documents beneath it and nothing of its own introduces nothing.
+    if not root.exists(README_KEY):
+        return _compose(NO_README)
+    return _compose(READ_README)
 
 
 class RequestLog:
@@ -1514,12 +1498,9 @@ __all__ = [
     "DELIVERED",
     "DELIVERY_BUDGET",
     "NO_README",
-    "README_FLOOR_CHARS",
-    "README_HEADING",
+    "PROTECTED_CHARS",
+    "READ_README",
     "README_KEY",
-    "README_MAX_CHARS",
-    "README_NOTE",
-    "SCAFFOLDING_CHARS",
     "SKILLS",
     "WITHOUT_META_SAMPLE",
     "RequestLog",

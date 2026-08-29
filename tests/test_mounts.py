@@ -983,16 +983,24 @@ def test_a_mount_file_may_sit_in_a_subdirectory(tmp_path):
         assert (tmp_path / "base" / "stores" / "reference.sqlite").exists()
 
 
-def test_the_instructions_carry_the_root_readme(tmp_path):
-    from outrage.server import instructions
+def test_the_instructions_name_the_root_readme_only(tmp_path):
+    from outrage.server import NO_README, READ_README, instructions
 
     root = SqliteStore(tmp_path / "root")
     inner = SqliteStore(tmp_path / "inner")
-    root.store_document("readme", "The root store.")
     inner.store_document("readme", "The mounted store.")
+
+    # A mounted store's readme is not named either: a session that has not read
+    # the root's cannot act on a second one, and the mount shows up in a
+    # listing anyway. So a mounted readme leaves the text saying there is none.
+    with MountedStore({"": root, "ref": inner}) as table:
+        assert NO_README in instructions(table)
+
+    root.store_document("readme", "The root store.")
     with MountedStore({"": root, "ref": inner}) as table:
         text = instructions(table)
-    assert "The root store." in text
+    assert READ_README in text
+    assert "The root store." not in text
     assert "The mounted store." not in text
 
 

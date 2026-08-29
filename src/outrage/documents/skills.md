@@ -17,9 +17,9 @@ A client cuts a server's instructions at a length it does not announce. The
 split is a delivery order, not a subject:
 
 * `outrage/skills/essentials` - the key grammar, `?` allocation, `title`, and
-  that every listing is a page. Sent first, after the root store's own
-  `readme`, because a session that gets this and nothing else can still read
-  and write correctly.
+  that every listing is a page. Sent first, after the one line naming the root
+  store's own `readme`, because a session that gets this and nothing else can
+  still read and write correctly.
 * `outrage/skills/tail` - metadata namespaces, `?last`, containers, the root
   key, `without_meta`, and what a `readme` is for. Sent last, because every
   part of it is recoverable somewhere a session reaches anyway: a tool
@@ -30,9 +30,11 @@ which file a sentence goes in.
 
 ## Before editing either
 
-Both are paid for out of one budget, and the readme carried above them is paid
-for out of what is left. Growing `essentials` shrinks the store's own entry
-point, which is the failure this ordering exists to prevent, so
-`tests/test_server.py` holds a floor for the readme and fails when the static
-text grows back over it. `outrage/reference/server` has the constants and the
-arithmetic.
+Both are paid for out of one budget. Until 2026-08-29 the store's own `readme`
+was carried above them and paid for out of what was left, which capped it at
+667 characters - so growing `essentials` shrank the store's entry point, and a
+readme over the cap was silently replaced by a line reporting its length. The
+readme is named rather than carried now: its length is the project's business,
+and the budget covers only the fixed sentence naming it plus `essentials`.
+`tests/test_server.py` fails when that total passes the cut.
+`outrage/reference/server` has the constants and the arithmetic.
