@@ -22,8 +22,9 @@ Suggested namespace for documents - where ? represents an auto-incremented path
 segment. Create these as needed.
 
 * `readme` - the top level document containing conventions used in the
-  project. The conventions only: it is delivered at the top of every session's
-  instructions, and its length is spent out of that budget.
+  project. The conventions only: every session is told to read this before it
+  starts, so it is what has to be true of the whole store, and routing to a
+  particular document belongs in `contents` below.
 * `contents` - an index routing to the other documents, for when there are
   more of them than the conventions can name. Route by *when* a document
   applies, since a survey by title already says what one is about.

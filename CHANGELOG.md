@@ -4,6 +4,30 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+### The store's `readme` is named in the server's instructions, not carried in them
+
+A client cuts a server's instructions at a length it does not announce, so
+carrying the readme meant capping it: `DELIVERY_BUDGET` less whatever the
+static text cost, which was **667 characters**. Over that, nothing was inlined
+and the length was reported instead - a store whose readme had grown was
+silently no longer introducing itself, and only a freshly started session could
+see it. Both readmes in this repository were over it: this project's own at
+1898 characters, and the `default_readme` shipped as a template at 2560.
+
+Capping was the wrong bound. How long a store's entry point should be is the
+project's business, and different projects' conventions will not fit one
+number. The instructions now carry a fixed sentence saying there is a `readme`
+and to read it first, whatever length it is; a store with none is still told
+the convention, so the store is still consulted, just not quoted.
+
+* **`README_HEADING`, `README_NOTE`, `README_MAX_CHARS`, `README_FLOOR_CHARS`
+  and `SCAFFOLDING_CHARS` are gone** from `outrage.server`, and `READ_README`
+  and `PROTECTED_CHARS` replace them. `PROTECTED_CHARS` measures what is
+  delivered ahead of the tail - the readme line plus the essentials - which is
+  everything that has to survive the cut. It is 1328 of the 2048 budgeted.
+* The readme is now read **live** by the session that needs it, rather than at
+  server startup, so a readme written during a session reaches that session.
+
 ### A mount can say which backend keeps it, so a directory of files is mountable
 
 Which backend keeps a store followed from its file extension, and a directory

@@ -12,21 +12,21 @@ use them and what to name things.
 ## Start at `readme`
 
 Every store's entry point is the document at `readme`: what this particular
-store holds, and what to read before anything else. The server carries it at
-the top of its instructions, so it arrives without being asked for and there is
-normally nothing to do here. If it did not arrive, read it.
+store holds, and what to read before anything else. The server's instructions
+name it but do not carry it, so **reading it is the first call of a session**
+that does not already know the store. Nothing else says what its conventions
+are.
 
-Three things follow from that. A readme long enough to be worth summarising is
-too long - it routes, and the documents it points at explain. It has a hard cap
-of a few hundred characters, because a client cuts the instructions at a length
-it does not announce and the readme is what has to survive that cut; over the
-cap the server reports its length instead of carrying it, which is the signal
-to go and read it. And a store with no readme is asking for one: a session that
-works out how the store is laid out, or what the next session should read
-first, should write that there.
+Two things follow from that. A readme long enough to be worth summarising is
+too long - it routes, and the documents it points at explain; but the bound on
+that is editorial rather than a delivery budget, and it is the project's to
+choose. Carrying it was tried until 2026-08-29 and capped it at 667 characters,
+which no store's conventions fitted - `context/74`. And a store with no readme
+is asking for one: a session that works out how the store is laid out, or what
+the next session should read first, should write that there.
 
-It is read once, when the server starts, so a readme stored now reaches the
-next session rather than this one.
+Read live, so a readme stored now reaches this session as well as the next
+one - unlike the instructions around it, which are read once at startup.
 
 ## Survey before reading
 

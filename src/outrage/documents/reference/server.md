@@ -85,46 +85,26 @@ What is said when the store has no readme. The empty store is exactly where
 naming the convention is worth most, since the session that goes on to learn
 the layout is the one that can write it down.
 
-### outrage.server.README_FLOOR_CHARS *= 600*
+### outrage.server.PROTECTED_CHARS *= 1328*
 
-The smallest readme worth having a mechanism for: enough to name what a
-store holds and point at two or three keys. `test_the_essentials_leave_room`
-fails if the static text grows back over the cut, which is the failure that
-produced all of this.
+What is delivered ahead of the tail, and so everything that has to survive
+the client's cut: the readme line and the essentials. Measured from the real
+strings rather than estimated, so editing either moves it, and
+`test_the_delivered_text_fits_the_budget` fails when it passes
+`DELIVERY_BUDGET`. It no longer varies with the store: what the readme
+costs here is the length of the sentence naming it.
 
-### outrage.server.README_HEADING *= "--- \`readme\`: this store's own introduction, so you start with it ---"*
+### outrage.server.READ_README *= 'This store has a \`readme\` document - its own introduction, saying what it holds and what to read first. Read it before starting.'*
 
-How the readme is introduced, and the one thing about it a session cannot
-work out for itself. Both are paid for out of the same budget as the readme
-they wrap, so both say the least that is still true: the heading carries why
-the document is here, the note carries when it was read. Everything else
-about the convention is in the tail document, where it can afford to be.
+What is said about the readme instead of carrying it: that there is one, and
+to read it before anything else. A fixed cost, where the document itself cost
+whatever that project's conventions happened to run to.
 
 ### outrage.server.README_KEY *= 'readme'*
 
 The key whose document introduces the store. One name, so that a session
 arriving at a store nobody described to it has somewhere to look, and a
 session that learns how one is organised has somewhere to write it.
-
-### outrage.server.README_MAX_CHARS *= 667*
-
-How much of the readme is carried, computed rather than chosen: whatever the
-budget has left once the scaffolding is paid for. The old constant bounded
-the wrong thing - it asked how long a routing document ought to be, when the
-question the client actually answers is how much room is left before the
-cut. That number was negative, so no readme of any length was ever
-delivered. See project/reference/planned/instructions-budget.
-
-### outrage.server.README_NOTE *= 'Read once, when the server started - a \`readme\` changed during a session reaches the next one, not this one.'*
-
-The second half of that pair: when the readme was read, which is the one
-thing about it a session cannot work out from the text itself.
-
-### outrage.server.SCAFFOLDING_CHARS *= 1381*
-
-What the readme's own block costs before a word of it is written: the
-heading, the note below it, the blank lines between, and the essentials that
-follow. Measured from the real strings, so editing any of them moves the cap.
 
 ### outrage.server.SKILLS *= 'skills'*
 
@@ -184,34 +164,42 @@ always failing.
 
 ### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
-The root store's own readme, then the essentials, then the tail.
+A line naming the root store's readme, then the essentials, then the tail.
 
-Delivered rather than requested. A line telling a session to go and read a
-key is a line that can be read past, and this project has two records of
-exactly that happening -- see planned/agents on trap 2, and
-project/reference/agents on the search cascade. The readme costs no tool
-call and cannot be skipped, which is the same argument that puts title in
-the tool signature: reachable at the moment it applies, rather than
-depending on somebody remembering it then.
+The readme is **named, not carried**. Inlining it was the older answer, and
+the argument for it still holds as far as it goes: a line telling a session
+to go and read a key is a line that can be read past, and this project has
+two records of exactly that happening -- see plans/agents on trap 2, and
+reference/agents on the search cascade.
 
-The order is the whole point. A client cuts this text at some length it
-does not announce -- `DELIVERY_BUDGET` records the one measurement there
-is -- so what is written first is what survives, and the readme was last
-for long enough that it never arrived once. What is at risk now is
-the tail document, which is chosen to be the recoverable half.
+What settled it the other way is that the length of a store's entry point
+is the project's business, not this server's. Carrying it means capping it,
+and the cap was `DELIVERY_BUDGET` minus whatever the static text happened
+to cost -- 667 characters when this changed. No conventions worth writing
+down fit that reliably, and different projects' will not fit the same
+number at all: this store's own readme went to 1898 characters the moment
+it listed its namespaces, and the readme shipped as the default is 2560.
+Over the cap nothing was inlined and the length was reported instead, which
+is a failure mode that arrives *silently* at the one document meant to
+prevent silent failure -- it looks like delivery until somebody starts a
+fresh session and reads what came. See context/74, and context/73/5 for
+the session that found it.
 
-Over `README_MAX_CHARS` nothing is inlined and the length is reported
-instead. A silently shortened entry point would be the project's own
-recurring failure at the one document meant to prevent it, and a reader
-told the size can decide to go and read the rest.
+So the cost is fixed and small, the readme can be whatever the project needs,
+and what makes the line hard to read past is that it is first and the
+session has not yet done anything. Two things carry the risk that it is
+read past anyway: the tail document says what a readme is for, and a
+host that loads project instructions of its own can say it a second time.
 
-The **root** store's readme, when there is a mount table. A mounted
-store's own readme is not carried: the budget is spent to within a few
-dozen characters -- see project/reference/planned/instructions-budget
-for what the margin is today -- and a second readme is hundreds, so it
-would push the first over the client's cut, which is the exact failure
-that ordering exists to prevent. A mount announces itself in a listing
-instead, where it costs nothing until somebody looks.
+The order still decides what survives. A client cuts this text at some
+length it does not announce, so what is written first is what a session
+gets, and the tail document is last because it is the recoverable half.
+`PROTECTED_CHARS` is what everything ahead of it costs.
+
+The **root** store's readme, when there is a mount table. A mounted store's
+own is not named either: a session that has not yet read the root's cannot
+act on a second, and a mount announces itself in a listing instead, where
+it costs nothing until somebody looks.
 
 ### outrage.server.main(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
 

@@ -794,47 +794,57 @@ def test_paging_a_survey_tiles_its_windows(tmp_path):
 # -- the readme, delivered rather than requested --------------------------
 
 
-def test_a_readme_is_carried_in_the_instructions(store):
-    store.store_document("readme", "# This store\n\nRead `project` next.")
+def test_the_readme_is_named_in_the_instructions(store):
+    store.store_document("readme", "# This store\n\nRead `contents` next.")
 
     text = server_module.instructions(store)
 
-    # Delivered, not requested: a line telling a session to go and read a key
-    # is a line that can be read past, and the whole point is that this one
-    # arrives before the session has to know to ask.
-    assert "Read `project` next." in text
+    # Named, not carried: the session is told there is one and to read it
+    # first, and nothing about how long it is changes what arrives.
+    assert "`readme`" in text
+    assert "Read it before starting." in text
+    assert "Read `contents` next." not in text
     assert server_module.skill("essentials") in text
     assert server_module.skill("tail") in text
 
 
-def test_the_readme_is_delivered_before_the_protocol(store):
-    store.store_document("readme", "# This store\n\nRead `project` next.")
+def test_the_readme_is_named_before_the_protocol(store):
+    store.store_document("readme", "# This store\n\nRead `contents` next.")
 
     text = server_module.instructions(store)
 
     # The client cuts this text at a length it does not announce, so order is
-    # what decides what survives. The readme was last for long enough that it
-    # never reached a session at all; see `planned/instructions-budget`.
+    # what decides what survives. The readme line is first because a session
+    # that gets only one sentence should get that one.
     essentials = server_module.skill("essentials")
 
-    assert text.index("Read `project` next.") < text.index(essentials)
+    assert text.index(server_module.READ_README) < text.index(essentials)
     assert text.index(essentials) < text.index(server_module.skill("tail"))
 
 
-def test_the_essentials_leave_room_for_a_readme(store):
-    # The whole failure was static prose growing past the cut and pushing the
-    # store's own routing off the end. This fails the moment that starts again,
-    # rather than three weeks later when somebody re-measures a transcript.
-    assert server_module.README_MAX_CHARS >= server_module.README_FLOOR_CHARS
+def test_a_readme_costs_the_same_whatever_length_it_is(store):
+    """The whole of why inlining went. A store's entry point is the project's
+    business, and it used to be bounded by what this server had left over."""
+    store.store_document("readme", "short")
+    brief = server_module.instructions(store)
 
-    store.store_document("readme", "x" * server_module.README_MAX_CHARS)
+    store.store_document("readme", "x" * 20_000)
+    enormous = server_module.instructions(store)
+
+    assert brief == enormous
+
+
+def test_the_delivered_text_fits_the_budget(store):
+    # The failure this guards is static prose growing past the cut. It used to
+    # push the store's own readme off the end; now it would push the essentials
+    # there, which is worse. The tail is allowed to fall past -- that is what
+    # makes it the tail.
+    store.store_document("readme", "# This store")
     text = server_module.instructions(store)
 
-    # Everything ahead of the tail is what the budget has to cover. The tail is
-    # allowed to fall past the cut -- that is what makes it the tail.
-    delivered = text.removesuffix(f"\n{server_module.skill('tail')}")
-    assert len(delivered) <= server_module.DELIVERY_BUDGET
-    assert "x" * server_module.README_MAX_CHARS in delivered
+    protected = text.removesuffix(f"\n{server_module.skill('tail')}")
+    assert len(protected) == server_module.PROTECTED_CHARS
+    assert server_module.PROTECTED_CHARS <= server_module.DELIVERY_BUDGET
 
 
 def test_a_store_with_no_readme_is_told_the_convention(store):
@@ -851,25 +861,14 @@ def test_a_container_at_the_readme_key_introduces_nothing(store):
     assert "no `readme` document" in server_module.instructions(store)
 
 
-def test_an_oversized_readme_is_named_rather_than_shortened(store):
-    store.store_document("readme", "x" * 2500)
-
-    text = server_module.instructions(store)
-
-    # A silently shortened entry point would be this project's own recurring
-    # failure at the one document meant to prevent it. Told the size, a reader
-    # can decide to go and read the rest.
-    assert "x" * 2500 not in text
-    assert "2500 characters" in text
-    assert "Read it before starting" in text
-
-
 def test_the_server_is_built_with_the_readme_in_place(store):
+    # The store is still consulted at build time, even though its content no
+    # longer reaches the text: which of the two sentences is sent depends on it.
+    assert server_module.NO_README in server_module.build_server(store).instructions
+
     store.store_document("readme", "the store's own introduction")
 
-    built = server_module.build_server(store)
-
-    assert "the store's own introduction" in built.instructions
+    assert server_module.READ_README in server_module.build_server(store).instructions
 
 
 # -- the root ------------------------------------------------------------
