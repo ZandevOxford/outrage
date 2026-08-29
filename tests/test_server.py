@@ -7,7 +7,7 @@ from typing import Any
 import anyio
 import pytest
 from mcp.client.session import ClientSession
-from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
 from outrage import eventlog, mountfile, shipped
@@ -16,6 +16,16 @@ from outrage import server as server_module
 from outrage.eventlog import EventLog
 from outrage.server import RequestLog, build_server, instructions, parse_args
 from outrage.store_sqlite import SqliteStore
+
+try:
+    from mcp.server.mcpserver.exceptions import UnexpectedToolError
+except ImportError:  # pragma: no cover - depends which SDK is installed
+    # Only mcp 2.1 and later tell a crash from a deliberate failure; 2.0 wrapped
+    # both as a plain ToolError and carried the text of either. `pyproject.toml`
+    # asks for `mcp>=1.2` because the package itself works against all of them,
+    # so the one test of that boundary has to skip rather than fail to import
+    # and take the whole module with it.
+    UnexpectedToolError = None
 
 
 @pytest.fixture
@@ -266,6 +276,9 @@ def test_a_survey_rejects_an_empty_meta_name(server, tool):
     assert "at least 1 item" in message
 
 
+@pytest.mark.skipif(
+    UnexpectedToolError is None, reason="mcp 2.1 or later draws the distinction this asserts"
+)
 def test_a_crash_still_reaches_the_caller_with_nothing_in_it(server, monkeypatch):
     """The other half of the rule, and the reason `_reported` stays narrow.
 
