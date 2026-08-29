@@ -2,7 +2,7 @@
 
 ## Currently implemented
 
-Environment: Python 3.14 or later, which is what `requires-python` asks for.
+Environment: Python 3.12 or later, which is what `requires-python` asks for.
 Developed against SQLite 3.53 and, for the optional parquet backend, pyarrow 25.
 Package installed in editable mode with `pip install -e ".[dev]"`; the parquet
 backend needs `.[parquet]` as well. 993 tests and 18 doctests passing,

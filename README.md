@@ -90,7 +90,7 @@ writing.
 ## Development
 
 ```sh
-conda env create -f environment.yml   # or: conda create -n outrage -c conda-forge python=3.14
+conda env create -f environment.yml   # or: conda create -n outrage -c conda-forge python=3.12
 conda activate outrage
 pip install -e ".[dev]"
 pytest
