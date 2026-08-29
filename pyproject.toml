@@ -80,7 +80,13 @@ core-metadata-version = "2.4"
 #
 # Excluding the dogfooding config is right anyway: nothing installing outrage
 # wants this project's own `.claude`.
-exclude = [".claude"]
+#
+# `.mcp.json` is the same thing outside that directory: this repository
+# registering the server for itself, with a `command` that is an absolute path
+# into a conda environment on one machine and a `--dir` under one OneDrive
+# folder. It is `outrage config` output, it is documented in the README as
+# machine specific, and it is of no use to anybody installing this.
+exclude = [".claude", ".mcp.json"]
 skip-excluded-dirs = true
 
 [tool.hatch.build.targets.wheel]

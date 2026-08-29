@@ -154,7 +154,15 @@ def test_the_sdist_leaves_out_the_dogfood_config(sdist_names):
     # installing outrage - and excluding it is half of what stops the symlink
     # from eating the skill. The other half is `skip-excluded-dirs`, without
     # which the walk still descends and still claims the inode.
-    intruders = [name for name in sdist_names if name.startswith(".claude")]
+    #
+    # `.mcp.json` is the same file's neighbour: this repository registering the
+    # server for itself, naming a conda environment and a OneDrive folder that
+    # exist on one machine. It shipped in 0.3.0 and in the first 0.4.0 build.
+    intruders = [
+        name
+        for name in sdist_names
+        if name.startswith(".claude") or name == ".mcp.json"
+    ]
     assert not intruders, intruders
 
 
