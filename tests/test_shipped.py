@@ -25,7 +25,7 @@ from outrage.store_files import FilesystemStore
 #: The documents the tree is expected to hold. Named rather than counted: a
 #: test that only counted would pass on a tree that had lost the readme and
 #: gained something else.
-EXPECTED = ("cli", "conventions", "keys", "readme", "tools")
+EXPECTED = ("cli", "default_readme", "keys", "readme", "tools")
 
 
 def test_the_tree_is_in_the_checkout():
