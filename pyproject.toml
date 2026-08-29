@@ -41,7 +41,11 @@ parquet = ["pyarrow>=18"]
 # hatchling and build are here because the suite builds the sdist and the wheel
 # and asserts what is in them - tests/test_packaging.py. Without them that
 # check skips, and a release can drop a file the way 0.1.0 did.
-dev = ["pytest>=8", "ruff>=0.6", "hatchling", "build>=1", "PyYAML>=6"]
+# `twine` is here for the release process rather than the suite:
+# `reference/distribution` in the store has `twine check` as a step before
+# every upload, and nothing declared it, so preparing a release meant finding
+# an environment that happened to have it.
+dev = ["pytest>=8", "ruff>=0.6", "hatchling", "build>=1", "PyYAML>=6", "twine>=5"]
 # `sphinx-markdown-builder` is not optional within this extra even though only
 # `make markdown` uses it: `docs/conf.py` names it in `extensions`, so an
 # install without it cannot build the HTML either.
