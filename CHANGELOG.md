@@ -21,9 +21,35 @@ readme a store introduces itself with. The main changes are:
   file, and a subtree copied or re-rooted.
 * **A mount may name its backend**, so a directory of files is mountable.
 
-`requires-python` drops to **3.12**. For library callers this is a breaking
-release in one place only: five names are gone from `outrage.server`, listed
-below.
+`requires-python` drops to **3.12**. For library callers it breaks in two
+places: five names are gone from `outrage.server`, and
+`install.HookTarget.template` is now relative to the hooks directory rather
+than absolute, with `HookTarget.fragment` giving the path it used to hold.
+Both are below.
+
+### Nothing shipped names the machine it was built on
+
+`outrage.install.CLAUDE_HOOK` carried the packaged hook fragment as an
+**absolute** path, resolved at import. Sphinx renders a module constant by its
+`repr`, so the build machine's checkout went into
+`documents/reference/install.md` - a page that ships in the wheel and is
+mounted as documentation a session reads. It also made
+`test_the_reference_is_not_stale` fail for anybody whose clone was somewhere
+else, which is the wrong way round: the person who could see it was the one who
+had not caused it, and what they saw was an unrelated test failing in a fresh
+clone.
+
+* **`HookTarget.template` is now relative to the hooks directory**, as
+  `HookTarget.relative` has always been relative to the project root, and the
+  new **`HookTarget.fragment`** property is where it actually is. A property
+  rather than a field, so it stays out of the `repr` the reference renders.
+* **`.mcp.json` no longer ships in the sdist.** It is this repository
+  registering the server for itself, with a `command` naming a conda
+  environment and a `--dir` naming one OneDrive folder. `.claude` was already
+  excluded for the same reason; this is its neighbour.
+* Both have a test. `test_no_page_names_the_machine_it_was_built_on` reads the
+  committed pages rather than re-rendering them, so it fails for whoever
+  commits the defect instead of for whoever clones it next.
 
 ### Python 3.12 is enough
 

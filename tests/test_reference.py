@@ -141,6 +141,29 @@ def test_no_key_is_held_by_more_than_one_file():
     assert report.problems == []
 
 
+def test_no_page_names_the_machine_it_was_built_on():
+    """A rendered page must not carry the checkout's own absolute path.
+
+    Sphinx renders a module constant by its ``repr``, so a dataclass field
+    holding an absolute path puts the build machine's directory into the page
+    and ships it in the wheel. `outrage.install.CLAUDE_HOOK` did exactly that
+    until 2026-08-29.
+
+    It is worth a test of its own rather than leaving it to
+    ``test_the_reference_is_not_stale``, which does catch it but only for
+    somebody whose clone is somewhere else: on the machine the pages were
+    committed from, the stale check passes and the defect is invisible. That is
+    the wrong way round - the person who can see it is the one who did not
+    cause it, and what they see is an unrelated test failing in a fresh clone.
+    """
+    root = str(Path(__file__).resolve().parents[1])
+    named = {name for name, text in section_files(shipped.tree()).items() if root in text}
+    assert not named, (
+        f"{sorted(named)} carry this checkout's path; a value rendered into the "
+        f"reference has to be the same wherever it is built"
+    )
+
+
 @pytest.fixture(scope="module")
 def regenerated(tmp_path_factory) -> Path:
     """Render the reference again, from the current docstrings, into a temp tree.

@@ -112,11 +112,11 @@ settings path is one of them and used to spell the directory out.
 
 Where Codex reads project-scoped skills, relative to the project root.
 
-### outrage.install.CLAUDE_HOOK *= HookTarget(name='Claude Code', template=PosixPath('/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/src/outrage/hooks/settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={})*
+### outrage.install.CLAUDE_HOOK *= HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={})*
 
 Claude Code: merged into the user's own settings file.
 
-### outrage.install.COPILOT_HOOK *= HookTarget(name='Copilot CLI', template=PosixPath('/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/src/outrage/hooks/copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1})*
+### outrage.install.COPILOT_HOOK *= HookTarget(name='Copilot CLI', template=PosixPath('copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1})*
 
 Copilot CLI: a file per purpose, so this one is outrage's own. Named for the
 package rather than the event, so a second outrage hook joins it here rather
@@ -127,7 +127,7 @@ than claiming a second file.
 The key below which that merge happens. Everything else in the file is
 somebody else's and is written back as it was found.
 
-### outrage.install.HOOK_TARGETS *= (HookTarget(name='Claude Code', template=PosixPath('/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/src/outrage/hooks/settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}), HookTarget(name='Copilot CLI', template=PosixPath('/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/src/outrage/hooks/copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1}))*
+### outrage.install.HOOK_TARGETS *= (HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}), HookTarget(name='Copilot CLI', template=PosixPath('copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1}))*
 
 Every hook `outrage init` writes, in the order it reports them.
 
@@ -164,7 +164,7 @@ What installing one packaged file would do, or did.
 
 #### describe() → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
-### *class* outrage.install.HookChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/library/stdtypes.html#str), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None), duplicates: [int](https://docs.python.org/3/library/functions.html#int) = 0, target: [HookTarget](#outrage.install.HookTarget) = HookTarget(name='Claude Code', template=PosixPath('/Users/john/Library/CloudStorage/OneDrive-Personal/Projects/Rage/src/outrage/hooks/settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}))
+### *class* outrage.install.HookChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/library/stdtypes.html#str), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None), duplicates: [int](https://docs.python.org/3/library/functions.html#int) = 0, target: [HookTarget](#outrage.install.HookTarget) = HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}))
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -211,7 +211,16 @@ What `outrage init` calls this in its output.
 
 #### template *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-The packaged fragment, holding the entry exactly as it is installed.
+The packaged fragment, **relative to the hooks directory**, holding the
+entry exactly as it is installed. [`fragment`](#outrage.install.HookTarget.fragment) is where it actually is.
+
+Relative for the same reason [`relative`](#outrage.install.HookTarget.relative) is: a field that is the whole
+installation's absolute path is different on every machine, and this
+dataclass's `repr` is *rendered into the shipped API reference*. It was
+absolute until 2026-08-29, which put the build machine's checkout into
+documents/reference/install.md and made
+`test_the_reference_is_not_stale` fail for anyone whose clone was
+somewhere else.
 
 #### relative *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
@@ -228,6 +237,13 @@ What a newly created file starts from, before the entry is merged in.
 Empty for Claude Code. Copilot CLI requires `{"version": 1}`, and a file
 without it is not read - which is the sort of thing that fails by the hook
 simply never firing, so it is carried here rather than assumed.
+
+#### *property* fragment *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+
+Where [`template`](#outrage.install.HookTarget.template) actually is, inside this installation.
+
+A property rather than a field, so it stays out of the `repr` that
+the generated reference renders.
 
 #### path(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 

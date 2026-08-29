@@ -152,7 +152,17 @@ class HookTarget:
     """What ``outrage init`` calls this in its output."""
 
     template: Path
-    """The packaged fragment, holding the entry exactly as it is installed."""
+    """The packaged fragment, **relative to the hooks directory**, holding the
+    entry exactly as it is installed. :attr:`fragment` is where it actually is.
+
+    Relative for the same reason :attr:`relative` is: a field that is the whole
+    installation's absolute path is different on every machine, and this
+    dataclass's ``repr`` is *rendered into the shipped API reference*. It was
+    absolute until 2026-08-29, which put the build machine's checkout into
+    `documents/reference/install.md` and made
+    ``test_the_reference_is_not_stale`` fail for anyone whose clone was
+    somewhere else.
+    """
 
     relative: Path
     """Where the file goes, relative to the project root."""
@@ -168,6 +178,15 @@ class HookTarget:
     simply never firing, so it is carried here rather than assumed.
     """
 
+    @property
+    def fragment(self) -> Path:
+        """Where :attr:`template` actually is, inside this installation.
+
+        A property rather than a field, so it stays out of the ``repr`` that
+        the generated reference renders.
+        """
+        return _TEMPLATES / self.template
+
     def path(self, project_dir: str | Path) -> Path:
         """Where this hook's file is in a project, whether or not it exists yet."""
         return Path(project_dir) / self.relative
@@ -176,7 +195,7 @@ class HookTarget:
 #: Claude Code: merged into the user's own settings file.
 CLAUDE_HOOK = HookTarget(
     name="Claude Code",
-    template=_TEMPLATES / SETTINGS_NAME,
+    template=Path(SETTINGS_NAME),
     relative=Path(CLAUDE_DIR) / SETTINGS_NAME,
     event="SessionStart",
 )
@@ -186,7 +205,7 @@ CLAUDE_HOOK = HookTarget(
 #: than claiming a second file.
 COPILOT_HOOK = HookTarget(
     name="Copilot CLI",
-    template=_TEMPLATES / "copilot.json",
+    template=Path("copilot.json"),
     relative=Path(".github") / "hooks" / "outrage.json",
     event="sessionStart",
     base={"version": 1},
@@ -244,11 +263,11 @@ def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     something the matcher no longer recognises without anything noticing.
     """
     try:
-        loaded = json.loads(target.template.read_text(encoding="utf-8"))
+        loaded = json.loads(target.fragment.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:  # pragma: no cover - a broken install
-        raise InstallError("template-missing", path=str(target.template)) from exc
+        raise InstallError("template-missing", path=str(target.fragment)) from exc
     except json.JSONDecodeError as exc:  # pragma: no cover - a broken install
-        raise InstallError("template-not-json", path=str(target.template)) from exc
+        raise InstallError("template-not-json", path=str(target.fragment)) from exc
 
     entries = loaded.get(HOOKS_FIELD, {}).get(target.event)
     if not isinstance(entries, list) or len(entries) != 1:

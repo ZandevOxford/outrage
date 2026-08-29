@@ -47,7 +47,7 @@ from outrage.install import (
 # Almost everything here is about the Claude Code hook, which was the only one
 # until Copilot CLI arrived. Named locally so those tests read as they did.
 HOOK_EVENT = CLAUDE_HOOK.event
-TEMPLATE = CLAUDE_HOOK.template
+TEMPLATE = CLAUDE_HOOK.fragment
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -559,12 +559,12 @@ def copilot_entries(path: Path) -> list:
 
 
 def test_the_copilot_template_ships_and_carries_the_marker():
-    assert COPILOT_HOOK.template.is_file(), "the template must travel with the package"
+    assert COPILOT_HOOK.fragment.is_file(), "the template must travel with the package"
     assert is_ours(template_entry(COPILOT_HOOK))
 
 
 def test_the_copilot_template_is_a_whole_file_with_its_version_stamp():
-    loaded = json.loads(COPILOT_HOOK.template.read_text(encoding="utf-8"))
+    loaded = json.loads(COPILOT_HOOK.fragment.read_text(encoding="utf-8"))
     # Unlike the Claude fragment this is a complete file, so it carries the
     # version: without it Copilot CLI does not read the hooks at all.
     assert loaded["version"] == 1
