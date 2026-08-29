@@ -71,7 +71,9 @@ whatever landed.
 
 ## Key conventions
 
-Three top level namespaces. Nothing enforces them; they exist so that a later
+Three top level namespaces, as an example of the shape. Nothing enforces
+them, and the names below are illustrations rather than paths that exist: a
+store's own `readme` is what says which it uses. They are here so that a later
 session can guess where to look.
 
 `context/<n>/…` - one numbered thread of work. Do not invent the number: store
@@ -89,12 +91,12 @@ answering about the level above.
 * `context/<n>/design`, `…/findings`, `…/decisions` - whatever the work
   produced that is worth keeping.
 
-`project/reference/<topic>` - durable facts about the project itself, belonging
+`reference/<topic>` - durable facts about the project itself, belonging
 to no single thread: the environment, conventions, current status. Updated in
 place as they change.
 
-`notes/<path>` - notes about one file, keyed to mirror its path, as in
-`notes/src/outrage/store.py`.
+`file_notes/<path>` - notes about one file, keyed to mirror its path, as in
+`file_notes/src/outrage/store.py`.
 
 Pass `title` on every document. It is what the survey above can see, and a
 document without one is findable only by someone who already knows its key.
@@ -135,7 +137,7 @@ Rewrite the same key rather than accumulating new ones: `context/1/state` should
 be the current state, not the first of several. Storing overwrites, which is
 what makes this cheap.
 
-Keep `project/reference/…` current when the facts under it change. A stale
+Keep `reference/…` current when the facts under it change. A stale
 reference is worse than an absent one, because it is believed.
 
 ## One document, one question
@@ -150,8 +152,8 @@ A document should be readable in one call. `retrieve_document` returns 8000
 characters by default, so a longer document is read in slices, and a session
 that judges it from the first slice judges it wrongly and silently.
 
-Size is the symptom; scope is the cause. `project/reference/planned` reached
-11389 characters because it answered five questions at once - what CLI pieces
+Size is the symptom; scope is the cause. This project's own `plans` document
+reached 11389 characters because it answered five questions at once - what CLI pieces
 remain, what is open on the agents, what the log reader should do, how the
 checkpoint prompt gets delivered, which files are stale. No title and no
 summary can route a reader to the right part of a document like that, so it is
@@ -159,8 +161,8 @@ read whole or not at all.
 
 Split along the questions, not by length. A key can hold content *and* have
 keys beneath it, so the general document stays where it is and the detail goes
-below: `project/reference/planned` is now a short index over `planned/cli`,
-`planned/agents`, `planned/log-reader` and the rest. Anything already pointing
+below: `plans` is now a short index over `plans/cli`, `plans/agents`,
+`plans/log-reader` and the rest. Anything already pointing
 at the old key still lands somewhere useful, which is what makes a split safe
 to do late - but adding as you go is cheaper than splitting afterwards.
 

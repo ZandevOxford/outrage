@@ -9,8 +9,8 @@ got to.
 Do not duplicate in bulk information which is available from the files or
 the git history. However, do feel free to make notes on what was done and why.
 
-Unless there is a good reason, documents should be small (up to 8k or so) and
-cover a single topic.
+Unless there is a good reason, documents should be small (up to 8k or so,
+which is one `retrieve_document`) and cover a single topic.
 
 Where possible, avoid significant edits to documents, and instead use the ?
 path segment to add additional notes rather than appending more information
@@ -21,8 +21,12 @@ to a document.
 Suggested namespace for documents - where ? represents an auto-incremented path
 segment. Create these as needed.
 
-* `readme` - the top level document containing conventions used in the project
-  and routing to other documents.
+* `readme` - the top level document containing conventions used in the
+  project. The conventions only: it is delivered at the top of every session's
+  instructions, and its length is spent out of that budget.
+* `contents` - an index routing to the other documents, for when there are
+  more of them than the conventions can name. Route by *when* a document
+  applies, since a survey by title already says what one is about.
 * `current` - a brief document containing a summary of the current state and
   routes to other documents (in context, plans, issues etc.) for what has just
   been done and what is next.
@@ -31,8 +35,9 @@ segment. Create these as needed.
   documents below this (typically with ? autoincrement) to record work done
   and decisions made.
 * `plans/<feature>` - plans for features to implement and decisions made.
-  Also archived notes on already implemented features.
-* `issues/?` - Notes on bugs or other issues.
+  Also archived notes on already implemented features. Carry a `!status` so
+  that a survey separates what is still open from what has been built.
+* `issues/?` - Notes on bugs or other issues, with a `!status` likewise.
 * `reference/<topic>` - durable facts about the project.
 * `glossary/<term>` - definitions and notes on terms and keywords used in the
   project.

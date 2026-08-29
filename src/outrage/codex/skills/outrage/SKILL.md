@@ -26,8 +26,9 @@ project, and do not write there.
 
 ## Store conventions
 
-Use `context/<n>/…` for a thread of work, `project/reference/<topic>` for
-durable project facts, and `notes/<path>` for file-specific notes. Allocate a
+Use `context/<n>/…` for a thread of work, `reference/<topic>` for durable
+project facts, and `file_notes/<path>` for file-specific notes - example names
+rather than paths that exist, since a store's `readme` says which it uses. Allocate a
 new thread with `context/?/task`, then use the returned key for related state,
 findings, and decisions. Give every document a `title`; add `!summary` when
 the title cannot say enough to screen the document.
