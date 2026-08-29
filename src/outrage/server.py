@@ -207,86 +207,63 @@ WITHOUT_META_SAMPLE = 10
 #: after it may not, and nothing may be *only* said after it.
 DELIVERY_BUDGET = 2048
 
-#: The half that has to survive truncation: the grammar of a key, how one is
-#: allocated, and that a listing is a page. Ordered second, after the store's
-#: own readme, because a session that gets this and nothing else can still read
-#: and write correctly, while one that gets the protocol and no routing does
-#: not know where anything is.
-ESSENTIALS = """\
-A store for notes, designs and task context that outlives a single session.
+#: Where the delivered text is kept, below the shipped documentation's root.
+#: Prose in a document rather than a string literal here: it is diffable,
+#: carries a title, and is readable with `retrieve_document` like anything else
+#: -- including by a session that was cut off mid-instructions and wants the
+#: rest of them. The document at `outrage/skills` says which file is which.
+SKILLS = "skills"
 
-Keys are hierarchical, slash delimited strings such as `context/<id>/design`,
-and `/` is the only separator there is. A segment beginning with `!` opens a
-metadata namespace on the key above it, such as `context/<id>/design/!title`.
-Intermediate keys exist implicitly; nothing needs creating before writing
-beneath one.
 
-When storing, a `?` in place of a whole segment asks the store to allocate a
-number for it, at any depth: `context/?/design` writes to `context/1/design` in
-an empty store. The result reports the key actually written, which is what to
-use for anything else belonging with it, such as `context/1/task`.
+#: The documents delivered, in the order they are sent. The split is a delivery
+#: order and not a subject: a client cuts these instructions at a length it does
+#: not announce, so `essentials` is what has to survive the cut -- the grammar of
+#: a key, how one is allocated, and that a listing is a page -- and `tail` is
+#: chosen so that every part of it is recoverable somewhere a session reaches
+#: anyway: a tool description, the packaged agent skill, or a failure that
+#: explains itself. That test is the whole of what decides which document a
+#: sentence belongs in, and `outrage/skills` is where it is written down for
+#: whoever edits them.
+DELIVERED = ("essentials", "tail")
 
-Store a document under a descriptive key and pass a `title`, so that later
-sessions can survey what is here with `get_documents(meta_name=["title"])`
-before reading anything in full.
 
-Every listing is a page, not the whole store. Each one reports `returned`
-beside `total`, and a `next_cursor` when more remains: pass it back as `after`
-to continue from exactly where the page stopped. Read `total` before treating a
-result as everything there is - 20 of 22 is a listing, 20 of 40000 is a sample.
-"""
+@functools.cache
+def skill(name: str) -> str:
+    """The text of one delivered document, read from the installed files.
 
-#: The half that can be lost. Not one word of it is unimportant; every part is
-#: recoverable somewhere a session reaches anyway - the tool descriptions, the
-#: packaged skill, or a failure that explains itself when it happens. That is
-#: the whole test for putting something here rather than in `ESSENTIALS`.
-TAIL = """\
-A segment may hold almost any text - the exclusions are `/`, the control
-characters below tab, and a leading `?`, which is reserved for `?` and `?last`
-and for the filters a key will grow - so a key can mirror a real name without
-transforming it. Keys are not file paths, but they read like them: notes about a file can
-live at `notes/src/myfile.py`. Inside a metadata namespace everything is an
-ordinary namespace again - documents, `?`, `?last` and their own metadata - so
-`a/!changelog/22` is a document kept in `a`'s changelog, and `a` carries
-`changelog`, not `changelog/22`. Only the segments before the first `!` count
-towards depth, so a survey reaches a namespace's contents by being scoped
-inside it rather than by asking for more depth.
+    The files rather than the mount, for two reasons. This is needed at import,
+    to size the readme against ``DELIVERY_BUDGET``, which is before any store
+    is opened; and a mount table naming ``outrage`` overrides the shipped
+    documentation silently, which would otherwise let a project's own store
+    decide what this server says about itself.
+    :func:`outrage.shipped.tree` is the same directory the mount reads, so the
+    two never disagree about what the text is.
 
-A survey also reports the untitled documents under `without_meta`, as a count
-and a few examples covering the same stretch of the store as the page itself.
-It is stats, not a listing, so it carries no cursor: page the survey and the
-windows tile; to enumerate what it counts, call `keys_missing_meta`.
+    Read once per process, which is what the text itself promises a session:
+    instructions are sent when a client connects, so a file edited afterwards
+    reaches the next server rather than this one.
 
-Prefer several small documents to one large one. A document should answer one
-question and be readable in a single call, and a key can hold content *and*
-have keys beneath it, so a general document can stay where it is with the
-detail below it. When there is more to add, add a document rather than growing
-one - `?` allocates the key, so this costs no naming decision.
+    A missing file is the build failure :func:`outrage.shipped.available`
+    exists to notice, and is raised rather than served as instructions with a
+    hole in them.
+    """
+    path = shipped.tree() / SKILLS / f"{name}.md"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise shipped.DocumentsError("documents-not-installed", path=str(path)) from exc
 
-A key that holds nothing itself but has keys beneath it is a container: reading
-it fails, listing it does not.
 
-`?last` in place of a whole segment names the key that sorts last there, so
-`context/?last/state` reads the newest context without looking the number up
-first. It works on any key a tool takes, counts containers, and the result says
-which key it resolved to.
+def static_instructions() -> str:
+    """Every delivered document, in order: what a client that does not truncate gets.
 
-The empty key is the root, and omitting a key means the same thing. It holds a
-document like any other key and carries metadata as `!title`, so a store can
-title itself. Nothing else about it is special, and by convention nothing much
-is kept there.
+    A function rather than a constant, and not only because the text is read
+    from files now. A module constant holding it is rendered *by value* into
+    the API reference, which put the whole of both documents back into the
+    generated page they had just been taken out of.
+    """
+    return "\n".join(skill(name) for name in DELIVERED)
 
-The document at `readme` is a store's entry point: what that particular store
-holds, and what to read before anything else. It is carried at the top of these
-instructions when there is one, so a session starts with it rather than having
-to know to ask. If you work out how a store is organised, or what a later
-session should read first, `readme` is where that belongs.
-"""
-
-#: The static text entire, in delivery order. Kept as one name because it is
-#: what a client that does not truncate receives, and what anything documenting
-#: the server should quote.
-INSTRUCTIONS = f"{ESSENTIALS}\n{TAIL}"
 
 #: The key whose document introduces the store. One name, so that a session
 #: arriving at a store nobody described to it has somewhere to look, and a
@@ -297,7 +274,7 @@ README_KEY = "readme"
 #: work out for itself. Both are paid for out of the same budget as the readme
 #: they wrap, so both say the least that is still true: the heading carries why
 #: the document is here, the note carries when it was read. Everything else
-#: about the convention is in ``TAIL``, where it can afford to be.
+#: about the convention is in the `tail` document, where it can afford to be.
 README_HEADING = f"--- `{README_KEY}`: this store's own introduction, so you start with it ---"
 
 #: The second half of that pair: when the readme was read, which is the one
@@ -323,12 +300,12 @@ def _compose(opening: str) -> str:
     the same way as the string actually sent, rather than by a second estimate
     of it that can drift out of step.
     """
-    return f"{opening}\n\n{ESSENTIALS}\n{TAIL}"
+    return f"{opening}\n\n{static_instructions()}"
 
 
 def _protected(opening: str) -> str:
     """The part of a composition that has to survive the cut: everything but the tail."""
-    return _compose(opening).removesuffix(f"\n{TAIL}")
+    return _compose(opening).removesuffix(f"\n{skill(DELIVERED[-1])}")
 
 
 #: What the readme's own block costs before a word of it is written: the
@@ -366,7 +343,7 @@ def instructions(store: Store) -> str:
     does not announce -- ``DELIVERY_BUDGET`` records the one measurement there
     is -- so what is written first is what survives, and the readme was last
     for long enough that it never arrived once. What is at risk now is
-    ``TAIL``, which is chosen to be the recoverable half.
+    the `tail` document, which is chosen to be the recoverable half.
 
     Over ``README_MAX_CHARS`` nothing is inlined and the length is reported
     instead. A silently shortened entry point would be the project's own
@@ -1534,9 +1511,8 @@ __all__ = [
     "DEFAULT_COPY_LIMIT",
     "DEFAULT_ITEM_LIMIT",
     "DEFAULT_PAGE_CHARS",
+    "DELIVERED",
     "DELIVERY_BUDGET",
-    "ESSENTIALS",
-    "INSTRUCTIONS",
     "NO_README",
     "README_FLOOR_CHARS",
     "README_HEADING",
@@ -1544,11 +1520,13 @@ __all__ = [
     "README_MAX_CHARS",
     "README_NOTE",
     "SCAFFOLDING_CHARS",
-    "TAIL",
+    "SKILLS",
     "WITHOUT_META_SAMPLE",
     "RequestLog",
     "build_server",
     "instructions",
     "main",
     "parse_args",
+    "skill",
+    "static_instructions",
 ]

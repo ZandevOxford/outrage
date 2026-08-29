@@ -685,11 +685,13 @@ def test_the_caps_are_written_where_a_caller_can_read_them(server):
 
 
 def test_the_instructions_say_a_listing_is_a_page(server):
-    from outrage.server import INSTRUCTIONS
+    from outrage.server import static_instructions
 
-    assert "next_cursor" in INSTRUCTIONS
-    assert "`after`" in INSTRUCTIONS
-    assert "total" in INSTRUCTIONS
+    text = static_instructions()
+
+    assert "next_cursor" in text
+    assert "`after`" in text
+    assert "total" in text
 
 
 def test_the_untitled_are_enumerated_by_the_tool_that_pages_them(tmp_path):
@@ -801,8 +803,8 @@ def test_a_readme_is_carried_in_the_instructions(store):
     # is a line that can be read past, and the whole point is that this one
     # arrives before the session has to know to ask.
     assert "Read `project` next." in text
-    assert server_module.ESSENTIALS in text
-    assert server_module.TAIL in text
+    assert server_module.skill("essentials") in text
+    assert server_module.skill("tail") in text
 
 
 def test_the_readme_is_delivered_before_the_protocol(store):
@@ -813,8 +815,10 @@ def test_the_readme_is_delivered_before_the_protocol(store):
     # The client cuts this text at a length it does not announce, so order is
     # what decides what survives. The readme was last for long enough that it
     # never reached a session at all; see `planned/instructions-budget`.
-    assert text.index("Read `project` next.") < text.index(server_module.ESSENTIALS)
-    assert text.index(server_module.ESSENTIALS) < text.index(server_module.TAIL)
+    essentials = server_module.skill("essentials")
+
+    assert text.index("Read `project` next.") < text.index(essentials)
+    assert text.index(essentials) < text.index(server_module.skill("tail"))
 
 
 def test_the_essentials_leave_room_for_a_readme(store):
@@ -828,7 +832,7 @@ def test_the_essentials_leave_room_for_a_readme(store):
 
     # Everything ahead of the tail is what the budget has to cover. The tail is
     # allowed to fall past the cut -- that is what makes it the tail.
-    delivered = text.removesuffix(f"\n{server_module.TAIL}")
+    delivered = text.removesuffix(f"\n{server_module.skill('tail')}")
     assert len(delivered) <= server_module.DELIVERY_BUDGET
     assert "x" * server_module.README_MAX_CHARS in delivered
 
