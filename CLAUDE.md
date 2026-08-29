@@ -7,14 +7,16 @@ nothing here can go stale against what the store says.
 
 ## Start here
 
-Read the document at key `project`. It is an index of what to read and *when it
-applies*, and it routes to everything else. A survey by title
-(`get_documents(meta_name=["title"])`) tells you what documents are about; the
-`project` document tells you which one you need before you know to look.
+Read the document at key `readme`, then `current`. `readme` holds the
+conventions and the namespaces; `current` is where the work has got to and what
+is next. `contents` is the index behind them, routing by *when* a document
+applies: a survey by title (`get_documents(meta_name=["title"])`) tells you
+what documents are about, and `contents` tells you which one you need before
+you know to look.
 
 ## Before snapshotting the store
 
-Read `project/reference/snapshots` first. Copying `.outrage/store.sqlite` with `cp`
+Read `reference/snapshots` first. Copying `.outrage/store.sqlite` with `cp`
 succeeds and produces a **silently stale** store, potentially a whole schema
 version behind. Use `outrage backup`.
 

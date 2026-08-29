@@ -1,8 +1,9 @@
 A segment may hold almost any text - the exclusions are `/`, the control
 characters below tab, and a leading `?`, which is reserved for `?` and `?last`
 and for the filters a key will grow - so a key can mirror a real name without
-transforming it. Keys are not file paths, but they read like them: notes about a file can
-live at `notes/src/myfile.py`. Inside a metadata namespace everything is an
+transforming it. Keys are not file paths, but they read like them: notes about a file might
+live at `file_notes/src/myfile.py`. Names like that are one store's convention
+rather than the system's, and its `readme` says which it uses. Inside a metadata namespace everything is an
 ordinary namespace again - documents, `?`, `?last` and their own metadata - so
 `a/!changelog/22` is a document kept in `a`'s changelog, and `a` carries
 `changelog`, not `changelog/22`. Only the segments before the first `!` count
