@@ -9,8 +9,8 @@ got to.
 Do not duplicate in bulk information which is available from the files or
 the git history. However, do feel free to make notes on what was done and why.
 
-Unless there is a good reason, documents should be small and cover a single
-topic.
+Unless there is a good reason, documents should be small (up to 8k or so) and
+cover a single topic.
 
 Where possible, avoid significant edits to documents, and instead use the ?
 path segment to add additional notes rather than appending more information
@@ -19,7 +19,7 @@ to a document.
 ## Where to store information
 
 Suggested namespace for documents - where ? represents an auto-incremented path
-segment.
+segment. Create these as needed.
 
 * `readme` - the top level document containing conventions used in the project
   and routing to other documents.
@@ -38,3 +38,8 @@ segment.
   project.
 * `file_notes/<path>` - <path> will mirror the project filesystem, so use this
   to make notes about files in the project.
+* `scratch/?` - scratch space for temporary notes. Also can be used for
+  communication between simultaneous agents by using another level of
+  auto-incremented documents. Agents can write new notes, and other agents
+  can find them by looking for keys greater than the last they have previously
+  read.
