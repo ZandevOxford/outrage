@@ -1,10 +1,14 @@
 # Minimal makefile for Sphinx documentation.
 #
-# The project's interpreter is the `rage` conda environment, not whatever
+# The project's interpreter is the `outrage` conda environment, not whatever
 # `python` the shell resolves to; PYTHON below is that interpreter and can be
 # overridden: make html PYTHON=python
+#
+# It was the `rage` environment until 2026-08-29, which is the one that existed
+# before `environment.yml` named `outrage` and before the Python floor dropped
+# to 3.12. That name is retired; `reference/env` in the store is the record.
 
-PYTHON        ?= /Users/john/miniforge3/envs/rage/bin/python
+PYTHON        ?= /Users/john/miniforge3/envs/outrage/bin/python
 SPHINXOPTS    ?=
 SPHINXBUILD   ?= $(PYTHON) -m sphinx
 SOURCEDIR     = .
