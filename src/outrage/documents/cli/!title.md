@@ -1,1 +1,0 @@
-The outrage command line

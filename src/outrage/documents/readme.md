@@ -1,4 +1,23 @@
-# The outrage manual, as documents
+# Outrage
+
+This is the documentation for Outrage, a MCP RAG store.
+
+This is available in the Outrage repo, the python build and also by default
+under the 'outrage' key in the Outrage store.
+
+If you are an LLM reading this because you do not have a configured readme
+file, then read the 'default_readme' file next to this file and ask the user
+if they want the same conventions added to the store's readme for this
+project. When reading files from the store, drop the '.md' extension.
+
+## Documentation
+
+At this level:
+
+* [keys](keys.md) contains the definition of keys.
+* [cli](cli.md) contains the documentation for the command line.
+
+And 
 
 You are reading a store. It ships inside the `outrage` package, is mounted
 read-only at `outrage`, and holds what outrage itself has to say about how it

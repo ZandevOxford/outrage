@@ -1,4 +1,4 @@
-# The command line
+# The Outrage command line
 
 `outrage` is the same library as the MCP server, reached from a shell. It reads
 the same `mounts.toml`, so a person and a session see one namespace rather than

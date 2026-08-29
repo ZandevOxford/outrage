@@ -1,1 +1,1 @@
-Keys: the grammar of the namespace
+What a key is
