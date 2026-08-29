@@ -2,7 +2,72 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.4.0 - 2026-08-29
+
+0.4.0 is about what a store and its server *say*: the documentation outrage
+ships about itself, the sentence a caller reads when a call is refused, and the
+readme a store introduces itself with. The main changes are:
+
+* **Outrage's own documentation is a mounted store**, generated from the
+  docstrings and shipped in the wheel, so a session can read the API reference
+  through the same tools it reads anything else with.
+* **A store's `readme` is named in the server's instructions rather than
+  carried in them**, so it may be any length, and it is read live by the
+  session that needs it.
+* **A failure a caller can correct now reaches them as a sentence**, against
+  mcp 2.1, which stopped carrying the text of anything that is not a
+  deliberate `ToolError`.
+* **`document_file` and `copy_tree`** are new tools: one document through a
+  file, and a subtree copied or re-rooted.
+* **A mount may name its backend**, so a directory of files is mountable.
+
+`requires-python` drops to **3.12**. For library callers this is a breaking
+release in one place only: five names are gone from `outrage.server`, listed
+below.
+
+### Python 3.12 is enough
+
+`requires-python` asked for **3.14**, which was the interpreter to hand when
+the first commit was written rather than a decision. Nothing in the package
+needs it: the only feature ever argued for is `tomllib`, in the standard
+library since 3.11, and compiling the whole of `src` and `tests` under 3.12 is
+clean. Asking for an interpreter released in October 2025 excluded most of the
+ones outrage would otherwise install into, for nothing gained.
+
+The floor is now **3.12**, and `environment.yml` moves with it so that the
+environment the README tells a contributor to create is the one the package
+asks for. The suite, the doctests, `ruff` and the strict docs build were run on
+3.12 and on 3.14; nothing in the package changed.
+
+### A failure a caller can fix now says so
+
+mcp 2.1 stopped carrying the text of anything raised out of a tool that is not
+a `ToolError`: a deliberate failure keeps its message, and everything else
+reaches the client as `Error executing tool <name>` and nothing more, its own
+text logged server-side. That is the distinction `outrage.errors` already drew,
+and it caught **seven** places where this package was on the wrong side of it.
+A damaged `json-string` value, an unknown `encoding` or `format`, an empty
+`pattern` and an empty `meta_name` were each a bare `ValueError`, so a model
+that had emitted scaffolding into its own tool call - the thing the encoding
+exists to catch - was told only that something went wrong, when what it needed
+was to be told to send the call again.
+
+* **`store.InvalidArgumentError`** is an argument value the caller can correct,
+  as against the checks that guard a front end's own mistake. Three message
+  codes follow it, carrying the wording that used to be written at the raise
+  site.
+* **`format` and `encoding` are typed rather than described.** The tool schema
+  listed the values in prose and said `string`; it now carries a real `enum`
+  and `const`, so a bad one is refused before the tool body runs.
+  `store.Format` and `store.Encoding` are the new source, and `store.FORMATS`
+  and `store.ENCODINGS` are `get_args()` of them. `meta_name` takes at least
+  one entry.
+* **`outrage get --pattern ''` printed a traceback** and prints a sentence now.
+  The command line was never about the SDK; it had the same misclassification
+  underneath.
+
+The package still supports `mcp>=1.2`, and the one test asserting the 2.1
+behaviour skips where the SDK does not draw the distinction.
 
 ### The store's `readme` is named in the server's instructions, not carried in them
 
