@@ -75,6 +75,42 @@ from .store import (
 #: in it is vanishingly rare, and a drive letter is not.
 SPEC_DELIMITER = "="
 
+#: Separates the store file from an option, and one option from the next:
+#: ``KEY=FILE,NAME=VALUE``. ``mount(8)``'s own ``-o`` vocabulary, and chosen
+#: for what it does to *precedence*: an option written inside the value keeps
+#: one mount one option occurrence, so a later ``--mount`` at that point
+#: replaces the entry and everything said about it, and
+#: ``outrage.mountfile._overridden`` needs no sentence about half-overridden
+#: mounts. A second flag keyed by mount point would have needed one.
+#:
+#: The price is a comma, which a store file may no longer hold: it is refused
+#: by :func:`parse_options` on the way in and by :func:`unparse` on the way
+#: out, rather than being quietly the first option's name.
+OPTION_DELIMITER = ","
+
+#: Separates an option's name from its value, and the same character the mount
+#: point uses for the same reason. ``type=files`` is one option and there is
+#: currently one option; the grammar is what is general, not the list.
+OPTION_ASSIGNMENT = "="
+
+#: The option that says which backend keeps this store, overriding what the
+#: file name implies. The value is a backend's own name --
+#: :attr:`outrage.store.FileStore.backend_name`, the word a report already uses
+#: -- so ``type=files`` names :class:`outrage.store_files.FilesystemStore` and
+#: is not a second vocabulary for the same three classes.
+#:
+#: **Why the option exists at all.** Which backend keeps a store follows from
+#: the store file's extension, and a directory of files has no extension to
+#: read: without a way to say so, a tree is not mountable and a mount table
+#: cannot describe one. See :data:`outrage.store._BY_EXTENSION`.
+TYPE_OPTION = "type"
+
+#: Every option a spec may carry. Anything else is refused rather than ignored,
+#: which is the rule ``mounts.toml`` already follows for a field it does not
+#: know: a mount that quietly did something other than what it says is the
+#: failure a mount configuration is least able to notice.
+OPTIONS = (TYPE_OPTION,)
+
 #: The ``kind`` a listing reports for a key that is a mount point. A fourth
 #: kind beside 'document', 'metadata' and 'implicit', because a mount point is
 #: none of the three: it may hold content, and it always has a store behind it.
@@ -1429,8 +1465,105 @@ def _implicit(key: str) -> Entry:
     return Entry(key=key, kind="implicit", size=None, format=None, updated_at=None)
 
 
-def parse_spec(spec: str) -> tuple[str, Path]:
-    """Split a ``KEY=FILE`` mount argument, or say why it is not one.
+@dataclass(frozen=True, slots=True)
+class Spec:
+    """A store as an argument names it: which file, and how to open it.
+
+    The value half of ``--mount KEY=FILE,type=NAME``, and the whole of
+    ``--root-mount FILE,type=NAME``, which is why it is a thing of its own
+    rather than a pair returned beside a mount point: the root takes the same
+    grammar and has no mount point to be returned beside.
+
+    ``path`` is relative to the store directory, as every store file is;
+    ``store_file`` applies that when the store is opened rather than here, so
+    this stays a parse of the argument and touches nothing.
+    """
+
+    path: Path
+    type: str | None = None
+    """The backend, when the argument named one, else None for the file to say."""
+
+
+def parse_options(value: str, *, spec: str | None = None) -> Spec:
+    """Split ``FILE[,NAME=VALUE]...``, or say why it is not one.
+
+    The value half of a mount spec, and a ``--root-mount`` whole. ``spec`` is
+    what the reader actually wrote, when there is a longer argument to quote
+    back at them.
+
+    **An unknown option name is refused**, and so is a repeat of a known one.
+    The first is the rule ``mounts.toml`` already follows for a field it does
+    not recognise, for the reason a mount configuration exists: it is read
+    later, by somebody who is not watching, and an option that silently did
+    nothing is the failure least likely to be noticed -- a mount that is not
+    the store it says is a store that reads as simply empty. The second is the
+    same refusal a duplicate mount point earns, one level down.
+
+    The *value* of an option is not checked here. ``type=nonsense`` is a
+    backend that does not exist, which :func:`outrage.store._backend_for`
+    refuses in its own words when the store is opened; a second list of
+    backend names kept here to refuse it a moment earlier is exactly the
+    duplicate vocabulary this grammar is written to avoid.
+    """
+    quoted = value if spec is None else spec
+    file, _, rest = value.partition(OPTION_DELIMITER)
+    if not file:
+        raise MountError("mount-spec-has-no-file", spec=quoted)
+    options: dict[str, str] = {}
+    while rest:
+        option, _, rest = rest.partition(OPTION_DELIMITER)
+        name, assigned, setting = option.partition(OPTION_ASSIGNMENT)
+        if not assigned or not name:
+            raise MountError(
+                "mount-option-malformed",
+                spec=quoted,
+                option=option,
+                assignment=OPTION_ASSIGNMENT,
+            )
+        if name not in OPTIONS:
+            raise MountError(
+                "mount-option-unknown", spec=quoted, option=name, known=list(OPTIONS)
+            )
+        if name in options:
+            raise MountError("mount-option-repeated", spec=quoted, option=name)
+        options[name] = setting
+    return Spec(Path(file), options.get(TYPE_OPTION))
+
+
+def unparse(spec: Spec) -> str:
+    """``spec`` as the argument it was read from: the inverse of
+    :func:`parse_options`.
+
+    What a mount table renders into when it is spliced into a command line,
+    which is the whole mechanism by which a file has any effect at all -- so
+    the two functions are here together, where they can be read as one grammar
+    and tested as a round trip.
+
+    A store file holding the option delimiter is refused *here* as well as on
+    the way in, because this is the direction a file reaches: an entry written
+    as ``{ path = "a,b" }`` in TOML never passed through a spec, and rendering
+    it would produce an argument that parses back as something else.
+    """
+    file = str(spec.path)
+    if OPTION_DELIMITER in file:
+        raise MountError("mount-file-unspellable", file=file, delimiter=OPTION_DELIMITER)
+    if spec.type is None:
+        return file
+    return f"{file}{OPTION_DELIMITER}{TYPE_OPTION}{OPTION_ASSIGNMENT}{spec.type}"
+
+
+def _root_spec(root_mount: str | os.PathLike[str] | Spec | None) -> Spec | None:
+    """``--root-mount``'s value as a :class:`Spec`, whatever shape it arrived in."""
+    if root_mount is None or isinstance(root_mount, Spec):
+        return root_mount
+    if isinstance(root_mount, str):
+        return parse_options(root_mount)
+    return Spec(Path(root_mount))
+
+
+def parse_spec(spec: str) -> tuple[str, Spec]:
+    """Split a ``KEY=FILE[,NAME=VALUE]...`` mount argument, or say why it is
+    not one.
 
     ``FILE`` is a store file **relative to the store directory**, not a
     directory of its own: every mount a server holds lives in the one directory
@@ -1442,13 +1575,18 @@ def parse_spec(spec: str) -> tuple[str, Path]:
     misspelled mount point is refused before a database is created for it --
     ``Store`` makes its file on the way in, and a typo would otherwise leave an
     empty store behind as evidence of a server that never started.
+
+    The options after the file are :func:`parse_options`'s, and everything a
+    mount can say beyond *where* it is goes there. One flag remains one mount,
+    which is what keeps overriding an entry from a mount configuration a matter
+    of replacing it whole -- see :data:`OPTION_DELIMITER`.
     """
-    prefix, delimiter, path = spec.partition(SPEC_DELIMITER)
+    prefix, delimiter, value = spec.partition(SPEC_DELIMITER)
     if not delimiter:
         raise MountError("mount-spec-malformed", spec=spec)
-    if not path:
+    if not value:
         raise MountError("mount-spec-has-no-file", spec=spec)
-    return mount_point(prefix, spec=spec), Path(path)
+    return mount_point(prefix, spec=spec), parse_options(value, spec=spec)
 
 
 def mount_point(prefix: str, *, spec: str | None = None) -> str:
@@ -1482,7 +1620,7 @@ def open_mounts(
     specs: Sequence[str] = (),
     read_only_specs: Sequence[str] = (),
     *,
-    root_mount: str | os.PathLike[str] | None = None,
+    root_mount: str | os.PathLike[str] | Spec | None = None,
     log: EventLog | None = None,
     attached: Mapping[str, Store] = MappingProxyType({}),
 ) -> MountedStore:
@@ -1534,13 +1672,18 @@ def open_mounts(
     """
     writable = [parse_spec(spec) for spec in specs]
     refusing = [parse_spec(spec) for spec in read_only_specs]
+    # The root takes the same grammar as a mount, so a string is parsed for
+    # options here rather than by each front end. A ``Path`` is a path and not
+    # an argument -- a caller holding one has nothing to say about backends --
+    # and a ``Spec`` is one already parsed.
+    root = _root_spec(root_mount)
     lent = {mount_point(prefix): store for prefix, store in attached.items()}
     # Resolved once, here, because the read-only check below and the stores
     # themselves have to agree about where a mount's file is; asking twice is
     # how they would come to disagree.
     base = store_module.resolve_directory(directory)
-    for prefix, path in refusing:
-        database = store_file(base, path)
+    for prefix, spec in refusing:
+        database = store_file(base, spec.path)
         if not database.exists():
             raise MountError(
                 "mount-read-only-missing", mount=prefix, path=str(database)
@@ -1554,11 +1697,18 @@ def open_mounts(
     try:
         # The root is never among the lent stores: ``mount_point`` refuses it
         # above, as it does for a spec, so this cannot overwrite one.
-        opened[keys.ROOT] = store_module.default_store(base, filename=root_mount, log=log)
-        for prefix, path in [*writable, *refusing]:
+        opened[keys.ROOT] = store_module.default_store(
+            base,
+            filename=None if root is None else root.path,
+            backend=None if root is None else root.type,
+            log=log,
+        )
+        for prefix, spec in [*writable, *refusing]:
             if prefix in opened:
                 raise MountError("mount-duplicate", mount=prefix)
-            opened[prefix] = store_module.default_store(base, filename=path, log=log)
+            opened[prefix] = store_module.default_store(
+                base, filename=spec.path, backend=spec.type, log=log
+            )
         return MountedStore(opened, read_only=[prefix for prefix, _ in refusing] + list(lent))
     except Exception:
         for store in opened.values():
@@ -1568,15 +1718,22 @@ def open_mounts(
 
 __all__ = [
     "MOUNT_KIND",
+    "OPTIONS",
+    "OPTION_ASSIGNMENT",
+    "OPTION_DELIMITER",
     "READ_ONLY_MOUNT_KIND",
     "SPEC_DELIMITER",
+    "TYPE_OPTION",
     "Mount",
     "MountError",
     "MountedStore",
     "ReadOnlyMountError",
     "Resolved",
     "Segment",
+    "Spec",
     "mount_point",
     "open_mounts",
+    "parse_options",
     "parse_spec",
+    "unparse",
 ]

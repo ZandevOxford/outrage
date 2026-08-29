@@ -163,6 +163,25 @@ distinguishes one store from another is reduced to a filename, which is the
 seam a backend that is not SQLite fits into: the directory around it does not
 change.
 
+**A mount may name the backend that keeps it**: `--mount KEY=FILE,type=NAME`,
+and `docs = { path = "docs", type = "files" }` in a mount table. Which backend
+keeps a store otherwise follows from the store file's extension, which is what
+lets `ref=python.parquet` mean what it obviously means without a second
+grammar - but a **directory of files** has no extension to read, so the one
+backend whose store is a directory is the one that has to be asked for. The
+value is the backend's own name, the word a report already uses for it, rather
+than a fourth vocabulary for the same three classes.
+
+An **option inside the argument's value** rather than a second flag beside it,
+and the reason is precedence. One mount is one option occurrence, so a `--mount`
+at a point a mount table already claimed replaces that entry and everything said
+about it - the override rule that was already there, needing nothing said about
+options at all. A `--mount-type KEY=NAME` keyed by mount point would have needed
+a new sentence about what a later claim on the path did to an earlier claim on
+the type, and every future option would have needed another flag. The price is a
+comma, which a store file may no longer contain: it is refused in both
+directions rather than being quietly the first option's name.
+
 **A mount may be read-only**: `--mount-ro KEY=FILE`, and every write routed
 there is refused before the store is reached. That is the case the whole
 feature was pointed at - a shared reference base beside a local read-write

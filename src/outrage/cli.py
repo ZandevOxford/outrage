@@ -911,7 +911,10 @@ def _store_option(parser: argparse.ArgumentParser) -> None:
             f"Which store in that directory, as a file relative to it "
             f"(default: {store.default_store_file()}). On a command that takes "
             f"mounts this is the root mount -- the store answering for every "
-            f"key no mount claims -- and --root-mount is the same option."
+            f"key no mount claims -- and --root-mount is the same option. "
+            f"Takes the same options a --mount does, so --store "
+            f"documents,{mounts.TYPE_OPTION}=files reads a directory of files "
+            f"as the whole store."
         ),
     )
 
@@ -939,8 +942,12 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
         help=(
             "Also mount the store FILE under KEY for this command, as in "
             f"ref{mounts.SPEC_DELIMITER}reference.sqlite. FILE is relative to "
-            "--dir, like --store. Repeatable. Reads, writes, surveys and "
-            "recursive deletes cross mount boundaries."
+            "--dir, like --store, and may carry options after a comma: "
+            f"docs,{mounts.TYPE_OPTION}=files says which backend keeps the "
+            "store, for one whose name cannot -- a directory of files has no "
+            f"extension to read. Types: {', '.join(store.backend_names())}. "
+            "Repeatable. Reads, writes, surveys and recursive deletes cross "
+            "mount boundaries."
         ),
     )
     parser.add_argument(
@@ -1101,16 +1108,29 @@ def _report_table(table: mountfile.Starter, out: TextIO, *, dry_run: bool) -> No
         print(f"    {line}", file=out)
 
 
+def _root(args: argparse.Namespace) -> mounts.Spec:
+    """The root store this command line names: its file, and any option on it.
+
+    ``--store`` takes the same grammar as a ``--mount``'s value half, so the
+    root can name a backend the way any other mount can -- ``--store
+    docs,type=files`` reads a tree as the whole store. Parsed in one place
+    because several commands ask the same question of the same argument, and
+    two of them ask it about a file that must already exist.
+    """
+    return mounts.parse_options(args.filename)
+
+
 def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
     """Snapshot the store, or say where the snapshot would go."""
     directory = store.resolve_directory(args.directory)
-    database = store.store_file(directory, args.filename)
+    root = _root(args)
+    database = store.store_file(directory, root.path)
     if not database.exists():
         # Opening one would create it, and backing up a store the caller never
         # had is a success that answers the wrong question.
         raise store.BackupError("check-no-store", path=str(database))
 
-    with store.open_store(directory, filename=args.filename) as opened:
+    with store.open_store(directory, filename=root.path, backend=root.type) as opened:
         if args.dry_run:
             target = opened.backup_path(args.destination, overwrite=args.overwrite)
             print(f"would back up {opened.path} to {target}", file=out)
@@ -1675,7 +1695,7 @@ def _mounts_command(args: argparse.Namespace, out: TextIO) -> int:
         _mount_row(
             directory,
             keys.ROOT,
-            args.filename,
+            _root(args),
             MOUNT_KIND,
             sources,
             unnamed=mountfile.TYPED_SOURCE if typed else "default",
@@ -1703,8 +1723,8 @@ def _mounts_command(args: argparse.Namespace, out: TextIO) -> int:
         failed = failed or state == "missing"
     for specs, kind in ((args.mounts, MOUNT_KIND), (args.read_only_mounts, READ_ONLY_MOUNT_KIND)):
         for spec in specs:
-            point, filename = mounts.parse_spec(spec)
-            row = _mount_row(directory, point, str(filename), kind, sources)
+            point, named = mounts.parse_spec(spec)
+            row = _mount_row(directory, point, named, kind, sources)
             if point in seen:
                 # Reported rather than raised, unlike everywhere else: a report
                 # that stopped at the first thing wrong with a table would be
@@ -1731,14 +1751,21 @@ def _mounts_command(args: argparse.Namespace, out: TextIO) -> int:
 def _mount_row(
     directory: Path,
     point: str,
-    filename: str,
+    spec: mounts.Spec,
     kind: str,
     sources: dict[str | None, tuple[str, str]],
     *,
     unnamed: str = mountfile.TYPED_SOURCE,
 ) -> tuple[str, str, str, str, str]:
-    """One mount, as the five things worth knowing about it before it opens."""
-    if store.store_file(directory, filename).exists():
+    """One mount, as the five things worth knowing about it before it opens.
+
+    The file column is the argument's value half rather than its path alone, so
+    a mount that names a backend says so here: ``docs,type=files`` is a
+    different mount from ``docs``, and a report that showed them alike would
+    hide the one thing about it that cannot be inferred from the name.
+    """
+    filename = mounts.unparse(spec)
+    if store.store_file(directory, spec.path).exists():
         state = "ok"
     elif kind == READ_ONLY_MOUNT_KIND:
         # The refusal `open_mounts` would make, said here instead of at the
@@ -1838,8 +1865,9 @@ def _open_existing(args: argparse.Namespace):
     perfectly healthy empty store, which is a wrong answer delivered as a clean
     bill of health.
     """
-    directory = maintenance.require_store(store.resolve_directory(args.directory), args.filename)
-    return store.open_store(directory, filename=args.filename)
+    root = _root(args)
+    directory = maintenance.require_store(store.resolve_directory(args.directory), root.path)
+    return store.open_store(directory, filename=root.path, backend=root.type)
 
 
 @contextlib.contextmanager
@@ -1863,17 +1891,18 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
     already exist and a read-write one is created.
     """
     directory = store.resolve_directory(args.directory)
+    root = _root(args)
     if not create:
-        maintenance.require_store(directory, args.filename)
+        maintenance.require_store(directory, root.path)
     if not (args.mounts or args.read_only_mounts or args.mount_docs):
-        with store.open_store(directory, filename=args.filename) as opened:
+        with store.open_store(directory, filename=root.path, backend=root.type) as opened:
             yield opened
         return
     with mounts.open_mounts(
         directory,
         args.mounts,
         args.read_only_mounts,
-        root_mount=args.filename,
+        root_mount=root,
         # Refused rather than warned about when the tree is not there, unlike
         # the server: here somebody typed the flag, and a mount that silently
         # was not made is the failure `--mount-ro` refuses for.

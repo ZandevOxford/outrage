@@ -34,8 +34,9 @@ from outrage.store import (
     BoundedSubtree,
     KeyNotFoundError,
     KeyRange,
+    StoreFileError,
 )
-from outrage.store_files import FilesystemStore, NotTextError
+from outrage.store_files import DEFAULT_TREE_NAME, FilesystemStore, NotTextError
 from outrage.store_sqlite import SqliteStore
 
 #: The corpus ``test_store_parquet.py`` chose, for the same reasons and with
@@ -154,6 +155,36 @@ def files(tmp_path):
         store.store_document("a", "a body", title="A")
         store.store_document("a/b", "below")
         yield store
+
+
+def test_a_tree_is_opened_either_at_a_path_or_as_a_name_in_a_directory(tmp_path):
+    """The two callers a tree has, and why they cannot be one constructor.
+
+    An export target is an absolute path somebody typed, and ``store_file``
+    refuses those -- correctly, for the store file it is about. A *mount* is
+    the opposite: a name relative to ``--dir``, like every other store, and it
+    has to earn every refusal that rule makes or a tree would be the one
+    backend able to sit outside the directory a table describes.
+    """
+    typed = tmp_path / "elsewhere" / "corpus"
+    with FilesystemStore(typed) as store:
+        assert store.root == typed
+
+    with FilesystemStore.in_directory(tmp_path / ".outrage", filename="documents") as store:
+        assert store.root == tmp_path / ".outrage" / "documents"
+        # The directory around the tree is the one holding it, so a backup
+        # lands beside the corpus rather than inside it.
+        assert store.directory == tmp_path / ".outrage"
+
+    # And with no name at all it is the tree beside the store files, rather
+    # than whatever the *package* default backend calls its file.
+    with FilesystemStore.in_directory(tmp_path / "bare") as store:
+        assert store.root == tmp_path / "bare" / DEFAULT_TREE_NAME
+
+    with raises_rendered(StoreFileError, "absolute path"):
+        FilesystemStore.in_directory(tmp_path, filename="/srv/corpus")
+    with raises_rendered(StoreFileError, "climbs out"):
+        FilesystemStore.in_directory(tmp_path, filename="../corpus")
 
 
 # -- the contract, as a comparison ---------------------------------------

@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from conftest import raises_rendered
-from outrage import mountfile
+from outrage import mountfile, mounts
 from outrage.mountfile import MountFileError
 from outrage.mounts import MountError
 
@@ -76,7 +76,106 @@ def test_a_mount_point_is_parsed_as_a_key(tmp_path):
     """Not a second grammar: the same parse ``--mount`` goes through."""
     path = write(tmp_path / "mounts.toml", '[mount]\n"/Ref/Notes/" = "r.sqlite"\n')
 
-    assert mountfile.read(path).mounts == (("Ref/Notes", "r.sqlite"),)
+    assert mountfile.read(path).mounts == (("Ref/Notes", mounts.Spec(Path("r.sqlite"))),)
+
+
+def test_an_entry_may_be_a_table_saying_more_than_a_file_name(tmp_path):
+    """The second spelling, and what it is for.
+
+    A store file names its own backend by its extension, and a directory of
+    files has none -- so an entry has to be able to say more about a store than
+    where it is. The fields are the option names, so the table and the string
+    are one vocabulary rather than two.
+    """
+    path = write(
+        tmp_path / "mounts.toml",
+        """
+        root-mount = { path = "main.sqlite" }
+
+        [mount]
+        docs = { path = "documents", type = "files" }
+        """,
+    )
+
+    table = mountfile.read(path)
+    assert table.root == mounts.Spec(Path("main.sqlite"))
+    assert table.mounts == (("docs", mounts.Spec(Path("documents"), "files")),)
+    # And it stands for the option it would have been typed as, which is the
+    # whole of how a file has any effect at all.
+    assert table.options() == [
+        "--root-mount",
+        "main.sqlite",
+        "--mount",
+        "docs=documents,type=files",
+    ]
+
+
+def test_a_string_entry_is_the_argument_unchanged(tmp_path):
+    """Options included, because an entry *is* the option it stands for.
+
+    The table form is what a file maintained by hand should say -- it needs no
+    reader to know where a comma binds -- but the string form is the value half
+    of a ``--mount``, read by the same parser, so nothing is expressible typed
+    and not in a file.
+    """
+    path = write(tmp_path / "mounts.toml", '[mount]\ndocs = "documents,type=files"\n')
+
+    assert mountfile.read(path).mounts == (("docs", mounts.Spec(Path("documents"), "files")),)
+
+
+def test_an_entry_that_says_something_no_mount_can_say_is_refused(tmp_path):
+    """Refused rather than ignored, and naming the file, like every field here.
+
+    A table read from disk is the one kind nobody was looking at when it broke:
+    it was written some other day, possibly by somebody else, and an option
+    that silently did nothing is the failure it is least able to notice.
+    """
+    unknown = write(tmp_path / "a.toml", '[mount]\ndocs = { path = "d", mode = "fast" }\n')
+    with raises_rendered(MountFileError, "not something a mount can say"):
+        mountfile.read(unknown)
+
+    nameless = write(tmp_path / "b.toml", '[mount]\ndocs = { type = "files" }\n')
+    with raises_rendered(MountFileError, "names no store file"):
+        mountfile.read(nameless)
+
+    # The grammar's own refusals are the grammar's, unwrapped: the same
+    # sentence a ``--mount`` earns, since it is the same argument.
+    typed = write(tmp_path / "c.toml", '[mount]\ndocs = "d,mode=fast"\n')
+    with raises_rendered(MountError, "not a mount option"):
+        mountfile.read(typed)
+
+    # A store file holding the delimiter has no spelling that reads back as
+    # itself, whichever form wrote it down.
+    comma = write(tmp_path / "d.toml", '[mount]\ndocs = { path = "a,b.sqlite" }\n')
+    with raises_rendered(MountError, "no spelling that reads back as itself"):
+        mountfile.read(comma)
+
+
+def test_a_section_that_is_one_entry_is_not_a_table_of_them(tmp_path):
+    """``[mount] path = "x"`` is somebody who meant ``root-mount``.
+
+    Told apart by shape, since a mount point may legally be spelled ``path``.
+    The reason to catch it is the reason every field here is checked: the
+    alternative is a store mounted at ``path`` that nobody meant and nothing
+    reads.
+    """
+    path = write(tmp_path / "mounts.toml", '[mount]\npath = "main.sqlite"\n')
+    with raises_rendered(MountFileError, "one entry's fields rather than a table"):
+        mountfile.read(path)
+
+
+def test_an_entry_carrying_an_option_is_overridden_whole(tmp_path):
+    """Which is why the option lives inside the value.
+
+    One mount is one option occurrence, so a ``--mount`` at a point a file
+    already claimed replaces the entry and everything said about it -- the
+    ordinary override rule, needing nothing said about options at all.
+    """
+    a_table(tmp_path, '[mount]\ndocs = { path = "documents", type = "files" }\n')
+
+    spliced = mountfile.spliced(["--mount", "docs=other.sqlite"], directory=tmp_path)
+
+    assert spliced == ["--mount", "docs=other.sqlite"]
 
 
 def test_a_mount_point_that_is_not_a_key_is_refused(tmp_path):

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from outrage import mountfile, shipped
+from outrage import mountfile, mounts, shipped
 from outrage.cli import main, parse_args
 
 
@@ -164,9 +164,9 @@ def test_config_writes_the_mounts_to_the_table_beside_the_stores(tmp_path):
 
     table = tmp_path / ".outrage" / mountfile.DEFAULT_NAME
     written = mountfile.read(table)
-    assert written.root == "main.sqlite"
-    assert written.mounts == (("lib", "lib.sqlite"),)
-    assert written.read_only == (("ref", "reference.sqlite"),)
+    assert written.root == mounts.Spec(Path("main.sqlite"))
+    assert written.mounts == (("lib", mounts.Spec(Path("lib.sqlite"))),)
+    assert written.read_only == (("ref", mounts.Spec(Path("reference.sqlite"))),)
     assert str(table) in output
     # A store is named relative to the directory, so only --dir is a path: it
     # is what lets the project move with one line to fix.

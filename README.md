@@ -113,10 +113,18 @@ root-mount = "store.sqlite"
 
 [mount]
 team = "team.sqlite"          # read-write
+docs = { path = "docs", type = "files" }   # a directory of files
 
 [mount-ro]
 ref = "reference.sqlite"      # writes here are refused
 ```
+
+An entry is a store file, or a table saying more about one. `type` is which
+backend keeps it - `sqlite`, `parquet` or `files` - and it is needed only where
+the name cannot say: a directory of files has no extension to read. The same
+option is written after a comma when it is typed, as `--mount
+docs=docs,type=files` or `--store docs,type=files`, so one mount is still one
+argument and overriding an entry still replaces it whole.
 
 The file behaves as if its options had been typed at the point where it is
 named, so anything on the command line comes after it and wins - and a mount

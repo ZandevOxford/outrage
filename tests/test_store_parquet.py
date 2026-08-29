@@ -49,6 +49,7 @@ from outrage.store import (
     KeyRange,
     ReadOnlyStoreError,
 )
+from outrage.store_files import FilesystemStore
 from outrage.store_parquet import ParquetStore
 from outrage.store_sqlite import SqliteStore
 
@@ -606,6 +607,24 @@ def test_the_extension_chooses_the_backend(tmp_path):
     # name would break configurations that named one before a backend claimed
     # an extension.
     assert store_module._backend_for("ref.db") is SqliteStore
+
+
+def test_a_backend_may_be_named_instead_of_inferred(tmp_path):
+    """The seam a directory of files needs, since a directory has no extension.
+
+    Named rather than guessed at, so the two mistakes are answered differently:
+    an unrecognised *extension* falls back to the default, and an unrecognised
+    *name* is refused. One is a file called something a backend never claimed;
+    the other is somebody saying a word this build does not know, and a store
+    quietly opened as some other kind reads as a store that is simply empty.
+    """
+    assert store_module._backend_for("documents", "files") is FilesystemStore
+    # The name wins over the extension, which is the point of asking.
+    assert store_module._backend_for("ref.sqlite", "parquet") is ParquetStore
+    assert store_module.backend_names() == ("files", "parquet", "sqlite")
+
+    with raises_rendered(BackendError, "there is no 'tree' backend"):
+        store_module._backend_for("documents", "tree")
 
 
 def test_default_store_opens_a_parquet_file_without_naming_a_backend(tmp_path):

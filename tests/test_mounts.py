@@ -22,8 +22,11 @@ from outrage.mounts import (
     MountedStore,
     MountError,
     ReadOnlyMountError,
+    Spec,
     open_mounts,
+    parse_options,
     parse_spec,
+    unparse,
 )
 from outrage.server import build_server, parse_args
 from outrage.store import (
@@ -796,8 +799,120 @@ def test_nothing_changes_for_a_key_with_no_mount_below_it(table):
 def test_a_mount_spec_is_a_key_and_a_store_file():
     # The file is relative to the store directory and stays as written: the
     # spec is parsed here and resolved against a directory only when opened.
-    assert parse_spec("ref=reference.sqlite") == ("ref", Path("reference.sqlite"))
+    assert parse_spec("ref=reference.sqlite") == ("ref", Spec(Path("reference.sqlite")))
     assert parse_spec("lib/ref=x")[0] == "lib/ref"
+
+
+def test_a_mount_spec_may_carry_options_after_its_store_file():
+    """``KEY=FILE,NAME=VALUE``: the mount(8) shape, and why it is that shape.
+
+    An option written *inside* the value keeps one mount to one option
+    occurrence, which is what leaves overriding an entry from a mount
+    configuration a matter of replacing it whole. A second flag keyed by mount
+    point would have needed a rule for what a later ``--mount`` at that point
+    did to the options an earlier source set.
+    """
+    assert parse_spec("export=docs,type=files") == ("export", Spec(Path("docs"), "files"))
+    assert parse_spec("export=docs") == ("export", Spec(Path("docs"), None))
+    # The root takes the value half alone, and the same grammar.
+    assert parse_options("docs,type=files") == Spec(Path("docs"), "files")
+    # And it renders back to what it was read from, which is what a mount
+    # table relies on: a file is defined as the options it stands for.
+    assert unparse(Spec(Path("docs"), "files")) == "docs,type=files"
+    assert unparse(Spec(Path("docs"))) == "docs"
+
+
+def test_an_option_that_is_not_one_is_refused_rather_than_ignored():
+    """The rule a mount configuration already follows for a field it does not know.
+
+    A mount is read later, by somebody who is not watching, and an option that
+    silently did nothing is the failure least likely to be noticed: a mount
+    that is not the store it says reads as a store that is simply empty.
+    """
+    with raises_rendered(MountError, "not a mount option"):
+        parse_spec("ref=r.sqlite,mode=fast")
+    with raises_rendered(MountError, "is not an option"):
+        parse_spec("ref=r.sqlite,files")
+    with raises_rendered(MountError, "twice"):
+        parse_spec("ref=r.sqlite,type=files,type=sqlite")
+    # The value is not checked here: which backends exist is the store's
+    # question, and a second list of their names kept here to answer it a
+    # moment earlier is the duplicate vocabulary this grammar avoids.
+    assert parse_spec("ref=r.sqlite,type=nonsense")[1].type == "nonsense"
+
+
+def test_a_store_file_holding_the_option_delimiter_has_no_spelling():
+    """The price of options in the value, paid where it is noticed.
+
+    Refused in both directions: a comma typed after the file starts an option,
+    and one that reached a ``Spec`` some other way -- a table in ``mounts.toml``
+    -- is refused when it is rendered, because the argument it would render to
+    reads back as something else.
+    """
+    with raises_rendered(MountError, "is not an option"):
+        parse_spec("ref=a,b.sqlite")
+    with raises_rendered(MountError, "no spelling that reads back as itself"):
+        unparse(Spec(Path("a,b.sqlite")))
+
+
+def test_a_mount_may_name_the_backend_that_keeps_it(tmp_path):
+    """``type=files`` is the only way to mount a directory of files.
+
+    Which backend keeps a store follows from its file extension, and a
+    directory has none to read. So this is the case the option exists for, and
+    the test is that the store really is a tree: a document written through the
+    mount is a file on disk.
+    """
+    with open_mounts(tmp_path / "root", ["tree=documents,type=files"]) as table:
+        table.store_document("tree/note", "written through the mount")
+        assert table.retrieve_document("tree/note").content == "written through the mount"
+    assert (tmp_path / "root" / "documents" / "note.md").read_text() == (
+        "written through the mount"
+    )
+
+
+def test_a_named_backend_that_does_not_exist_is_refused(tmp_path):
+    """Unlike an unrecognised extension, which falls back to the default.
+
+    An extension is a guess at what somebody meant and a ``type=`` is what they
+    said. A mount that quietly opened as some other kind of store would read as
+    a store that is simply empty, which is the one failure a mount
+    configuration cannot notice.
+    """
+    with raises_rendered(BackendError, "there is no 'nonsense' backend"):
+        with open_mounts(tmp_path / "root", ["ref=r.sqlite,type=nonsense"]):
+            pass
+    assert not (tmp_path / "root" / "r.sqlite").exists()
+
+
+def test_the_root_mount_takes_the_same_options_as_any_other(tmp_path):
+    """``--root-mount docs,type=files`` reads a tree as the whole store.
+
+    The root is a mount like the others in everything but not having a mount
+    point, so it takes the value half of the same grammar rather than a
+    spelling of its own.
+    """
+    with open_mounts(tmp_path / "root", root_mount="documents,type=files") as table:
+        table.store_document("note", "the tree is the store")
+    assert (tmp_path / "root" / "documents" / "note.md").exists()
+
+
+def test_a_tree_mount_is_a_name_inside_the_store_directory(tmp_path):
+    """And earns every refusal a database mounted beside it earns.
+
+    ``FilesystemStore`` is constructed at a path when it is an export target,
+    which is a path somebody typed. A mount is not that: it is a name relative
+    to ``--dir`` like every other store, so the same rule refuses an absolute
+    one and one that climbs out.
+    """
+    with raises_rendered(StoreFileError, "absolute path"):
+        open_mounts(tmp_path / "root", ["tree=/srv/documents,type=files"])
+    with raises_rendered(StoreFileError, r"climbs out"):
+        open_mounts(tmp_path / "root", ["tree=../documents,type=files"])
+    # Refused before the directory it named was made, which for a tree is the
+    # refusal doing something a database's would not: an unrefused one would
+    # have left a directory outside --dir with nothing in it to explain itself.
+    assert not (tmp_path / "documents").exists()
 
 
 def test_a_mount_file_is_relative_to_the_store_directory(tmp_path):

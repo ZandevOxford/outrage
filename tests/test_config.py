@@ -18,7 +18,7 @@ import pytest
 
 from conftest import raises_rendered
 from outrage import config as config_module
-from outrage import eventlog, mountfile, store
+from outrage import eventlog, mountfile, mounts, store
 from outrage.config import (
     Change,
     ConfigError,
@@ -357,8 +357,8 @@ def test_a_mount_is_written_to_the_table_beside_the_stores(tmp_path):
 
     written = mountfile.read(tmp_path / "base" / mountfile.DEFAULT_NAME)
     assert written.mounts == (
-        ("ref", "reference.sqlite"),
-        ("lib/deep", "stores/deep.sqlite"),
+        ("ref", mounts.Spec(Path("reference.sqlite"))),
+        ("lib/deep", mounts.Spec(Path("stores/deep.sqlite"))),
     )
     assert "# Mounted read-write." in table.text
 
@@ -372,7 +372,7 @@ def test_the_root_mount_is_written_only_when_it_is_not_the_default(tmp_path):
     named = mountfile.plan_starter(tmp_path / "c", root_mount="main.sqlite")
     assert named.writes
     mountfile.write_starter(named)
-    assert mountfile.read(named.path).root == "main.sqlite"
+    assert mountfile.read(named.path).root == mounts.Spec(Path("main.sqlite"))
 
 
 def test_a_misspelled_mount_point_is_refused_while_writing_the_table(tmp_path):
@@ -396,10 +396,10 @@ def test_a_read_only_mount_is_written_to_its_own_table(tmp_path):
     mountfile.write_starter(table)
 
     written = mountfile.read(table.path)
-    assert written.mounts == (("lib", "lib.sqlite"),)
+    assert written.mounts == (("lib", mounts.Spec(Path("lib.sqlite"))),)
     assert written.read_only == (
-        ("ref", "reference.sqlite"),
-        ("shared/base", "shared.sqlite"),
+        ("ref", mounts.Spec(Path("reference.sqlite"))),
+        ("shared/base", mounts.Spec(Path("shared.sqlite"))),
     )
 
 
