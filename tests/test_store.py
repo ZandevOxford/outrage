@@ -30,6 +30,7 @@ from outrage.mounts import MountedStore
 from outrage.store import (
     BoundedSubtree,
     FileStore,
+    InvalidArgumentError,
     KeyNotFoundError,
     KeyRange,
     PatternNotFoundError,
@@ -253,8 +254,9 @@ def test_encoding_must_be_known(store):
 
 
 def test_json_string_encoding_rejects_trailing_scaffolding(store):
-    with pytest.raises(ValueError, match="not a valid JSON string literal"):
+    with pytest.raises(InvalidArgumentError) as raised:
         store.store_document("a", '"A summary."</content>\n</invoke>\n', encoding="json-string")
+    assert raised.value.code == "encoding-not-a-json-string"
 
     with pytest.raises(KeyNotFoundError):
         store.retrieve_document("a")
@@ -263,20 +265,31 @@ def test_json_string_encoding_rejects_trailing_scaffolding(store):
 def test_json_string_encoding_rejects_scaffolding_inside_the_quotes(store):
     # Raw newlines are not legal inside a JSON string, which is what catches
     # scaffolding that lands before the closing quote rather than after it.
-    with pytest.raises(ValueError, match="not a valid JSON string literal"):
+    with pytest.raises(InvalidArgumentError) as raised:
         store.store_document("a", '"A summary.</content>\n</invoke>\n"', encoding="json-string")
+    assert raised.value.code == "encoding-not-a-json-string"
 
 
 def test_json_string_encoding_rejects_unencoded_content(store):
     # A caller that asks for the encoding and then forgets to apply it fails
     # loudly, which is the property prose instructions cannot provide.
-    with pytest.raises(ValueError, match="not a valid JSON string literal"):
+    with pytest.raises(InvalidArgumentError) as raised:
         store.store_document("a", "A plain unencoded summary.", encoding="json-string")
+    assert raised.value.code == "encoding-not-a-json-string"
 
 
 def test_json_string_encoding_rejects_non_strings(store):
-    with pytest.raises(ValueError, match="decoded to dict"):
+    with pytest.raises(InvalidArgumentError) as raised:
         store.store_document("a", '{"summary": "A summary."}', encoding="json-string")
+    assert raised.value.code == "encoding-not-a-string"
+    assert raised.value.details["decoded"] == "dict"
+
+
+def test_json_string_damage_is_still_a_value_error(store):
+    # `except ValueError` around a store call predates the code, and the class
+    # keeps the builtin so that it goes on working. See `errors.OutrageError`.
+    with pytest.raises(ValueError):
+        store.store_document("a", "unencoded", encoding="json-string")
 
 
 def test_json_string_encoding_survives_a_document_full_of_scaffolding(store):
