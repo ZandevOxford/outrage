@@ -36,6 +36,27 @@ dist/
 # a canary belongs on the machine that runs it rather than in the repository.
 # A project that is not outrage itself has every reason to commit this file.
 .github/hooks/outrage.json
+
+# .mcp.json is the last of the files `outrage init` writes, and was the only one
+# still committed. Its `command` is an absolute path into a conda environment
+# and its `--dir` an absolute path to a store, so the committed copy was true on
+# exactly one machine; it was excluded from the sdist for that reason before it
+# was excluded from here. Recreate it with `outrage init`.
+.mcp.json
+
+# CLAUDE.md and AGENTS.md were pointers saying "the store is the record, go read
+# its readme". That sentence is delivered twice already, by the SessionStart
+# hook `outrage init` installs and by the MCP server's own instructions, and
+# `context/74`/`context/75` in the store are the work that made the second of
+# those reliable. A third copy in a file nothing tests is the copy that goes
+# stale, which AGENTS.md did: it still named the `project` key that became
+# `contents`, and a `.Codex/` directory that `outrage init` writes as `.codex/`.
+#
+# A project that is not outrage itself has every reason to commit these. This
+# one has the hook, and no store to point at in a fresh clone anyway - .outrage/
+# is ignored above.
+CLAUDE.md
+AGENTS.md
 .outrage-*/
 .rage-*/
 

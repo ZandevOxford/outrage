@@ -60,6 +60,21 @@ writing.
 * **[implementation.md](implementation.md)** - what is implemented so far, and
   the planned build order.
 
+The rest is in `src/outrage/documents`, a documentation tree written to be read
+*through the store*: it ships in the wheel, and the server mounts it read-only
+at the `outrage` key **by default**, so a session reads the manual with the same
+tools it reads everything else with. (`--mount-docs` is the flag; it exists for
+the command line, which does not mount it unasked.) It is ordinary markdown as
+well, so the links below work here too.
+
+* **[the documents](src/outrage/documents/readme.md)** - the top of that tree,
+  and where to start. Keys, the command line, the tools and the conventions all
+  hang off it.
+* **[the API reference](src/outrage/documents/reference.md)** - a page per
+  module, **generated from the docstrings** and committed. Do not edit a page
+  there by hand: it is build output, and `tests/test_reference.py` fails when it
+  stops matching the source.
+
 ## Components
 
 * **MCP server** - Python, stdio, for local use. Exposes the store as tools.
