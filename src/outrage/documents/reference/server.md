@@ -79,13 +79,13 @@ fixed, shared between servers, or really a token count is unestablished -
 Everything ordered before this point survives on that client; everything
 after it may not, and nothing may be *only* said after it.
 
-### outrage.server.NO_README *= 'This store has no \`readme\` document. If you work out how it is organised, or what a later session should read first, store that there.'*
+### outrage.server.NO_README *= 'This store has no \`readme\` document. Try reading \`outrage/readme\` instead for instructions.'*
 
 What is said when the store has no readme. The empty store is exactly where
 naming the convention is worth most, since the session that goes on to learn
 the layout is the one that can write it down.
 
-### outrage.server.PROTECTED_CHARS *= 1328*
+### outrage.server.PROTECTED_CHARS *= 863*
 
 What is delivered ahead of the tail, and so everything that has to survive
 the client's cut: the readme line and the essentials. Measured from the real
@@ -94,7 +94,7 @@ strings rather than estimated, so editing either moves it, and
 `DELIVERY_BUDGET`. It no longer varies with the store: what the readme
 costs here is the length of the sentence naming it.
 
-### outrage.server.READ_README *= 'This store has a \`readme\` document - its own introduction, saying what it holds and what to read first. Read it before starting.'*
+### outrage.server.READ_README *= 'This store has a \`readme\` document covering project conventions. Read it before starting.'*
 
 What is said about the readme instead of carrying it: that there is one, and
 to read it before anything else. A fixed cost, where the document itself cost

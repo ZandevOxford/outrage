@@ -1,7 +1,9 @@
-Store a document or a metadata value at a key, overwriting whatever is there.
-Content is markdown, JSON, plain text or HTML. A whole segment given as `?` is
-replaced by a number the store allocates, so `tmp/?` writes to `tmp/1` in an
-empty store; the returned `key` is the one actually written, and is what to use
-for related keys afterwards. Pass `title` whenever you store a document: it is
-what later sessions survey the store by, and a document stored without one is
-hard to find again.
+Store (overwrite) a document or metadata value at a key.
+
+Content is markdown, JSON, plain text or HTML.
+
+When appropriate, supply `title` which will be stored in the `/!title` key
+below.
+
+Use the `?` auto-increment path segment to add documents with incrementing
+ids. This is safe to use across parallel agents.

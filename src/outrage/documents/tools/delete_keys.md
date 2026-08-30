@@ -1,3 +1,5 @@
-Delete a key. A key takes its whole metadata subtree with it. Descendants
-survive unless `recursive` is set. Note that storing an empty document does not
-delete anything.
+Delete a key and all metadata.
+
+Non-metadata descendants are not deleted unless `recursive` is set.
+
+Storing an empty document is not a delete.

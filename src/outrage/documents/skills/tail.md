@@ -1,42 +1,15 @@
-A segment may hold almost any text - the exclusions are `/`, the control
-characters below tab, and a leading `?`, which is reserved for `?` and `?last`
-and for the filters a key will grow - so a key can mirror a real name without
-transforming it. Keys are not file paths, but they read like them: notes about a file might
-live at `file_notes/src/myfile.py`. Names like that are one store's convention
-rather than the system's, and its `readme` says which it uses. Inside a metadata namespace everything is an
-ordinary namespace again - documents, `?`, `?last` and their own metadata - so
-`a/!changelog/22` is a document kept in `a`'s changelog, and `a` carries
-`changelog`, not `changelog/22`. Only the segments before the first `!` count
-towards depth, so a survey reaches a namespace's contents by being scoped
-inside it rather than by asking for more depth.
+Path segments starting with `?` are reserved but otherwise almost any text
+is allowed apart from control characters below \x09. Thus most file paths
+can be mirrored in the store.
 
-A survey also reports the untitled documents under `without_meta`, as a count
-and a few examples covering the same stretch of the store as the page itself.
-It is stats, not a listing, so it carries no cursor: page the survey and the
-windows tile; to enumerate what it counts, call `keys_missing_meta`.
+Projects may have their own namespace conventions, typically stored in
+the `readme` key.
 
-Prefer several small documents to one large one. A document should answer one
-question and be readable in a single call, and a key can hold content *and*
-have keys beneath it, so a general document can stay where it is with the
-detail below it. When there is more to add, add a document rather than growing
-one - `?` allocates the key, so this costs no naming decision.
+Some tools search by depth. This is a count of path segments, except that
+everything below a metadata segment does not count against depth, so metadata
+is selected along with the document.
 
-A key that holds nothing itself but has keys beneath it is a container: reading
-it fails, listing it does not.
+For all tools `?last` in place of a whole segment names the key that sorts
+last there, so `context/?last/state` reads the newest context.
 
-`?last` in place of a whole segment names the key that sorts last there, so
-`context/?last/state` reads the newest context without looking the number up
-first. It works on any key a tool takes, counts containers, and the result says
-which key it resolved to.
-
-The empty key is the root, and omitting a key means the same thing. It holds a
-document like any other key and carries metadata as `!title`, so a store can
-title itself. Nothing else about it is special, and by convention nothing much
-is kept there.
-
-The document at `readme` is a store's entry point: what that particular store
-holds, and what to read before anything else. These instructions name it but do
-not carry it, so reading it is the first thing to do in a store you do not
-already know - its conventions are not derivable from anything here. If you
-work out how a store is organised, or what a later session should read first,
-`readme` is where that belongs, at whatever length it takes.
+The empty key is a valid root document, but otherwise has no special meaning.

@@ -69,7 +69,6 @@ def _scope(key: str | None) -> str:
     return "" if key is None else key
 
 
-
 def _reported[**P, T](function: Callable[P, T]) -> Callable[P, T]:
     """Render a :class:`OutrageError` from a tool into the sentence a caller reads.
 
@@ -298,16 +297,16 @@ README_KEY = "readme"
 #: to read it before anything else. A fixed cost, where the document itself cost
 #: whatever that project's conventions happened to run to.
 READ_README = (
-    f"This store has a `{README_KEY}` document - its own introduction, saying what it "
-    f"holds and what to read first. Read it before starting."
+    f"This store has a `{README_KEY}` document covering project conventions. "
+    "Read it before starting."
 )
 
 #: What is said when the store has no readme. The empty store is exactly where
 #: naming the convention is worth most, since the session that goes on to learn
 #: the layout is the one that can write it down.
 NO_README = (
-    f"This store has no `{README_KEY}` document. If you work out how it is "
-    f"organised, or what a later session should read first, store that there."
+    f"This store has no `{README_KEY}` document. Try reading `outrage/readme` "
+    "instead for instructions."
 )
 
 
@@ -491,12 +490,7 @@ def build_server(
     def retrieve_document(
         key: Annotated[
             str,
-            Field(
-                description=(
-                    "Key to read, e.g. context/a1b2/design, or context/?last/design "
-                    "for the newest"
-                )
-            ),
+            Field(description="Key to read"),
         ],
         offset: Annotated[int, Field(description="Character offset to start at", ge=0)] = 0,
         length: Annotated[
@@ -532,13 +526,7 @@ def build_server(
     def store_document(
         key: Annotated[
             str,
-            Field(
-                description=(
-                    "Key to write, e.g. context/a1b2/design, "
-                    "context/a1b2/design/!title, context/?/design to allocate a "
-                    "number, or context/?last/design for the newest"
-                )
-            ),
+            Field(description="Key to write"),
         ],
         content: Annotated[str, Field(description="Document content")],
         format: Annotated[
@@ -553,11 +541,7 @@ def build_server(
         title: Annotated[
             str | None,
             Field(
-                description=(
-                    "Short title, stored as the key's '!title' metadata in the "
-                    "same write. A metadata key takes one too, and it becomes "
-                    "that namespace's own '!title'."
-                )
+                description=("Short title, stored as the key's '!title' metadata in the same write")
             ),
         ] = None,
         encoding: Annotated[
@@ -611,12 +595,7 @@ def build_server(
     def list_keys(
         key: Annotated[
             str | None,
-            Field(
-                description=(
-                    "Key to list below, e.g. context/?last for the newest; "
-                    "omit for the top level"
-                )
-            ),
+            Field(description="Key to list below"),
         ] = None,
         limit: Annotated[
             int, Field(description="Maximum keys to return", gt=0)
@@ -637,7 +616,6 @@ def build_server(
             "next_cursor": page.next_cursor,
         }
 
-
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
         description=tool_description("get_documents"),
@@ -646,12 +624,7 @@ def build_server(
     def get_documents(
         key: Annotated[
             str | None,
-            Field(
-                description=(
-                    "Key whose subtree to read, e.g. context/?last for the newest; "
-                    "omit for everything"
-                )
-            ),
+            Field(description="Key whose subtree to read; omit for root"),
         ] = None,
         meta_name: Annotated[
             list[str] | None,
@@ -732,12 +705,7 @@ def build_server(
     def keys_missing_meta(
         key: Annotated[
             str | None,
-            Field(
-                description=(
-                    "Key whose subtree to check, e.g. context/?last for the newest; "
-                    "omit for everything"
-                )
-            ),
+            Field(description="Key whose subtree to check; omit for everything"),
         ] = None,
         meta_name: Annotated[
             list[str] | None,
@@ -782,7 +750,7 @@ def build_server(
     def delete_keys(
         key: Annotated[
             str,
-            Field(description="Key to delete, e.g. context/?last for the newest"),
+            Field(description="Key to delete"),
         ],
         recursive: Annotated[
             bool, Field(description="Also delete everything beneath the key")
@@ -1039,8 +1007,7 @@ def build_server(
                 }
                 _add_note(
                     result,
-                    "Edit this file in place and call again with its path to "
-                    "store it back.",
+                    "Edit this file in place and call again with its path to store it back.",
                 )
                 if exported.replaced:
                     # The fact, not a refusal: one file per key is what stops
