@@ -1,56 +1,37 @@
 # Outrage
 
-A simple retrieval system for coding agents: an MCP server, a data store, and
-skills that let an agent keep notes, designs and task context in a store local
-to the project it is working on.
-
-Retrieval is by key rather than by similarity. Keys are hierarchical, slash
-delimited strings such as `context/<guid>/design`, and any key may carry
-metadata such as `context/<guid>/design/!title`. Since an agent knows the keys it
-wrote, lexical addressing is enough, and the system stays deterministic and free
-of external dependencies. Semantic search is a possible later addition, layered
-on as metadata rather than as a change to the model.
-
-Keys are not paths, but they are shaped like them, so a key can mirror one:
-`notes/src/myfile.py` for notes about a source file. A key being written may
-also use `?` in place of a segment - storing at `tmp/?` writes to `tmp/1`, and
-the store reports the key it chose.
-
-## Purpose
-
-To provide a hierarchical RAG (Retrieval-Augmented Generation) MCP store to use
-with LLM based tools.
+A simple RAG (Retrieval-Augmented Generation) system for LLMs, designed to just
+work with minimal setup, and provide a memory that interoperated between
+coding harnesses such as Claude Code, Codex and Copilot CLI.
 
 ## Features
 
 * Simple to get started with - built in initialisation configures everything.
-* Hierarchical store of data and metadata.
-* LLM search - LLM subagents add summary metadata to documents, and LLM subagents can
-  search documents and metadata.
-* Multiple data stores including parquet based stores for large-scale reference material.
+* Hierarchical key based store of data and arbitrary metadata.
+* LLM search - LLM subagents add summary and keyword metadata to documents, and
+  LLM subagents can search documents and metadata.
+* Multiple data stores including parquet based stores for large-scale reference
+  material.
 * Explicit support for command-line coding agents: Claude Code, OpenAI Codex
   CLI, and GitHub Copilot CLI.
+* Command line tools for manipulating the data stores.
 
-## Status
+## Getting started
 
-The store, the MCP server, the key handling, the skill and the command line tool
-are implemented. The tool covers the store operations (`outrage get`, `set`,
-`ls`, `dump`, `copy`, `rm`), bulk export and import to a directory of files
-(`outrage export`, `outrage import`), building a read-only parquet store
-(`outrage pack`),
-the MCP configuration (`outrage config`), a verified backup (`outrage backup`),
-the event log (`outrage log`), and setting a project up (`outrage init`). See
-[implementation.md](implementation.md) for what is done and what is next.
+Set up a 3.12 or later Python environment.
 
-`outrage init` is the way in: run it in a project and it registers the MCP
-server, installs the Claude Code skill, agents and `SessionStart` hook, installs
-the project skill for OpenAI Codex CLI, and installs the session-start hook for
-GitHub Copilot CLI. Outrage explicitly supports these command-line clients; it
-does not claim integrations with similarly named desktop, web or IDE products.
-It writes only the entries outrage owns, leaves the rest of those files alone,
-and is safe to re-run - which is how a project is repaired after an upgrade or
-after the environment moves. `--dry-run` reports what it would change without
-writing.
+Install outrage with:
+
+`pip install outrage`
+
+To set up a project to use Outrage, change directory to the root of the project
+and run:
+
+`outrage init`
+
+And that's it. That will set up the MCP server, tools, skills, agents and hooks
+such that when you run your LLM harness the agent will use the Outrage store
+as a memory.
 
 ## Documentation
 
