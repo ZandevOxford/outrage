@@ -62,31 +62,27 @@ who wrote what. An installer that cannot recognise its own entry has only bad
 options: append every run and accumulate duplicates, or replace the lot and
 destroy hooks it did not write.
 
-So the command carries a marker as a trailing shell comment::
+Claude Code and Codex carry the marker as the final argument to the managed
+command::
 
-    echo '{"hookSpecificOutput": …}'  # outrage-managed:session-start:v1
+    <python> -m outrage sessionstart outrage-managed:session-start:v3
 
-Verified to produce identical output under ``sh``, ``bash`` and ``zsh``, with
-the marker absent from stdout in all three.
+The CLI accepts that one private argument and does not print it, so the marker
+is independent of shell comment syntax and remains absent from stdout.
 
 **Copilot CLI carries the same marker in a ``comment`` field instead**, which
-reverses the argument below for that harness alone. The reason is evidence: a
-live session was seen to deliver the context from an entry shaped that way,
-and no session has yet been seen to deliver it from one carrying a trailing
-shell comment. Which of the two that difference belongs to is *not* settled -
-the failing runs were all non-interactive, and no sessionStart hook fired in
-any of them - so this ships the shape that was watched working and leaves the
-question in the store rather than guessing at it. :func:`is_ours` looks for the
-marker anywhere in the entry, so both forms are recognised and a later
-correction moves it without a migration.
+keeps the live-verified shape for that harness. Older Claude Code and Codex
+entries carried it in a trailing shell comment; :func:`is_ours` looks for the
+marker anywhere in the entry, so both generations are recognised and replaced
+without a migration.
 
 An unknown JSON key on the entry - ``{"_outrageManaged": …}`` - was tested and
 works: the client tolerates it and the hook still fires. It was rejected
 anyway. It depends on that tolerance continuing, which is undocumented, and if
-it ever stops the hook is rejected and delivers nothing *silently*. A shell
-comment depends only on POSIX shell semantics and cannot break a hook that runs
-at all. Both client behaviours this project has been burnt by were undocumented
-ones; see ``project/reference/harness-delivery`` in the store.
+it ever stops the hook is rejected and delivers nothing *silently*. An ordinary
+argument belongs to the command contract and needs no undocumented JSON
+tolerance. Both client behaviours this project has been burnt by were
+undocumented ones; see ``reference/harness-delivery`` in the store.
 
 **Match on the stable part, never the whole marker.** ``:vN`` is
 informational, and so is the product name in front of it. A matcher that
@@ -104,17 +100,26 @@ one word further along.
 
 ## The bridge this is
 
-The marker is needed because the command is an inlined ``echo`` whose text
-changes between releases. If the hook ever becomes ``<abs>/bin/outrage hook
-session-start``, the command is stable and is its own marker - no comment, no
-version, and it works on Windows, where ``#`` does not begin a comment. Expect
-to retire this.
+The Claude Code and Codex hooks now run ``<python> -m outrage sessionstart``.
+The interpreter is the absolute :data:`sys.executable` of the environment that
+ran ``outrage init``, for the same reason the MCP entry names that environment:
+a hook does not inherit an activated environment. The managed marker is an
+ordinary final argument rather than a shell comment, so neither it nor the
+command depends on ``#`` meaning the same thing on every platform.
+
+Copilot CLI remains the exception. Its live-verified payload is a different,
+flatter shape and its hook contract provides separate ``bash`` and
+``powershell`` commands plus a ``comment`` field. Do not fold it into the
+shared command until that payload is known to accept the nested form too.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shlex
+import subprocess
+import sys
 import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -132,6 +137,10 @@ MARKER = "outrage-managed:session-start"
 #: that an entry written under a former name is still recognised as ours and
 #: replaced rather than duplicated. See the module docstring.
 MARKER_MATCH = "-managed:session-start"
+
+#: The complete marker written as the final CLI argument. The stable part is
+#: still :data:`MARKER_MATCH`; the version remains informational.
+SESSIONSTART_MARKER = f"{MARKER}:v3"
 
 #: Where a project's skills, agents and settings live, relative to its root.
 #: Declared above its three users rather than beside the assets, because the
@@ -151,6 +160,9 @@ HOOKS_FIELD = "hooks"
 
 #: Where the packaged fragments live.
 _TEMPLATES = Path(__file__).parent / "hooks"
+
+_SESSIONSTART_COMMAND = "__OUTRAGE_SESSIONSTART_COMMAND__"
+_SESSIONSTART_PROMPT = Path(__file__).parent / "documents" / "hooks" / "sessionstart.md"
 
 
 class InstallError(ConfigError):
@@ -285,13 +297,56 @@ def settings_path(project_dir: str | Path) -> Path:
     return CLAUDE_HOOK.path(project_dir)
 
 
+def sessionstart_command(executable: str | os.PathLike[str] | None = None) -> str:
+    """Build the shell command installed for the shared SessionStart payload.
+
+    The absolute interpreter is the one running ``outrage init``. ``shlex``
+    quotes it for POSIX shells and ``list2cmdline`` for Windows; neither has to
+    quote JSON because :func:`sessionstart_payload` creates that at runtime.
+    The marker is a real argument understood by the private CLI wiring, not a
+    shell comment, so it survives either command language without reaching
+    stdout.
+    """
+    argv = [
+        str(Path(executable or sys.executable).resolve()),
+        "-m",
+        "outrage",
+        "sessionstart",
+        SESSIONSTART_MARKER,
+    ]
+    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+
+
+def sessionstart_payload() -> dict[str, Any]:
+    """Read the shipped prompt and wrap it in the Claude/Codex hook payload."""
+    context = _SESSIONSTART_PROMPT.read_text(encoding="utf-8").removesuffix("\n")
+    return {
+        "hookSpecificOutput": {
+            "hookEventName": CLAUDE_HOOK.event,
+            "additionalContext": context,
+        }
+    }
+
+
+def _render_sessionstart_command(value: Any) -> Any:
+    """Replace the packaged placeholder without knowing a harness's shape."""
+    if isinstance(value, str):
+        return value.replace(_SESSIONSTART_COMMAND, sessionstart_command())
+    if isinstance(value, list):
+        return [_render_sessionstart_command(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _render_sessionstart_command(item) for key, item in value.items()}
+    return value
+
+
 def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     """The entry to install, read from the packaged template.
 
-    The template holds the marker rather than this module appending it, so the
-    command that ships is the command that is installed, character for
-    character. A template whose marker were added in code could be edited into
-    something the matcher no longer recognises without anything noticing.
+    Claude Code and Codex carry a placeholder which is rendered with the
+    absolute interpreter and managed marker at init time. Copilot's verified
+    entry is already complete and passes through unchanged. In both cases the
+    marker is present before the entry is accepted, so a broken template
+    cannot silently become one a later run fails to recognise.
     """
     try:
         loaded = json.loads(target.fragment.read_text(encoding="utf-8"))
@@ -300,6 +355,7 @@ def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     except json.JSONDecodeError as exc:  # pragma: no cover - a broken install
         raise InstallError("template-not-json", path=str(target.fragment)) from exc
 
+    loaded = _render_sessionstart_command(loaded)
     entries = loaded.get(HOOKS_FIELD, {}).get(target.event)
     if not isinstance(entries, list) or len(entries) != 1:
         raise InstallError("template-hook-count", event=target.event)
@@ -657,6 +713,7 @@ __all__ = [
     "HOOK_TARGETS",
     "MARKER",
     "MARKER_MATCH",
+    "SESSIONSTART_MARKER",
     "SETTINGS_NAME",
     "FileChange",
     "HookChange",
@@ -672,6 +729,8 @@ __all__ = [
     "plan_assets",
     "plan_codex_assets",
     "settings_path",
+    "sessionstart_command",
+    "sessionstart_payload",
     "template_entry",
     "write_assets",
 ]

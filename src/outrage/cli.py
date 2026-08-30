@@ -147,6 +147,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     init.set_defaults(handler=_init_command)
 
+    sessionstart = subcommands.add_parser(
+        "sessionstart",
+        help="emit the managed SessionStart context as hook JSON",
+        description="Emit the managed SessionStart context as hook JSON.",
+    )
+    sessionstart.add_argument(
+        "managed_marker",
+        nargs="?",
+        choices=(install.SESSIONSTART_MARKER,),
+        help=argparse.SUPPRESS,
+    )
+    sessionstart.set_defaults(handler=_sessionstart_command)
+
     config = subcommands.add_parser(
         "config",
         help="write the MCP server configuration for a project or user",
@@ -1054,6 +1067,15 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
         # Where the report is long enough to scroll, one line on stderr is what
         # says the run did nothing after the reader has stopped reading.
         print("outrage: dry run, nothing changed", file=sys.stderr)
+    return 0
+
+
+def _sessionstart_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Emit the packaged prompt in the payload Claude Code and Codex accept."""
+    payload = json.dumps(
+        install.sessionstart_payload(), ensure_ascii=False, separators=(",", ":")
+    )
+    print(payload, file=out)
     return 0
 
 

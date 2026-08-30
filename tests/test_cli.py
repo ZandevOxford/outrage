@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
+from outrage import install as install_module
 from outrage import mountfile, mounts, shipped
 from outrage.cli import main, parse_args
 
@@ -25,6 +28,24 @@ def run(*argv: str) -> tuple[int, str]:
 
 def servers(path: Path) -> dict:
     return json.loads(path.read_text())["mcpServers"]
+
+
+def test_sessionstart_emits_the_shipped_prompt_as_hook_json():
+    status, output = run("sessionstart")
+
+    assert status == 0
+    assert json.loads(output) == install_module.sessionstart_payload()
+
+
+def test_python_m_outrage_dispatches_sessionstart_to_the_cli():
+    result = subprocess.run(
+        [sys.executable, "-m", "outrage", "sessionstart", install_module.SESSIONSTART_MARKER],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == install_module.sessionstart_payload()
 
 
 def test_config_writes_the_project_file(tmp_path):

@@ -1,6 +1,11 @@
-"""Allow ``python -m outrage`` as an alternative to the outrage-server script."""
+"""Dispatch the hook CLI while preserving the MCP server module fallback."""
 
-from .server import main
+import sys
+
+from .cli import main as cli_main
+from .server import main as server_main
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:2] == ["sessionstart"]:
+        raise SystemExit(cli_main())
+    raise SystemExit(server_main())

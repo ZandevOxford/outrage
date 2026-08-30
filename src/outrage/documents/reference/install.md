@@ -64,33 +64,29 @@ who wrote what. An installer that cannot recognise its own entry has only bad
 options: append every run and accumulate duplicates, or replace the lot and
 destroy hooks it did not write.
 
-So the command carries a marker as a trailing shell comment:
+Claude Code and Codex carry the marker as the final argument to the managed
+command:
 
 ```default
-echo '{"hookSpecificOutput": …}'  # outrage-managed:session-start:v1
+<python> -m outrage sessionstart outrage-managed:session-start:v3
 ```
 
-Verified to produce identical output under `sh`, `bash` and `zsh`, with
-the marker absent from stdout in all three.
+The CLI accepts that one private argument and does not print it, so the marker
+is independent of shell comment syntax and remains absent from stdout.
 
 **Copilot CLI carries the same marker in a \`\`comment\`\` field instead**, which
-reverses the argument below for that harness alone. The reason is evidence: a
-live session was seen to deliver the context from an entry shaped that way,
-and no session has yet been seen to deliver it from one carrying a trailing
-shell comment. Which of the two that difference belongs to is *not* settled -
-the failing runs were all non-interactive, and no sessionStart hook fired in
-any of them - so this ships the shape that was watched working and leaves the
-question in the store rather than guessing at it. [`is_ours()`](#outrage.install.is_ours) looks for the
-marker anywhere in the entry, so both forms are recognised and a later
-correction moves it without a migration.
+keeps the live-verified shape for that harness. Older Claude Code and Codex
+entries carried it in a trailing shell comment; [`is_ours()`](#outrage.install.is_ours) looks for the
+marker anywhere in the entry, so both generations are recognised and replaced
+without a migration.
 
 An unknown JSON key on the entry - `{"_outrageManaged": …}` - was tested and
 works: the client tolerates it and the hook still fires. It was rejected
 anyway. It depends on that tolerance continuing, which is undocumented, and if
-it ever stops the hook is rejected and delivers nothing *silently*. A shell
-comment depends only on POSIX shell semantics and cannot break a hook that runs
-at all. Both client behaviours this project has been burnt by were undocumented
-ones; see `project/reference/harness-delivery` in the store.
+it ever stops the hook is rejected and delivers nothing *silently*. An ordinary
+argument belongs to the command contract and needs no undocumented JSON
+tolerance. Both client behaviours this project has been burnt by were
+undocumented ones; see `reference/harness-delivery` in the store.
 
 **Match on the stable part, never the whole marker.** `:vN` is
 informational, and so is the product name in front of it. A matcher that
@@ -108,11 +104,17 @@ one word further along.
 
 ## The bridge this is
 
-The marker is needed because the command is an inlined `echo` whose text
-changes between releases. If the hook ever becomes `<abs>/bin/outrage hook
-session-start`, the command is stable and is its own marker - no comment, no
-version, and it works on Windows, where `#` does not begin a comment. Expect
-to retire this.
+The Claude Code and Codex hooks now run `<python> -m outrage sessionstart`.
+The interpreter is the absolute [`sys.executable`](https://docs.python.org/3/library/sys.html#sys.executable) of the environment that
+ran `outrage init`, for the same reason the MCP entry names that environment:
+a hook does not inherit an activated environment. The managed marker is an
+ordinary final argument rather than a shell comment, so neither it nor the
+command depends on `#` meaning the same thing on every platform.
+
+Copilot CLI remains the exception. Its live-verified payload is a different,
+flatter shape and its hook contract provides separate `bash` and
+`powershell` commands plus a `comment` field. Do not fold it into the
+shared command until that payload is known to accept the nested form too.
 
 ### outrage.install.ASSET_DIRS *= ('skills', 'agents')*
 
@@ -168,6 +170,11 @@ marker for both harnesses: it names the hook, not the client.
 What a matcher compares against: [`MARKER`](#outrage.install.MARKER) without the product name, so
 that an entry written under a former name is still recognised as ours and
 replaced rather than duplicated. See the module docstring.
+
+### outrage.install.SESSIONSTART_MARKER *= 'outrage-managed:session-start:v3'*
+
+The complete marker written as the final CLI argument. The stable part is
+still [`MARKER_MATCH`](#outrage.install.MARKER_MATCH); the version remains informational.
 
 ### outrage.install.SETTINGS_NAME *= 'settings.json'*
 
@@ -383,14 +390,30 @@ Work out which Codex skills a project is missing or has an older copy of.
 
 Where a project's Claude Code settings file is, existing or not.
 
+### outrage.install.sessionstart_command(executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+Build the shell command installed for the shared SessionStart payload.
+
+The absolute interpreter is the one running `outrage init`. `shlex`
+quotes it for POSIX shells and `list2cmdline` for Windows; neither has to
+quote JSON because [`sessionstart_payload()`](#outrage.install.sessionstart_payload) creates that at runtime.
+The marker is a real argument understood by the private CLI wiring, not a
+shell comment, so it survives either command language without reaching
+stdout.
+
+### outrage.install.sessionstart_payload() → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+
+Read the shipped prompt and wrap it in the Claude/Codex hook payload.
+
 ### outrage.install.template_entry(target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 The entry to install, read from the packaged template.
 
-The template holds the marker rather than this module appending it, so the
-command that ships is the command that is installed, character for
-character. A template whose marker were added in code could be edited into
-something the matcher no longer recognises without anything noticing.
+Claude Code and Codex carry a placeholder which is rendered with the
+absolute interpreter and managed marker at init time. Copilot's verified
+entry is already complete and passes through unchanged. In both cases the
+marker is present before the entry is accepted, so a broken template
+cannot silently become one a later run fails to recognise.
 
 ### outrage.install.write_assets(changes: [list](https://docs.python.org/3/library/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]) → [None](https://docs.python.org/3/library/constants.html#None)
 

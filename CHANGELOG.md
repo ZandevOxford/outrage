@@ -2,6 +2,29 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.4.1 - 2026-08-30
+
+0.4.1 makes the session-start guidance installed by `outrage init` work the
+same way across Claude Code and Codex, while retaining Copilot CLI's separately
+verified hook shape.
+
+* **`outrage init` now installs a Codex SessionStart hook** in
+  `.codex/hooks.json`. It merges its entry with an existing file and leaves
+  hooks it does not own untouched, just as it already does for Claude Code and
+  Copilot CLI.
+* **Claude Code and Codex now generate their hook JSON through the installed
+  Python**, using `python -m outrage sessionstart`, instead of embedding it in
+  an `echo` command. The command reads the shipped prompt when the hook runs,
+  quotes the interpreter for the host platform, and carries its managed marker
+  as an ordinary argument rather than a shell comment.
+* **The installed prompt names `retrieve_document` explicitly** and falls back
+  from the project's `readme` to `outrage/readme` when the project does not
+  provide one.
+
+The repository's own generated client configuration is no longer tracked, and
+the README now links directly to the shipped documents and generated API
+reference.
+
 ## 0.4.0 - 2026-08-29
 
 0.4.0 is about what a store and its server *say*: the documentation outrage
