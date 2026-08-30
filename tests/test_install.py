@@ -27,6 +27,7 @@ from outrage.install import (
     CLAUDE_DIR,
     CLAUDE_HOOK,
     CODEX_DIR,
+    CODEX_HOOK,
     COPILOT_HOOK,
     HOOK_TARGETS,
     MARKER,
@@ -703,3 +704,118 @@ def test_init_reports_one_change_per_harness(tmp_path):
 
     assert [h.target for h in done.hooks] == list(HOOK_TARGETS)
     assert [h.path for h in done.hooks] == [t.path(done.project_dir) for t in HOOK_TARGETS]
+
+
+# -- the third harness: Codex ---------------------------------------------
+#
+# Codex reads `.codex/hooks.json`, its own file the way Copilot's is, but the
+# entry inside is Claude Code's shape: `SessionStart`, a nested `hooks` list,
+# and `hookSpecificOutput` around the context. So the interesting assertions
+# are the two ends - that it lands in the right file, and that it says the same
+# sentence as the other two - plus the `matcher`, which is Codex's alone.
+
+
+def codex_hook_path(project: Path) -> Path:
+    return CODEX_HOOK.path(project)
+
+
+def codex_entries(path: Path) -> list:
+    return read_json(path)["hooks"][CODEX_HOOK.event]
+
+
+def test_the_codex_template_ships_and_carries_the_marker():
+    assert CODEX_HOOK.fragment.is_file(), "the template must travel with the package"
+    assert is_ours(template_entry(CODEX_HOOK))
+
+
+def test_the_codex_hook_goes_beside_the_codex_skills():
+    """`.codex/hooks.json`, not `.codex/skills/` and not `.github/`.
+
+    The two Codex halves are installed by different code - skills by
+    `plan_codex_assets`, this by `plan` - and nothing but this ties them to the
+    same directory.
+    """
+    assert CODEX_HOOK.relative == Path(".codex") / "hooks.json"
+
+
+def test_the_codex_entry_is_the_claude_shape_with_a_matcher():
+    entry = template_entry(CODEX_HOOK)
+
+    assert entry["matcher"] == "startup|resume"
+    assert entry["hooks"][0]["type"] == "command"
+    # Claude's shape, so the marker is a shell comment again rather than the
+    # JSON field Copilot needs.
+    assert MARKER in entry["hooks"][0]["command"]
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the marker is a POSIX shell comment")
+def test_the_codex_command_emits_the_context_and_hides_the_marker():
+    result = subprocess.run(
+        ["sh", "-c", template_entry(CODEX_HOOK)["hooks"][0]["command"]],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["hookSpecificOutput"]["hookEventName"] == CODEX_HOOK.event
+    assert "outrage document store" in payload["hookSpecificOutput"]["additionalContext"]
+    assert MARKER not in result.stdout
+
+
+def test_every_harness_delivers_the_same_sentence():
+    """One store, one instruction. Three wordings would drift, and silently.
+
+    `test_both_harnesses_deliver_the_same_sentence` above covers the first two
+    and is left as it is; this one is over `HOOK_TARGETS`, so a fourth harness
+    is caught without a fourth test.
+    """
+
+    def context(target) -> str:
+        entry = template_entry(target)
+        command = entry["bash"] if "bash" in entry else entry["hooks"][0]["command"]
+        payload = json.loads(
+            subprocess.run(
+                ["sh", "-c", command], capture_output=True, text=True, check=True
+            ).stdout
+        )
+        return payload.get("hookSpecificOutput", payload)["additionalContext"]
+
+    assert len({context(t) for t in HOOK_TARGETS}) == 1
+
+
+def test_init_writes_the_codex_hook(tmp_path):
+    init(tmp_path)
+
+    assert codex_entries(codex_hook_path(tmp_path)) == [template_entry(CODEX_HOOK)]
+
+
+def test_a_second_run_leaves_the_codex_file_alone(tmp_path):
+    install(tmp_path, target=CODEX_HOOK)
+    before = codex_hook_path(tmp_path).read_text()
+
+    change = install(tmp_path, target=CODEX_HOOK)
+
+    assert change.action == "unchanged"
+    assert codex_hook_path(tmp_path).read_text() == before
+
+
+def test_the_codex_file_is_merged_not_claimed(tmp_path):
+    """Somebody else's Codex hooks survive, including their own SessionStart."""
+    path = codex_hook_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    theirs = {"matcher": "startup", "hooks": [{"type": "command", "command": "echo hi"}]}
+    write_json(
+        path,
+        {
+            "description": "mine",
+            "hooks": {CODEX_HOOK.event: [theirs], "PreToolUse": [theirs]},
+        },
+    )
+
+    install(tmp_path, target=CODEX_HOOK)
+    written = read_json(path)
+
+    assert written["description"] == "mine"
+    assert written["hooks"]["PreToolUse"] == [theirs]
+    assert written["hooks"][CODEX_HOOK.event] == [theirs, template_entry(CODEX_HOOK)]
