@@ -1,3 +1,3 @@
 """Outrage: a key-addressed retrieval system for coding agents."""
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
