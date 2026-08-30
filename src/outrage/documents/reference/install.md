@@ -28,9 +28,9 @@ They differ in more than spelling:
 * **Claude Code** merges into `.claude/settings.json`, a file the user owns
   outright and which this project does not commit.
 * **Copilot CLI** takes a file per purpose under `.github/hooks/`, so
-  `.github/hooks/outrage.json` is outrage's own - but `.github` is usually
-  **committed**, so a re-run's diff lands in somebody's version control where
-  the Claude one does not.
+  `.github/hooks/outrage.json` is outrage's own, and repository agents under
+  `.github/agents/`. `.github` is usually **committed**, so a re-run's diff
+  lands in somebody's version control where the Claude one does not.
 * Copilot's entry carries the command twice, as `bash` and `powershell`,
   and the file needs `"version": 1` at its top. Hence
   [`HookTarget.base`](#outrage.install.HookTarget.base): what to start from when the file does not exist.
@@ -64,7 +64,7 @@ who wrote what. An installer that cannot recognise its own entry has only bad
 options: append every run and accumulate duplicates, or replace the lot and
 destroy hooks it did not write.
 
-Claude Code and Codex carry the marker as the final argument to the managed
+All three harnesses carry the marker as the final argument to the managed
 command:
 
 ```default
@@ -74,11 +74,12 @@ command:
 The CLI accepts that one private argument and does not print it, so the marker
 is independent of shell comment syntax and remains absent from stdout.
 
-**Copilot CLI carries the same marker in a \`\`comment\`\` field instead**, which
-keeps the live-verified shape for that harness. Older Claude Code and Codex
-entries carried it in a trailing shell comment; [`is_ours()`](#outrage.install.is_ours) looks for the
-marker anywhere in the entry, so both generations are recognised and replaced
-without a migration.
+Copilot's command also carries a hidden `--copilot` flag so the CLI emits its
+flat `additionalContext` payload rather than Claude and Codex's nested one.
+Older Copilot entries carried the marker in a `comment` field, and older
+Claude Code and Codex entries carried it in a trailing shell comment;
+[`is_ours()`](#outrage.install.is_ours) looks for the marker anywhere in the entry, so every generation
+is recognised and replaced without a migration.
 
 An unknown JSON key on the entry - `{"_outrageManaged": …}` - was tested and
 works: the client tolerates it and the hook still fires. It was rejected
@@ -104,17 +105,17 @@ one word further along.
 
 ## The bridge this is
 
-The Claude Code and Codex hooks now run `<python> -m outrage sessionstart`.
+All three hooks now run `<python> -m outrage sessionstart`.
 The interpreter is the absolute [`sys.executable`](https://docs.python.org/3/library/sys.html#sys.executable) of the environment that
 ran `outrage init`, for the same reason the MCP entry names that environment:
 a hook does not inherit an activated environment. The managed marker is an
 ordinary final argument rather than a shell comment, so neither it nor the
 command depends on `#` meaning the same thing on every platform.
 
-Copilot CLI remains the exception. Its live-verified payload is a different,
-flatter shape and its hook contract provides separate `bash` and
-`powershell` commands plus a `comment` field. Do not fold it into the
-shared command until that payload is known to accept the nested form too.
+Copilot CLI remains different only at the boundary: its hook contract provides
+separate `bash` and `powershell` commands and its output is the documented
+flat payload. The same command reads the same shipped prompt at invocation time
+and selects that shape with `--copilot`.
 
 ### outrage.install.ASSET_DIRS *= ('skills', 'agents')*
 
@@ -132,6 +133,10 @@ settings path is one of them and used to spell the directory out.
 
 Where Codex reads project-scoped skills and hooks, relative to the project
 root. Both live below it, so the hook target spells out only the filename.
+
+### outrage.install.GITHUB_DIR *= '.github'*
+
+Where Copilot CLI reads its repository hook and preferred agent definitions.
 
 ### outrage.install.CLAUDE_HOOK *= HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={})*
 
@@ -289,7 +294,7 @@ Bases: [`ConfigError`](config.md#outrage.config.ConfigError)
 
 Settings that cannot safely be updated.
 
-### *class* outrage.install.Installation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], table: [Starter](mountfile.md#outrage.mountfile.Starter))
+### *class* outrage.install.Installation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], copilot_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], table: [Starter](mountfile.md#outrage.mountfile.Starter))
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -311,6 +316,10 @@ Claude Code skills and agents.
 
 Codex skills.
 
+#### copilot_assets *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
+
+Copilot CLI agents.
+
 #### table *: [Starter](mountfile.md#outrage.mountfile.Starter)*
 
 The project's mount table: written when there is none, never rewritten.
@@ -324,6 +333,10 @@ Every packaged file to install, as a source and a path below `.claude`.
 ### outrage.install.codex_asset_sources() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
 
 Every packaged Codex skill, as a source and path below `.codex`.
+
+### outrage.install.copilot_asset_sources() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
+
+Every packaged Copilot agent, as a source and path below `.github`.
 
 ### outrage.install.init(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Installation](#outrage.install.Installation)
 
@@ -386,11 +399,15 @@ Work out which packaged files a project is missing or has an older copy of.
 
 Work out which Codex skills a project is missing or has an older copy of.
 
+### outrage.install.plan_copilot_assets(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]
+
+Work out which Copilot agents a project is missing or has an older copy of.
+
 ### outrage.install.settings_path(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where a project's Claude Code settings file is, existing or not.
 
-### outrage.install.sessionstart_command(executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.install.sessionstart_command(executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, copilot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 Build the shell command installed for the shared SessionStart payload.
 
@@ -401,19 +418,19 @@ The marker is a real argument understood by the private CLI wiring, not a
 shell comment, so it survives either command language without reaching
 stdout.
 
-### outrage.install.sessionstart_payload() → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+### outrage.install.sessionstart_payload(\*, copilot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
-Read the shipped prompt and wrap it in the Claude/Codex hook payload.
+Read the shipped prompt and wrap it in one harness's hook payload.
 
 ### outrage.install.template_entry(target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 The entry to install, read from the packaged template.
 
-Claude Code and Codex carry a placeholder which is rendered with the
-absolute interpreter and managed marker at init time. Copilot's verified
-entry is already complete and passes through unchanged. In both cases the
-marker is present before the entry is accepted, so a broken template
-cannot silently become one a later run fails to recognise.
+Every harness carries a placeholder rendered with the absolute interpreter
+and managed marker at init time. Copilot receives the same command with a
+flag selecting its flat payload. The marker is present before the entry is
+accepted, so a broken template cannot silently become one a later run
+fails to recognise.
 
 ### outrage.install.write_assets(changes: [list](https://docs.python.org/3/library/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]) → [None](https://docs.python.org/3/library/constants.html#None)
 

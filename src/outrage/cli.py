@@ -106,7 +106,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "entry in .mcp.json, a session-start hook for each harness - "
             ".claude/settings.json for Claude Code, .github/hooks/outrage.json "
             "for Copilot CLI, .codex/hooks.json for Codex - and the packaged "
-            "skill and agents in .claude/, and the Codex skills in .codex/. "
+            "skill and agents in .claude/, Copilot agents in .github/agents/, "
+            "and the Codex skills in .codex/. "
             "Only the entries outrage owns are written; anything else in those "
             "files is left as it was, and a file already holding the current "
             "content is not rewritten. Mounts go in mounts.toml in the store "
@@ -151,6 +152,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "sessionstart",
         help="emit the managed SessionStart context as hook JSON",
         description="Emit the managed SessionStart context as hook JSON.",
+    )
+    sessionstart.add_argument(
+        "--copilot",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     sessionstart.add_argument(
         "managed_marker",
@@ -1062,6 +1068,13 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
         root=done.project_dir / install.CODEX_DIR,
         label="Codex skill",
     )
+    _report_assets(
+        done.copilot_assets,
+        out,
+        dry_run=args.dry_run,
+        root=done.project_dir / install.GITHUB_DIR,
+        label="Copilot agents",
+    )
 
     if args.dry_run and done.writes:
         # Where the report is long enough to scroll, one line on stderr is what
@@ -1071,9 +1084,11 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def _sessionstart_command(args: argparse.Namespace, out: TextIO) -> int:
-    """Emit the packaged prompt in the payload Claude Code and Codex accept."""
+    """Emit the packaged prompt in the selected harness's hook payload."""
     payload = json.dumps(
-        install.sessionstart_payload(), ensure_ascii=False, separators=(",", ":")
+        install.sessionstart_payload(copilot=args.copilot),
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
     print(payload, file=out)
     return 0

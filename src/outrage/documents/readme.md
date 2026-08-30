@@ -23,6 +23,8 @@ At this level:
   editing and handing over work in a project store.
 * [reference](reference.md) contains the API documentation, generated from the
   source, with a page per module below it.
+* [agents](agents.md) contains the canonical search, annotation and backfill
+  procedures shared by the harness integrations.
 
 ## Documentation used by the MCP server
 

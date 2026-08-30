@@ -4,9 +4,8 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "echo '{\"additionalContext\":\"Unless you are told otherwise, use the Outrage tool read_document to read the key \\\"readme\\\" for project conventions before starting. If this is missing, read \\\"outrage/readme\\\" instead.\"}'",
-        "powershell": "Write-Output '{\"additionalContext\":\"Unless you are told otherwise, use the Outrage tool read_document to read the key \\\"readme\\\" for project conventions before starting. If this is missing, read \\\"outrage/readme\\\" instead.\"}'",
-        "comment": "outrage-managed:session-start:v2"
+        "bash": "__OUTRAGE_SESSIONSTART_COMMAND__",
+        "powershell": "__OUTRAGE_SESSIONSTART_COMMAND__"
       }
     ]
   }

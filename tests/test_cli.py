@@ -37,6 +37,13 @@ def test_sessionstart_emits_the_shipped_prompt_as_hook_json():
     assert json.loads(output) == install_module.sessionstart_payload()
 
 
+def test_sessionstart_emits_the_flat_copilot_payload_when_selected():
+    status, output = run("sessionstart", "--copilot")
+
+    assert status == 0
+    assert json.loads(output) == install_module.sessionstart_payload(copilot=True)
+
+
 def test_python_m_outrage_dispatches_sessionstart_to_the_cli():
     result = subprocess.run(
         [sys.executable, "-m", "outrage", "sessionstart", install_module.SESSIONSTART_MARKER],
@@ -1257,6 +1264,7 @@ def test_init_arranges_the_whole_project(tmp_path):
     assert (tmp_path / ".claude" / "settings.json").is_file()
     assert (tmp_path / ".claude" / "skills" / "outrage" / "SKILL.md").is_file()
     assert (tmp_path / ".codex" / "skills" / "outrage" / "SKILL.md").is_file()
+    assert (tmp_path / ".github" / "agents" / "outrage-search.agent.md").is_file()
     assert "added" in output
 
 
@@ -1276,6 +1284,7 @@ def test_init_names_every_path_it_touches(tmp_path):
     assert str(tmp_path / ".claude" / "settings.json") in output
     assert "skills/outrage/SKILL.md" in output
     assert str(tmp_path / ".codex") in output
+    assert str(tmp_path / ".github") in output
 
 
 def test_init_records_the_store_directory_and_the_log(tmp_path):

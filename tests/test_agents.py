@@ -15,8 +15,10 @@ from pathlib import Path
 import pytest
 
 import outrage
+from outrage import shipped
 
 AGENTS = Path(outrage.__file__).parent / "agents"
+CODEX_REFERENCES = Path(outrage.__file__).parent / "codex" / "skills" / "outrage" / "references"
 REPO = Path(__file__).resolve().parents[1]
 DOGFOOD = REPO / ".claude" / "agents"
 # Where the symlinks are meant to land. Not ``AGENTS``: that is whichever copy
@@ -34,6 +36,11 @@ UNCONFIGURED = not (REPO / ".claude").is_dir()
 NO_DOGFOOD = "no .claude/ in this checkout; `outrage init` installs one"
 
 NAMES = ["outrage-annotate", "outrage-backfill", "outrage-search"]
+PROCEDURES = {
+    "outrage-annotate": "annotate",
+    "outrage-backfill": "backfill",
+    "outrage-search": "search",
+}
 
 
 def _frontmatter(text: str) -> dict[str, str]:
@@ -75,6 +82,25 @@ def test_description_is_substantial(name):
     # The description is the only part in context before the agent is chosen,
     # so it is what decides whether the agent is ever reached.
     assert len(_fields(name)["description"]) > 100
+
+
+@pytest.mark.parametrize(("name", "procedure"), PROCEDURES.items())
+def test_agent_reads_a_resolving_shared_procedure_or_stops(name, procedure):
+    text = (AGENTS / f"{name}.md").read_text(encoding="utf-8")
+
+    assert f"`outrage/agents/{procedure}`" in text
+    assert "stop and report the failure" in text
+    with shipped.open_documents() as store:
+        shared = store.retrieve_document(f"agents/{procedure}")
+    assert shared.content.startswith("# ")
+
+
+@pytest.mark.parametrize("procedure", PROCEDURES.values())
+def test_codex_reference_reads_the_same_shared_procedure_or_stops(procedure):
+    text = (CODEX_REFERENCES / f"{procedure}.md").read_text(encoding="utf-8")
+
+    assert f"`outrage/agents/{procedure}`" in text
+    assert "stop and report the failure" in text
 
 
 @pytest.mark.skipif(UNCONFIGURED, reason=NO_DOGFOOD)
@@ -120,6 +146,7 @@ def test_backfill_surveys_and_delegates_but_does_not_write():
     # What it actually asks for: the keys missing the metadata, not the
     # documents that already have it.
     assert "mcp__outrage__keys_missing_meta" in tools
+    assert "mcp__outrage__read_document" in tools
     assert "Agent" in tools, "it generates by spawning outrage-annotate, so it needs to spawn"
     # Every write in the flow goes through outrage-annotate, so the metadata
     # contract - omit title, never touch the document key - lives in one place.

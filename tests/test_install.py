@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shlex
 import shutil
 import subprocess
@@ -21,6 +20,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import yaml
 
 from conftest import raises_rendered
 from outrage import install as install_module
@@ -31,6 +31,7 @@ from outrage.install import (
     CODEX_DIR,
     CODEX_HOOK,
     COPILOT_HOOK,
+    GITHUB_DIR,
     HOOK_TARGETS,
     MARKER,
     SESSIONSTART_MARKER,
@@ -38,12 +39,14 @@ from outrage.install import (
     InstallError,
     asset_sources,
     codex_asset_sources,
+    copilot_asset_sources,
     init,
     install,
     is_ours,
     plan,
     plan_assets,
     plan_codex_assets,
+    plan_copilot_assets,
     sessionstart_command,
     sessionstart_payload,
     settings_path,
@@ -139,6 +142,23 @@ def test_the_shared_hook_command_names_the_running_python_environment():
         assert shlex.split(command) == expected
 
 
+def test_the_copilot_hook_command_selects_its_flat_payload():
+    expected = [
+        str(Path(sys.executable).resolve()),
+        "-m",
+        "outrage",
+        "sessionstart",
+        "--copilot",
+        SESSIONSTART_MARKER,
+    ]
+    command = sessionstart_command(copilot=True)
+
+    if os.name == "nt":
+        assert command == subprocess.list2cmdline(expected)
+    else:
+        assert shlex.split(command) == expected
+
+
 def test_the_sessionstart_payload_is_read_from_the_shipped_document():
     payload = sessionstart_payload()
     prompt = Path(install_module.__file__).parent / "documents" / "hooks" / "sessionstart.md"
@@ -146,6 +166,9 @@ def test_the_sessionstart_payload_is_read_from_the_shipped_document():
     assert payload["hookSpecificOutput"]["additionalContext"] == (
         prompt.read_text(encoding="utf-8").removesuffix("\n")
     )
+    assert sessionstart_payload(copilot=True) == {
+        "additionalContext": prompt.read_text(encoding="utf-8").removesuffix("\n")
+    }
 
 
 def test_the_sessionstart_prompt_is_read_at_command_time(tmp_path, monkeypatch):
@@ -359,6 +382,10 @@ def codex_installed(project: Path, relative: str) -> Path:
     return project / CODEX_DIR / relative
 
 
+def copilot_installed(project: Path, relative: str) -> Path:
+    return project / GITHUB_DIR / relative
+
+
 def test_the_package_ships_a_skill_and_three_agents():
     """The copy is only as good as what is packaged, so check it is there."""
     relative = {str(r) for _, r in asset_sources()}
@@ -382,6 +409,47 @@ def test_the_package_ships_a_codex_skill_with_agent_workflows():
     } <= relative
 
 
+def test_the_package_ships_three_copilot_agents():
+    relative = {str(r) for _, r in copilot_asset_sources()}
+
+    assert relative == {
+        "agents/outrage-annotate.agent.md",
+        "agents/outrage-backfill.agent.md",
+        "agents/outrage-search.agent.md",
+    }
+
+
+@pytest.mark.parametrize(
+    ("name", "tools"),
+    [
+        ("outrage-annotate", {"outrage-read_document", "outrage-store_document"}),
+        (
+            "outrage-backfill",
+            {"outrage-keys_missing_meta", "outrage-read_document", "task"},
+        ),
+        (
+            "outrage-search",
+            {
+                "outrage-get_documents",
+                "outrage-read_document",
+                "outrage-keys_missing_meta",
+            },
+        ),
+    ],
+)
+def test_copilot_agents_use_its_profile_shape_and_shared_procedures(name, tools):
+    root = Path(install_module.__file__).parent / "copilot" / "agents"
+    text = (root / f"{name}.agent.md").read_text(encoding="utf-8")
+    _, block, body = text.split("---", 2)
+    fields = yaml.safe_load(block)
+
+    assert fields["name"] == name
+    assert set(fields["tools"]) == tools
+    procedure = name.removeprefix("outrage-")
+    assert f"`outrage/agents/{procedure}`" in body
+    assert "stop and report the failure" in body
+
+
 def test_an_empty_project_gets_every_packaged_file(tmp_path):
     done = init(tmp_path)
     changes = done.assets
@@ -391,6 +459,9 @@ def test_an_empty_project_gets_every_packaged_file(tmp_path):
         assert change.path.read_bytes() == change.source.read_bytes()
     assert actions(list(done.codex_assets)) == {"created"}
     for change in done.codex_assets:
+        assert change.path.read_bytes() == change.source.read_bytes()
+    assert actions(list(done.copilot_assets)) == {"created"}
+    for change in done.copilot_assets:
         assert change.path.read_bytes() == change.source.read_bytes()
 
 
@@ -402,6 +473,7 @@ def test_a_second_run_copies_nothing(tmp_path):
     assert actions(init(tmp_path).assets) == {"unchanged"}
     assert skill.stat().st_mtime_ns == before, "an unchanged file is not rewritten"
     assert actions(init(tmp_path).codex_assets) == {"unchanged"}
+    assert actions(init(tmp_path).copilot_assets) == {"unchanged"}
 
 
 def test_an_edited_copy_is_replaced_by_the_packaged_one(tmp_path):
@@ -465,9 +537,11 @@ def test_a_symlinked_codex_skill_is_left_alone(tmp_path):
 def test_planning_the_copy_writes_nothing(tmp_path):
     plan_assets(tmp_path)
     plan_codex_assets(tmp_path)
+    plan_copilot_assets(tmp_path)
 
     assert not (tmp_path / CLAUDE_DIR).exists()
     assert not (tmp_path / CODEX_DIR).exists()
+    assert not (tmp_path / GITHUB_DIR).exists()
 
 
 # -- setting a whole project up ------------------------------------------
@@ -486,6 +560,7 @@ def test_init_writes_the_three_things(tmp_path):
     assert is_ours(entries(settings_path(tmp_path))[-1])
     assert installed(tmp_path, "skills/outrage/SKILL.md").is_file()
     assert codex_installed(tmp_path, "skills/outrage/SKILL.md").is_file()
+    assert copilot_installed(tmp_path, "agents/outrage-search.agent.md").is_file()
     assert done.writes
 
 
@@ -555,6 +630,7 @@ def test_a_second_init_changes_nothing_anywhere(tmp_path):
     assert [h.action for h in done.hooks] == ["unchanged"] * len(HOOK_TARGETS)
     assert actions(list(done.assets)) == {"unchanged"}
     assert actions(list(done.codex_assets)) == {"unchanged"}
+    assert actions(list(done.copilot_assets)) == {"unchanged"}
 
 
 def test_init_dry_run_writes_nothing_and_agrees_with_the_real_run(tmp_path):
@@ -563,11 +639,14 @@ def test_init_dry_run_writes_nothing_and_agrees_with_the_real_run(tmp_path):
     assert not (tmp_path / ".mcp.json").exists()
     assert not (tmp_path / CLAUDE_DIR).exists()
     assert not (tmp_path / CODEX_DIR).exists()
+    assert not (tmp_path / GITHUB_DIR).exists()
 
     done = init(tmp_path)
     assert preview.server.action == done.server.action
     assert [h.action for h in preview.hooks] == [h.action for h in done.hooks]
     assert actions(list(preview.assets)) == actions(list(done.assets))
+    assert actions(list(preview.codex_assets)) == actions(list(done.codex_assets))
+    assert actions(list(preview.copilot_assets)) == actions(list(done.copilot_assets))
 
 
 def test_a_refusal_stops_the_whole_run(tmp_path):
@@ -582,15 +661,16 @@ def test_a_refusal_stops_the_whole_run(tmp_path):
     assert not (tmp_path / ".mcp.json").exists(), "the server entry was not written either"
     assert not installed(tmp_path, "skills/outrage/SKILL.md").exists()
     assert not codex_installed(tmp_path, "skills/outrage/SKILL.md").exists()
+    assert not copilot_installed(tmp_path, "agents/outrage-search.agent.md").exists()
 
 
 # -- the second harness: Copilot CLI -------------------------------------
 #
-# Copilot CLI reads most of what this project already writes, so the hook was
-# the only piece missing. It is a different shape in every way that matters:
+# Copilot CLI reads Claude-compatible skills but its preferred repository
+# agents live in `.github/agents`. Its hook is also a different shape:
 # its own file rather than a merge into the user's, `sessionStart` rather than
-# `SessionStart`, a `version` stamp the file is ignored without, and the
-# command carried twice for the two shells.
+# `SessionStart`, a `version` stamp the file is ignored without, and the command
+# carried twice for the two shells.
 
 
 def copilot_path(project: Path) -> Path:
@@ -620,26 +700,18 @@ def test_the_copilot_entry_carries_both_shells():
     # Both, because the docs ask for both and a Windows session would otherwise
     # get no context at all. The powershell form is unverified - no PowerShell
     # on the machine this was written on.
-    assert entry["bash"].startswith("echo '")
-    assert entry["powershell"].startswith("Write-Output '")
+    assert entry["bash"] == sessionstart_command(copilot=True)
+    assert entry["powershell"] == sessionstart_command(copilot=True)
 
 
-def test_the_copilot_marker_is_a_field_and_not_a_shell_comment():
-    """The one place outrage puts its marker in JSON rather than in the command.
-
-    A live Copilot session delivered the context from an entry shaped this way.
-    None has been seen to deliver it from one carrying a trailing `# marker`,
-    so until that is pinned down the shipped shape is the watched one. Keeping
-    the command free of the comment is the point, so this asserts it.
-    """
+def test_the_copilot_marker_is_an_argument_and_the_old_field_is_gone():
     entry = template_entry(COPILOT_HOOK)
 
-    assert re.fullmatch(rf"{re.escape(MARKER)}:v\d+", entry["comment"])
-    assert MARKER not in entry["bash"]
-    assert MARKER not in entry["powershell"]
+    assert "comment" not in entry
+    assert shlex.split(entry["bash"])[-1] == SESSIONSTART_MARKER
+    assert shlex.split(entry["powershell"])[-1] == SESSIONSTART_MARKER
 
 
-@pytest.mark.skipif(os.name != "posix", reason="the marker is a POSIX shell comment")
 @pytest.mark.parametrize("shell", ["sh", "bash", "zsh"])
 def test_the_copilot_command_emits_the_context_and_hides_the_marker(shell):
     """Same premise as the Claude one, and the same failure if it is wrong.
@@ -680,6 +752,22 @@ def test_both_harnesses_deliver_the_same_sentence():
         ).stdout
     )
     assert copilot["additionalContext"] == claude["hookSpecificOutput"]["additionalContext"]
+
+
+def test_a_v2_copilot_entry_is_recognised_and_upgraded(tmp_path):
+    old = {
+        "type": "command",
+        "bash": "echo '{\"additionalContext\":\"old\"}'",
+        "powershell": "Write-Output '{\"additionalContext\":\"old\"}'",
+        "comment": f"{MARKER}:v2",
+    }
+    path = copilot_path(tmp_path)
+    write_json(path, {"version": 1, "hooks": {COPILOT_HOOK.event: [old]}})
+
+    change = install(tmp_path, target=COPILOT_HOOK)
+
+    assert change.action == "updated"
+    assert copilot_entries(path) == [template_entry(COPILOT_HOOK)]
 
 
 def test_init_writes_the_copilot_hook_with_its_version(tmp_path):
@@ -785,8 +873,7 @@ def test_the_codex_entry_is_the_claude_shape_with_a_matcher():
 
     assert entry["matcher"] == "startup|resume"
     assert entry["hooks"][0]["type"] == "command"
-    # Claude's shape, and the marker is the CLI's final argument rather than
-    # the JSON field Copilot needs.
+    # Claude's shape, with the marker as the CLI's final argument.
     assert MARKER in entry["hooks"][0]["command"]
 
 

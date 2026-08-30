@@ -37,6 +37,7 @@ from outrage.store_files import FilesystemStore
 #: same reason: a build that dropped it would leave the server with nothing to
 #: say.
 EXPECTED = (
+    "agents",
     "cli",
     "default_readme",
     "hooks",

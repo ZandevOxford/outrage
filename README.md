@@ -70,8 +70,8 @@ well, so the links below work here too.
   storage rather than a setting. **Files** is a directory with one file per key,
   which is what `outrage export` already wrote: the tree a person edits by hand,
   readable as a store rather than only as a transfer.
-* **Client integrations** - packaged project skills for Claude Code and OpenAI
-  Codex CLI, plus session-start hooks for Claude Code and GitHub Copilot CLI.
+* **Client integrations** - packaged project skills and agents for Claude Code,
+  OpenAI Codex CLI and GitHub Copilot CLI, plus a session-start hook for each.
   They cover when to store and retrieve, the key conventions, and the moment a
   skill would not be reached on its own. `outrage init` installs each client's
   files without replacing configuration it does not own.

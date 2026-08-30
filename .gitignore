@@ -31,11 +31,12 @@ dist/
 # outrage itself has every reason to commit some of this.
 .codex/
 
-# The Copilot CLI hook file is rendered output too, on the same rule as
-# .claude/ above: the template in src/ is the source of truth, and
-# a canary belongs on the machine that runs it rather than in the repository.
-# A project that is not outrage itself has every reason to commit this file.
+# The Copilot CLI hook and agents are rendered output too, on the same rule as
+# .claude/ above: the templates in src/ are the source of truth, and a canary
+# belongs on the machine that runs it rather than in the repository. A project
+# that is not outrage itself has every reason to commit these files.
 .github/hooks/outrage.json
+.github/agents/
 
 # .mcp.json is the last of the files `outrage init` writes, and was the only one
 # still committed. Its `command` is an absolute path into a conda environment

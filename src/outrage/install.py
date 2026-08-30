@@ -26,9 +26,9 @@ They differ in more than spelling:
 * **Claude Code** merges into ``.claude/settings.json``, a file the user owns
   outright and which this project does not commit.
 * **Copilot CLI** takes a file per purpose under ``.github/hooks/``, so
-  ``.github/hooks/outrage.json`` is outrage's own - but ``.github`` is usually
-  **committed**, so a re-run's diff lands in somebody's version control where
-  the Claude one does not.
+  ``.github/hooks/outrage.json`` is outrage's own, and repository agents under
+  ``.github/agents/``. ``.github`` is usually **committed**, so a re-run's diff
+  lands in somebody's version control where the Claude one does not.
 * Copilot's entry carries the command twice, as ``bash`` and ``powershell``,
   and the file needs ``"version": 1`` at its top. Hence
   :attr:`HookTarget.base`: what to start from when the file does not exist.
@@ -62,7 +62,7 @@ who wrote what. An installer that cannot recognise its own entry has only bad
 options: append every run and accumulate duplicates, or replace the lot and
 destroy hooks it did not write.
 
-Claude Code and Codex carry the marker as the final argument to the managed
+All three harnesses carry the marker as the final argument to the managed
 command::
 
     <python> -m outrage sessionstart outrage-managed:session-start:v3
@@ -70,11 +70,12 @@ command::
 The CLI accepts that one private argument and does not print it, so the marker
 is independent of shell comment syntax and remains absent from stdout.
 
-**Copilot CLI carries the same marker in a ``comment`` field instead**, which
-keeps the live-verified shape for that harness. Older Claude Code and Codex
-entries carried it in a trailing shell comment; :func:`is_ours` looks for the
-marker anywhere in the entry, so both generations are recognised and replaced
-without a migration.
+Copilot's command also carries a hidden ``--copilot`` flag so the CLI emits its
+flat ``additionalContext`` payload rather than Claude and Codex's nested one.
+Older Copilot entries carried the marker in a ``comment`` field, and older
+Claude Code and Codex entries carried it in a trailing shell comment;
+:func:`is_ours` looks for the marker anywhere in the entry, so every generation
+is recognised and replaced without a migration.
 
 An unknown JSON key on the entry - ``{"_outrageManaged": …}`` - was tested and
 works: the client tolerates it and the hook still fires. It was rejected
@@ -100,17 +101,17 @@ one word further along.
 
 ## The bridge this is
 
-The Claude Code and Codex hooks now run ``<python> -m outrage sessionstart``.
+All three hooks now run ``<python> -m outrage sessionstart``.
 The interpreter is the absolute :data:`sys.executable` of the environment that
 ran ``outrage init``, for the same reason the MCP entry names that environment:
 a hook does not inherit an activated environment. The managed marker is an
 ordinary final argument rather than a shell comment, so neither it nor the
 command depends on ``#`` meaning the same thing on every platform.
 
-Copilot CLI remains the exception. Its live-verified payload is a different,
-flatter shape and its hook contract provides separate ``bash`` and
-``powershell`` commands plus a ``comment`` field. Do not fold it into the
-shared command until that payload is known to accept the nested form too.
+Copilot CLI remains different only at the boundary: its hook contract provides
+separate ``bash`` and ``powershell`` commands and its output is the documented
+flat payload. The same command reads the same shipped prompt at invocation time
+and selects that shape with ``--copilot``.
 """
 
 from __future__ import annotations
@@ -150,6 +151,9 @@ CLAUDE_DIR = ".claude"
 #: Where Codex reads project-scoped skills and hooks, relative to the project
 #: root. Both live below it, so the hook target spells out only the filename.
 CODEX_DIR = ".codex"
+
+#: Where Copilot CLI reads its repository hook and preferred agent definitions.
+GITHUB_DIR = ".github"
 
 #: The settings file the fragment is merged into, inside :data:`CLAUDE_DIR`.
 SETTINGS_NAME = "settings.json"
@@ -297,7 +301,9 @@ def settings_path(project_dir: str | Path) -> Path:
     return CLAUDE_HOOK.path(project_dir)
 
 
-def sessionstart_command(executable: str | os.PathLike[str] | None = None) -> str:
+def sessionstart_command(
+    executable: str | os.PathLike[str] | None = None, *, copilot: bool = False
+) -> str:
     """Build the shell command installed for the shared SessionStart payload.
 
     The absolute interpreter is the one running ``outrage init``. ``shlex``
@@ -312,14 +318,18 @@ def sessionstart_command(executable: str | os.PathLike[str] | None = None) -> st
         "-m",
         "outrage",
         "sessionstart",
-        SESSIONSTART_MARKER,
     ]
+    if copilot:
+        argv.append("--copilot")
+    argv.append(SESSIONSTART_MARKER)
     return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
 
 
-def sessionstart_payload() -> dict[str, Any]:
-    """Read the shipped prompt and wrap it in the Claude/Codex hook payload."""
+def sessionstart_payload(*, copilot: bool = False) -> dict[str, Any]:
+    """Read the shipped prompt and wrap it in one harness's hook payload."""
     context = _SESSIONSTART_PROMPT.read_text(encoding="utf-8").removesuffix("\n")
+    if copilot:
+        return {"additionalContext": context}
     return {
         "hookSpecificOutput": {
             "hookEventName": CLAUDE_HOOK.event,
@@ -328,25 +338,28 @@ def sessionstart_payload() -> dict[str, Any]:
     }
 
 
-def _render_sessionstart_command(value: Any) -> Any:
+def _render_sessionstart_command(value: Any, *, target: HookTarget) -> Any:
     """Replace the packaged placeholder without knowing a harness's shape."""
     if isinstance(value, str):
-        return value.replace(_SESSIONSTART_COMMAND, sessionstart_command())
+        command = sessionstart_command(copilot=target is COPILOT_HOOK)
+        return value.replace(_SESSIONSTART_COMMAND, command)
     if isinstance(value, list):
-        return [_render_sessionstart_command(item) for item in value]
+        return [_render_sessionstart_command(item, target=target) for item in value]
     if isinstance(value, dict):
-        return {key: _render_sessionstart_command(item) for key, item in value.items()}
+        return {
+            key: _render_sessionstart_command(item, target=target) for key, item in value.items()
+        }
     return value
 
 
 def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     """The entry to install, read from the packaged template.
 
-    Claude Code and Codex carry a placeholder which is rendered with the
-    absolute interpreter and managed marker at init time. Copilot's verified
-    entry is already complete and passes through unchanged. In both cases the
-    marker is present before the entry is accepted, so a broken template
-    cannot silently become one a later run fails to recognise.
+    Every harness carries a placeholder rendered with the absolute interpreter
+    and managed marker at init time. Copilot receives the same command with a
+    flag selecting its flat payload. The marker is present before the entry is
+    accepted, so a broken template cannot silently become one a later run
+    fails to recognise.
     """
     try:
         loaded = json.loads(target.fragment.read_text(encoding="utf-8"))
@@ -355,7 +368,7 @@ def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     except json.JSONDecodeError as exc:  # pragma: no cover - a broken install
         raise InstallError("template-not-json", path=str(target.fragment)) from exc
 
-    loaded = _render_sessionstart_command(loaded)
+    loaded = _render_sessionstart_command(loaded, target=target)
     entries = loaded.get(HOOKS_FIELD, {}).get(target.event)
     if not isinstance(entries, list) or len(entries) != 1:
         raise InstallError("template-hook-count", event=target.event)
@@ -553,6 +566,26 @@ def plan_codex_assets(project_dir: str | Path) -> list[FileChange]:
     return _plan_files(Path(project_dir) / CODEX_DIR, codex_asset_sources())
 
 
+def copilot_asset_sources() -> list[tuple[Path, Path]]:
+    """Every packaged Copilot agent, as a source and path below ``.github``."""
+    root = Path(__file__).parent / "copilot" / "agents"
+    if not root.is_dir():  # pragma: no cover - a broken install
+        raise InstallError("assets-missing", asset="copilot/agents", path=str(root))
+    found = [
+        (source, Path("agents") / source.relative_to(root))
+        for source in sorted(root.rglob("*"))
+        if source.is_file() and not source.name.startswith(".")
+    ]
+    if not found:  # pragma: no cover - a broken install
+        raise InstallError("assets-empty", asset=GITHUB_DIR, path=str(root))
+    return found
+
+
+def plan_copilot_assets(project_dir: str | Path) -> list[FileChange]:
+    """Work out which Copilot agents a project is missing or has an older copy of."""
+    return _plan_files(Path(project_dir) / GITHUB_DIR, copilot_asset_sources())
+
+
 def _through_a_link(root: Path, relative: Path) -> bool:
     """Whether anything on the way down to ``relative`` is a symlink.
 
@@ -614,6 +647,9 @@ class Installation:
     codex_assets: tuple[FileChange, ...]
     """Codex skills."""
 
+    copilot_assets: tuple[FileChange, ...]
+    """Copilot CLI agents."""
+
     table: mountfile.Starter
     """The project's mount table: written when there is none, never rewritten."""
 
@@ -625,6 +661,7 @@ class Installation:
             or any(h.writes for h in self.hooks)
             or any(a.writes for a in self.assets)
             or any(a.writes for a in self.codex_assets)
+            or any(a.writes for a in self.copilot_assets)
         )
 
 
@@ -664,6 +701,7 @@ def init(
 
     assets = plan_assets(project)
     codex_assets = plan_codex_assets(project)
+    copilot_assets = plan_copilot_assets(project)
 
     hooks = []
     for target in HOOK_TARGETS:
@@ -691,6 +729,7 @@ def init(
                 config.write_config(path, settings, settings_text)
         write_assets(assets)
         write_assets(codex_assets)
+        write_assets(copilot_assets)
 
     return Installation(
         project_dir=project,
@@ -699,6 +738,7 @@ def init(
         hooks=tuple(hook for _, hook, _, _ in hooks),
         assets=tuple(assets),
         codex_assets=tuple(codex_assets),
+        copilot_assets=tuple(copilot_assets),
     )
 
 
@@ -706,6 +746,7 @@ __all__ = [
     "ASSET_DIRS",
     "CLAUDE_DIR",
     "CODEX_DIR",
+    "GITHUB_DIR",
     "CLAUDE_HOOK",
     "CODEX_HOOK",
     "COPILOT_HOOK",
@@ -722,12 +763,14 @@ __all__ = [
     "Installation",
     "asset_sources",
     "codex_asset_sources",
+    "copilot_asset_sources",
     "init",
     "install",
     "is_ours",
     "plan",
     "plan_assets",
     "plan_codex_assets",
+    "plan_copilot_assets",
     "settings_path",
     "sessionstart_command",
     "sessionstart_payload",

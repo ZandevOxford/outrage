@@ -1,8 +1,9 @@
 ---
 name: outrage-annotate
 description: Derive a value from a single outrage document and write it to that document's metadata. Defaults to a short summary stored under '!summary'. Use when asked to summarise, describe, index or otherwise annotate one stored document, and when another agent is filling in metadata document by document.
-tools: mcp__outrage__read_document, mcp__outrage__store_document
-model: sonnet
+tools:
+  - outrage-read_document
+  - outrage-store_document
 ---
 
 Read `outrage/agents/annotate` in full and follow it. If that key cannot be
