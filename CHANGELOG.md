@@ -2,12 +2,22 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.4.2 - 2026-08-30
 
-* The MCP tool `retrieve_document` is now `read_document`. The Python Store API
-  and store-event operation retain the original name.
-* `read_document` no longer takes `length`; use `max_chars`, consistently with
-  `get_documents`.
+0.4.2 simplifies the MCP surface and makes the text a client sees easier to
+maintain and inspect.
+
+* **The MCP tool `retrieve_document` is now `read_document`.** This is a
+  breaking change for MCP clients that call tools by name. The Python Store API
+  and store-event operation retain `retrieve_document`.
+* **`read_document` no longer takes `length`; use `max_chars`**, consistently
+  with `get_documents`.
+* **Every MCP tool description is now a shipped document** under
+  `outrage/tools/<name>`, read and cached when the server registers the tool.
+  The descriptions and delivered store instructions are shorter while keeping
+  their paging, limit and readme-routing rules.
+
+The README has a shorter introduction and setup path.
 
 ## 0.4.1 - 2026-08-30
 
