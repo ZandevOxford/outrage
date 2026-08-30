@@ -656,7 +656,7 @@ def test_the_copilot_command_emits_the_context_and_hides_the_marker(shell):
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert "outrage document store" in payload["additionalContext"]
+    assert "retrieve_document" in payload["additionalContext"]
     assert "readme" in payload["additionalContext"]
     assert MARKER not in result.stdout
 
@@ -801,7 +801,7 @@ def test_the_codex_command_emits_the_context_and_hides_the_marker():
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["hookSpecificOutput"]["hookEventName"] == CODEX_HOOK.event
-    assert "outrage document store" in payload["hookSpecificOutput"]["additionalContext"]
+    assert "retrieve_document" in payload["hookSpecificOutput"]["additionalContext"]
     assert MARKER not in result.stdout
 
 
