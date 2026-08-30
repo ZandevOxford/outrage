@@ -14,13 +14,14 @@ leaves everything else exactly as it found it - the rule [`outrage.config`](conf
 already follows for `.mcp.json`, and the reason its `read_config` and
 `write_config` are reused here rather than reimplemented.
 
-## Two harnesses, one hook each
+## Three harnesses, one hook each
 
 [`HOOK_TARGETS`](#outrage.install.HOOK_TARGETS) is the list, and everything below takes one of them rather
 than assuming Claude Code. Adding the second one is what turned the constants
-into a [`HookTarget`](#outrage.install.HookTarget); `project/reference/harness-portability` said not
-to generalise before there was something real to generalise *to*, and Copilot
-CLI is it.
+into a [`HookTarget`](#outrage.install.HookTarget); `reference/harness-portability` said not to
+generalise before there was something real to generalise *to*, and Copilot CLI
+was it. Codex, added third, cost a template and a constant and no change to any
+function here - which is the shape working.
 
 They differ in more than spelling:
 
@@ -33,10 +34,27 @@ They differ in more than spelling:
 * Copilot's entry carries the command twice, as `bash` and `powershell`,
   and the file needs `"version": 1` at its top. Hence
   [`HookTarget.base`](#outrage.install.HookTarget.base): what to start from when the file does not exist.
+* **Codex** reads `.codex/hooks.json`, its own file like Copilot's, but the
+  entry inside is Claude Code's shape down to the `hookSpecificOutput`
+  payload - so the two templates differ only in the `matcher` below.
+  `.codex` is not committed here, so it behaves like the Claude file rather
+  than the Copilot one.
 
-Both are written by default. A project that uses one harness carries a small
-inert file for the other, which is cheaper than an installer that has to be
-told what the user is running.
+All three are written by default. A project that uses one harness carries a
+small inert file for the other two, which is cheaper than an installer that has
+to be told what the user is running.
+
+## The matcher outrage does not know the vocabulary of
+
+Codex's documented `SessionStart` example carries `"matcher":
+"startup|resume"`, and the template ships exactly that. Whether the field is
+required, and what else it could match, is **not** established: the
+documentation gives no list of sources. Both readings fail the same silent way
+this project keeps being caught by - omit a required matcher and the hook never
+fires; ship a narrow one and it stops firing on whatever source is not named -
+so this ships what was documented and does not improve on it. If a Codex
+session is ever seen starting a way this does not match, that is the evidence
+to widen it.
 
 ## Why the marker exists
 
@@ -110,11 +128,20 @@ settings path is one of them and used to spell the directory out.
 
 ### outrage.install.CODEX_DIR *= '.codex'*
 
-Where Codex reads project-scoped skills, relative to the project root.
+Where Codex reads project-scoped skills and hooks, relative to the project
+root. Both live below it, so the hook target spells out only the filename.
 
 ### outrage.install.CLAUDE_HOOK *= HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={})*
 
 Claude Code: merged into the user's own settings file.
+
+### outrage.install.CODEX_HOOK *= HookTarget(name='Codex', template=PosixPath('codex.json'), relative=PosixPath('.codex/hooks.json'), event='SessionStart', base={})*
+
+Codex: its own file, like Copilot CLI, but the entry is Claude Code's shape
+- `SessionStart`, a nested `hooks` list, and the same
+`hookSpecificOutput` payload. The one thing neither of the others has is
+the `matcher`; see the module docstring on why it is written as documented
+rather than left out.
 
 ### outrage.install.COPILOT_HOOK *= HookTarget(name='Copilot CLI', template=PosixPath('copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1})*
 
@@ -127,7 +154,7 @@ than claiming a second file.
 The key below which that merge happens. Everything else in the file is
 somebody else's and is written back as it was found.
 
-### outrage.install.HOOK_TARGETS *= (HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}), HookTarget(name='Copilot CLI', template=PosixPath('copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1}))*
+### outrage.install.HOOK_TARGETS *= (HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}), HookTarget(name='Copilot CLI', template=PosixPath('copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1}), HookTarget(name='Codex', template=PosixPath('codex.json'), relative=PosixPath('.codex/hooks.json'), event='SessionStart', base={}))*
 
 Every hook `outrage init` writes, in the order it reports them.
 
@@ -325,10 +352,11 @@ something different from what a write would produce.
 
 Whether this session-start entry is one outrage wrote.
 
-The marker anywhere in the entry, because the two harnesses put the command
-in different places - `hooks[].command` for Claude Code, `bash` and
-`powershell` for Copilot CLI - and a matcher that knows both shapes has
-to be taught a third. Nothing but our own entry carries a string in this
+The marker anywhere in the entry, because the harnesses put the command in
+different places - `hooks[].command` for Claude Code and Codex, `bash`
+and `powershell` for Copilot CLI - and a matcher that knows those shapes
+has to be taught the next one. Codex arrived and needed nothing here, which
+is the argument. Nothing but our own entry carries a string in this
 namespace.
 
 Compares [`MARKER_MATCH`](#outrage.install.MARKER_MATCH), not [`MARKER`](#outrage.install.MARKER). See the module docstring

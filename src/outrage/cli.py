@@ -104,8 +104,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         description=(
             "Arrange everything a project needs to use outrage: the MCP server "
             "entry in .mcp.json, a session-start hook for each harness - "
-            ".claude/settings.json for Claude Code and .github/hooks/outrage.json "
-            "for Copilot CLI - and the packaged skill and agents in .claude/. "
+            ".claude/settings.json for Claude Code, .github/hooks/outrage.json "
+            "for Copilot CLI, .codex/hooks.json for Codex - and the packaged "
+            "skill and agents in .claude/, and the Codex skills in .codex/. "
             "Only the entries outrage owns are written; anything else in those "
             "files is left as it was, and a file already holding the current "
             "content is not rewritten. Mounts go in mounts.toml in the store "
