@@ -4,6 +4,7 @@
 the same `mounts.toml`, so a person and a session see one namespace rather than
 two.
 
+* `outrage init` configures a repo to use outrage.
 * `outrage get KEY` and `outrage set KEY --file F` - one document each way.
 * `outrage ls KEY`, `outrage dump KEY` - a level, and a subtree.
 * `outrage copy SOURCE TARGET` - a subtree or a key-order range, moved beneath
@@ -13,5 +14,5 @@ two.
   and be silently stale.
 * `outrage mounts` - the table a command line would open, without opening it.
 
-*Placeholder: `init`, `config`, `pack`, `check`, `rm` and `log` are not covered
+*TODO:  `config`, `pack`, `check`, `rm` and `log` are not covered
 here yet. `outrage --help` is complete in the meantime.*
