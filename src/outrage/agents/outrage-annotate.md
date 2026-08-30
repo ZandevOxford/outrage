@@ -1,7 +1,7 @@
 ---
 name: outrage-annotate
 description: Derive a value from a single outrage document and write it to that document's metadata. Defaults to a short summary stored under '!summary'. Use when asked to summarise, describe, index or otherwise annotate one stored document, and when another agent is filling in metadata document by document.
-tools: mcp__outrage__retrieve_document, mcp__outrage__store_document
+tools: mcp__outrage__read_document, mcp__outrage__store_document
 model: sonnet
 ---
 
@@ -32,7 +32,7 @@ onto the wrong document is worse than not writing one.
 **1. Read the document in full.**
 
 ```
-retrieve_document(key=<document key>, max_chars=20000)
+read_document(key=<document key>, max_chars=20000)
 ```
 
 Read the whole thing unless the instruction says otherwise. If the result has a

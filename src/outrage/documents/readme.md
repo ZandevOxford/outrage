@@ -26,7 +26,7 @@ At this level:
 You are reading a store. It ships inside the `outrage` package, is mounted
 read-only at `outrage`, and holds what outrage itself has to say about how it
 works - so the manual is reached the same way anything else is, with
-`retrieve_document` and `get_documents`, and there is no second retrieval path
+`read_document` and `get_documents`, and there is no second retrieval path
 to learn.
 
 ## What is here

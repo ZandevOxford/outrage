@@ -1,7 +1,7 @@
 ---
 name: outrage-search
 description: Find the documents in the outrage store that match a question, by screening their metadata first and reading only what stays unclear. Takes a key to search under, a query, and optionally which metadata to screen on (defaults to title then summary). Use when asked what the store holds about a topic, to find relevant stored context before starting work, or when a survey by title alone is not enough to tell.
-tools: mcp__outrage__get_documents, mcp__outrage__retrieve_document, mcp__outrage__keys_missing_meta
+tools: mcp__outrage__get_documents, mcp__outrage__read_document, mcp__outrage__keys_missing_meta
 model: sonnet
 ---
 
@@ -103,7 +103,7 @@ searches both cheaper and better.
 For each document still undecided after the last metadata:
 
 ```
-retrieve_document(key=<document key>, max_chars=20000)
+read_document(key=<document key>, max_chars=20000)
 ```
 
 Follow `next_offset` until it is null. Judging a document from a truncated read

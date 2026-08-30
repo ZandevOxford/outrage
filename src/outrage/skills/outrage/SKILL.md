@@ -38,7 +38,7 @@ get_documents(meta_name=["title"])
 
 That returns a title per document, not the documents, so it is cheap enough to
 run at the start of any piece of work. Then read only what looks relevant, with
-`retrieve_document`.
+`read_document`.
 
 **Read `total`, not just what came back.** The result is a page: `returned`
 titles out of `total` documents, with `next_cursor` set when there are more.
@@ -148,7 +148,7 @@ that is there. Sub-documents are the intended shape, and `?` allocates a key at
 any depth - `context/1/findings/?` writes the next document under `findings` -
 so adding one costs no naming decision and no thought about where it goes.
 
-A document should be readable in one call. `retrieve_document` returns 8000
+A document should be readable in one call. `read_document` returns 8000
 characters by default, so a longer document is read in slices, and a session
 that judges it from the first slice judges it wrongly and silently.
 

@@ -201,9 +201,7 @@ def test_config_declines_to_rewrite_a_table_and_says_what_to_add(tmp_path):
     table = tmp_path / ".outrage" / mountfile.DEFAULT_NAME
     before = table.read_text()
 
-    status, output = run(
-        "config", "--project-dir", str(tmp_path), "--mount", "other=other.sqlite"
-    )
+    status, output = run("config", "--project-dir", str(tmp_path), "--mount", "other=other.sqlite")
 
     assert status == 0
     assert table.read_text() == before
@@ -386,7 +384,7 @@ def a_log(directory: Path) -> Path:
             "event": "request",
             "call": 1,
             "method": "tools/call",
-            "params": {"name": "retrieve_document", "arguments": {"key": "context/5/state"}},
+            "params": {"name": "read_document", "arguments": {"key": "context/5/state"}},
             "result": {"ok": True},
         },
     ]
@@ -1052,8 +1050,14 @@ def test_rm_dry_run_preview_can_be_shortened(tmp_path):
     a_wide_store(tmp_path / ".outrage", 10)
 
     _, output = run(
-        "rm", "--dir", str(tmp_path / ".outrage"), "notes",
-        "--recursive", "--dry-run", "--limit", "3",
+        "rm",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "notes",
+        "--recursive",
+        "--dry-run",
+        "--limit",
+        "3",
     )
 
     assert output.count("and below:") == 3
@@ -1071,8 +1075,14 @@ def test_rm_dry_run_shortened_count_holds_the_key_s_own_metadata(tmp_path):
             store.store_document(f"notes/{number}", "body", title=f"Note {number}")
 
     _, output = run(
-        "rm", "--dir", str(tmp_path / ".outrage"), "notes",
-        "--recursive", "--dry-run", "--limit", "2",
+        "rm",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "notes",
+        "--recursive",
+        "--dry-run",
+        "--limit",
+        "2",
     )
 
     # Seven keys are below `notes`: its own title, three documents and theirs.
@@ -1084,8 +1094,14 @@ def test_rm_dry_run_shortened_count_holds_the_key_s_own_metadata(tmp_path):
     assert "and 5 more" in output
 
     _, output = run(
-        "rm", "--dir", str(tmp_path / ".outrage"), "notes",
-        "--recursive", "--dry-run", "--limit", "6",
+        "rm",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "notes",
+        "--recursive",
+        "--dry-run",
+        "--limit",
+        "6",
     )
 
     assert "and 1 more" in output
@@ -1207,8 +1223,12 @@ def test_import_stopping_at_a_conflict_is_a_failed_run(tmp_path):
     run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
     status, output = run(
-        "import", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"),
-        "--on-conflict", "stop",
+        "import",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        str(tmp_path / "out"),
+        "--on-conflict",
+        "stop",
     )
 
     # The exit status is the only part of a partial run a script can see.
@@ -1519,9 +1539,7 @@ def test_last_deletes_from_the_newest_key(tmp_path):
 def test_last_with_nothing_below_it_is_a_message_and_a_status(tmp_path, capsys):
     a_few_threads(tmp_path / ".outrage")
 
-    status = main(
-        ["get", "--dir", str(tmp_path / ".outrage"), "nowhere/?last"], io.StringIO()
-    )
+    status = main(["get", "--dir", str(tmp_path / ".outrage"), "nowhere/?last"], io.StringIO())
 
     assert status == 1
     assert "nothing below it" in capsys.readouterr().err
@@ -1590,15 +1608,11 @@ def test_copy_moves_a_subtree_between_mounted_stores(tmp_path):
     with SqliteStore(directory, filename="archive.sqlite"):
         pass
 
-    status, output = run(
-        "copy", "--dir", str(directory), "team/plans", "archive/imported"
-    )
+    status, output = run("copy", "--dir", str(directory), "team/plans", "archive/imported")
 
     assert status == 0
     assert "wrote       archive/imported/team/plans/q3" in output
-    _, copied = run(
-        "get", "--dir", str(directory), "archive/imported/team/plans/q3"
-    )
+    _, copied = run("get", "--dir", str(directory), "archive/imported/team/plans/q3")
     assert copied == "the plan"
 
 
@@ -1675,9 +1689,7 @@ def test_copy_parser_exposes_every_key_range_cut():
 def test_copy_dry_run_writes_nothing(tmp_path):
     directory = a_mounted_project(tmp_path / ".outrage")
 
-    status, output = run(
-        "copy", "--dir", str(directory), "team/plans", "preview", "--dry-run"
-    )
+    status, output = run("copy", "--dir", str(directory), "team/plans", "preview", "--dry-run")
 
     assert status == 0
     assert "would write preview/team/plans/q3" in output
@@ -1688,9 +1700,7 @@ def test_copy_dry_run_writes_nothing(tmp_path):
 def test_copy_refuses_a_target_inside_its_streaming_source(tmp_path, capsys):
     directory = a_mounted_project(tmp_path / ".outrage")
 
-    status = main(
-        ["copy", "--dir", str(directory), "team", "team/archive"], io.StringIO()
-    )
+    status = main(["copy", "--dir", str(directory), "team", "team/archive"], io.StringIO())
 
     assert status == 1
     assert "target is inside the source subtree" in capsys.readouterr().err
@@ -1704,9 +1714,7 @@ def test_copy_reroot_lands_the_subtree_at_the_target(tmp_path):
     """
     directory = a_mounted_project(tmp_path / ".outrage")
 
-    status, output = run(
-        "copy", "--dir", str(directory), "team/plans", "moved", "--reroot"
-    )
+    status, output = run("copy", "--dir", str(directory), "team/plans", "moved", "--reroot")
 
     assert status == 0
     assert "wrote       moved/q3" in output
@@ -1823,8 +1831,14 @@ def test_a_read_only_backend_can_still_be_read_directly(tmp_path, capsys):
     """
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
     a_mounted_project(tmp_path / ".outrage")
-    run("pack", str(tmp_path / ".outrage/packed.parquet"), "--dir",
-        str(tmp_path / ".outrage"), "--from-store", "store.sqlite")
+    run(
+        "pack",
+        str(tmp_path / ".outrage/packed.parquet"),
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "--from-store",
+        "store.sqlite",
+    )
     capsys.readouterr()
 
     status, output = run(

@@ -100,7 +100,7 @@ def test_the_delivered_instructions_are_the_documents_here():
 def test_the_tool_descriptions_are_the_documents_here():
     """The mounted manual and MCP registration read the same installed bytes."""
     names = (
-        "retrieve_document",
+        "read_document",
         "store_document",
         "list_keys",
         "get_documents",
@@ -110,9 +110,7 @@ def test_the_tool_descriptions_are_the_documents_here():
         "document_file",
     )
     with shipped.open_documents() as store:
-        descriptions = {
-            name: store.retrieve_document(f"tools/{name}").content for name in names
-        }
+        descriptions = {name: store.retrieve_document(f"tools/{name}").content for name in names}
 
     assert descriptions == {name: server.tool_description(name) for name in names}
 

@@ -2,6 +2,13 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+* The MCP tool `retrieve_document` is now `read_document`. The Python Store API
+  and store-event operation retain the original name.
+* `read_document` no longer takes `length`; use `max_chars`, consistently with
+  `get_documents`.
+
 ## 0.4.1 - 2026-08-30
 
 0.4.1 makes the session-start guidance installed by `outrage init` work the

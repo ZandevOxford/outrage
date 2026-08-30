@@ -7,7 +7,7 @@ connects. Edit one and you have edited what every session is told.
 
 Kept here rather than inline in `server.py` for the ordinary reason - prose
 belongs in a document, where it is diffable, readable and reachable by the same
-`retrieve_document` as anything else - and for one particular to this store: a
+`read_document` as anything else - and for one particular to this store: a
 session that was cut off mid-instructions can read the rest at
 `outrage/skills/tail` instead of guessing at what it did not get.
 

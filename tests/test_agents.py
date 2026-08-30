@@ -91,7 +91,7 @@ def test_dogfood_agent_is_the_one_in_the_checkout(name):
 def test_annotate_can_read_and_write_but_nothing_else():
     tools = _tools("outrage-annotate")
 
-    assert tools == {"mcp__outrage__retrieve_document", "mcp__outrage__store_document"}
+    assert tools == {"mcp__outrage__read_document", "mcp__outrage__store_document"}
     # It writes one metadata value beside one document. Deletion is not part of
     # that, and an agent that can delete is one bad key away from removing the
     # document it was asked to describe.
@@ -106,7 +106,7 @@ def test_search_reads_at_both_levels_but_does_not_write():
     # at all, which a survey by that metadata cannot show.
     assert tools == {
         "mcp__outrage__get_documents",
-        "mcp__outrage__retrieve_document",
+        "mcp__outrage__read_document",
         "mcp__outrage__keys_missing_meta",
     }
     # Searching is a read. An agent that answers a question should not be able

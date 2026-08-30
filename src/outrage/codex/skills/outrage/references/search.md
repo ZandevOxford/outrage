@@ -22,7 +22,7 @@ documents continue to the next level.
    leave the document unclear; never reject a document based on a truncated
    value.
 4. Read each document still unclear with
-   `retrieve_document(key=..., max_chars=20000)`, following `next_offset` to
+   `read_document(key=..., max_chars=20000)`, following `next_offset` to
    the end. If more than 15 remain, read the 15 most promising and explicitly
    name the remainder as unread.
 

@@ -8,4 +8,4 @@ Pages hold at most 100 documents and 20000 characters. Pass `next_cursor` as
 `after` for the next page.
 
 Documents may also be truncated. If this is reported and you need the
-whole document, use `retrieve_document` on that document.
+whole document, use `read_document` on that document.

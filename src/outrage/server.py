@@ -209,7 +209,7 @@ DELIVERY_BUDGET = 2048
 
 #: Where the delivered text is kept, below the shipped documentation's root.
 #: Prose in a document rather than a string literal here: it is diffable,
-#: carries a title, and is readable with `retrieve_document` like anything else
+#: carries a title, and is readable with `read_document` like anything else
 #: -- including by a session that was cut off mid-instructions and wants the
 #: rest of them. The document at `outrage/skills` says which file is which.
 SKILLS = "skills"
@@ -484,18 +484,15 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
-        description=tool_description("retrieve_document"),
+        description=tool_description("read_document"),
     )
     @_reported
-    def retrieve_document(
+    def read_document(
         key: Annotated[
             str,
             Field(description="Key to read"),
         ],
         offset: Annotated[int, Field(description="Character offset to start at", ge=0)] = 0,
-        length: Annotated[
-            int | None, Field(description="Characters to return; capped by max_chars", ge=0)
-        ] = None,
         pattern: Annotated[
             str | None,
             Field(description="Literal substring to start the read from, not a regex"),
@@ -511,7 +508,6 @@ def build_server(
             table.retrieve_document(
                 _named_key(table, key),
                 offset=offset,
-                length=length,
                 pattern=pattern,
                 occurrence=occurrence,
                 max_chars=max_chars,

@@ -10,7 +10,7 @@ Do not duplicate in bulk information which is available from the files or
 the git history. However, do feel free to make notes on what was done and why.
 
 Unless there is a good reason, documents should be small (up to 8k or so,
-which is one `retrieve_document`) and cover a single topic.
+which is one `read_document`) and cover a single topic.
 
 Where possible, avoid significant edits to documents, and instead use the ?
 path segment to add additional notes rather than appending more information

@@ -139,14 +139,14 @@ def test_mounts_below_a_key_are_the_ones_a_subtree_read_misses(table):
 
 
 def test_a_read_crosses_a_mount_and_comes_back_named_from_outside(server):
-    result = call(server, "retrieve_document", key="ref/python/asyncio")
+    result = call(server, "read_document", key="ref/python/asyncio")
     assert result["key"] == "ref/python/asyncio"
     assert result["content"] == "Event loops."
 
 
 def test_the_mount_point_reads_the_inner_root(server):
-    assert call(server, "retrieve_document", key="ref")["content"] == "The reference base."
-    assert call(server, "retrieve_document", key="ref/!title")["content"] == "Reference"
+    assert call(server, "read_document", key="ref")["content"] == "The reference base."
+    assert call(server, "read_document", key="ref/!title")["content"] == "Reference"
 
 
 def test_a_write_lands_in_the_mounted_store(server, table):
@@ -188,7 +188,7 @@ def test_a_mount_point_appears_in_the_listing_above_it(server):
 def test_a_mount_nested_below_an_implicit_key_is_reachable(server):
     entries = {e["key"]: e for e in call(server, "list_keys", key="lib")["entries"]}
     assert entries["lib/deep"]["kind"] == MOUNT_KIND
-    assert call(server, "retrieve_document", key="lib/deep/a")["content"] == "Deep."
+    assert call(server, "read_document", key="lib/deep/a")["content"] == "Deep."
 
 
 def test_a_listing_inside_a_mount_is_named_from_outside(server):
@@ -267,7 +267,7 @@ def test_a_recursive_delete_does_not_report_shadowed_keys_as_deleted(shadowing):
     result = call(server, "delete_keys", key="", recursive=True)
 
     for key in result["deleted"]:
-        assert call_expecting_error(server, "retrieve_document", key=key)
+        assert call_expecting_error(server, "read_document", key=key)
 
     # `project` is deleted because the *mount's* root document was deleted, not
     # because the shadowed one underneath it was.
@@ -359,7 +359,7 @@ def test_a_failed_read_names_the_key_the_caller_asked_for(server):
     at all: used as written it addresses the root store. What comes back has to
     be the key the caller could send again.
     """
-    message = call_expecting_error(server, "retrieve_document", key="ref/python/nope")
+    message = call_expecting_error(server, "read_document", key="ref/python/nope")
     assert "nothing is stored at or below 'ref/python/nope'" in message
 
 
@@ -370,7 +370,7 @@ def test_a_container_inside_a_mount_gives_advice_that_works(server):
     there -- so following the advice returns an empty listing rather than an
     error, and the caller concludes the keys do not exist.
     """
-    message = call_expecting_error(server, "retrieve_document", key="ref/python")
+    message = call_expecting_error(server, "read_document", key="ref/python")
     assert "no content stored at 'ref/python'" in message
     named = message[message.index("no content") :]
     assert "'python'" not in named.replace("'ref/python'", "")
@@ -384,7 +384,7 @@ def test_an_empty_mounted_store_is_not_reported_as_a_blank_key(tmp_path):
     """`planned/root-key/impact` finding 7: a blank key is invisible in a report."""
     root, empty = SqliteStore(tmp_path / "root"), SqliteStore(tmp_path / "empty")
     with MountedStore({"": root, "blank": empty}) as table:
-        message = call_expecting_error(build_server(table), "retrieve_document", key="blank")
+        message = call_expecting_error(build_server(table), "read_document", key="blank")
     assert "at or below 'blank'" in message
     assert "at or below ''" not in message
 
@@ -456,7 +456,7 @@ def test_two_full_halves_still_join(tmp_path):
         assert keys.fits(joined)
 
         server = build_server(table)
-        assert call(server, "retrieve_document", key=joined)["content"] == "as deep as it goes"
+        assert call(server, "read_document", key=joined)["content"] == "as deep as it goes"
 
         survey = call(server, "get_documents", key=point, meta_name=["title"])
         assert [d["key"] for d in survey["documents"]] == [f"{point}/{titled}/!title"]
@@ -574,7 +574,7 @@ def test_a_survey_does_not_report_what_reading_by_key_would_refuse(shadowed_serv
 
     # And the titles the survey shows are the ones a read can reach.
     for key in survey(shadowed_server, meta_name=["title"]):
-        assert call(shadowed_server, "retrieve_document", key=key)["content"]
+        assert call(shadowed_server, "read_document", key=key)["content"]
 
     # Nothing was skipped, so there is nothing to warn about.
     result = call(shadowed_server, "get_documents", meta_name=["title"])
@@ -598,15 +598,13 @@ def test_a_survey_counts_the_segments_it_actually_read(shadowed_server):
     # The mount's own titles are counted and the shadowed `Project` is not,
     # which is the same rule stated from both sides: a total counts what the
     # answer could show.
-    assert result["total_chars"] == len("Readme") + len("Last") + len("Mounted root") + len(
-        "Shown"
-    )
+    assert result["total_chars"] == len("Readme") + len("Last") + len("Mounted root") + len("Shown")
 
 
 def test_the_mounts_own_title_is_what_the_survey_shows_at_the_mount_point(shadowed_server):
     # The mount point resolves to the mounted store, so `project/!title` is the
     # inner root's title and not the shadowed one underneath it.
-    assert call(shadowed_server, "retrieve_document", key="project/!title")["content"] == (
+    assert call(shadowed_server, "read_document", key="project/!title")["content"] == (
         "Mounted root"
     )
 
@@ -1160,11 +1158,11 @@ def test_a_read_only_mount_refuses_a_delete(read_only_server):
 
 def test_a_refused_write_leaves_the_store_exactly_as_it_was(read_only_server, read_only_table):
     """The point of refusing in the routing: the store is never reached at all."""
-    before = call(read_only_server, "retrieve_document", key="ref/python/asyncio")
+    before = call(read_only_server, "read_document", key="ref/python/asyncio")
     call_expecting_error(
         read_only_server, "store_document", key="ref/python/asyncio", content="Rewritten."
     )
-    after = call(read_only_server, "retrieve_document", key="ref/python/asyncio")
+    after = call(read_only_server, "read_document", key="ref/python/asyncio")
     assert after["content"] == before["content"]
     assert after["updated_at"] == before["updated_at"]
     # And nothing was created alongside it either.
@@ -1172,10 +1170,8 @@ def test_a_refused_write_leaves_the_store_exactly_as_it_was(read_only_server, re
 
 
 def test_a_read_only_mount_still_reads(read_only_server):
-    assert call(read_only_server, "retrieve_document", key="ref")["content"] == (
-        "The reference base."
-    )
-    assert call(read_only_server, "retrieve_document", key="ref/python/asyncio")["content"] == (
+    assert call(read_only_server, "read_document", key="ref")["content"] == ("The reference base.")
+    assert call(read_only_server, "read_document", key="ref/python/asyncio")["content"] == (
         "Event loops."
     )
     titles = call(read_only_server, "get_documents", key="ref", meta_name=["title"])
@@ -1192,12 +1188,12 @@ def test_a_listing_says_which_mount_is_read_only(read_only_server):
 
 def test_a_writable_mount_is_unaffected(read_only_server):
     call(read_only_server, "store_document", key="lib/deep/b", content="Written.", title="B")
-    assert call(read_only_server, "retrieve_document", key="lib/deep/b")["content"] == "Written."
+    assert call(read_only_server, "read_document", key="lib/deep/b")["content"] == "Written."
 
 
 def test_the_root_is_unaffected(read_only_server):
     call(read_only_server, "store_document", key="context/2/task", content="Task.", title="Task")
-    assert call(read_only_server, "retrieve_document", key="context/2/task")["content"] == "Task."
+    assert call(read_only_server, "read_document", key="context/2/task")["content"] == "Task."
 
 
 def test_a_delete_above_a_read_only_mount_is_allowed_and_says_what_it_kept(read_only_table):
@@ -1205,7 +1201,7 @@ def test_a_delete_above_a_read_only_mount_is_allowed_and_says_what_it_kept(read_
     server = build_server(read_only_table)
     result = call(server, "delete_keys", key="", recursive=True)
     assert "ref" in result["mounts_kept"]
-    assert call(server, "retrieve_document", key="ref/python/asyncio")["content"] == "Event loops."
+    assert call(server, "read_document", key="ref/python/asyncio")["content"] == "Event loops."
 
 
 def test_a_read_only_flag_naming_nothing_mounted_is_refused(tmp_path):
@@ -1243,9 +1239,7 @@ def test_a_read_only_mount_is_not_created_when_it_does_not_exist(tmp_path):
 def test_open_mounts_marks_only_the_read_only_specs(tmp_path):
     SqliteStore(tmp_path / "base", filename="ref.sqlite").close()
     SqliteStore(tmp_path / "base", filename="extra.sqlite").close()
-    with open_mounts(
-        tmp_path / "base", ["lib=extra.sqlite"], ["ref=ref.sqlite"]
-    ) as built:
+    with open_mounts(tmp_path / "base", ["lib=extra.sqlite"], ["ref=ref.sqlite"]) as built:
         assert [m.prefix for m in built.read_only] == ["ref"]
         assert built.resolve("ref/x").read_only
         assert not built.resolve("lib/x").read_only
@@ -1344,9 +1338,7 @@ def test_a_parquet_mount_refuses_a_write_without_offering_a_flag(tmp_path):
     a_packed_store(tmp_path / "base")
     SqliteStore(tmp_path / "base", filename="flagged.sqlite").close()
 
-    with open_mounts(
-        tmp_path / "base", ["ref=ref.parquet"], ["ro=flagged.sqlite"]
-    ) as table:
+    with open_mounts(tmp_path / "base", ["ref=ref.parquet"], ["ro=flagged.sqlite"]) as table:
         with raises_rendered(ReadOnlyStoreError, "No way of starting the server") as raised:
             table.resolve("ref/python/new").writable()
         assert raised.value.code == "store-read-only"
@@ -1365,7 +1357,7 @@ def test_a_parquet_mount_reads_through_the_server(tmp_path):
 
     with open_mounts(tmp_path / "base", ["ref=ref.parquet"]) as table:
         server = build_server(table)
-        read = call(server, "retrieve_document", key="ref/python/os/getcwd")
+        read = call(server, "read_document", key="ref/python/os/getcwd")
         assert read["content"] == "Return the current working directory."
 
         survey = call(server, "get_documents", key="ref", meta_name=["title"])
@@ -1377,9 +1369,7 @@ def test_a_parquet_mount_reads_through_the_server(tmp_path):
             "ref/python/os/path",
         ]
 
-        refused = call_expecting_error(
-            server, "store_document", key="ref/python/new", content="x"
-        )
+        refused = call_expecting_error(server, "store_document", key="ref/python/new", content="x")
         assert "written whole rather than updated in place" in refused
         # The key is named as the *caller* sees it, through the mount prefix.
         assert "'ref/python/new'" in refused
@@ -1426,8 +1416,8 @@ def test_last_sees_a_mount_point(table, server):
 def test_last_routes_into_the_store_it_resolves_to(server):
     # Resolved before the routing, which is the order that matters: a `?last`
     # naming a mount decides which store answers.
-    assert call(server, "retrieve_document", key="?last")["content"] == "The reference base."
-    assert call(server, "retrieve_document", key="?last/python/typing")["content"] == "Annotations."
+    assert call(server, "read_document", key="?last")["content"] == "The reference base."
+    assert call(server, "read_document", key="?last/python/typing")["content"] == "Annotations."
 
 
 def test_last_inside_a_mounted_store_is_named_from_outside(table, server):
@@ -1580,9 +1570,24 @@ def _read(store, key):
 
 
 _SPLIT_KEYS = [
-    "", "a", "a/2", "a/10", "a/b", "a/b/c", "a/b/c/d", "a/z", "a-x",
-    "b", "b/1", "context", "context/10", "z", "nope", "a/b/nope",
-    "a/!changelog", "a/!changelog/22",
+    "",
+    "a",
+    "a/2",
+    "a/10",
+    "a/b",
+    "a/b/c",
+    "a/b/c/d",
+    "a/z",
+    "a-x",
+    "b",
+    "b/1",
+    "context",
+    "context/10",
+    "z",
+    "nope",
+    "a/b/nope",
+    "a/!changelog",
+    "a/!changelog/22",
 ]
 
 _SPLIT_RANGES = [
@@ -1966,7 +1971,7 @@ def test_a_failure_in_the_root_mount_still_spells_the_root_the_way_a_reader_read
     store.store_document("a", "below")
     with MountedStore.single(store) as table:
         server = build_server(table)
-        assert "'/'" in call_expecting_error(server, "retrieve_document", key="")
+        assert "'/'" in call_expecting_error(server, "read_document", key="")
 
 
 def test_read_only_mounts_below_a_key_are_named_without_being_deleted(tmp_path):

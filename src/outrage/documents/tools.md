@@ -1,6 +1,6 @@
 # The tools, and which one answers which question
 
-* `retrieve_document` - read one key, in full or from an offset or a pattern.
+* `read_document` - read one key from the start, an offset or a pattern.
 * `store_document` - write one key, with an optional title.
 * `list_keys` - what is immediately below a key, subkeys and metadata alike.
 * `get_documents` - read a whole subtree, or, with `meta_name`, survey it.

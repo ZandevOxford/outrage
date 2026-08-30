@@ -656,7 +656,7 @@ def test_the_copilot_command_emits_the_context_and_hides_the_marker(shell):
 
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    assert "retrieve_document" in payload["additionalContext"]
+    assert "read_document" in payload["additionalContext"]
     assert "readme" in payload["additionalContext"]
     assert MARKER not in result.stdout
 
@@ -801,7 +801,7 @@ def test_the_codex_command_emits_the_context_and_hides_the_marker():
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
     assert payload["hookSpecificOutput"]["hookEventName"] == CODEX_HOOK.event
-    assert "retrieve_document" in payload["hookSpecificOutput"]["additionalContext"]
+    assert "read_document" in payload["hookSpecificOutput"]["additionalContext"]
     assert MARKER not in result.stdout
 
 
@@ -817,9 +817,7 @@ def test_every_harness_delivers_the_same_sentence():
         entry = template_entry(target)
         command = entry["bash"] if "bash" in entry else entry["hooks"][0]["command"]
         payload = json.loads(
-            subprocess.run(
-                ["sh", "-c", command], capture_output=True, text=True, check=True
-            ).stdout
+            subprocess.run(["sh", "-c", command], capture_output=True, text=True, check=True).stdout
         )
         return payload.get("hookSpecificOutput", payload)["additionalContext"]
 

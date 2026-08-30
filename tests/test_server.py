@@ -65,7 +65,7 @@ def list_tools(server) -> dict[str, Any]:
 def test_tools_are_registered(server):
     tools = list_tools(server)
     assert set(tools) == {
-        "retrieve_document",
+        "read_document",
         "store_document",
         "list_keys",
         "get_documents",
@@ -76,7 +76,7 @@ def test_tools_are_registered(server):
     # `document_file` is deliberately not in that set: it writes files under the
     # store directory, and this server was built without being told where that
     # is. See `test_the_file_tool_is_offered_only_when_there_is_somewhere_to_write`.
-    assert tools["retrieve_document"].annotations.read_only_hint is True
+    assert tools["read_document"].annotations.read_only_hint is True
     assert tools["delete_keys"].annotations.destructive_hint is True
     for tool in tools.values():
         assert tool.description
@@ -87,7 +87,7 @@ def test_every_tool_description_is_the_shipped_document(exporting):
     tools = list_tools(exporting)
 
     assert set(tools) == {
-        "retrieve_document",
+        "read_document",
         "store_document",
         "list_keys",
         "get_documents",
@@ -115,7 +115,7 @@ def test_a_misspelled_argument_is_named_rather_than_ignored(server):
     message = call_expecting_error(server, "store_document", key="a/b", content="x", titel="typo")
     assert "titel" in message
     # The document must not have been written under a half-understood call.
-    assert "nothing is stored" in call_expecting_error(server, "retrieve_document", key="a/b")
+    assert "nothing is stored" in call_expecting_error(server, "read_document", key="a/b")
 
 
 def test_schemas_tell_clients_that_arguments_are_fixed(server):
@@ -130,27 +130,27 @@ def test_known_arguments_still_pass(server):
 
 
 def test_tool_schemas_describe_their_arguments(server):
-    tool = list_tools(server)["retrieve_document"]
+    tool = list_tools(server)["read_document"]
     properties = tool.input_schema["properties"]
     assert tool.input_schema["required"] == ["key"]
     assert "regex" in properties["pattern"]["description"]
 
 
-def test_retrieve_document(server):
-    result = call(server, "retrieve_document", key="context/c3d4/task")
+def test_read_document(server):
+    result = call(server, "read_document", key="context/c3d4/task")
     assert result["content"] == "Add a delete tool."
     assert result["truncated"] is False
     assert result["next_offset"] is None
 
 
-def test_retrieve_document_pages(server):
-    first = call(server, "retrieve_document", key="context/a1b2/design", max_chars=20)
+def test_read_document_pages(server):
+    first = call(server, "read_document", key="context/a1b2/design", max_chars=20)
     assert first["content"] == "# Store schema\n\nbody"
     assert first["truncated"] is True
 
     second = call(
         server,
-        "retrieve_document",
+        "read_document",
         key="context/a1b2/design",
         offset=first["next_offset"],
         max_chars=20,
@@ -159,49 +159,54 @@ def test_retrieve_document_pages(server):
     assert second["content"] == " body body body body"
 
 
-def test_retrieve_document_by_pattern(server):
-    result = call(server, "retrieve_document", key="context/a1b2/design", pattern="body")
+def test_read_document_by_pattern(server):
+    result = call(server, "read_document", key="context/a1b2/design", pattern="body")
     assert result["offset"] == 16
 
 
-def test_retrieve_missing_key_is_a_tool_error(server):
-    assert "context/zzzz" in call_expecting_error(server, "retrieve_document", key="context/zzzz")
+def test_read_missing_key_is_a_tool_error(server):
+    assert "context/zzzz" in call_expecting_error(server, "read_document", key="context/zzzz")
 
 
 def test_invalid_key_is_a_tool_error(server):
     # `!title` used to be the example here and is the root's title since the
     # root became addressable, so the malformation has to be a real one.
-    message = call_expecting_error(server, "retrieve_document", key="context/!")
+    message = call_expecting_error(server, "read_document", key="context/!")
     assert "metadata name" in message
 
 
 def test_a_wildcard_is_a_tool_error_when_reading(server):
-    message = call_expecting_error(server, "retrieve_document", key="context/?")
+    message = call_expecting_error(server, "read_document", key="context/?")
     assert "only when storing" in message
 
 
 def test_argument_validation_rejects_a_negative_offset(server):
-    message = call_expecting_error(server, "retrieve_document", key="a", offset=-1)
+    message = call_expecting_error(server, "read_document", key="a", offset=-1)
     assert "offset" in message
+
+
+def test_read_document_rejects_the_removed_length_argument(server):
+    message = call_expecting_error(server, "read_document", key="a", length=1)
+    assert "length" in message
 
 
 def test_store_document_round_trip(server):
     stored = call(server, "store_document", key="project/notes", content="# Notes")
     assert stored == {"key": "project/notes", "stored": 7, "generated": False}
-    assert call(server, "retrieve_document", key="project/notes")["content"] == "# Notes"
+    assert call(server, "read_document", key="project/notes")["content"] == "# Notes"
 
 
 def test_store_document_reports_an_allocated_key(server):
     stored = call(server, "store_document", key="tmp/?", content="scratch")
     assert stored == {"key": "tmp/1", "stored": 7, "generated": True}
     assert call(server, "store_document", key="tmp/?", content="more")["key"] == "tmp/2"
-    assert call(server, "retrieve_document", key="tmp/1")["content"] == "scratch"
+    assert call(server, "read_document", key="tmp/1")["content"] == "scratch"
 
 
 def test_store_document_writes_a_title_in_one_call(server):
     stored = call(server, "store_document", key="project/notes", content="# Notes", title="Notes")
     assert stored["title_key"] == "project/notes/!title"
-    assert call(server, "retrieve_document", key="project/notes/!title")["content"] == "Notes"
+    assert call(server, "read_document", key="project/notes/!title")["content"] == "Notes"
 
 
 def test_store_document_titles_the_key_it_allocated(server):
@@ -211,13 +216,13 @@ def test_store_document_titles_the_key_it_allocated(server):
 
 def test_store_document_titles_a_metadata_namespace(server):
     call(server, "store_document", key="a/b/!changelog", content="text", title="What changed")
-    title = call(server, "retrieve_document", key="a/b/!changelog/!title")
+    title = call(server, "read_document", key="a/b/!changelog/!title")
     assert title["content"] == "What changed"
 
 
 def test_store_document_detects_json(server):
     call(server, "store_document", key="project/data", content='{"a": 1}')
-    assert call(server, "retrieve_document", key="project/data")["format"] == "json"
+    assert call(server, "read_document", key="project/data")["format"] == "json"
 
 
 def test_store_document_decodes_a_json_string_encoding(server):
@@ -231,7 +236,7 @@ def test_store_document_decodes_a_json_string_encoding(server):
     # `stored` counts what was stored, not the longer encoded form that arrived.
     assert stored["stored"] == len('A summary saying "hi".\nSecond line.')
     assert (
-        call(server, "retrieve_document", key="a/b/!summary")["content"]
+        call(server, "read_document", key="a/b/!summary")["content"]
         == 'A summary saying "hi".\nSecond line.'
     )
 
@@ -246,9 +251,7 @@ def test_store_document_rejects_scaffolding_under_a_json_string_encoding(server)
     )
     assert "not a valid JSON string literal" in message
     # Nothing was written, so the caller can simply send it again.
-    assert "nothing is stored" in call_expecting_error(
-        server, "retrieve_document", key="a/b/!summary"
-    )
+    assert "nothing is stored" in call_expecting_error(server, "read_document", key="a/b/!summary")
 
 
 # Six of the seven cases below had no test through the server until 2026-08-29,
@@ -281,10 +284,8 @@ def test_store_document_rejects_an_unknown_format(server):
     assert "markdown" in message
 
 
-def test_retrieve_document_rejects_an_empty_pattern(server):
-    message = call_expecting_error(
-        server, "retrieve_document", key="context/a1b2/design", pattern=""
-    )
+def test_read_document_rejects_an_empty_pattern(server):
+    message = call_expecting_error(server, "read_document", key="context/a1b2/design", pattern="")
     assert "must not be empty" in message
 
 
@@ -306,13 +307,14 @@ def test_a_crash_still_reaches_the_caller_with_nothing_in_it(server, monkeypatch
     Widening `_reported` to catch `ValueError` would pass all six above and
     break this one, which is exactly the trade it must not make.
     """
+
     def boom(*args, **kwargs):
         raise ValueError("a detail from inside outrage")
 
     monkeypatch.setattr(SqliteStore, "retrieve_document", boom)
 
     with pytest.raises(UnexpectedToolError) as raised:
-        anyio.run(server.call_tool, "retrieve_document", {"key": "context/a1b2/design"})
+        anyio.run(server.call_tool, "read_document", {"key": "context/a1b2/design"})
     assert "a detail from inside outrage" not in str(raised.value)
     assert isinstance(raised.value.__cause__, ValueError)
 
@@ -468,7 +470,11 @@ def test_copy_tree_resumes_from_the_cursor_it_returns(server):
     assert "cursor" in first["note"]
 
     second = call(
-        server, "copy_tree", source="context", target="archive", limit=10,
+        server,
+        "copy_tree",
+        source="context",
+        target="archive",
+        limit=10,
         cursor=first["next_cursor"],
     )
 
@@ -493,9 +499,7 @@ def test_copy_tree_dry_run_writes_nothing(server):
 
 
 def test_copy_tree_refuses_a_target_inside_its_source(server):
-    message = call_expecting_error(
-        server, "copy_tree", source="context", target="context/archive"
-    )
+    message = call_expecting_error(server, "copy_tree", source="context", target="context/archive")
 
     assert "target is inside the source subtree" in message
 
@@ -526,9 +530,7 @@ def test_copy_tree_names_the_read_only_mounts_the_copy_could_not_reach(tmp_path)
     with SqliteStore(tmp_path) as root:
         root.store_document("notes/ref/python", "mine")
         root.store_document("notes/plain", "mine too")
-    with mounts_module.open_mounts(
-        tmp_path, read_only_specs=["archive/ref=ref.sqlite"]
-    ) as table:
+    with mounts_module.open_mounts(tmp_path, read_only_specs=["archive/ref=ref.sqlite"]) as table:
         server = build_server(table)
         result = call(server, "copy_tree", source="notes", target="archive", reroot=True)
 
@@ -554,9 +556,7 @@ def test_copy_tree_says_when_the_failures_it_names_are_a_sample(tmp_path, monkey
     with SqliteStore(tmp_path) as root:
         root.store_document("notes/ref/python", "mine")
         root.store_document("notes/ref/rust", "mine too")
-    with mounts_module.open_mounts(
-        tmp_path, read_only_specs=["archive/ref=ref.sqlite"]
-    ) as table:
+    with mounts_module.open_mounts(tmp_path, read_only_specs=["archive/ref=ref.sqlite"]) as table:
         server = build_server(table)
         result = call(server, "copy_tree", source="notes", target="archive", reroot=True)
 
@@ -626,7 +626,7 @@ def test_the_middleware_is_registered_only_when_there_is_a_log(tmp_path):
 
 
 def test_the_middleware_is_reached(tmp_path):
-    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b"}))
+    recorded = session_calls(tmp_path, ("read_document", {"key": "a/b"}))
 
     # `MCPServer.middleware` is documented as provisional. If a future SDK
     # stops calling it, this fails rather than logging silently stopping.
@@ -636,14 +636,14 @@ def test_the_middleware_is_reached(tmp_path):
 
 
 def test_the_client_that_connected_is_recorded(tmp_path):
-    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b"}))
+    recorded = session_calls(tmp_path, ("read_document", {"key": "a/b"}))
 
     (initialize,) = [e for e in recorded if e.get("method") == "initialize"]
     assert initialize["params"]["clientInfo"]["name"]
 
 
 def test_a_rejected_call_is_recorded_as_an_error(tmp_path):
-    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b", "bogus": 1}))
+    recorded = session_calls(tmp_path, ("read_document", {"key": "a/b", "bogus": 1}))
 
     (called,) = [e for e in recorded if e.get("method") == "tools/call"]
     assert called["result"]["ok"] is False
@@ -651,7 +651,7 @@ def test_a_rejected_call_is_recorded_as_an_error(tmp_path):
 
 
 def test_a_rejected_call_never_reaches_the_store(tmp_path):
-    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b", "bogus": 1}))
+    recorded = session_calls(tmp_path, ("read_document", {"key": "a/b", "bogus": 1}))
 
     # The absence is the finding: an argument the server does not know is
     # refused before the tool function is entered, which is the failure a log
@@ -674,7 +674,7 @@ def test_store_accesses_are_grouped_under_the_call_that_caused_them(tmp_path):
 
 
 def test_the_setup_writes_are_not_attributed_to_any_call(tmp_path):
-    recorded = session_calls(tmp_path, ("retrieve_document", {"key": "a/b"}))
+    recorded = session_calls(tmp_path, ("read_document", {"key": "a/b"}))
 
     (setup,) = [e for e in recorded if e.get("op") == "store_document"]
     assert "call" not in setup
@@ -973,8 +973,8 @@ def test_the_root_is_readable_and_writable_through_the_tools(server):
     assert written["key"] == ""
     # Not `/!title`: a caller told the wrong key cannot read it back.
     assert written["title_key"] == "!title"
-    assert call(server, "retrieve_document", key="")["content"] == "# This store"
-    assert call(server, "retrieve_document", key="!title")["content"] == "This store"
+    assert call(server, "read_document", key="")["content"] == "# This store"
+    assert call(server, "read_document", key="!title")["content"] == "This store"
 
 
 def test_an_omitted_key_resolves_to_the_root(server):
@@ -998,7 +998,7 @@ def test_the_root_document_does_not_list_below_itself(server):
 
 def test_a_slash_is_a_spelling_of_the_root(server):
     call(server, "store_document", key="/", content="body")
-    assert call(server, "retrieve_document", key="")["content"] == "body"
+    assert call(server, "read_document", key="")["content"] == "body"
 
 
 # -- ?last ------------------------------------------------------------------
@@ -1007,7 +1007,7 @@ def test_a_slash_is_a_spelling_of_the_root(server):
 def test_last_reads_the_newest_key_and_says_which_one(server):
     # `?` reports the number it allocated; this is the same obligation from the
     # other end -- a caller that asked for the newest is told what that was.
-    result = call(server, "retrieve_document", key="context/?last/task")
+    result = call(server, "read_document", key="context/?last/task")
     assert result["key"] == "context/c3d4/task"
     assert result["content"] == "Add a delete tool."
 
@@ -1027,7 +1027,7 @@ def test_last_orders_the_way_a_listing_does(server):
 def test_last_writes_under_the_newest_key(server):
     written = call(server, "store_document", key="context/?last/notes", content="body")
     assert written["key"] == "context/c3d4/notes"
-    assert call(server, "retrieve_document", key="context/c3d4/notes")["content"] == "body"
+    assert call(server, "read_document", key="context/c3d4/notes")["content"] == "body"
 
 
 def test_last_and_a_wildcard_in_one_key(server):
@@ -1044,7 +1044,7 @@ def test_last_deletes_from_the_newest_key(server):
 
 
 def test_last_with_nothing_below_it_is_refused_by_name(server):
-    message = call_expecting_error(server, "retrieve_document", key="nowhere/?last/task")
+    message = call_expecting_error(server, "read_document", key="nowhere/?last/task")
     assert "nowhere" in message and "nothing below it" in message
 
 
@@ -1097,7 +1097,7 @@ def test_a_file_edited_on_disk_is_stored_back(exporting):
 
     assert (imported["stored"], imported["previous"]) == (23, 14)
     assert "note" not in imported
-    read = call(exporting, "retrieve_document", key="context/a1b2/design")
+    read = call(exporting, "read_document", key="context/a1b2/design")
     assert read["content"] == "# Store schema, revised"
 
 
@@ -1140,7 +1140,7 @@ def test_the_file_name_is_what_says_what_format_came_back(exporting):
 
     call(exporting, "document_file", key="notes/data", path=exported["path"])
 
-    assert call(exporting, "retrieve_document", key="notes/data")["format"] == "json"
+    assert call(exporting, "read_document", key="notes/data")["format"] == "json"
 
 
 def test_a_file_outside_the_export_directory_is_refused(exporting, tmp_path):
@@ -1152,7 +1152,7 @@ def test_a_file_outside_the_export_directory_is_refused(exporting, tmp_path):
     )
 
     assert "outside the export directory" in message
-    assert call(exporting, "retrieve_document", key="context/a1b2/design")["content"] == (
+    assert call(exporting, "read_document", key="context/a1b2/design")["content"] == (
         "# Store schema"
     )
 

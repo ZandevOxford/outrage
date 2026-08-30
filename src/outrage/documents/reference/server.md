@@ -110,7 +110,7 @@ session that learns how one is organised has somewhere to write it.
 
 Where the delivered text is kept, below the shipped documentation's root.
 Prose in a document rather than a string literal here: it is diffable,
-carries a title, and is readable with retrieve_document like anything else
+carries a title, and is readable with read_document like anything else
 -- including by a session that was cut off mid-instructions and wants the
 rest of them. The document at outrage/skills says which file is which.
 
