@@ -67,7 +67,7 @@ leaves open.
 
 ```
 store_document(
-    key="<document key>:<metadata name>",
+    key="<document key>/!<metadata name>",
     content=<the text as a JSON string literal>,
     encoding="json-string",
 )

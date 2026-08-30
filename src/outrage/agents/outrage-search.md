@@ -64,8 +64,8 @@ exists to protect. Combining the names also doubles the text weighed against
 `max_chars`, so it is likelier to truncate as well. Fetch title, judge, and
 only then fetch summary for what is left.
 
-Metadata comes back keyed `<document key>:<name>` - strip the suffix to get the
-document.
+Metadata comes back keyed `<document key>/!<name>` - strip the trailing `/!<name>`
+segment to get the document.
 
 Move to the next level only if some documents are still unclear, and when you
 do, ignore the entries for documents already decided.
