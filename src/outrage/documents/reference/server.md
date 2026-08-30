@@ -114,6 +114,13 @@ carries a title, and is readable with retrieve_document like anything else
 -- including by a session that was cut off mid-instructions and wants the
 rest of them. The document at outrage/skills says which file is which.
 
+### outrage.server.TOOLS *= 'tools'*
+
+Where the MCP tools' descriptions are kept, below the shipped documentation
+root. Like [`SKILLS`](#outrage.server.SKILLS), these are documents rather than string literals:
+they are diffable, readable through the mounted manual, and shipped in the
+same package as the code that registers them.
+
 ### outrage.server.WITHOUT_META_SAMPLE *= 10*
 
 Keys named in without_meta before it stops listing and only counts. Its
@@ -261,3 +268,13 @@ A function rather than a constant, and not only because the text is read
 from files now. A module constant holding it is rendered *by value* into
 the API reference, which put the whole of both documents back into the
 generated page they had just been taken out of.
+
+### outrage.server.tool_description(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+The description of one MCP tool, read from the installed documents.
+
+The same contract as [`skill()`](#outrage.server.skill): the installed file is read once per
+process, before the tool is registered, and a build that dropped it fails
+loudly instead of exposing a tool with an empty or stale description.
+Keeping the description in the documentation tree also makes the bytes a
+session receives available at `outrage/tools/<name>`.

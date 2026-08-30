@@ -15,5 +15,7 @@
 Every listing is a page rather than the whole store: each reports `returned`
 beside `total`, and a `next_cursor` when more remains.
 
-*Placeholder: the argument rules live on the tools themselves and are not
-repeated here yet.*
+Each tool's full description is the document at its own key below this one.
+Those documents are also the source the MCP server reads when it registers the
+tools: editing one changes what a client is told the next time the server
+starts. Argument descriptions remain on the tool schema itself.

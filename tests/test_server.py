@@ -82,6 +82,24 @@ def test_tools_are_registered(server):
         assert tool.description
 
 
+def test_every_tool_description_is_the_shipped_document(exporting):
+    """The registered text has one source, readable through the manual too."""
+    tools = list_tools(exporting)
+
+    assert set(tools) == {
+        "retrieve_document",
+        "store_document",
+        "list_keys",
+        "get_documents",
+        "keys_missing_meta",
+        "delete_keys",
+        "copy_tree",
+        "document_file",
+    }
+    for name, tool in tools.items():
+        assert tool.description == server_module.tool_description(name)
+
+
 def test_unknown_arguments_are_rejected(server):
     """Guards a reach into the SDK; see server._forbid_unknown_arguments.
 

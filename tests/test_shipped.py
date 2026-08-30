@@ -97,6 +97,26 @@ def test_the_delivered_instructions_are_the_documents_here():
     assert tail == server.skill("tail")
 
 
+def test_the_tool_descriptions_are_the_documents_here():
+    """The mounted manual and MCP registration read the same installed bytes."""
+    names = (
+        "retrieve_document",
+        "store_document",
+        "list_keys",
+        "get_documents",
+        "keys_missing_meta",
+        "delete_keys",
+        "copy_tree",
+        "document_file",
+    )
+    with shipped.open_documents() as store:
+        descriptions = {
+            name: store.retrieve_document(f"tools/{name}").content for name in names
+        }
+
+    assert descriptions == {name: server.tool_description(name) for name in names}
+
+
 def test_the_readme_says_what_the_mount_is_not():
     """It is the manual, not the project's own store, and it says so.
 

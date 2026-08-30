@@ -215,6 +215,12 @@ DELIVERY_BUDGET = 2048
 #: rest of them. The document at `outrage/skills` says which file is which.
 SKILLS = "skills"
 
+#: Where the MCP tools' descriptions are kept, below the shipped documentation
+#: root. Like :data:`SKILLS`, these are documents rather than string literals:
+#: they are diffable, readable through the mounted manual, and shipped in the
+#: same package as the code that registers them.
+TOOLS = "tools"
+
 
 #: The documents delivered, in the order they are sent. The split is a delivery
 #: order and not a subject: a client cuts these instructions at a length it does
@@ -249,6 +255,23 @@ def skill(name: str) -> str:
     hole in them.
     """
     path = shipped.tree() / SKILLS / f"{name}.md"
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise shipped.DocumentsError("documents-not-installed", path=str(path)) from exc
+
+
+@functools.cache
+def tool_description(name: str) -> str:
+    """The description of one MCP tool, read from the installed documents.
+
+    The same contract as :func:`skill`: the installed file is read once per
+    process, before the tool is registered, and a build that dropped it fails
+    loudly instead of exposing a tool with an empty or stale description.
+    Keeping the description in the documentation tree also makes the bytes a
+    session receives available at ``outrage/tools/<name>``.
+    """
+    path = shipped.tree() / TOOLS / f"{name}.md"
     try:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
@@ -462,12 +485,7 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
-        description=(
-            "Read the document stored at a key. Long documents are returned in "
-            "capped slices: when `next_offset` is set, call again with that "
-            "`offset` to continue. To jump to a section, pass `pattern` as a "
-            "literal substring to start the read from."
-        ),
+        description=tool_description("retrieve_document"),
     )
     @_reported
     def retrieve_document(
@@ -508,16 +526,7 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(idempotent_hint=True),
-        description=(
-            "Store a document or a metadata value at a key, overwriting whatever "
-            "is there. Content is markdown, JSON, plain text or HTML. A whole segment given "
-            "as `?` is replaced by a number the store allocates, so `tmp/?` "
-            "writes to `tmp/1` in an empty store; the returned `key` is the one "
-            "actually written, and is what to use for related keys afterwards. "
-            "Pass `title` whenever you store a document: it is what later "
-            "sessions survey the store by, and a document stored without one is "
-            "hard to find again."
-        ),
+        description=tool_description("store_document"),
     )
     @_reported
     def store_document(
@@ -596,22 +605,7 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
-        description=(
-            "List the keys immediately below a key, including subkeys and "
-            "metadata. Omit the key to list the top level. Keys of kind "
-            "'implicit' hold no content themselves but have something beneath "
-            + (
-                "them. A key of kind 'mount' is where another store is mounted, "
-                "and 'read-only mount' is one that refuses writes; either reads, "
-                "lists and is searched like any other key, so nothing has to be "
-                "asked twice. "
-                if table.multiple
-                else "them. "
-            )
-            + f"Returns at most {DEFAULT_ITEM_LIMIT} keys: compare `returned` with "
-            "`total` to see whether that was the whole level, and pass "
-            "`next_cursor` back as `after` to continue."
-        ),
+        description=tool_description("list_keys"),
     )
     @_reported
     def list_keys(
@@ -646,24 +640,7 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
-        description=(
-            "Read every document at and below a key. Pass `meta_name` to get that "
-            "metadata across the subtree instead, which is the cheap way to survey "
-            "what is stored: `get_documents(key='context', meta_name=['title'])` "
-            "lists the titles of everything under `context`. Each document is "
-            f"truncated to `max_chars`; use retrieve_document to read one in full. "
-            f"The page holds at most {DEFAULT_ITEM_LIMIT} documents and "
-            f"{DEFAULT_PAGE_CHARS} characters in total, whichever comes first, "
-            "so a survey of short metadata usually arrives whole while a read "
-            "of real documents does not: "
-            "compare `returned` with `total`, and pass `next_cursor` back as "
-            "`after` to continue from where it stopped. With `meta_name`, "
-            "`without_meta` counts the documents in this same page's window "
-            "that carry none of it - what the survey structurally cannot "
-            "show. It is always present, and describes exactly the stretch "
-            "this page covers, so paging the survey tiles those windows "
-            "without gap or overlap. Use keys_missing_meta to list them."
-        ),
+        description=tool_description("get_documents"),
     )
     @_reported
     def get_documents(
@@ -749,15 +726,7 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
-        description=(
-            "List the document keys at and below a key that carry none of the "
-            "named metadata: exactly what a `get_documents` survey by that "
-            "metadata cannot show, since a survey can only report documents "
-            "that have it, and which `without_meta` only counts. A document "
-            "counts as covered when it "
-            "has any one of the names given, so ask for one name at a time "
-            "unless you mean 'none of these'."
-        ),
+        description=tool_description("keys_missing_meta"),
     )
     @_reported
     def keys_missing_meta(
@@ -807,11 +776,7 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=True),
-        description=(
-            "Delete a key. A key takes its whole metadata subtree with it. Descendants "
-            "survive unless `recursive` is set. Note that storing an empty "
-            "document does not delete anything."
-        ),
+        description=tool_description("delete_keys"),
     )
     @_reported
     def delete_keys(
@@ -868,23 +833,7 @@ def build_server(
         # store, whichever `on_conflict` was asked for. Not read-only and not
         # declared non-destructive, because `overwrite` replaces documents.
         annotations=ToolAnnotations(idempotent_hint=True),
-        description=(
-            "Copy a subtree to another key. `target` is a prefix the copied keys "
-            "are grafted beneath, so copy_tree('ref/python', 'archive') writes "
-            "`archive/ref/python/...`; pass `reroot` to land them at `target` "
-            "itself instead, which is what moving a subtree to a new key means. "
-            "Documents cross with their metadata and their original timestamps, "
-            "and may cross between mounted stores. **A copy never deletes**: it "
-            "merges into whatever is already there, and `on_conflict` decides "
-            "one key at a time. To move, copy and then delete_keys; to split one "
-            "document into two keys, use document_file rather than this. The "
-            "result is counts rather than a list of keys, since a copy may cross "
-            "more keys than a result can hold, with `next_cursor` when the limit "
-            "stopped it - call again with `cursor` set to that and everything "
-            "else unchanged. `target` may not be at or below `source`, and with "
-            "`reroot` the two subtrees must be wholly separate, because the copy "
-            "walks the source as it writes rather than snapshotting it."
-        ),
+        description=tool_description("copy_tree"),
     )
     @_reported
     def copy_tree(
@@ -1047,20 +996,7 @@ def build_server(
 
         @server.tool(
             annotations=ToolAnnotations(idempotent_hint=True),
-            description=(
-                "Move one document between the store and a file, so a long "
-                "document can be edited by shell tools without its unchanged "
-                "text passing through the conversation twice. **Omit `path` to "
-                "export**: the whole document at `key` is written to a file and "
-                "the path returned, ready to be edited in place with `sed`, a "
-                "heredoc or an editor. **Pass `path` to import**: that file's "
-                "content is stored at `key`, and the answer reports both the "
-                "size written and the size that was there before, so an edit "
-                "that truncated is visible. The path must be one this tool "
-                "exported. The key and the path need not be the same key's, so "
-                "exporting one key and importing to another copies content "
-                "across the store."
-            ),
+            description=tool_description("document_file"),
         )
         @_reported
         def document_file(
@@ -1510,6 +1446,7 @@ __all__ = [
     "READ_README",
     "README_KEY",
     "SKILLS",
+    "TOOLS",
     "WITHOUT_META_SAMPLE",
     "RequestLog",
     "build_server",
@@ -1518,4 +1455,5 @@ __all__ = [
     "parse_args",
     "skill",
     "static_instructions",
+    "tool_description",
 ]
