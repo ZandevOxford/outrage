@@ -45,6 +45,7 @@ EXPECTED = (
     "reference",
     "skills",
     "tools",
+    "workflow",
 )
 
 
@@ -126,6 +127,20 @@ def test_the_readme_says_what_the_mount_is_not():
         readme = store.retrieve_document("readme").content
 
     assert "not the project's own store" in readme.replace("*", "")
+
+
+def test_default_readme_routes_detailed_working_practice():
+    """Project policy stays in the store documents rather than the skills."""
+    with shipped.open_documents() as store:
+        default = store.retrieve_document("default_readme").content
+        workflow = store.retrieve_document("workflow").content
+
+    assert 'get_documents(meta_name=["title"])' in default
+    assert "`context/?/task`" in default
+    assert "`!summary`" in default
+    assert "`outrage/workflow`" in default
+    assert "`document_file`" in workflow
+    assert "Before handoff or compaction" in workflow
 
 
 def test_it_is_opened_without_creating_anything(tmp_path, monkeypatch):

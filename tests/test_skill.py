@@ -15,6 +15,7 @@ import pytest
 import outrage
 
 SKILL = Path(outrage.__file__).parent / "skills" / "outrage" / "SKILL.md"
+CODEX_SKILL = Path(outrage.__file__).parent / "codex" / "skills" / "outrage" / "SKILL.md"
 REPO = Path(__file__).resolve().parents[1]
 DOGFOOD = REPO / ".claude" / "skills" / "outrage" / "SKILL.md"
 # Where the symlink is meant to land. Not ``SKILL``: that is whichever copy is
@@ -55,6 +56,15 @@ def test_frontmatter_names_the_skill():
     # The description is the only part always in context, so it is what decides
     # whether the skill is ever reached.
     assert len(fields["description"]) > 100
+
+
+def test_codex_skill_extends_the_shared_core():
+    """Harness-specific routing is the only deliberate prose difference."""
+    shared = SKILL.read_text(encoding="utf-8")
+    codex = CODEX_SKILL.read_text(encoding="utf-8")
+
+    assert codex.startswith(shared)
+    assert "references/search.md" in codex
 
 
 @pytest.mark.skipif(UNCONFIGURED, reason=NO_DOGFOOD)

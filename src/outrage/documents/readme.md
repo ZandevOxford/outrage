@@ -19,6 +19,8 @@ At this level:
 
 * [keys](keys.md) contains the definition of keys.
 * [cli](cli.md) contains the documentation for the command line.
+* [workflow](workflow.md) contains detailed advice for surveying, recording,
+  editing and handing over work in a project store.
 * [reference](reference.md) contains the API documentation, generated from the
   source, with a page per module below it.
 

@@ -1,55 +1,17 @@
 ---
 name: outrage
-description: Recover and preserve a project's working knowledge in its Outrage MCP document store. Use when resuming work, finding earlier decisions or task state, saving durable findings, or searching, annotating, or backfilling store documents.
+description: Recover and preserve durable project knowledge in its Outrage document store when starting or resuming work, finding earlier decisions or task state, recording a finding or decision worth keeping, or preparing a handoff or compaction.
 ---
 
 # The Outrage store
 
-Outrage keeps decisions, findings, and task state that would otherwise be lost
-between sessions. It is reached through the `mcp__outrage__*` tools.
+Use the `mcp__outrage__*` tools. Read `readme` first and follow the project's
+own routing and conventions; if it is missing, read `outrage/default_readme`.
 
-Read `readme` first - the server names it but does not carry it - then read
-where it directs you. Survey cheaply before reading:
+The tools carry the key grammar and argument rules. `outrage/` is the mounted,
+read-only Outrage manual rather than this project's store; its
+`outrage/workflow` document has detailed store-working guidance.
 
-```
-get_documents(meta_name=["title"])
-```
-
-Listings are pages. Compare `returned` with `total`, follow `next_cursor` with
-`after`, and account for `without_meta`; a title survey cannot show documents
-without titles.
-
-`outrage/` is Outrage's own manual, mounted read-only from inside the package:
-a readme and documents on keys, the tools, the command line and the
-conventions. Read it for how Outrage works, not for anything about this
-project, and do not write there.
-
-## Store conventions
-
-Use `context/<n>/…` for a thread of work, `reference/<topic>` for durable
-project facts, and `file_notes/<path>` for file-specific notes - example names
-rather than paths that exist, since a store's `readme` says which it uses. Allocate a
-new thread with `context/?/task`, then use the returned key for related state,
-findings, and decisions. Give every document a `title`; add `!summary` when
-the title cannot say enough to screen the document.
-
-Store what cost something to learn: a decision and its reasoning, a verified
-finding, a correction, or the current state and next step. Do not restate code
-or a diff that the repository already records. Keep one question per document
-and rewrite a state document rather than appending stale snapshots.
-
-Use `?last` to address the newest item in a hierarchy. Before ending a task,
-update its state and check that the documents you wrote have titles.
-
-## Specialised operations
-
-Read only the reference needed for the operation:
-
-* To answer what the store contains about a question, read
-  [references/search.md](references/search.md).
-* To derive metadata for one document, read
-  [references/annotate.md](references/annotate.md).
-* To fill missing metadata across a subtree, read
-  [references/backfill.md](references/backfill.md). It uses Codex runtime
-  subagents for the independent annotation work.
-
+For specialised operations, read only the matching local reference:
+`references/search.md`, `references/annotate.md`, or
+`references/backfill.md`.

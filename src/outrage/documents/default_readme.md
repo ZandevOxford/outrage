@@ -1,59 +1,52 @@
 # Outrage project structure
 
-## Storing information
+This store keeps decisions, findings and task state that would otherwise be
+lost between sessions. Do not duplicate in bulk what the files or git history
+already say; do record what was done and why.
 
-The store is for what would otherwise be lost between sessions: a decision and
-the reasoning behind it, a finding that took real effort to get, where the work
-got to.
+## Working with the store
 
-Do not duplicate in bulk information which is available from the files or
-the git history. However, do feel free to make notes on what was done and why.
+Survey before reading with `get_documents(meta_name=["title"])`, then read
+only what looks relevant. Surveys are paged: compare `returned` with `total`,
+follow `next_cursor` with `after`, and account for `without_meta`, whose
+documents cannot appear in a title survey.
 
-Unless there is a good reason, documents should be small (up to 8k or so,
-which is one `read_document`) and cover a single topic.
+Give every document a title. Add a `!summary` when the title alone cannot say
+enough to decide whether the document is worth reading.
 
-Where possible, avoid significant edits to documents, and instead use the ?
-path segment to add additional notes rather than appending more information
-to a document.
+Store durable knowledge as the work goes on, once it is settled, rather than
+saving it all for the end. Keep current documents current instead of appending
+stale snapshots. Before a session ends, is handed over or may be compacted,
+record anything still held only in the conversation, update the thread's
+state, and check that new documents have titles.
 
-When an edit is worth making anyway, prefer `document_file` to rewriting the
-document whole, and to the `outrage` command line: export the key to a file,
-change it there with the ordinary shell tools, and import it back. The
-unchanged text then never passes through the conversation twice, and the
-import reports the size it replaced, so an edit that truncated is visible.
+Keep one facet per document and about 8k characters or less, so it can be read
+in one `read_document` call. Add a numbered subdocument for further detail
+instead of making one document answer several questions. For editing,
+splitting and handoff guidance, read `outrage/workflow`.
 
 ## Where to store information
 
-Suggested namespace for documents - where ? represents an auto-incremented path
-segment. Create these as needed.
+Suggested namespace for documents — where `?` represents an auto-incremented
+path segment. Create these as needed.
 
-* `readme` - the top level document containing conventions used in the
-  project. The conventions only: every session is told to read this before it
-  starts, so it is what has to be true of the whole store, and routing to a
-  particular document belongs in `contents` below.
-* `contents` - an index routing to the other documents, for when there are
-  more of them than the conventions can name. Route by *when* a document
-  applies, since a survey by title already says what one is about.
-* `current` - a brief document containing a summary of the current state and
-  routes to other documents (in context, plans, issues etc.) for what has just
+* `readme` — the conventions used throughout this project. Every session is
+  told to read it first, so routing to particular subject matter belongs in
+  `contents` instead.
+* `contents` — an index routing to the other documents, for when there are more
+  than the conventions can name. Route by *when* a document applies, since a
+  title survey already says what one is about.
+* `current` — a brief summary of the current state, routing to what has just
   been done and what is next.
-* `context/?` - one thread of work: its task, its decisions, its state. Create
-  a new context at this level for every significant piece of work. Create further
-  documents below this (typically with ? autoincrement) to record work done
-  and decisions made.
-* `plans/<feature>` - plans for features to implement and decisions made.
-  Also archived notes on already implemented features. Carry a `!status` so
-  that a survey separates what is still open from what has been built.
-* `issues/?` - Notes on bugs or other issues, with a `!status` likewise.
-* `reference/<topic>` - durable facts about the project: the conventions and
-  processes the work follows, its history and releases, which environment to
-  build and test in, and how the implementation actually works.
-* `glossary/<term>` - definitions and notes on terms and keywords used in the
-  project.
-* `file_notes/<path>` - <path> will mirror the project filesystem, so use this
-  to make notes about files in the project.
-* `scratch/?` - scratch space for temporary notes. Also can be used for
-  communication between simultaneous agents by using another level of
-  auto-incremented documents. Agents can write new notes, and other agents
-  can find them by looking for keys greater than the last they have previously
-  read.
+* `context/?/task` — allocate one numbered thread for each significant piece
+  of work, then use the returned number for its related documents:
+  `context/<n>/state` for where it got to and what comes next, and documents
+  such as `decisions`, `findings` or numbered notes for what it produced.
+* `plans/<feature>` — plans for features and retained reasoning about features
+  already built. Carry a `!status` so a survey separates open from completed.
+* `issues/?` — bugs or other issues, with a `!status` likewise.
+* `reference/<topic>` — durable project facts: conventions and processes,
+  history and releases, environment and implementation detail.
+* `glossary/<term>` — project-specific terms and keywords.
+* `file_notes/<path>` — notes about one file, mirroring the project tree.
+* `scratch/?` — temporary notes and mailboxes between simultaneous agents.
