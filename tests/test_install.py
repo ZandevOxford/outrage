@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from conftest import raises_rendered
+from outrage import install as install_module
 from outrage.config import ConfigError
 from outrage.install import (
     CLAUDE_DIR,
@@ -31,6 +33,7 @@ from outrage.install import (
     COPILOT_HOOK,
     HOOK_TARGETS,
     MARKER,
+    SESSIONSTART_MARKER,
     FileChange,
     InstallError,
     asset_sources,
@@ -41,6 +44,8 @@ from outrage.install import (
     plan,
     plan_assets,
     plan_codex_assets,
+    sessionstart_command,
+    sessionstart_payload,
     settings_path,
     template_entry,
 )
@@ -98,10 +103,9 @@ def test_template_is_a_fragment_holding_one_entry():
     assert len(loaded["hooks"][HOOK_EVENT]) == 1
 
 
-@pytest.mark.skipif(os.name != "posix", reason="the marker is a POSIX shell comment")
 @pytest.mark.parametrize("shell", ["sh", "bash", "zsh"])
 def test_the_installed_command_emits_valid_json_and_hides_the_marker(shell):
-    """The whole premise: a comment that the shell drops and a client never sees.
+    """The whole premise: the CLI builds JSON and its marker never reaches it.
 
     Run for real rather than reasoned about, because the failure mode is a hook
     that exits 0 while emitting something unparseable - which looks exactly
@@ -117,6 +121,44 @@ def test_the_installed_command_emits_valid_json_and_hides_the_marker(shell):
     payload = json.loads(result.stdout)
     assert payload["hookSpecificOutput"]["hookEventName"] == HOOK_EVENT
     assert MARKER not in result.stdout
+
+
+def test_the_shared_hook_command_names_the_running_python_environment():
+    expected = [
+        str(Path(sys.executable).resolve()),
+        "-m",
+        "outrage",
+        "sessionstart",
+        SESSIONSTART_MARKER,
+    ]
+    command = sessionstart_command()
+
+    if os.name == "nt":
+        assert command == subprocess.list2cmdline(expected)
+    else:
+        assert shlex.split(command) == expected
+
+
+def test_the_sessionstart_payload_is_read_from_the_shipped_document():
+    payload = sessionstart_payload()
+    prompt = Path(install_module.__file__).parent / "documents" / "hooks" / "sessionstart.md"
+
+    assert payload["hookSpecificOutput"]["additionalContext"] == (
+        prompt.read_text(encoding="utf-8").removesuffix("\n")
+    )
+
+
+def test_the_sessionstart_prompt_is_read_at_command_time(tmp_path, monkeypatch):
+    prompt = tmp_path / "sessionstart.md"
+    monkeypatch.setattr(install_module, "_SESSIONSTART_PROMPT", prompt)
+
+    prompt.write_text("first", encoding="utf-8")
+    assert sessionstart_payload()["hookSpecificOutput"]["additionalContext"] == "first"
+
+    prompt.write_text("changed after init", encoding="utf-8")
+    assert sessionstart_payload()["hookSpecificOutput"]["additionalContext"] == (
+        "changed after init"
+    )
 
 
 # -- recognising our own entry -------------------------------------------
@@ -743,12 +785,12 @@ def test_the_codex_entry_is_the_claude_shape_with_a_matcher():
 
     assert entry["matcher"] == "startup|resume"
     assert entry["hooks"][0]["type"] == "command"
-    # Claude's shape, so the marker is a shell comment again rather than the
-    # JSON field Copilot needs.
+    # Claude's shape, and the marker is the CLI's final argument rather than
+    # the JSON field Copilot needs.
     assert MARKER in entry["hooks"][0]["command"]
 
 
-@pytest.mark.skipif(os.name != "posix", reason="the marker is a POSIX shell comment")
+@pytest.mark.skipif(os.name != "posix", reason="this test invokes a POSIX shell")
 def test_the_codex_command_emits_the_context_and_hides_the_marker():
     result = subprocess.run(
         ["sh", "-c", template_entry(CODEX_HOOK)["hooks"][0]["command"]],

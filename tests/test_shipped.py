@@ -39,6 +39,7 @@ from outrage.store_files import FilesystemStore
 EXPECTED = (
     "cli",
     "default_readme",
+    "hooks",
     "keys",
     "readme",
     "reference",
