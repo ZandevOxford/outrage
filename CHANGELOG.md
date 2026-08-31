@@ -2,6 +2,30 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.4.3 - 2026-08-31
+
+0.4.3 gives Claude Code, Codex and Copilot CLI one maintained source for the
+agent procedures they share, and expands the store guidance those procedures
+rely on.
+
+* **Search, annotation and metadata backfill procedures are now shipped once**
+  under `outrage/agents/`. Harness-specific agents and skill references point
+  to those documents instead of carrying copies that can drift.
+* **`outrage init` installs native Copilot CLI agent profiles** alongside its
+  session-start hook. The hook now runs the installed Python with the same v3
+  managed marker used by Claude Code and Codex while preserving Copilot's
+  required payload shape.
+* **Project conventions live in each store's readme and workflow guidance,**
+  leaving the packaged skills concise. The shipped key and workflow documents
+  now cover ordering and range bounds, metadata, long-document editing,
+  handoff, and safe deletion of current and historical records.
+* **The annotation and search agents use the current `/!name` metadata form.**
+  Their stale pre-schema-4 `:name` examples could create ordinary documents
+  instead of metadata while reporting success.
+
+The shipped documentation index now explains title surveys without repeating
+the mounted-document inventory.
+
 ## 0.4.2 - 2026-08-30
 
 0.4.2 simplifies the MCP surface and makes the text a client sees easier to
