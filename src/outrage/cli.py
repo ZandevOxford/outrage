@@ -5,13 +5,13 @@ with behaviour belongs in :mod:`outrage.store` or :mod:`outrage.config`, so that
 can be tested without going through argparse and used by whichever of the two
 front ends needs it.
 
-What this module *offers* is three names: :func:`main`, :func:`parse_args`,
-and :class:`ConflictingSourceError` as something to catch. The subcommand handlers
-are argparse wiring reached through ``handler``, one per subcommand and never
-from outside, so they are private -- which also keeps this page from being a
-list of twelve near-identical ``(args, out) -> int`` entries in place of an
-orientation. The interface people actually use here is the command line, and
-``outrage --help`` is what states it.
+What this module *offers* is :func:`argument_parser`, :func:`parse_args`,
+:func:`main`, and :class:`ConflictingSourceError` as something to catch. The
+subcommand handlers are argparse wiring reached through ``handler``, one per
+subcommand and never from outside, so they are private -- which also keeps this
+page from being a list of twelve near-identical ``(args, out) -> int`` entries
+in place of an orientation. The interface people actually use here is the
+command line, and ``outrage --help`` is what states it.
 """
 
 from __future__ import annotations
@@ -66,36 +66,24 @@ _RANGE_ARGUMENTS = (
 )
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    """The whole command line, and the handler each subcommand dispatches to.
+def argument_parser() -> argparse.ArgumentParser:
+    """Build the whole command-line interface.
 
     Every subcommand sets ``handler``, so :func:`main` dispatches without a
-    branch per command and this function is the only place the shape of the
-    command line is written down. Separate from :func:`main` so that a test can
-    ask what an argument list parses to without running anything.
-
-    The subcommands in :data:`MOUNTED` have their mount options spliced in
-    from a configuration file first -- see :mod:`outrage.mountfile`. Only
-    those, because a subcommand that does not take the options would be handed
-    ones it has never heard of; and the subcommand is read off the front of the
-    argument list rather than parsed, since parsing is what has not happened
-    yet. That is safe here for one reason worth keeping true: **no option on
-    the top level parser takes a value**, so the first token that is not a flag
-    is the subcommand.
+    branch per command and this function is the one place the shape of the
+    command line is written down. It returns a new parser on every call, making
+    the interface available to documentation and other introspection without
+    parsing ``sys.argv`` or reading a mount configuration.
     """
-    argv = list(sys.argv[1:] if argv is None else argv)
-    at = next((i for i, token in enumerate(argv) if not token.startswith("-")), None)
-    written = None
-    if at is not None and argv[at] in MOUNTED:
-        # After the subcommand, which is where the front of its line is: an
-        # option belonging to `outrage ls` written before the word `ls` is an
-        # option on the top level parser, which has never heard of it.
-        written = (list(argv), at + 1)
-        argv = mountfile.spliced(argv, front=at + 1)
     parser = argparse.ArgumentParser(
         prog="outrage", description="Command line tool for the Outrage document store"
     )
-    parser.add_argument("--version", action="version", version=f"outrage {__version__}")
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"outrage {__version__}",
+        help="show the installed version and exit",
+    )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     init = subcommands.add_parser(
@@ -583,9 +571,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     _store_option(import_)
     _table_options(import_)
-    import_.add_argument(
-        "source", metavar="DIRECTORY", help="Directory to read documents from."
-    )
+    import_.add_argument("source", metavar="DIRECTORY", help="Directory to read documents from.")
     import_.add_argument(
         "key",
         nargs="?",
@@ -738,7 +724,34 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     _table_options(mounts_)
     mounts_.set_defaults(handler=_mounts_command)
 
-    parsed = parser.parse_args(argv)
+    return parser
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse an argument list and attach the selected command's handler.
+
+    Separate from :func:`main` so that a test can ask what an argument list
+    parses to without running anything.
+
+    The subcommands in :data:`MOUNTED` have their mount options spliced in
+    from a configuration file first -- see :mod:`outrage.mountfile`. Only
+    those, because a subcommand that does not take the options would be handed
+    ones it has never heard of; and the subcommand is read off the front of the
+    argument list rather than parsed, since parsing is what has not happened
+    yet. That is safe here for one reason worth keeping true: **no option on
+    the top level parser takes a value**, so the first token that is not a flag
+    is the subcommand.
+    """
+    argv = list(sys.argv[1:] if argv is None else argv)
+    at = next((i for i, token in enumerate(argv) if not token.startswith("-")), None)
+    written = None
+    if at is not None and argv[at] in MOUNTED:
+        # After the subcommand, which is where the front of its line is: an
+        # option belonging to `outrage ls` written before the word `ls` is an
+        # option on the top level parser, which has never heard of it.
+        written = (list(argv), at + 1)
+        argv = mountfile.spliced(argv, front=at + 1)
+    parsed = argument_parser().parse_args(argv)
     # The list as it was *written*, kept for the one command that reports where
     # each mount came from. A namespace built from the spliced list cannot say:
     # by then every source has been flattened into one argument list, which is
@@ -1290,8 +1303,7 @@ def _resolved_copy(opened: store.Store, args: argparse.Namespace) -> None:
         )
         setattr(args, name, resolved)
         print(
-            f"outrage: {keys.LAST} in {name.replace('_', '-')} is "
-            f"{keys.displayed(resolved)}",
+            f"outrage: {keys.LAST} in {name.replace('_', '-')} is {keys.displayed(resolved)}",
             file=sys.stderr,
         )
 
@@ -1578,9 +1590,7 @@ def _verb(action: str, dry_run: bool) -> str:
         store.READ: "would pack",
         store.SKIPPED: "would skip",
         store.STOPPED: "would stop",
-    }.get(
-        action, action
-    )
+    }.get(action, action)
 
 
 def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -1594,9 +1604,9 @@ def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
     """
     target = Path(args.target).expanduser()
     if args.from_store is not None:
-        with _open_existing(argparse.Namespace(
-            directory=args.directory, filename=args.from_store
-        )) as opened:
+        with _open_existing(
+            argparse.Namespace(directory=args.directory, filename=args.from_store)
+        ) as opened:
             _resolved(opened, args)
             status = _report_transfers(
                 bulk.pack(
@@ -1856,8 +1866,10 @@ def _check_command(args: argparse.Namespace, out: TextIO) -> int:
             # An empty list is a backend saying there is nothing its storage
             # could need, which is not the same as finding nothing wrong. Said
             # rather than left as a blank, so the difference reaches the user.
-            print(f"  nothing to repair: a {report.backend} store has no state a "
-                  f"repair could move", file=out)
+            print(
+                f"  nothing to repair: a {report.backend} store has no state a repair could move",
+                file=out,
+            )
 
     # Re-opened deliberately: the point of the second check is what the file
     # looks like now, and reusing the first report would be reporting the claim
@@ -1885,8 +1897,10 @@ def _print_report(report: maintenance.Report, out: TextIO) -> None:
         file=out,
     )
     if report.details:
-        print("  " + ", ".join(f"{label} {value}" for label, value in report.details.items()),
-              file=out)
+        print(
+            "  " + ", ".join(f"{label} {value}" for label, value in report.details.items()),
+            file=out,
+        )
     for problem in report.problems:
         print(f"  {problem.severity}: {problem.summary}", file=out)
         if problem.detail:
@@ -2092,6 +2106,7 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
 __all__ = [
     "MOUNTED",
     "ConflictingSourceError",
+    "argument_parser",
     "main",
     "parse_args",
 ]

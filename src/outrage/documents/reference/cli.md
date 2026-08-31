@@ -7,13 +7,13 @@ with behaviour belongs in [`outrage.store`](store.md#module-outrage.store) or [`
 can be tested without going through argparse and used by whichever of the two
 front ends needs it.
 
-What this module *offers* is three names: [`main()`](#outrage.cli.main), [`parse_args()`](#outrage.cli.parse_args),
-and [`ConflictingSourceError`](#outrage.cli.ConflictingSourceError) as something to catch. The subcommand handlers
-are argparse wiring reached through `handler`, one per subcommand and never
-from outside, so they are private -- which also keeps this page from being a
-list of twelve near-identical `(args, out) -> int` entries in place of an
-orientation. The interface people actually use here is the command line, and
-`outrage --help` is what states it.
+What this module *offers* is [`argument_parser()`](#outrage.cli.argument_parser), [`parse_args()`](#outrage.cli.parse_args),
+[`main()`](#outrage.cli.main), and [`ConflictingSourceError`](#outrage.cli.ConflictingSourceError) as something to catch. The
+subcommand handlers are argparse wiring reached through `handler`, one per
+subcommand and never from outside, so they are private -- which also keeps this
+page from being a list of twelve near-identical `(args, out) -> int` entries
+in place of an orientation. The interface people actually use here is the
+command line, and `outrage --help` is what states it.
 
 ### outrage.cli.MOUNTED *= ('get', 'set', 'ls', 'dump', 'copy', 'rm', 'export', 'import', 'mounts')*
 
@@ -36,6 +36,16 @@ Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError)
 
 Raised when the content to store cannot be determined from the arguments.
 
+### outrage.cli.argument_parser() → [ArgumentParser](https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser)
+
+Build the whole command-line interface.
+
+Every subcommand sets `handler`, so [`main()`](#outrage.cli.main) dispatches without a
+branch per command and this function is the one place the shape of the
+command line is written down. It returns a new parser on every call, making
+the interface available to documentation and other introspection without
+parsing `sys.argv` or reading a mount configuration.
+
 ### outrage.cli.main(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, out: [TextIO](https://docs.python.org/3/library/typing.html#typing.TextIO) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
 
 Run one command and return its exit status.
@@ -51,12 +61,10 @@ stopping.
 
 ### outrage.cli.parse_args(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Namespace](https://docs.python.org/3/library/argparse.html#argparse.Namespace)
 
-The whole command line, and the handler each subcommand dispatches to.
+Parse an argument list and attach the selected command's handler.
 
-Every subcommand sets `handler`, so [`main()`](#outrage.cli.main) dispatches without a
-branch per command and this function is the only place the shape of the
-command line is written down. Separate from [`main()`](#outrage.cli.main) so that a test can
-ask what an argument list parses to without running anything.
+Separate from [`main()`](#outrage.cli.main) so that a test can ask what an argument list
+parses to without running anything.
 
 The subcommands in [`MOUNTED`](#outrage.cli.MOUNTED) have their mount options spliced in
 from a configuration file first -- see [`outrage.mountfile`](mountfile.md#module-outrage.mountfile). Only
