@@ -136,6 +136,36 @@ def test_tool_schemas_describe_their_arguments(server):
     assert "regex" in properties["pattern"]["description"]
 
 
+def test_tool_schemas_describe_their_results(exporting):
+    tools = list_tools(exporting)
+
+    for tool in tools.values():
+        assert tool.output_schema["type"] == "object", tool.name
+        assert tool.output_schema["additionalProperties"] is False, tool.name
+        assert tool.output_schema["properties"], tool.name
+
+    read = tools["read_document"].output_schema
+    assert read["required"] == [
+        "key",
+        "content",
+        "format",
+        "updated_at",
+        "offset",
+        "returned",
+        "total",
+        "next_offset",
+        "truncated",
+    ]
+    assert read["properties"]["next_offset"]["description"]
+
+    survey = tools["get_documents"].output_schema
+    assert survey["properties"]["documents"]["items"] == {"$ref": "#/$defs/_ExcerptResult"}
+    assert "without_meta" not in survey["required"]
+
+    file_result = tools["document_file"].output_schema
+    assert set(file_result["required"]) == {"key", "path"}
+
+
 def test_read_document(server):
     result = call(server, "read_document", key="context/c3d4/task")
     assert result["content"] == "Add a delete tool."
