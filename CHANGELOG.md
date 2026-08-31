@@ -2,6 +2,22 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.4.4 - 2026-08-31
+
+0.4.4 makes both command-line and MCP documentation derive from the interfaces
+they describe, and gives MCP clients complete result schemas.
+
+* **Every MCP tool now publishes a closed, described output schema.** Nested
+  results such as document excerpts, missing-metadata summaries and copy
+  failures are typed too, while optional fields remain absent when they do not
+  apply so existing wire results retain their shape.
+* **The shipped MCP tool reference is generated from the built server.** Tool
+  descriptions, parameters, defaults, constraints and return fields therefore
+  stay aligned with the metadata clients receive, enforced by a freshness test.
+* **The command-line reference is generated from the live argument parser.**
+  Usage blocks have explicit headings and the checked-in document is tested
+  against the parser rather than maintained as a second source of truth.
+
 ## 0.4.3 - 2026-08-31
 
 0.4.3 gives Claude Code, Codex and Copilot CLI one maintained source for the
