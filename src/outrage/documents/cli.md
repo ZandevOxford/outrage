@@ -7,9 +7,9 @@ Command line tool for the Outrage document store
 ## Usage
 
 ```text
-usage: outrage [-h] [--version]
-               {init,sessionstart,config,backup,log,get,set,ls,dump,copy,export,import,pack,rm,check,mounts}
-               ...
+outrage [-h] [--version]
+        {init,sessionstart,config,backup,log,get,set,ls,dump,copy,export,import,pack,rm,check,mounts}
+        ...
 ```
 
 ### Arguments
@@ -49,10 +49,12 @@ is written once and maintained by hand thereafter; an option already on an exist
 Safe to re-run, which is how a project is repaired after outrage is upgraded or the environment
 moves.
 
+### Usage
+
 ```text
-usage: outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
-                    [--mount KEY=FILE] [--mount-ro KEY=FILE] [--log [PATH]]
-                    [--log-content {none,excerpt,full}] [--dry-run]
+outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
+             [--mount KEY=FILE] [--mount-ro KEY=FILE] [--log [PATH]]
+             [--log-content {none,excerpt,full}] [--dry-run]
 ```
 
 ### Arguments
@@ -71,8 +73,10 @@ usage: outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
 
 Emit the managed SessionStart context as hook JSON.
 
+### Usage
+
 ```text
-usage: outrage sessionstart [-h]
+outrage sessionstart [-h]
 ```
 
 ### Arguments
@@ -89,12 +93,14 @@ written here at all: they go in mounts.toml in the store directory, which both t
 command line read, and which is written once and maintained by hand thereafter. Safe to re-run,
 which is how the configuration is repaired after the environment moves.
 
+### Usage
+
 ```text
-usage: outrage config [-h] [--scope {project,user}] [--project-dir PATH]
-                      [--dir PATH] [--path PATH] [--name NAME]
-                      [--root-mount FILE] [--mount KEY=FILE]
-                      [--mount-ro KEY=FILE] [--log [PATH]]
-                      [--log-content {none,excerpt,full}] [--dry-run]
+outrage config [-h] [--scope {project,user}] [--project-dir PATH]
+               [--dir PATH] [--path PATH] [--name NAME]
+               [--root-mount FILE] [--mount KEY=FILE]
+               [--mount-ro KEY=FILE] [--log [PATH]]
+               [--log-content {none,excerpt,full}] [--dry-run]
 ```
 
 ### Arguments
@@ -119,9 +125,11 @@ version, and a row count against the source. Copying the files instead is what t
 since a store in WAL mode keeps recent writes in a sidecar and the copy left behind still opens
 cleanly.
 
+### Usage
+
 ```text
-usage: outrage backup [-h] [--dir PATH] [--store FILE] [--to PATH]
-                      [--overwrite] [--dry-run]
+outrage backup [-h] [--dir PATH] [--store FILE] [--to PATH]
+               [--overwrite] [--dry-run]
 ```
 
 ### Arguments
@@ -139,11 +147,13 @@ Show what the server was asked for and what it touched. Events are grouped by se
 file holds more than one process and the sequence numbers restart with each of them. Only written
 when the server was configured with --log.
 
+### Usage
+
 ```text
-usage: outrage log [-h] [--dir PATH] [--path PATH] [--session SESSION]
-                   [--call CALL] [--op OP] [--method METHOD] [--event EVENT]
-                   [--key KEY] [--errors] [--content] [--summary] [--json]
-                   [--limit N]
+outrage log [-h] [--dir PATH] [--path PATH] [--session SESSION]
+            [--call CALL] [--op OP] [--method METHOD] [--event EVENT]
+            [--key KEY] [--errors] [--content] [--summary] [--json]
+            [--limit N]
 ```
 
 ### Arguments
@@ -170,13 +180,15 @@ prints the title. The whole document is printed by default: the tool's own read 
 and hands back a continuation offset, which is right for an agent's context window and wrong for a
 person redirecting a document to a file. Ask for a slice and you get exactly the slice.
 
+### Usage
+
 ```text
-usage: outrage get [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                   [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                   [--mount-config FILE] [--no-mount-config] [--offset OFFSET]
-                   [--length LENGTH] [--pattern PATTERN]
-                   [--occurrence OCCURRENCE] [--max-chars MAX_CHARS]
-                   key
+outrage get [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+            [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+            [--mount-config FILE] [--no-mount-config] [--offset OFFSET]
+            [--length LENGTH] [--pattern PATTERN]
+            [--occurrence OCCURRENCE] [--max-chars MAX_CHARS]
+            key
 ```
 
 ### Arguments
@@ -204,13 +216,15 @@ Write content to a key, overwriting whatever is there. Content comes from standa
 a number the store allocates, and the key actually written is printed - which is the only way to
 learn the allocated number.
 
+### Usage
+
 ```text
-usage: outrage set [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                   [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                   [--mount-config FILE] [--no-mount-config]
-                   [--content CONTENT] [--file PATH] [--title TITLE]
-                   [--format {markdown,json,text,html}]
-                   key
+outrage set [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+            [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+            [--mount-config FILE] [--no-mount-config]
+            [--content CONTENT] [--file PATH] [--title TITLE]
+            [--format {markdown,json,text,html}]
+            key
 ```
 
 ### Arguments
@@ -236,12 +250,14 @@ List one level. Includes documents, metadata, and keys that exist only because s
 them does - a container holds nothing itself and cannot be read, which is why listing and reading
 disagree about whether it is there.
 
+### Usage
+
 ```text
-usage: outrage ls [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                  [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                  [--mount-config FILE] [--no-mount-config] [--recursive]
-                  [--limit N]
-                  [key]
+outrage ls [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+           [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+           [--mount-config FILE] [--no-mount-config] [--recursive]
+           [--limit N]
+           [key]
 ```
 
 ### Arguments
@@ -268,12 +284,14 @@ export that quietly holds back part of a document is one nothing downstream can 
 one. Pass --max-chars to cap each document for a skim; a capped one is then marked with what it
 held.
 
+### Usage
+
 ```text
-usage: outrage dump [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                    [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                    [--mount-config FILE] [--no-mount-config] [--meta NAME]
-                    [--depth DEPTH] [--max-chars MAX_CHARS] [--limit N]
-                    [key]
+outrage dump [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+             [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+             [--mount-config FILE] [--no-mount-config] [--meta NAME]
+             [--depth DEPTH] [--max-chars MAX_CHARS] [--limit N]
+             [key]
 ```
 
 ### Arguments
@@ -301,15 +319,17 @@ and TARGET is a prefix grafted onto every key written, so `outrage copy ref/pyth
 Documents may cross between backing stores, and metadata and original timestamps cross with them.
 The selection is the intersection of SOURCE, --depth, and every range bound supplied.
 
+### Usage
+
 ```text
-usage: outrage copy [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                    [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                    [--mount-config FILE] [--no-mount-config] [--reroot]
-                    [--depth DEPTH] [--after-inclusive KEY] [--after KEY]
-                    [--after-subtree KEY] [--before KEY]
-                    [--before-inclusive KEY] [--final-subtree KEY]
-                    [--on-conflict {skip,overwrite,stop}] [--dry-run]
-                    source target
+outrage copy [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+             [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+             [--mount-config FILE] [--no-mount-config] [--reroot]
+             [--depth DEPTH] [--after-inclusive KEY] [--after KEY]
+             [--after-subtree KEY] [--before KEY]
+             [--before-inclusive KEY] [--final-subtree KEY]
+             [--on-conflict {skip,overwrite,stop}] [--dry-run]
+             source target
 ```
 
 ### Arguments
@@ -346,12 +366,14 @@ written from the top of the key namespace rather than from the key asked for, so
 subtree imports back to where it came from. This is not a backup: it carries the documents and
 nothing the database holds about them, and `outrage backup` is the copy that keeps the rest.
 
+### Usage
+
 ```text
-usage: outrage export [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                      [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                      [--mount-config FILE] [--no-mount-config]
-                      [--on-conflict {skip,overwrite,stop}] [--dry-run]
-                      DIRECTORY [key]
+outrage export [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+               [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+               [--mount-config FILE] [--no-mount-config]
+               [--on-conflict {skip,overwrite,stop}] [--dry-run]
+               DIRECTORY [key]
 ```
 
 ### Arguments
@@ -379,13 +401,15 @@ src/myfile.py is stored at the key src/myfile.py. Nothing already stored is repl
 directory could be walked twice to promise that and a stream could not, and --dry-run answers the
 same question without promising anything it might later have to take back.
 
+### Usage
+
 ```text
-usage: outrage import [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                      [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                      [--mount-config FILE] [--no-mount-config]
-                      [--on-conflict {skip,overwrite,stop}] [--hidden]
-                      [--dry-run]
-                      DIRECTORY [key]
+outrage import [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+               [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+               [--mount-config FILE] [--no-mount-config]
+               [--on-conflict {skip,overwrite,stop}] [--hidden]
+               [--dry-run]
+               DIRECTORY [key]
 ```
 
 ### Arguments
@@ -416,10 +440,12 @@ afterwards. Nothing is written until the whole file is, so an interrupted pack l
 behind and the report says `read` rather than `wrote`. Mount the result with the server's
 --mount-ro, or read it directly with --store.
 
+### Usage
+
 ```text
-usage: outrage pack [-h] (--from-dir DIRECTORY | --from-store FILE)
-                    [--dir PATH] [--hidden] [--overwrite] [--dry-run]
-                    FILE [key]
+outrage pack [-h] (--from-dir DIRECTORY | --from-store FILE)
+             [--dir PATH] [--hidden] [--overwrite] [--dry-run]
+             FILE [key]
 ```
 
 ### Arguments
@@ -439,12 +465,14 @@ usage: outrage pack [-h] (--from-dir DIRECTORY | --from-store FILE)
 Delete a key and the metadata attached to it. Descendants survive unless --recursive is given, so a
 mistyped key cannot silently discard a subtree; what was left behind is reported either way.
 
+### Usage
+
 ```text
-usage: outrage rm [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                  [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                  [--mount-config FILE] [--no-mount-config] [--recursive]
-                  [--dry-run] [--limit N]
-                  key
+outrage rm [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+           [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+           [--mount-config FILE] [--no-mount-config] [--recursive]
+           [--dry-run] [--limit N]
+           key
 ```
 
 ### Arguments
@@ -472,8 +500,10 @@ the database -- invisible in normal use, and what makes a copy of the database f
 recent writes. For parquet it is whether the file is still in the sort order every read of it
 bisects.
 
+### Usage
+
 ```text
-usage: outrage check [-h] [--dir PATH] [--store FILE] [--repair]
+outrage check [-h] [--dir PATH] [--store FILE] [--repair]
 ```
 
 ### Arguments
@@ -493,10 +523,12 @@ taken here, so it answers for the line you would really run - including which co
 the command line itself, each mount came from. What is *in* the stores is `outrage ls`, which does
 open them.
 
+### Usage
+
 ```text
-usage: outrage mounts [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-                      [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-                      [--mount-config FILE] [--no-mount-config]
+outrage mounts [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+               [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+               [--mount-config FILE] [--no-mount-config]
 ```
 
 ### Arguments

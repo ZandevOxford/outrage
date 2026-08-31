@@ -26,6 +26,20 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
+def _usage(parser: argparse.ArgumentParser) -> str:
+    """Return argparse's usage without its label and matching indentation."""
+    lines = parser.format_usage().strip().splitlines()
+    prefix = "usage: "
+    if lines and lines[0].startswith(prefix):
+        lines[0] = lines[0][len(prefix) :]
+        indentation = " " * len(prefix)
+        lines[1:] = [
+            line[len(indentation) :] if line.startswith(indentation) else line
+            for line in lines[1:]
+        ]
+    return "\n".join(lines)
+
+
 def _subcommands(
     parser: argparse.ArgumentParser,
 ) -> list[tuple[str, argparse.ArgumentParser, str]]:
@@ -74,7 +88,7 @@ def render(parser: argparse.ArgumentParser) -> str:
         "## Usage",
         "",
         "```text",
-        parser.format_usage().strip(),
+        _usage(parser),
         "```",
     ]
     _append_arguments(lines, parser)
@@ -92,8 +106,10 @@ def render(parser: argparse.ArgumentParser) -> str:
                 "",
                 _paragraph(command.description or ""),
                 "",
+                "### Usage",
+                "",
                 "```text",
-                command.format_usage().strip(),
+                _usage(command),
                 "```",
             ]
         )

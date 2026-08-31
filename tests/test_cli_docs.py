@@ -24,3 +24,11 @@ def test_argument_parser_exposes_a_fresh_complete_parser():
 
 def test_the_cli_document_is_not_stale():
     assert (shipped.tree() / "cli.md").read_text() == render_cli.render(argument_parser())
+
+
+def test_usage_has_a_heading_instead_of_argparses_label():
+    rendered = render_cli.render(argument_parser())
+
+    assert "## Usage\n\n```text\noutrage " in rendered
+    assert "### Usage\n\n```text\noutrage init " in rendered
+    assert "usage: " not in rendered
