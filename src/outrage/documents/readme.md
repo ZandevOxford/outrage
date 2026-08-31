@@ -1,40 +1,43 @@
 # Outrage
 
-This is the documentation for Outrage, a MCP RAG store.
+This is the documentation for Outrage, an MCP RAG store.
 
-This is available in the Outrage repo, the python build and also by default
-under the 'outrage' key in the Outrage store.
+It is available in the Outrage repository and Python distribution, and is also
+mounted by default under the `outrage` key in the Outrage store.
 
 If you are an LLM reading this because you do not have a configured readme
-file, then read the 'default_readme' file next to this file and ask the user
+file, then read the `default_readme` file next to this file and ask the user
 if they want the same conventions added to the store's readme for this
-project. When reading files from the store, drop the '.md' extension.
+project. When reading files from the store, drop the `.md` extension.
 
 If reading this via the MCP server,
 `get_documents(key="outrage", meta_name=["title"])` will list all the titles.
 
 ## Documentation
 
-At this level:
-
-* [keys](keys.md) contains the definition of keys.
-* [cli](cli.md) contains the documentation for the command line.
-* [workflow](workflow.md) contains detailed advice for surveying, recording,
-  editing and handing over work in a project store.
-* [reference](reference.md) contains the API documentation, generated from the
-  source, with a page per module below it.
-* [agents](agents.md) contains the canonical search, annotation and backfill
-  procedures shared by the harness integrations.
-
-## Documentation used by the MCP server
-
+* [agents](agents.md) - canonical procedures shared by the harness
+  integrations.
+* [cli](cli.md) - the command line.
 * [default_readme](default_readme.md) is a default readme suggesting a project
   structure.
-* [skills](skills.md) is the text the MCP server sends as its instructions when
-  a client connects, kept as the two documents it is delivered in rather than
-  inline in the server: read `outrage/skills/tail` there for the half a client
-  may have cut off before it reached you.
-* [tools](tools) are the documents that the MCP server sends as tool descriptions.
+* [hooks](hooks.md) - the harness hooks.
+* [keys](keys.md) - detailed definition of keys.
+* [reference](reference.md) - the API reference. The [reference](reference)
+  folder contains the detailed pages generated from the code.
+* [skills](skills.md) - the instructions delivered by the MCP server.
+* [tools](tools.md) - descriptions and schemas of the MCP tools.
+* [workflow](workflow.md) - advice for LLMs for surveying, recording,
+  editing and handing over work in a project store.
+
+## Documentation used at runtime
+
+* [agents](agents) contains the procedures read by harness-specific agents.
+* [hooks](hooks) contains the prompts emitted by lifecycle-hook commands.
+* [skills](skills) contains the server's instructions, kept as the two
+  documents they are delivered in rather than inline in the server: read
+  `outrage/skills/tail` there for the half a client may have cut off.
+* [tools](tools) contains the documents that the MCP server sends as tool
+  descriptions.
 
 ## What this is not
 
