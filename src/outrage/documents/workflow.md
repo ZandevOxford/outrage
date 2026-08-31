@@ -65,14 +65,23 @@ To split a document, export it, place one facet at a new child key, and import
 the shortened parent. Use `copy_tree` for whole subtrees, not for splitting
 one document; a move is a successful copy followed by an explicit delete.
 
-## Deleting allocated keys
+## Deleting documents
 
-Numbers allocated by `?` are unique among the siblings that currently exist;
-they are not permanently reserved. Deleting the highest numbered sibling lets
-the next allocation reuse that number. If readers use the last key seen as a
-high-water mark, as a scratch mailbox may, treat the sequence as append-only:
-correct or retract with a new document rather than deleting the newest one or
-its containing numbered subtree.
+Unless there is a good reason, avoid deleting keys: other information may refer
+to them.
+
+Treat deletion according to a document's role. Rewrite documents that describe
+current state so they stay accurate. For decisions, findings and other
+historical records, prefer a correction or retraction that preserves the key
+and the earlier context rather than erasing the record. If a whole historical
+document must be withdrawn, replacing its contents with a retraction keeps
+existing references meaningful.
+
+There is a specific danger with deleting keys allocated with `?`. Deleting the
+highest numbered sibling lets the next allocation reuse that number. This can
+confuse existing references; it can also make a reader using its last-seen key
+as a high-water mark miss the replacement entirely. In a namespace used for
+communication between agents, treat the allocated sequence as append-only.
 
 ## Before handoff or compaction
 
