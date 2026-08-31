@@ -38,7 +38,13 @@ from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.mcpserver.utilities.func_metadata import ArgModelBase
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    model_serializer,
+)
 
 from . import __version__, bulk, eventlog, keys, messages, mountfile, shipped
 from . import mounts as mounts_module
@@ -196,6 +202,148 @@ COPY_FAILURE_SAMPLE = 5
 #: job is to warn that a survey under-reports the store, and a count does that
 #: at any size; at reference scale the list would *be* the corpus.
 WITHOUT_META_SAMPLE = 10
+
+
+class _ToolResult(BaseModel):
+    """A validated tool result which does not invent absent optional fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    @model_serializer(mode="wrap")
+    def _omit_unset(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        serialized = handler(self)
+        return {name: value for name, value in serialized.items() if name in self.model_fields_set}
+
+
+class _ExcerptResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized key read")]
+    content: Annotated[str, Field(description="The returned document content")]
+    format: Annotated[str | None, Field(description="The stored content format")]
+    updated_at: Annotated[str, Field(description="When the document was last written")]
+    offset: Annotated[int, Field(description="Character offset where this excerpt starts")]
+    returned: Annotated[int, Field(description="Characters returned in this excerpt")]
+    total: Annotated[int, Field(description="Total characters in the document")]
+    next_offset: Annotated[int | None, Field(description="Where to resume, or null at the end")]
+    truncated: Annotated[bool, Field(description="Whether part of the document remains unread")]
+
+
+class _StoreDocumentResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized key written")]
+    stored: Annotated[int, Field(description="Characters stored")]
+    generated: Annotated[bool, Field(description="Whether the store generated part of the key")]
+    title_key: Annotated[
+        str | None,
+        Field(description="Key where the supplied title was stored, when one was supplied"),
+    ] = None
+
+
+class _EntryResult(_ToolResult):
+    key: Annotated[str, Field(description="The listed key")]
+    kind: Annotated[
+        str, Field(description="Document, metadata, implicit, mount or read-only mount")
+    ]
+    size: Annotated[int | None, Field(description="Stored characters, when this key has content")]
+    format: Annotated[str | None, Field(description="Stored content format, when applicable")]
+    updated_at: Annotated[str | None, Field(description="Last write time, when applicable")]
+
+
+class _ListKeysResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized key listed")]
+    entries: Annotated[list[_EntryResult], Field(description="This page of immediate children")]
+    returned: Annotated[int, Field(description="Entries returned in this page")]
+    total: Annotated[int, Field(description="Entries in the whole level")]
+    total_chars: Annotated[int, Field(description="Characters stored across the whole level")]
+    next_cursor: Annotated[str | None, Field(description="Where to resume, or null at the end")]
+
+
+class _MissingMetaResult(_ToolResult):
+    total: Annotated[int, Field(description="Documents carrying none of the requested metadata")]
+    total_chars: Annotated[int, Field(description="Characters stored across those documents")]
+    sample: Annotated[list[str], Field(description="A bounded sample of their keys")]
+
+
+class _GetDocumentsResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized subtree key")]
+    count: Annotated[int, Field(description="Documents returned in this page")]
+    returned: Annotated[int, Field(description="Documents returned in this page")]
+    total: Annotated[int, Field(description="Documents in the whole selection")]
+    total_chars: Annotated[int, Field(description="Characters stored across the whole selection")]
+    next_cursor: Annotated[str | None, Field(description="Where to resume, or null at the end")]
+    documents: Annotated[list[_ExcerptResult], Field(description="This page of documents")]
+    without_meta: Annotated[
+        _MissingMetaResult | None,
+        Field(description="Documents omitted by a metadata survey, when one was requested"),
+    ] = None
+
+
+class _KeysMissingMetaResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized subtree key")]
+    keys: Annotated[list[str], Field(description="This page of keys missing the metadata")]
+    returned: Annotated[int, Field(description="Keys returned in this page")]
+    total: Annotated[int, Field(description="Keys in the whole selection")]
+    total_chars: Annotated[int, Field(description="Characters stored across the whole selection")]
+    next_cursor: Annotated[str | None, Field(description="Where to resume, or null at the end")]
+
+
+class _DeleteKeysResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized key asked for")]
+    deleted: Annotated[list[str], Field(description="Keys actually deleted")]
+    count: Annotated[int, Field(description="Number of keys deleted")]
+    remaining: Annotated[
+        int | None,
+        Field(description="Descendants kept by a non-recursive delete, when any remain"),
+    ] = None
+    mounts_kept: Annotated[
+        list[str] | None,
+        Field(description="Read-only mounted stores which refused the delete, when any"),
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
+
+
+class _CopyFailureResult(_ToolResult):
+    key: Annotated[str | None, Field(description="Destination key that failed")]
+    reason: Annotated[str | None, Field(description="Why it failed")]
+
+
+class _CopyTreeResult(_ToolResult):
+    source: Annotated[str, Field(description="The normalized source key")]
+    target: Annotated[str, Field(description="The normalized target key")]
+    copied: Annotated[dict[str, int], Field(description="Transfer counts by outcome")]
+    documents: Annotated[int, Field(description="Documents considered in this call")]
+    characters: Annotated[int, Field(description="Characters considered in this call")]
+    failures: Annotated[list[_CopyFailureResult], Field(description="A bounded sample of failures")]
+    next_cursor: Annotated[str | None, Field(description="Where to resume, or null at the end")]
+    dry_run: Annotated[
+        bool | None,
+        Field(description="True when this result reports a dry run and nothing was written"),
+    ] = None
+    mounts_kept: Annotated[
+        list[str] | None,
+        Field(description="Read-only mounted stores which refused writes, when any"),
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
+
+
+class _DocumentFileResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized document key")]
+    path: Annotated[str, Field(description="The exported file path")]
+    exported: Annotated[
+        int | None, Field(description="Characters exported, when exporting a document")
+    ] = None
+    format: Annotated[
+        str | None, Field(description="The document format, when exporting a document")
+    ] = None
+    replaced: Annotated[
+        bool | None, Field(description="Whether an existing export file was overwritten")
+    ] = None
+    stored: Annotated[
+        int | None, Field(description="Characters stored, when importing an edited file")
+    ] = None
+    previous: Annotated[
+        int | None, Field(description="Previous document size, or null when it did not exist")
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
+
 
 #: What a client is assumed to deliver of a server's instructions before it
 #: cuts them. An observation of one client, not a protocol guarantee: Claude
@@ -503,7 +651,7 @@ def build_server(
         max_chars: Annotated[
             int, Field(description="Maximum characters to return", gt=0)
         ] = DEFAULT_MAX_CHARS,
-    ) -> dict[str, Any]:
+    ) -> _ExcerptResult:
         return _excerpt_result(
             table.retrieve_document(
                 _named_key(table, key),
@@ -554,7 +702,7 @@ def build_server(
                 )
             ),
         ] = None,
-    ) -> dict[str, Any]:
+    ) -> _StoreDocumentResult:
         written = table.store_document(
             _named_key(table, key, allow_wildcard=True),
             content,
@@ -581,7 +729,7 @@ def build_server(
                 f"{written}{keys.DELIMITER}{keys.META_PREFIX}title",
                 max_segments=keys.MAX_JOINED_SEGMENTS,
             ).key
-        return result
+        return _StoreDocumentResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -600,17 +748,19 @@ def build_server(
             str | None,
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
-    ) -> dict[str, Any]:
+    ) -> _ListKeysResult:
         at = _named_key(table, key)
         page = table.list_keys(at, limit=limit, cursor=after)
-        return {
-            "key": at,
-            "entries": [dataclasses.asdict(entry) for entry in page.items],
-            "returned": page.returned,
-            "total": page.total,
-            "total_chars": page.total_chars,
-            "next_cursor": page.next_cursor,
-        }
+        return _ListKeysResult(
+            key=at,
+            entries=[
+                _EntryResult.model_validate(dataclasses.asdict(entry)) for entry in page.items
+            ],
+            returned=page.returned,
+            total=page.total,
+            total_chars=page.total_chars,
+            next_cursor=page.next_cursor,
+        )
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -647,7 +797,7 @@ def build_server(
             int,
             Field(description="Maximum characters across the whole page", gt=0),
         ] = DEFAULT_PAGE_CHARS,
-    ) -> dict[str, Any]:
+    ) -> _GetDocumentsResult:
         at = _named_key(table, key)
         subtree = BoundedSubtree(at, depth)
         page = table.get_documents(
@@ -691,7 +841,7 @@ def build_server(
                 "total_chars": gap.total_chars,
                 "sample": gap.sample,
             }
-        return result
+        return _GetDocumentsResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -721,7 +871,7 @@ def build_server(
             str | None,
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
-    ) -> dict[str, Any]:
+    ) -> _KeysMissingMetaResult:
         at = _named_key(table, key)
         page = table.keys_missing_meta(
             BoundedSubtree(at, depth),
@@ -729,14 +879,14 @@ def build_server(
             limit=limit,
             cursor=after,
         )
-        return {
-            "key": at,
-            "keys": page.items,
-            "returned": page.returned,
-            "total": page.total,
-            "total_chars": page.total_chars,
-            "next_cursor": page.next_cursor,
-        }
+        return _KeysMissingMetaResult(
+            key=at,
+            keys=page.items,
+            returned=page.returned,
+            total=page.total,
+            total_chars=page.total_chars,
+            next_cursor=page.next_cursor,
+        )
 
     @server.tool(
         annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=True),
@@ -751,7 +901,7 @@ def build_server(
         recursive: Annotated[
             bool, Field(description="Also delete everything beneath the key")
         ] = False,
-    ) -> dict[str, Any]:
+    ) -> _DeleteKeysResult:
         at = _named_key(table, key)
         # A delete crosses a mount boundary, exactly as a read does, and the
         # table is what crosses it. It is the one call where crossing makes the
@@ -790,7 +940,7 @@ def build_server(
                 f"removed, and `recursive` will not reach it either; restart the "
                 f"server with --mount rather than --mount-ro to delete there too.",
             )
-        return result
+        return _DeleteKeysResult.model_validate(result)
 
     @server.tool(
         # Idempotent as `store_document` is: the same call twice leaves the same
@@ -869,7 +1019,7 @@ def build_server(
             str | None,
             Field(description="Copy nothing later than the end of this key's subtree"),
         ] = None,
-    ) -> dict[str, Any]:
+    ) -> _CopyTreeResult:
         # Resolved before anything routes, exactly as every other tool does it:
         # a `?last` in the part of a key that names a mount decides which store
         # answers. The cursor is not resolved with them - it is this server's
@@ -953,7 +1103,7 @@ def build_server(
                 f"write: {', '.join(repr(m) for m in refused)}. Nothing lands there; "
                 f"restart the server with --mount rather than --mount-ro to copy there too.",
             )
-        return result
+        return _CopyTreeResult.model_validate(result)
 
     if directory is not None:
         exports = Path(directory) / store_module.EXPORT_DIR_NAME
@@ -987,7 +1137,7 @@ def build_server(
                     )
                 ),
             ] = None,
-        ) -> dict[str, Any]:
+        ) -> _DocumentFileResult:
             # No wildcard: `?` allocates a number, and a round trip is about a
             # key that already exists on one end or the other. Allocating one
             # is `store_document`'s business.
@@ -1013,7 +1163,7 @@ def build_server(
                         "A file was already there and has been overwritten; if it "
                         "held an edit that was never stored back, that edit is gone.",
                     )
-                return result
+                return _DocumentFileResult.model_validate(result)
             imported = bulk.import_document(table, at, path, exports)
             result = {
                 "key": imported.key,
@@ -1034,7 +1184,7 @@ def build_server(
                     f"{imported.stored} characters; if that was not intended, the "
                     f"previous content is gone.",
                 )
-            return result
+            return _DocumentFileResult.model_validate(result)
 
     return server
 
@@ -1075,8 +1225,10 @@ def _copied_result(
             failures.append({"key": transfer.key, "reason": transfer.reason})
 
 
-def _excerpt_result(excerpt: Excerpt) -> dict[str, Any]:
-    return dataclasses.asdict(excerpt) | {"truncated": excerpt.truncated}
+def _excerpt_result(excerpt: Excerpt) -> _ExcerptResult:
+    return _ExcerptResult.model_validate(
+        dataclasses.asdict(excerpt) | {"truncated": excerpt.truncated}
+    )
 
 
 def _ms(started: int) -> float:
