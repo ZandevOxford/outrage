@@ -31,6 +31,10 @@ dist/
 # outrage itself has every reason to commit some of this.
 .codex/
 
+# The root .agents/ tree is local harness state too. Repository-owned agent
+# sources live under src/outrage/, so nothing here is a source of truth.
+.agents/
+
 # The Copilot CLI hook and agents are rendered output too, on the same rule as
 # .claude/ above: the templates in src/ are the source of truth, and a canary
 # belongs on the machine that runs it rather than in the repository. A project
