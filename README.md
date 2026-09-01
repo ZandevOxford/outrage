@@ -83,7 +83,23 @@ well, so the links below work here too.
   mode keeps recent writes in a sidecar file and copying the `.sqlite` alone
   yields a near-empty database that still opens cleanly.
 
+## Parquet stores
+
+Outrage also supports data stores in Parquet format. Because this requires the
+optional `pyarrow` dependency, support isn't included by default.
+
+Install the extra to add Parquet support:
+
+`pip install outrage[parquet]`
+
 ## Development
+
+Outrage itself has been developed using Outrage as a memory store.
+
+As a test of that functionality, development has spanned multiple LLM harnesses
+and models: Claude Code, Codex and Copilot CLI.
+
+## Development environment
 
 ```sh
 conda env create -f environment.yml   # or: conda create -n outrage -c conda-forge python=3.12
