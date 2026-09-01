@@ -106,6 +106,7 @@ def test_the_tool_descriptions_are_the_documents_here():
         "store_document",
         "list_keys",
         "get_documents",
+        "find_documents",
         "keys_missing_meta",
         "delete_keys",
         "copy_tree",

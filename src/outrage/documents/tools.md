@@ -151,6 +151,62 @@ whole document, use `read_document` on that document.
 - `total_chars` (integer; required) — Characters stored across those documents
 - `sample` (array[string]; required) — A bounded sample of their keys
 
+## `find_documents`
+
+Search document bodies or their direct metadata values with one to five
+criteria. Each criterion targets `document` or `metadata` and uses
+case-sensitive `contains`, whole-`line`, or Python `regex` matching. Use
+`meta_name` to restrict a metadata criterion to selected names.
+
+`combine='any'` selects a document satisfying at least one criterion;
+`combine='all'` requires every criterion. Results contain the selected document
+and one first-match witness for each satisfied criterion.
+
+Each call examines at most 20 candidate documents by default. `next_cursor`
+names the last candidate examined, so a page can have no matches and still need
+continuing. Pass it as `after` until `next_cursor` is null.
+
+### Parameters
+
+- `criteria` (array[SearchCriterionArgument]; required; minimum items 1; maximum items 5) — One to five targeted search criteria
+- `key` (string or null; default null) — Key whose subtree to search; omit for root
+- `depth` (integer or null; default null; minimum 0) — How many levels below key to descend; unlimited when omitted
+- `combine` ("any" or "all"; default "any") — Select documents satisfying any or all criteria
+- `scan_limit` (integer; default 20; greater than 0) — Maximum candidate documents to examine in this call
+- `after` (string or null; default null) — Resume after this key, from a previous result's next_cursor
+
+### Returns
+
+- `key` (string; required) — The normalized subtree key
+- `matches` (array[DocumentMatch]; required) — Matches in this candidate window
+- `matched` (integer; required) — Documents matched in this window
+- `matched_chars` (integer; required) — Body characters across documents matched in this window
+- `scanned` (integer; required) — Candidate documents examined in this window
+- `total_candidates` (integer; required) — Candidate documents in the whole bounded selection
+- `total_candidate_chars` (integer; required) — Body characters across the whole candidate selection
+- `next_cursor` (string or null; required) — Last candidate examined, or null when search is complete
+
+#### `DocumentMatch` fields
+
+- `document` (Entry; required) — The selected document
+- `witnesses` (array[MatchWitness]; required) — One first match per satisfied criterion
+
+#### `Entry` fields
+
+- `key` (string; required) — The listed key
+- `kind` (string; required) — Document, metadata, implicit, mount or read-only mount
+- `size` (integer or null; required) — Stored characters, when this key has content
+- `format` (string or null; required) — Stored content format, when applicable
+- `updated_at` (string or null; required) — Last write time, when applicable
+
+#### `MatchWitness` fields
+
+- `criterion` (integer; required) — Zero-based request criterion satisfied
+- `source_key` (string; required) — Exact document or metadata key that matched
+- `source` ("document" or "metadata"; required) — Whether body or metadata content matched
+- `start` (integer; required) — Inclusive character offset of the first match
+- `end` (integer; required) — Exclusive character offset of the first match
+
 ## `keys_missing_meta`
 
 List the document keys at and below a key that carry none of the named

@@ -111,6 +111,15 @@ DEFAULT_BULK_MAX_CHARS = 2000
 #: for, never inferred. See :func:`_detect_format`.
 Format = Literal["markdown", "json", "text", "html"]
 
+#: How one search criterion compares its pattern with a stored value.
+MatchMode = Literal["contains", "line", "regex"]
+
+#: Which part of a document one search criterion examines.
+SearchTarget = Literal["document", "metadata"]
+
+#: Whether any criterion or every criterion selects a document.
+SearchCombination = Literal["any", "all"]
+
 #: The same four as a tuple, for membership tests and for argparse ``choices``.
 #: Derived from :data:`Format` rather than written twice: a front end validates
 #: against the type and this is what lists it, and the two drifting apart is a
@@ -321,6 +330,53 @@ class Entry:
     size: int | None
     format: str | None
     updated_at: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class SearchCriterion:
+    """One targeted condition in a document search."""
+
+    pattern: str
+    match: MatchMode
+    target: SearchTarget
+    meta_name: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MatchWitness:
+    """The first stored span satisfying one search criterion."""
+
+    criterion: int
+    source_key: str
+    source: SearchTarget
+    start: int
+    end: int
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentMatch:
+    """A selected document and the bounded evidence that selected it."""
+
+    document: Entry
+    witnesses: tuple[MatchWitness, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class SearchPage:
+    """Matches from one bounded candidate window.
+
+    Unlike :class:`Page`, the totals describe the candidate selection rather
+    than the filtered matches. Discovering a global match total would require
+    searching the whole selection and defeat the scan bound.
+    """
+
+    matches: tuple[DocumentMatch, ...]
+    matched: int
+    matched_chars: int
+    scanned: int
+    total_candidates: int
+    total_candidate_chars: int
+    next_cursor: str | None
 
 
 #: Leave what is already there and carry on. The default, because a transfer
@@ -1015,9 +1071,7 @@ class Store(ABC):
         names = [
             name
             for entry in level.items
-            if not (name := entry.key.rpartition(keys.DELIMITER)[2]).startswith(
-                keys.META_PREFIX
-            )
+            if not (name := entry.key.rpartition(keys.DELIMITER)[2]).startswith(keys.META_PREFIX)
         ]
         return names[-1] if names else None
 
@@ -1057,6 +1111,87 @@ class Store(ABC):
         characters each honours both stated bounds while returning two hundred
         thousand characters.
         """
+
+    def find_documents(
+        self,
+        subtree: BoundedSubtree = EVERYTHING,
+        *,
+        criteria: Sequence[SearchCriterion],
+        combine: SearchCombination = "any",
+        key_range: KeyRange = UNBOUNDED,
+        cursor: str | None = None,
+        scan_limit: int | None = None,
+    ) -> SearchPage:
+        """Search one bounded window of documents and their direct metadata.
+
+        The returned cursor is the last candidate examined, not the last
+        match. A page can therefore contain no matches and still carry a
+        cursor; callers continue until it is ``None``.
+
+        Concrete here, in terms of the ordinary read contract, so every
+        backend and :class:`~outrage.mounts.MountedStore` shares one baseline
+        implementation. A backend override is only an optimization and can be
+        checked against this method as its oracle.
+        """
+        prepared = _search_matchers(criteria, combine, scan_limit)
+        candidates = self.get_documents(
+            subtree,
+            key_range=key_range,
+            cursor=cursor,
+            max_chars=1,
+            limit=scan_limit,
+        )
+        wants_documents = any(criterion.target == "document" for criterion, _ in prepared)
+        wants_metadata = any(criterion.target == "metadata" for criterion, _ in prepared)
+        matches: list[DocumentMatch] = []
+
+        for candidate in candidates.items:
+            body = read_all(self, candidate.key).content if wants_documents else None
+            metadata = _search_metadata(self, candidate.key, prepared) if wants_metadata else {}
+            witnesses: list[MatchWitness] = []
+
+            for index, (criterion, matcher) in enumerate(prepared):
+                witness = None
+                if criterion.target == "document":
+                    span = matcher(body or "")
+                    if span is not None:
+                        witness = MatchWitness(index, candidate.key, "document", *span)
+                else:
+                    for source_key, content in metadata.items():
+                        name = source_key.rpartition(keys.DELIMITER)[2][len(keys.META_PREFIX) :]
+                        if criterion.meta_name is not None and name not in criterion.meta_name:
+                            continue
+                        span = matcher(content)
+                        if span is not None:
+                            witness = MatchWitness(index, source_key, "metadata", *span)
+                            break
+                if witness is not None:
+                    witnesses.append(witness)
+
+            selected = bool(witnesses) if combine == "any" else len(witnesses) == len(prepared)
+            if selected:
+                matches.append(
+                    DocumentMatch(
+                        document=Entry(
+                            key=candidate.key,
+                            kind="document",
+                            size=candidate.total,
+                            format=candidate.format,
+                            updated_at=candidate.updated_at,
+                        ),
+                        witnesses=tuple(witnesses),
+                    )
+                )
+
+        return SearchPage(
+            matches=tuple(matches),
+            matched=len(matches),
+            matched_chars=sum(match.document.size or 0 for match in matches),
+            scanned=candidates.returned,
+            total_candidates=candidates.total,
+            total_candidate_chars=candidates.total_chars,
+            next_cursor=candidates.next_cursor,
+        )
 
     @abstractmethod
     def missing_meta_stats(
@@ -1604,6 +1739,123 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
     return replace(first, content=content, returned=len(content), next_offset=offset)
 
 
+_MATCH_MODES = ("contains", "line", "regex")
+_SEARCH_TARGETS = ("document", "metadata")
+_SEARCH_COMBINATIONS = ("any", "all")
+_SEARCH_METADATA_PAGE = 100
+
+
+def _search_matchers(
+    criteria: Sequence[SearchCriterion], combine: str, scan_limit: int | None
+) -> list[tuple[SearchCriterion, Callable[[str], tuple[int, int] | None]]]:
+    """Validate and compile one search request at the Store boundary."""
+    if not 1 <= len(criteria) <= 5:
+        raise InvalidArgumentError("search-criteria-count", count=len(criteria))
+    if combine not in _SEARCH_COMBINATIONS:
+        raise InvalidArgumentError("search-combination", combine=combine)
+    if scan_limit is not None and scan_limit <= 0:
+        raise InvalidArgumentError("search-scan-limit", scan_limit=scan_limit)
+
+    prepared = []
+    for index, criterion in enumerate(criteria):
+        if criterion.match not in _MATCH_MODES:
+            raise InvalidArgumentError("search-match-mode", index=index, match=criterion.match)
+        if criterion.target not in _SEARCH_TARGETS:
+            raise InvalidArgumentError("search-target", index=index, target=criterion.target)
+        if not criterion.pattern:
+            raise InvalidArgumentError("search-pattern-empty", index=index)
+        if criterion.target == "document" and criterion.meta_name is not None:
+            raise InvalidArgumentError("search-document-meta-name", index=index)
+        if criterion.target == "metadata" and criterion.meta_name is not None:
+            if not criterion.meta_name or any(not name for name in criterion.meta_name):
+                raise InvalidArgumentError("search-meta-name-empty", index=index)
+        prepared.append((criterion, _search_matcher(criterion, index)))
+    return prepared
+
+
+def _search_matcher(
+    criterion: SearchCriterion, index: int
+) -> Callable[[str], tuple[int, int] | None]:
+    if criterion.match == "contains":
+
+        def contains(content: str) -> tuple[int, int] | None:
+            start = content.find(criterion.pattern)
+            return None if start < 0 else (start, start + len(criterion.pattern))
+
+        return contains
+    if criterion.match == "line":
+
+        def line(content: str) -> tuple[int, int] | None:
+            offset = 0
+            endings = (
+                "\r\n",
+                "\n",
+                "\r",
+                "\v",
+                "\f",
+                "\x1c",
+                "\x1d",
+                "\x1e",
+                "\x85",
+                "\u2028",
+                "\u2029",
+            )
+            for held in content.splitlines(keepends=True):
+                body = held
+                for ending in endings:
+                    if body.endswith(ending):
+                        body = body[: -len(ending)]
+                        break
+                if body == criterion.pattern:
+                    return offset, offset + len(body)
+                offset += len(held)
+            return None
+
+        return line
+    try:
+        expression = re.compile(criterion.pattern)
+    except re.error as exc:
+        raise InvalidArgumentError(
+            "search-regex-invalid", index=index, pattern=criterion.pattern, reason=str(exc)
+        ) from exc
+
+    def regex(content: str) -> tuple[int, int] | None:
+        found = expression.search(content)
+        return None if found is None else found.span()
+
+    return regex
+
+
+def _search_metadata(
+    store: Store,
+    document_key: str,
+    prepared: Sequence[tuple[SearchCriterion, Callable[[str], tuple[int, int] | None]]],
+) -> dict[str, str]:
+    """Read each direct metadata value relevant to the request once."""
+    requested: set[str] | None = set()
+    for criterion, _ in prepared:
+        if criterion.target != "metadata":
+            continue
+        if criterion.meta_name is None:
+            requested = None
+            break
+        requested.update(criterion.meta_name)
+
+    found: dict[str, str] = {}
+    cursor = None
+    while True:
+        page = store.list_keys(document_key, limit=_SEARCH_METADATA_PAGE, cursor=cursor)
+        for entry in page.items:
+            if entry.kind != "metadata" or entry.size is None:
+                continue
+            name = entry.key.rpartition(keys.DELIMITER)[2][len(keys.META_PREFIX) :]
+            if requested is None or name in requested:
+                found[entry.key] = read_all(store, entry.key).content
+        if page.next_cursor is None:
+            return found
+        cursor = page.next_cursor
+
+
 # -- shared by every backend -------------------------------------------------
 #
 # Below here is what a backend needs and should not re-decide: how a scope
@@ -1674,9 +1926,7 @@ def entry_kind(key: str) -> str:
     another on a filesystem.
     """
     return (
-        "metadata"
-        if key.rpartition(keys.DELIMITER)[2].startswith(keys.META_PREFIX)
-        else "document"
+        "metadata" if key.rpartition(keys.DELIMITER)[2].startswith(keys.META_PREFIX) else "document"
     )
 
 
@@ -1812,9 +2062,7 @@ def _timestamp(updated_at: str | None) -> str | None:
     try:
         moment = datetime.fromisoformat(updated_at)
     except ValueError as exc:
-        raise ValueError(
-            f"updated_at must be an ISO 8601 timestamp, got {updated_at!r}"
-        ) from exc
+        raise ValueError(f"updated_at must be an ISO 8601 timestamp, got {updated_at!r}") from exc
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
     return moment.astimezone(UTC).isoformat(timespec="seconds")
@@ -2061,6 +2309,7 @@ __all__ = [
     "BackendError",
     "BackupError",
     "BoundedSubtree",
+    "DocumentMatch",
     "Encoding",
     "Entry",
     "Excerpt",
@@ -2069,11 +2318,17 @@ __all__ = [
     "InvalidArgumentError",
     "KeyNotFoundError",
     "KeyRange",
+    "MatchMode",
+    "MatchWitness",
     "MetaReader",
     "MissingMeta",
     "Page",
     "PatternNotFoundError",
     "ReadOnlyStoreError",
+    "SearchCombination",
+    "SearchCriterion",
+    "SearchPage",
+    "SearchTarget",
     "Store",
     "StoreFileError",
     "Transfer",

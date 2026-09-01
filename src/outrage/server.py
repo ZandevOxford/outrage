@@ -60,6 +60,10 @@ from .store import (
     Excerpt,
     Format,
     KeyRange,
+    MatchMode,
+    SearchCombination,
+    SearchCriterion,
+    SearchTarget,
     Store,
 )
 
@@ -180,6 +184,9 @@ _forbid_unknown_arguments()
 #: the whole store for the session-scale case these defaults are mostly serving.
 DEFAULT_ITEM_LIMIT = 100
 
+#: Candidate documents one search call examines before returning a cursor.
+DEFAULT_SEARCH_SCAN_LIMIT = 20
+
 #: The character half of that pair: what one page may total before it stops,
 #: whatever the item count still allows.
 DEFAULT_PAGE_CHARS = 20000
@@ -245,6 +252,63 @@ class _EntryResult(_ToolResult):
     size: Annotated[int | None, Field(description="Stored characters, when this key has content")]
     format: Annotated[str | None, Field(description="Stored content format, when applicable")]
     updated_at: Annotated[str | None, Field(description="Last write time, when applicable")]
+
+
+class _SearchCriterionArgument(BaseModel):
+    """A closed criterion object accepted by ``find_documents``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pattern: Annotated[str, Field(description="Text or expression to match", min_length=1)]
+    match: Annotated[
+        MatchMode, Field(description="Literal contains, exact whole line, or Python regex")
+    ]
+    target: Annotated[
+        SearchTarget, Field(description="Search the document body or its direct metadata values")
+    ]
+    meta_name: Annotated[
+        list[str] | None,
+        Field(
+            description="Metadata names to search; omit for all direct metadata",
+            min_length=1,
+        ),
+    ] = None
+
+
+class _MatchWitnessResult(_ToolResult):
+    criterion: Annotated[int, Field(description="Zero-based request criterion satisfied")]
+    source_key: Annotated[str, Field(description="Exact document or metadata key that matched")]
+    source: Annotated[SearchTarget, Field(description="Whether body or metadata content matched")]
+    start: Annotated[int, Field(description="Inclusive character offset of the first match")]
+    end: Annotated[int, Field(description="Exclusive character offset of the first match")]
+
+
+class _DocumentMatchResult(_ToolResult):
+    document: Annotated[_EntryResult, Field(description="The selected document")]
+    witnesses: Annotated[
+        list[_MatchWitnessResult], Field(description="One first match per satisfied criterion")
+    ]
+
+
+class _FindDocumentsResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized subtree key")]
+    matches: Annotated[
+        list[_DocumentMatchResult], Field(description="Matches in this candidate window")
+    ]
+    matched: Annotated[int, Field(description="Documents matched in this window")]
+    matched_chars: Annotated[
+        int, Field(description="Body characters across documents matched in this window")
+    ]
+    scanned: Annotated[int, Field(description="Candidate documents examined in this window")]
+    total_candidates: Annotated[
+        int, Field(description="Candidate documents in the whole bounded selection")
+    ]
+    total_candidate_chars: Annotated[
+        int, Field(description="Body characters across the whole candidate selection")
+    ]
+    next_cursor: Annotated[
+        str | None, Field(description="Last candidate examined, or null when search is complete")
+    ]
 
 
 class _ListKeysResult(_ToolResult):
@@ -842,6 +906,66 @@ def build_server(
                 "sample": gap.sample,
             }
         return _GetDocumentsResult.model_validate(result)
+
+    @server.tool(
+        annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
+        description=tool_description("find_documents"),
+    )
+    @_reported
+    def find_documents(
+        criteria: Annotated[
+            list[_SearchCriterionArgument],
+            Field(description="One to five targeted search criteria", min_length=1, max_length=5),
+        ],
+        key: Annotated[
+            str | None,
+            Field(description="Key whose subtree to search; omit for root"),
+        ] = None,
+        depth: Annotated[
+            int | None,
+            Field(description="How many levels below key to descend; unlimited when omitted", ge=0),
+        ] = None,
+        combine: Annotated[
+            SearchCombination,
+            Field(description="Select documents satisfying any or all criteria"),
+        ] = "any",
+        scan_limit: Annotated[
+            int,
+            Field(description="Maximum candidate documents to examine in this call", gt=0),
+        ] = DEFAULT_SEARCH_SCAN_LIMIT,
+        after: Annotated[
+            str | None,
+            Field(description="Resume after this key, from a previous result's next_cursor"),
+        ] = None,
+    ) -> _FindDocumentsResult:
+        at = _named_key(table, key)
+        page = table.find_documents(
+            BoundedSubtree(at, depth),
+            criteria=[
+                SearchCriterion(
+                    pattern=criterion.pattern,
+                    match=criterion.match,
+                    target=criterion.target,
+                    meta_name=None if criterion.meta_name is None else tuple(criterion.meta_name),
+                )
+                for criterion in criteria
+            ],
+            combine=combine,
+            cursor=after,
+            scan_limit=scan_limit,
+        )
+        return _FindDocumentsResult.model_validate(
+            {
+                "key": at,
+                "matches": [dataclasses.asdict(match) for match in page.matches],
+                "matched": page.matched,
+                "matched_chars": page.matched_chars,
+                "scanned": page.scanned,
+                "total_candidates": page.total_candidates,
+                "total_candidate_chars": page.total_candidate_chars,
+                "next_cursor": page.next_cursor,
+            }
+        )
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -1554,6 +1678,7 @@ __all__ = [
     "DEFAULT_COPY_LIMIT",
     "DEFAULT_ITEM_LIMIT",
     "DEFAULT_PAGE_CHARS",
+    "DEFAULT_SEARCH_SCAN_LIMIT",
     "DELIVERED",
     "DELIVERY_BUDGET",
     "NO_README",

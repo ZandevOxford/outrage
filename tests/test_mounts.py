@@ -40,6 +40,7 @@ from outrage.store import (
     KeyNotFoundError,
     KeyRange,
     ReadOnlyStoreError,
+    SearchCriterion,
     Store,
     StoreFileError,
 )
@@ -1569,6 +1570,32 @@ def _read(store, key):
     return got.key, got.content, got.format, got.offset, got.returned, got.total, got.next_offset
 
 
+def _search_page(page):
+    """Search facts excluding timestamps, which differ between the two corpora."""
+    return (
+        [
+            (
+                (
+                    match.document.key,
+                    _one_kind(match.document.kind),
+                    match.document.size,
+                    match.document.format,
+                ),
+                tuple(
+                    (w.criterion, w.source_key, w.source, w.start, w.end) for w in match.witnesses
+                ),
+            )
+            for match in page.matches
+        ],
+        page.matched,
+        page.matched_chars,
+        page.scanned,
+        page.total_candidates,
+        page.total_candidate_chars,
+        page.next_cursor,
+    )
+
+
 _SPLIT_KEYS = [
     "",
     "a",
@@ -1673,6 +1700,37 @@ def test_a_split_table_answers_every_read_the_way_one_store_holding_it_all_does(
                         t, key_range=r, window=w, meta_name=m, sample=3
                     ),
                 )
+
+    searches = [
+        ([SearchCriterion("body", "contains", "document")], "any"),
+        ([SearchCriterion("A", "contains", "metadata", ("title",))], "any"),
+        (
+            [
+                SearchCriterion(r"\bdesign\b", "regex", "document"),
+                SearchCriterion("Ten", "line", "metadata", ("title",)),
+            ],
+            "all",
+        ),
+    ]
+    for subtree, key_range, (criteria, combine), scan_limit in itertools.product(
+        _SPLIT_SUBTREES,
+        (UNBOUNDED, KeyRange(after="a"), KeyRange(final_subtree="b")),
+        searches,
+        (None, 3),
+    ):
+        answers_alike(
+            whole,
+            split,
+            lambda s, t=subtree, r=key_range, c=criteria, both=combine, n=scan_limit: _search_page(
+                s.find_documents(
+                    t,
+                    criteria=c,
+                    combine=both,
+                    key_range=r,
+                    scan_limit=n,
+                )
+            ),
+        )
 
 
 # -- what the contract found ----------------------------------------------

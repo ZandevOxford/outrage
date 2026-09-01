@@ -48,6 +48,8 @@ from outrage.store import (
     KeyNotFoundError,
     KeyRange,
     ReadOnlyStoreError,
+    SearchCriterion,
+    Store,
 )
 from outrage.store_files import FilesystemStore
 from outrage.store_parquet import ParquetStore
@@ -181,8 +183,6 @@ _SUBTREES = [
 _METAS = [None, "title", ["title"], ["title", "summary"], ["summary"]]
 
 
-
-
 def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
     """The contract, checked against a live oracle rather than expectations.
 
@@ -236,6 +236,41 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
                     t, key_range=r, window=w, meta_name=m, sample=3
                 ),
             )
+
+
+def test_the_base_search_is_the_oracle_for_every_backend(sqlite, parquet):
+    """An optimized override must remain identical to the inherited baseline."""
+    searches = [
+        ([SearchCriterion("body", "contains", "document")], "any"),
+        ([SearchCriterion("A", "line", "metadata", ("title",))], "any"),
+        (
+            [
+                SearchCriterion(r"\bdesign\b", "regex", "document"),
+                SearchCriterion("Ten", "contains", "metadata", ("title",)),
+            ],
+            "all",
+        ),
+    ]
+    for criteria, combine in searches:
+        expected = Store.find_documents(
+            sqlite,
+            BoundedSubtree("a"),
+            criteria=criteria,
+            combine=combine,
+            scan_limit=3,
+        )
+        assert (
+            sqlite.find_documents(
+                BoundedSubtree("a"), criteria=criteria, combine=combine, scan_limit=3
+            )
+            == expected
+        )
+        assert (
+            parquet.find_documents(
+                BoundedSubtree("a"), criteria=criteria, combine=combine, scan_limit=3
+            )
+            == expected
+        )
 
 
 def test_the_two_backends_agree_under_every_combination_of_caps(sqlite, parquet):

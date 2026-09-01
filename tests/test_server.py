@@ -69,6 +69,7 @@ def test_tools_are_registered(server):
         "store_document",
         "list_keys",
         "get_documents",
+        "find_documents",
         "keys_missing_meta",
         "delete_keys",
         "copy_tree",
@@ -91,6 +92,7 @@ def test_every_tool_description_is_the_shipped_document(exporting):
         "store_document",
         "list_keys",
         "get_documents",
+        "find_documents",
         "keys_missing_meta",
         "delete_keys",
         "copy_tree",
@@ -161,6 +163,10 @@ def test_tool_schemas_describe_their_results(exporting):
     survey = tools["get_documents"].output_schema
     assert survey["properties"]["documents"]["items"] == {"$ref": "#/$defs/_ExcerptResult"}
     assert "without_meta" not in survey["required"]
+
+    search = tools["find_documents"].output_schema
+    assert search["properties"]["matches"]["items"] == {"$ref": "#/$defs/_DocumentMatchResult"}
+    assert search["properties"]["next_cursor"]["description"]
 
     file_result = tools["document_file"].output_schema
     assert set(file_result["required"]) == {"key", "path"}
@@ -414,6 +420,91 @@ def test_get_documents_truncates(server):
 def test_get_documents_respects_depth(server):
     assert call(server, "get_documents", key="context", depth=1)["count"] == 0
     assert call(server, "get_documents", key="context", depth=2)["count"] == 2
+
+
+def test_find_documents_searches_bodies_and_metadata(server):
+    result = call(
+        server,
+        "find_documents",
+        key="context",
+        criteria=[
+            {"target": "document", "match": "contains", "pattern": "delete"},
+            {
+                "target": "metadata",
+                "meta_name": ["title"],
+                "match": "line",
+                "pattern": "Store schema",
+            },
+        ],
+    )
+
+    assert result["key"] == "context"
+    assert [match["document"]["key"] for match in result["matches"]] == [
+        "context/a1b2/design",
+        "context/c3d4/task",
+    ]
+    assert result["matched"] == 2
+    assert result["scanned"] == 2
+    assert result["total_candidates"] == 2
+    assert result["matches"][0]["witnesses"][0] == {
+        "criterion": 1,
+        "source_key": "context/a1b2/design/!title",
+        "source": "metadata",
+        "start": 0,
+        "end": 12,
+    }
+
+
+def test_find_documents_can_return_an_empty_nonterminal_page(server):
+    for number in range(3):
+        call(server, "store_document", key=f"notes/{number}", content="miss")
+    call(server, "store_document", key="notes/3", content="match")
+
+    first = call(
+        server,
+        "find_documents",
+        key="notes",
+        criteria=[{"target": "document", "match": "contains", "pattern": "match"}],
+        scan_limit=2,
+    )
+    second = call(
+        server,
+        "find_documents",
+        key="notes",
+        criteria=[{"target": "document", "match": "contains", "pattern": "match"}],
+        scan_limit=2,
+        after=first["next_cursor"],
+    )
+
+    assert first["matches"] == []
+    assert first["next_cursor"] == "notes/1"
+    assert [match["document"]["key"] for match in second["matches"]] == ["notes/3"]
+    assert second["next_cursor"] is None
+
+
+def test_find_documents_rejects_unknown_criterion_fields(server):
+    message = call_expecting_error(
+        server,
+        "find_documents",
+        criteria=[{"target": "document", "match": "contains", "pattern": "x", "case": "ignore"}],
+    )
+    assert "case" in message
+
+
+def test_find_documents_renders_store_validation(server):
+    message = call_expecting_error(
+        server,
+        "find_documents",
+        criteria=[
+            {
+                "target": "document",
+                "match": "contains",
+                "pattern": "x",
+                "meta_name": ["title"],
+            }
+        ],
+    )
+    assert "meta_name must be omitted" in message
 
 
 def test_delete_keys_takes_metadata_with_the_document(server):

@@ -247,6 +247,16 @@ segments from `key`, and None is unlimited.
 
 #### depth *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
 
+### *class* outrage.store.DocumentMatch(document: [Entry](#outrage.store.Entry), witnesses: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[MatchWitness](#outrage.store.MatchWitness), ...])
+
+Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+
+A selected document and the bounded evidence that selected it.
+
+#### document *: [Entry](#outrage.store.Entry)*
+
+#### witnesses *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[MatchWitness](#outrage.store.MatchWitness), ...]*
+
 ### outrage.store.Encoding
 
 Encodings a caller may use for the content and title it passes in. These
@@ -591,6 +601,28 @@ Nothing set means no bound at all, so `KeyRange()` is every key.
 
 #### final_subtree *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
 
+### outrage.store.MatchMode
+
+How one search criterion compares its pattern with a stored value.
+
+alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['contains', 'line', 'regex']
+
+### *class* outrage.store.MatchWitness(criterion: [int](https://docs.python.org/3/library/functions.html#int), source_key: [str](https://docs.python.org/3/library/stdtypes.html#str), source: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata'], start: [int](https://docs.python.org/3/library/functions.html#int), end: [int](https://docs.python.org/3/library/functions.html#int))
+
+Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+
+The first stored span satisfying one search criterion.
+
+#### criterion *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### source_key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+
+#### source *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata']*
+
+#### start *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### end *: [int](https://docs.python.org/3/library/functions.html#int)*
+
 ### outrage.store.MetaReader
 
 What [`meta_reader()`](#outrage.store.meta_reader) returns: a row's key and its stored metadata split,
@@ -681,6 +713,56 @@ Distinct from [`outrage.mounts.ReadOnlyMountError`](mounts.md#outrage.mounts.Rea
 write through. This one is about the storage. A parquet file is not
 updated in place, so no flag exists that would make the same call succeed,
 and telling a caller to drop one would be advice that does not work.
+
+### outrage.store.SearchCombination
+
+Whether any criterion or every criterion selects a document.
+
+alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['any', 'all']
+
+### *class* outrage.store.SearchCriterion(pattern: [str](https://docs.python.org/3/library/stdtypes.html#str), match: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['contains', 'line', 'regex'], target: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata'], meta_name: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...] | [None](https://docs.python.org/3/library/constants.html#None) = None)
+
+Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+
+One targeted condition in a document search.
+
+#### pattern *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+
+#### match *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['contains', 'line', 'regex']*
+
+#### target *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata']*
+
+#### meta_name *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...] | [None](https://docs.python.org/3/library/constants.html#None)*
+
+### *class* outrage.store.SearchPage(matches: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[DocumentMatch](#outrage.store.DocumentMatch), ...], matched: [int](https://docs.python.org/3/library/functions.html#int), matched_chars: [int](https://docs.python.org/3/library/functions.html#int), scanned: [int](https://docs.python.org/3/library/functions.html#int), total_candidates: [int](https://docs.python.org/3/library/functions.html#int), total_candidate_chars: [int](https://docs.python.org/3/library/functions.html#int), next_cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None))
+
+Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+
+Matches from one bounded candidate window.
+
+Unlike [`Page`](#outrage.store.Page), the totals describe the candidate selection rather
+than the filtered matches. Discovering a global match total would require
+searching the whole selection and defeat the scan bound.
+
+#### matches *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[DocumentMatch](#outrage.store.DocumentMatch), ...]*
+
+#### matched *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### matched_chars *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### scanned *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### total_candidates *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### total_candidate_chars *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### next_cursor *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+### outrage.store.SearchTarget
+
+Which part of a document one search criterion examines.
+
+alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata']
 
 ### *class* outrage.store.Store(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
@@ -1018,6 +1100,19 @@ document, `limit` and `cursor` page the collection, and
 the two axes multiply, and a hundred documents at two thousand
 characters each honours both stated bounds while returning two hundred
 thousand characters.
+
+#### find_documents(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, criteria: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[SearchCriterion](#outrage.store.SearchCriterion)], combine: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['any', 'all'] = 'any', key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, scan_limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [SearchPage](#outrage.store.SearchPage)
+
+Search one bounded window of documents and their direct metadata.
+
+The returned cursor is the last candidate examined, not the last
+match. A page can therefore contain no matches and still carry a
+cursor; callers continue until it is `None`.
+
+Concrete here, in terms of the ordinary read contract, so every
+backend and [`MountedStore`](mounts.md#outrage.mounts.MountedStore) shares one baseline
+implementation. A backend override is only an optimization and can be
+checked against this method as its oracle.
 
 #### *abstractmethod* missing_meta_stats(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/library/functions.html#int) = 0) → [MissingMeta](#outrage.store.MissingMeta)
 

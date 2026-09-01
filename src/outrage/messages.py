@@ -116,6 +116,53 @@ def _pattern_empty(name: Namer, /, **_: Any) -> str:
     return "a pattern must not be empty; omit it to read from the offset instead"
 
 
+@template("search-criteria-count")
+def _search_criteria_count(name: Namer, /, *, count: int, **_: Any) -> str:
+    return f"a search needs between 1 and 5 criteria, got {count}"
+
+
+@template("search-combination")
+def _search_combination(name: Namer, /, *, combine: str, **_: Any) -> str:
+    return f"search combination must be 'any' or 'all', got {combine!r}"
+
+
+@template("search-scan-limit")
+def _search_scan_limit(name: Namer, /, *, scan_limit: int, **_: Any) -> str:
+    return f"search scan_limit must be positive, got {scan_limit}"
+
+
+@template("search-match-mode")
+def _search_match_mode(name: Namer, /, *, index: int, match: str, **_: Any) -> str:
+    return f"search criterion {index} has unknown match mode {match!r}"
+
+
+@template("search-target")
+def _search_target(name: Namer, /, *, index: int, target: str, **_: Any) -> str:
+    return f"search criterion {index} has unknown target {target!r}"
+
+
+@template("search-pattern-empty")
+def _search_pattern_empty(name: Namer, /, *, index: int, **_: Any) -> str:
+    return f"search criterion {index} has an empty pattern"
+
+
+@template("search-document-meta-name")
+def _search_document_meta_name(name: Namer, /, *, index: int, **_: Any) -> str:
+    return f"search criterion {index} targets a document, so meta_name must be omitted"
+
+
+@template("search-meta-name-empty")
+def _search_meta_name_empty(name: Namer, /, *, index: int, **_: Any) -> str:
+    return f"search criterion {index} has an empty meta_name selection"
+
+
+@template("search-regex-invalid")
+def _search_regex_invalid(
+    name: Namer, /, *, index: int, pattern: str, reason: str, **_: Any
+) -> str:
+    return f"search criterion {index} has invalid regex {pattern!r}: {reason}"
+
+
 # -- store: arguments in transit -------------------------------------------
 #
 # What ``json-string`` exists to catch, said to the caller who can act on it.
@@ -292,18 +339,12 @@ def _key_last_not_allowed(name: Namer, /, *, key: str, **_: Any) -> str:
 
 @template("key-not-below-scope")
 def _key_not_below_scope(name: Namer, /, *, key: str, scope: str, **_: Any) -> str:
-    return (
-        f"key {name(key)} is not at or below {name(scope)}, so it has no "
-        f"reading from there"
-    )
+    return f"key {name(key)} is not at or below {name(scope)}, so it has no reading from there"
 
 
 @template("key-no-last-child")
 def _key_no_last_child(name: Namer, /, *, key: str, parent: str, **_: Any) -> str:
-    return (
-        f"key {key!r} asks for the last key below {name(parent)}, "
-        f"which has nothing below it"
-    )
+    return f"key {key!r} asks for the last key below {name(parent)}, which has nothing below it"
 
 
 @template("key-no-wildcard-to-substitute")
@@ -578,12 +619,10 @@ def _mount_config_unknown_field(
 
 
 @template("mount-config-not-a-table")
-def _mount_config_not_a_table(
-    name: Namer, /, *, path: str, field: str, got: str, **_: Any
-) -> str:
+def _mount_config_not_a_table(name: Namer, /, *, path: str, field: str, got: str, **_: Any) -> str:
     return (
         f"{field!r} in the mount configuration at {path!r} is a {got} rather "
-        f"than a table of KEY = \"FILE\" entries"
+        f'than a table of KEY = "FILE" entries'
     )
 
 
@@ -602,7 +641,7 @@ def _mount_config_section_is_an_entry(
     return (
         f"[{field}] in the mount configuration at {path!r} is one entry's "
         f"fields rather than a table of mounts: {key!r} belongs inside an "
-        f"entry, as in docs = {{ {key} = \"documents\", type = \"files\" }}"
+        f'entry, as in docs = {{ {key} = "documents", type = "files" }}'
     )
 
 
@@ -838,9 +877,7 @@ def _content_missing(name: Namer, /, **_: Any) -> str:
 
 
 @template("copy-target-inside-source")
-def _copy_target_inside_source(
-    name: Namer, /, *, source: str, target: str, **_: Any
-) -> str:
+def _copy_target_inside_source(name: Namer, /, *, source: str, target: str, **_: Any) -> str:
     return (
         f"cannot copy {name(source)!r} beneath {name(target)!r}: the target is "
         "inside the source subtree, and a streaming copy would read what it just wrote"
@@ -848,9 +885,7 @@ def _copy_target_inside_source(
 
 
 @template("copy-source-inside-target")
-def _copy_source_inside_target(
-    name: Namer, /, *, source: str, target: str, **_: Any
-) -> str:
+def _copy_source_inside_target(name: Namer, /, *, source: str, target: str, **_: Any) -> str:
     return (
         f"cannot re-root {name(source)!r} onto {name(target)!r}: the source is "
         "inside the target subtree, so a re-rooted copy would write back into "

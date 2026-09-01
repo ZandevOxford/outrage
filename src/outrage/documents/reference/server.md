@@ -56,6 +56,10 @@ the whole store for the session-scale case these defaults are mostly serving.
 The character half of that pair: what one page may total before it stops,
 whatever the item count still allows.
 
+### outrage.server.DEFAULT_SEARCH_SCAN_LIMIT *= 20*
+
+Candidate documents one search call examines before returning a cursor.
+
 ### outrage.server.DELIVERED *= ('essentials', 'tail')*
 
 The documents delivered, in the order they are sent. The split is a delivery

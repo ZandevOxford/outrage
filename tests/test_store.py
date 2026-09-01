@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 import pytest
 
 from conftest import in_threads, raises_rendered
-from outrage import bulk, keys
+from outrage import bulk, keys, messages
 from outrage import store as store_module
 from outrage.eventlog import EventLog
 from outrage.keys import InvalidKeyError
@@ -34,6 +34,7 @@ from outrage.store import (
     KeyNotFoundError,
     KeyRange,
     PatternNotFoundError,
+    SearchCriterion,
     Store,
 )
 from outrage.store_files import FilesystemStore
@@ -188,7 +189,7 @@ def test_format_is_detected_but_can_be_overridden(store):
     [
         "<!DOCTYPE html>\n<html><body>hi</body></html>",
         "<!doctype HTML>",
-        "<html lang=\"en\">",
+        '<html lang="en">',
         "\n\n  <html>",
     ],
 )
@@ -552,11 +553,7 @@ def test_copy_from_reroots_onto_the_prefix_when_asked(store, source):
     again - which is why "these documents now live at another key" needed a
     flag rather than a second hop. ``context/68/findings``.
     """
-    list(
-        store.copy_from(
-            source, BoundedSubtree("context/c3d4"), prefix="archive/old", reroot=True
-        )
-    )
+    list(store.copy_from(source, BoundedSubtree("context/c3d4"), prefix="archive/old", reroot=True))
     assert walk_keys(store) == ["archive/old/design", "archive/old/design/!title"]
 
 
@@ -1078,6 +1075,136 @@ def test_get_documents_does_not_confuse_sibling_prefixes(store):
     store.store_document("a/b/c", "x")
     store.store_document("a/beta/d", "y")
     assert [e.key for e in store.get_documents(BoundedSubtree("a/b")).items] == ["a/b/c"]
+
+
+# -- searching ----------------------------------------------------------
+
+
+def criterion(pattern, match="contains", target="document", meta_name=None):
+    return SearchCriterion(pattern, match, target, meta_name)
+
+
+def test_find_documents_matches_full_bodies_and_reports_first_spans(store):
+    store.store_document("notes/1", "before " + "x" * 9000 + " needle and needle")
+    store.store_document("notes/2", "nothing here")
+
+    page = store.find_documents(BoundedSubtree("notes"), criteria=[criterion("needle")])
+
+    assert [match.document.key for match in page.matches] == ["notes/1"]
+    assert page.matches[0].document.size == len("before " + "x" * 9000 + " needle and needle")
+    assert page.matches[0].witnesses[0].source_key == "notes/1"
+    assert (page.matches[0].witnesses[0].start, page.matches[0].witnesses[0].end) == (
+        9008,
+        9014,
+    )
+    assert page.matched == 1
+    assert page.scanned == 2
+    assert page.total_candidates == 2
+
+
+def test_find_documents_supports_whole_lines_and_python_regex(store):
+    store.store_document("notes/1", "Pythonic\nPython\nCPython")
+
+    page = store.find_documents(
+        BoundedSubtree("notes"),
+        criteria=[criterion("Python", "line"), criterion(r"C(?=Python)", "regex")],
+        combine="all",
+    )
+
+    witnesses = page.matches[0].witnesses
+    assert [(w.criterion, w.start, w.end) for w in witnesses] == [(0, 9, 15), (1, 16, 17)]
+
+
+def test_find_documents_groups_direct_metadata_evidence_onto_its_document(store):
+    store.store_document("notes/1", "body without it")
+    store.store_document("notes/1/!keywords", "Rust\nPython\nSearch")
+    store.store_document("notes/1/!summary", "Python appears here too")
+    store.store_document("notes/1/!history/1", "Python is nested metadata")
+
+    page = store.find_documents(
+        BoundedSubtree("notes"),
+        criteria=[criterion("Python", "line", "metadata", ("keywords",))],
+    )
+
+    (match,) = page.matches
+    assert match.document.key == "notes/1"
+    assert match.witnesses == (
+        store_module.MatchWitness(0, "notes/1/!keywords", "metadata", 5, 11),
+    )
+
+
+def test_find_documents_any_evaluates_every_criterion_for_stable_evidence(store):
+    store.store_document("notes/1", "Python body")
+    store.store_document("notes/1/!title", "Python title")
+
+    page = store.find_documents(
+        BoundedSubtree("notes"),
+        criteria=[
+            criterion("Python"),
+            criterion("Python", target="metadata", meta_name=("title",)),
+        ],
+    )
+
+    assert [w.criterion for w in page.matches[0].witnesses] == [0, 1]
+
+
+def test_find_documents_all_requires_every_criterion(store):
+    store.store_document("notes/1", "Python body")
+    store.store_document("notes/2", "Rust body")
+
+    page = store.find_documents(
+        BoundedSubtree("notes"),
+        criteria=[criterion("Python"), criterion("title", target="metadata")],
+        combine="all",
+    )
+
+    assert page.matches == ()
+
+
+def test_find_documents_cursor_bounds_the_candidate_scan_not_the_matches(store):
+    for number in range(1, 6):
+        store.store_document(f"notes/{number}", "match" if number == 5 else "miss")
+
+    first = store.find_documents(
+        BoundedSubtree("notes"), criteria=[criterion("match")], scan_limit=2
+    )
+    second = store.find_documents(
+        BoundedSubtree("notes"),
+        criteria=[criterion("match")],
+        scan_limit=2,
+        cursor=first.next_cursor,
+    )
+    third = store.find_documents(
+        BoundedSubtree("notes"),
+        criteria=[criterion("match")],
+        scan_limit=2,
+        cursor=second.next_cursor,
+    )
+
+    assert first.matches == () and first.next_cursor == "notes/2"
+    assert second.matches == () and second.next_cursor == "notes/4"
+    assert [match.document.key for match in third.matches] == ["notes/5"]
+    assert third.next_cursor is None
+    assert (first.scanned, second.scanned, third.scanned) == (2, 2, 1)
+    assert first.total_candidates == second.total_candidates == third.total_candidates == 5
+
+
+@pytest.mark.parametrize(
+    ("criteria", "combine", "scan_limit", "message"),
+    [
+        ([], "any", None, "between 1 and 5"),
+        ([criterion("x")] * 6, "any", None, "between 1 and 5"),
+        ([criterion("")], "any", None, "empty pattern"),
+        ([criterion("(", "regex")], "any", None, "invalid regex"),
+        ([criterion("x", target="document", meta_name=("title",))], "any", None, "must be omitted"),
+        ([criterion("x")], "some", None, "must be 'any' or 'all'"),
+        ([criterion("x")], "any", 0, "must be positive"),
+    ],
+)
+def test_find_documents_validates_its_contract(store, criteria, combine, scan_limit, message):
+    with pytest.raises(InvalidArgumentError) as raised:
+        store.find_documents(criteria=criteria, combine=combine, scan_limit=scan_limit)
+    assert message in messages.render(raised.value)
 
 
 # -- deleting ------------------------------------------------------------
@@ -2270,16 +2397,15 @@ def test_a_survey_scoped_inside_a_metadata_namespace_reads_it(namespaced):
         "a/!changelog",
         "a/!changelog/22",
     ]
-    assert [
-        entry.key for entry in namespaced.get_documents(scoped, meta_name=["title"]).items
-    ] == ["a/!changelog/!title", "a/!changelog/22/!title"]
+    assert [entry.key for entry in namespaced.get_documents(scoped, meta_name=["title"]).items] == [
+        "a/!changelog/!title",
+        "a/!changelog/22/!title",
+    ]
 
 
 def test_keys_missing_meta_reads_a_metadata_namespace_from_inside_it(namespaced):
     namespaced.store_document("a/!changelog/23", "no title on this one")
-    assert namespaced.keys_missing_meta(BoundedSubtree("a/!changelog")).items == [
-        "a/!changelog/23"
-    ]
+    assert namespaced.keys_missing_meta(BoundedSubtree("a/!changelog")).items == ["a/!changelog/23"]
     # And from outside it, the notes are not documents to be missing a title.
     assert namespaced.keys_missing_meta().items == []
 
