@@ -2,6 +2,29 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.5.0 - 2026-09-01
+
+0.5.0 adds bounded programmatic document search to the Python and MCP
+interfaces, including stable evidence for why each document matched.
+
+* **`Store.find_documents` and the MCP `find_documents` tool search document
+  bodies and direct metadata.** One to five case-sensitive criteria can use
+  literal `contains`, exact whole-`line` or Python `regex` matching and can be
+  combined with `any` or `all`.
+* **Search results are grouped by document and carry bounded witnesses.** Each
+  satisfied criterion reports its first matching source and character span.
+  Candidate-window statistics and cursors keep expensive work bounded; an
+  empty match page may still have a cursor when more documents remain.
+* **Every backend shares the same search contract.** SQLite, filesystem,
+  Parquet and mounted stores use the concrete Store baseline, with differential
+  tests preserving identical results for future optimized implementations.
+  The MCP tool defaults to scanning 20 candidates and publishes closed input
+  and output schemas alongside generated tool and Python API documentation.
+
+The README now describes all three storage backends and the current development
+workflow, and the shipped documentation index lists every document the
+distribution carries.
+
 ## 0.4.4 - 2026-08-31
 
 0.4.4 makes both command-line and MCP documentation derive from the interfaces
