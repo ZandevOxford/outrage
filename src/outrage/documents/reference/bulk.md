@@ -38,6 +38,26 @@ and nothing holds one for longer than that.
 
 alias of [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None)]
 
+### outrage.bulk.EXPORT_DIR_PREFIX *= 'outrage-export'*
+
+The per-user directory exports live in, below [`tempfile.gettempdir()`](https://docs.python.org/3/library/tempfile.html#tempfile.gettempdir).
+Not inside the store directory: one file per key there meant two sessions
+editing one key shared one file, and the second export overwrote the first's
+unimported edit. That is the collision that happens, and
+`plans/robust-editing` is why this moved.
+
+The uid is in the name because `gettempdir()` is shared between users on a
+POSIX machine. Windows has no uid and its temporary directory is already per
+user, so there the prefix is the whole name -- and that half is as untested
+as `plans/hook-install/windows`, which is said rather than claimed.
+
+### outrage.bulk.EXPORT_MAX_AGE *= datetime.timedelta(days=7)*
+
+How long an export and its record are kept. Exports no longer overwrite one
+another, so nothing else removes them: a sweep by age is what a name of its
+own for every export costs. Seven days is John's call, 2026-09-02 - long
+enough that an edit picked up after a weekend still has its record.
+
 ### outrage.bulk.EXTENSION_BY_FORMAT *= {'html': '.html', 'json': '.json', 'markdown': '.md', 'text': '.txt'}*
 
 The extension a document is written with, by stored format. Named for the
@@ -46,32 +66,120 @@ reaching for one of the two should not have to check which is which. One
 entry per member of [`outrage.store.FORMATS`](store.md#outrage.store.FORMATS), so nothing can be stored
 that an export cannot name.
 
-### *class* outrage.bulk.Exported(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), excerpt: [Excerpt](store.md#outrage.store.Excerpt), replaced: [bool](https://docs.python.org/3/library/functions.html#bool))
+### *class* outrage.bulk.ExportRecord(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content_sha256: [str](https://docs.python.org/3/library/stdtypes.html#str), exported_at: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, store: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
-What exporting one document did: where it went, and what stood there.
+What an export handed out, as the sidecar beside it records it.
+
+A file rather than the filename or a table in the server process. The
+filename caps the record at what fits, truncates the hash and loses the
+check silently on a rename; a table dies with the server, and takes
+[`export_document()`](#outrage.bulk.export_document) and [`import_document()`](#outrage.bulk.import_document)'s standalone usefulness
+with it. A sidecar survives a restart, extends without a format change,
+and when it is missing an import degrades to *not getting the check*
+rather than to being wrong. John's call 1, 2026-09-02.
+
+The fields are shaped for the precondition `plans/write-preconditions`
+will eventually put inside `Store.store_document`, not for the comparison
+below alone: the token is what a store-level precondition would take, and
+it covers the body and nothing else, because that is exactly what a write
+covers. **Unknown fields are ignored on read**, so a later writer can
+record more without making the files an older reader must still import
+unreadable.
+
+#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+
+The key that was exported. An import to a *different* key is how content
+is copied around the store, not an edit, so the comparison does not apply
+to it -- see [`import_document()`](#outrage.bulk.import_document).
+
+#### content_sha256 *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+
+Hex sha256 of the exported content as UTF-8. The token that decides.
+Named for its algorithm rather than `hash` so a second one can be added
+beside it rather than replacing it.
+
+#### exported_at *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+
+When the export happened, UTC.
+
+#### format *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+The document's stored format.
+
+#### updated_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+What the document's `updated_at` was. **Recorded for the sentence, not
+for the decision**: it is normalised to second precision, so two writes
+inside one second are indistinguishable. The hash decides; this is what
+makes a refusal readable by a person.
+
+#### store *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Where the store was, when it could be asked. Recorded and **not
+enforced**: a file exported from one store and imported into another is a
+copy between stores, which is a thing somebody may mean, and the record is
+there so the answer can say it happened.
+
+#### *static* path_for(file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+
+Where the record for the export at `file` is kept.
+
+#### write(file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+
+Write this record beside the export at `file`.
+
+#### *classmethod* read(file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/library/constants.html#None)
+
+The record beside the export at `file`, or None if there is none to read.
+
+None rather than a raise for every way it can be absent - not there,
+not JSON, not an object, missing a field this needs. A hand-written
+file dropped into the export directory is still importable, as it was
+before there were records at all, and an import that cannot read one
+says so and proceeds.
+
+#### followed(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [ExportRecord](#outrage.bulk.ExportRecord)
+
+This record moved on to `content`, which `key` now holds.
+
+What an import writes back. The record is a claim about *what the edit
+was made against*, and an import that succeeds makes the file and the
+document agree again -- so the claim is renewed rather than left
+pointing at the state before the write.
+
+`key` is the key this record already names: an import to a different
+one is a copy, and rewriting the record would silently turn the file
+into an edit claim on a key it did not come from.
+
+### *class* outrage.bulk.Exported(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), excerpt: [Excerpt](store.md#outrage.store.Excerpt), record: [ExportRecord](#outrage.bulk.ExportRecord))
+
+Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+
+What exporting one document did: where it went, and what was recorded.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-The file written.
+The file written, a fresh one on every export.
 
 #### excerpt *: [Excerpt](store.md#outrage.store.Excerpt)*
 
 The document written to it, whole.
 
-#### replaced *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### record *: [ExportRecord](#outrage.bulk.ExportRecord)*
 
-Whether a file was already at that path. A fact, not a refusal:
-overwriting on re-export is the point of a deterministic name, and the case
-it costs is an edit that had not been imported back yet. See
-`context/66/decisions`, call 1.
+What was written to the sidecar beside it.
 
 ### outrage.bulk.FALLBACK_PREFIX *= 'document-'*
 
-What a key with no path of its own is named instead. Not
-[`TEMP_PREFIX`](#outrage.bulk.TEMP_PREFIX), which marks a file that is half written and that a
-reader must skip: this one is the export, and it is finished.
+What every export is named, an id and the format's extension and nothing
+else. Not [`TEMP_PREFIX`](#outrage.bulk.TEMP_PREFIX), which marks a file that is half written and
+that a reader must skip: this one is the export, and it is finished.
+
+This was the *fallback*, for a key with no path of its own. Since
+`plans/robust-editing` there is no other naming, and the constant survives
+its own exception: what it named is now what every export is called.
 
 ### outrage.bulk.FORMAT_BY_EXTENSION *= {'.html': 'html', '.json': 'json', '.md': 'markdown', '.txt': 'text'}*
 
@@ -84,7 +192,7 @@ as they are -- an export never writes one, so an import reads it as part of
 the name. Not to be confused with [`outrage.store.FORMATS`](store.md#outrage.store.FORMATS), which is what
 a document may be *stored* as; this is what a file name says it is.
 
-### *class* outrage.bulk.Imported(key: [str](https://docs.python.org/3/library/stdtypes.html#str), stored: [int](https://docs.python.org/3/library/functions.html#int), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None))
+### *class* outrage.bulk.Imported(key: [str](https://docs.python.org/3/library/stdtypes.html#str), stored: [int](https://docs.python.org/3/library/functions.html#int), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), unchecked: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unedited: [bool](https://docs.python.org/3/library/functions.html#bool) = False, overwritten: [bool](https://docs.python.org/3/library/functions.html#bool) = False, changed_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -104,6 +212,28 @@ Characters the key held before, or None if it held nothing. The
 distinction is kept because an empty document and no document are different
 things to have overwritten.
 
+#### unchecked *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Why the document was not compared with what was exported, or None when
+it was. A missing record and a cross-key import both land here: the write
+happens either way, and the caller is told the check did not.
+
+#### unedited *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+
+Whether the file is byte-identical to what the export handed out, so the
+edit matched nothing. Not a refusal - storing an unchanged document is
+harmless - but it is the silent no-op `plans/write-preconditions` names,
+and the record closes it for free.
+
+#### overwritten *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+
+Whether `overwrite` allowed a write this check would have refused.
+
+#### changed_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+What the displaced document's `updated_at` was, for the sentence that
+says what `overwrite` overwrote. None when the key held nothing.
+
 ### outrage.bulk.PAGE *= 200*
 
 How much of a collection one internal query asks for. The command line reads
@@ -120,6 +250,12 @@ happens while the rows accumulate for a file that is written at the end.
 
 alias of [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`Transfer`](store.md#outrage.store.Transfer), [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None)] | [`None`](https://docs.python.org/3/library/constants.html#None)]
 
+### outrage.bulk.RECORD_SUFFIX *= '.outrage.json'*
+
+What is written beside an export to record what was handed out, read back by
+an import. `plans/robust-editing/record` is the format and the three
+questions it answers.
+
 ### outrage.bulk.TEMP_PREFIX *= '.outrage-'*
 
 What a half-written file is called while it is being written. Named rather
@@ -135,13 +271,11 @@ legal segments when the grammar widened to mirror a filesystem; a path
 component of .. does not mirror anything, it climbs out of the directory
 the caller named.
 
-### outrage.bulk.UNNAMEABLE *= ('key-segment-is-traversal', 'key-escapes-tree')*
+### *exception* outrage.bulk.ExportRootError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-The mapping failures a single-document export answers with a random name
-instead of a refusal, and exactly those: a key that cannot be a path is
-still a key somebody wants to edit, and there is nowhere else for it to go.
-Anything else [`path_for_key()`](#outrage.bulk.path_for_key) or [`contained_path()`](#outrage.bulk.contained_path) raises is a
-refusal, and stays one.
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError)
+
+Raised when the directory exports would go in is not safely this user's.
 
 ### *exception* outrage.bulk.FileMissingError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
@@ -160,6 +294,17 @@ Raised when a copy would write into the subtree it is still reading.
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`FileNotFoundError`](https://docs.python.org/3/library/exceptions.html#FileNotFoundError)
 
 Raised when the directory to import from is not there.
+
+### *exception* outrage.bulk.StaleImportError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError)
+
+Raised when the document changed after the file being imported came out.
+
+The lost-update problem, refused rather than reported: two agents editing
+one key are both doing something reasonable, so a guard aimed at them
+cannot be advisory. `overwrite` is what keeps the refusal from being a
+hard bound - the caller who has looked and meant it has one word to say so.
 
 ### *exception* outrage.bulk.UnmappableError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
@@ -199,6 +344,14 @@ a link can redirect.
 
 See `project/reference/planned/export-traversal`, which is the whole
 analysis and says which of these are reachable where.
+
+### outrage.bulk.content_hash(content: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+The token a record carries: hex sha256 of `content` as UTF-8.
+
+A hash rather than the length, which is what `context/60/findings` had
+and is a weak token: a substitution that keeps the length is exactly the
+edit a careless script makes. This costs one read an import already makes.
 
 ### outrage.bulk.copied(source: [Store](store.md#outrage.store.Store), target: [Store](store.md#outrage.store.Store), subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = store.EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = store.UNBOUNDED, prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Generator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Generator)[[Transfer](store.md#outrage.store.Transfer), [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
 
@@ -280,11 +433,32 @@ and inventing one at build time is the honest answer -- see
 
 ### outrage.bulk.export_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Exported](#outrage.bulk.Exported)
 
-Write the document at `key` to its file under `root`, whole.
+Write the document at `key` to a fresh file under `root`, whole.
 
 The whole document rather than a slice, which is the only readable size: a
 slice edited and imported back is a silent truncation of everything the
 read stopped short of.
+
+A file of its own every time, with [`ExportRecord`](#outrage.bulk.ExportRecord) beside it saying
+what was handed out, so [`import_document()`](#outrage.bulk.import_document) can tell whether the store
+still holds what the edit was made against. Nothing is overwritten here,
+which is the whole of `plans/robust-editing`: the old mapped name meant a
+second session's export destroyed the first's unimported edit.
+
+### outrage.bulk.export_root() → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+
+This user's export directory, created if it is not already there.
+
+A stable directory swept by age rather than a fresh one per server process,
+which is John's call 3, 2026-09-02: a restart mid-edit must not strand the
+file, because the session that comes back is the one that wanted it. What
+it costs is that files accumulate, which [`sweep_exports()`](#outrage.bulk.sweep_exports) answers.
+
+Created `0700` and, when it is already there, **required to be a
+directory, ours, and not a symbolic link** - refused rather than written
+into otherwise. `gettempdir()` is shared between users on a POSIX
+machine, so a directory at a name another user could have pre-created is
+the one new risk moving out of the project took on.
 
 ### outrage.bulk.export_tree(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), target: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
 
@@ -306,45 +480,35 @@ key** rather than by one spelling of its file, so a document held as
 because it is written in terms of this one -- the mapping lives here and
 the store is expressed in it, not the other way round.
 
-### outrage.bulk.file_for_key(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [bool](https://docs.python.org/3/library/functions.html#bool)]
-
-The file under `root` that `key` is exported to, and whether it is the
-key's own.
-
-The key's own mapped path, so exporting a key twice reuses one file:
-nothing accumulates, and a stale copy of an earlier export cannot be picked
-up by mistake. The cost is taken deliberately - a second export overwrites
-an edit that had not been imported back yet.
-
-**A key with no path gets a random name here instead**, for the two cases
-in [`UNNAMEABLE`](#outrage.bulk.UNNAMEABLE). It still carries the format's extension, because
-with the key and the path free to disagree the path is the only thing left
-that says what the content is.
-
-The root key is not one of those cases: it maps to the extension alone at
-the top of `root`, which is hidden and valid.
-
-The flag says which of the two happened, because the answers differ in what
-a caller may say about the file: a mapped path may already hold an earlier
-export, and a fallback never does.
-
-### outrage.bulk.import_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Imported](#outrage.bulk.Imported)
+### outrage.bulk.import_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Imported](#outrage.bulk.Imported)
 
 Store the content of `path` at `key`, and say what it displaced.
 
-`path` must be inside `root`, which is the whole of the check: a tool
-that stored any file the caller named would read anything the server can
-read. See `project/reference/planned/export-traversal`.
+`path` must be inside `root`, which is the whole of the security check:
+a tool that stored any file the caller named would read anything the server
+can read. See `project/reference/planned/export-traversal`.
 
 **A relative \`\`path\`\` is relative to \`\`root\`\`**, not to the working
 directory: it is relativised before it is checked, so the containment rule
-is asked once. `tmp/1.md` is a good way to name an export; the same file
-named `.outrage/export/tmp/1.md` from the repository root is not.
+is asked once.
 
 **The key and the path do not have to agree.** The content is stored where
 the caller says, whatever file it came from, which is what makes an export,
 an edit and an import to a second key a way of copying content around the
 store.
+
+**A document that changed after the export is refused**, unless
+`overwrite` says to store it anyway. That is the lost-update problem, and
+the reason for the record: another writer has been there since the export,
+and this import would silently lose their write. The comparison is asked
+only when the record names the key being written - the record's hash is the
+*source* key's content, so comparing it against a different target would
+refuse every cross-key import as stale.
+
+What it is not is a compare-and-swap. The comparison happens here, between
+a read and a write, so two imports in the same instant both pass. The real
+precondition belongs inside `Store.store_document` and stays
+`plans/write-preconditions`.
 
 An empty file is stored rather than refused - emptying a document is a
 thing a person may legitimately mean. What guards the accident is the
@@ -426,6 +590,25 @@ partial answer this project keeps finding. Streaming is what makes it both
 complete and bounded in memory - and it fails better, since a long listing
 interrupted has already shown its first thousand lines rather than nothing.
 
+### outrage.bulk.new_export_file(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+
+A file under `root` for one export, and for nothing that came before it.
+
+An id and the format's extension, with **no slug of the key in it**: John's
+call, 2026-09-02. A name derived from the key stops two *keys* colliding
+and does nothing about two *agents* colliding, which is the collision that
+happens.
+
+`mkstemp` for the guarantee that the name is free - the mechanism the
+unnameable-key fallback already used, promoted from the exception to the
+only path. The extension stays because with the key and the path free to
+disagree, the path is the only thing left that says what the content is.
+
+What this costs is discoverability, and it is accepted: a person can no
+longer work out where a key's export is. The export result carries the
+path, and [`ExportRecord`](#outrage.bulk.ExportRecord) is what makes a directory of ids readable
+after the fact - every file has one, and it names the key.
+
 ### outrage.bulk.overlapping(source: [str](https://docs.python.org/3/library/stdtypes.html#str), target: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [None](https://docs.python.org/3/library/constants.html#None)
 
 Refuse a source and target pair a copy cannot safely stream between.
@@ -464,6 +647,19 @@ The relative path `key` is written to, extension included.
 >>> path_for_key("a/b/!title")
 PurePosixPath('a/b/!title.md')
 ```
+
+### outrage.bulk.sweep_exports(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], max_age: [timedelta](https://docs.python.org/3/library/datetime.html#datetime.timedelta) = EXPORT_MAX_AGE, now: [datetime](https://docs.python.org/3/library/datetime.html#datetime.datetime) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
+
+Remove exports and records under `root` older than `max_age`, and count them.
+
+**An export and its record age together**, by the newer of the two: a file
+edited days after it came out is still being worked on, and sweeping the
+record out from under it would cost exactly the check it is there for.
+
+Best effort throughout - a file that cannot be stat'd or removed is left
+alone rather than raising. This runs on the way to an export, and failing
+that export because somebody else's leftovers are unreadable would be a
+worse answer than leaving them there.
 
 ### outrage.bulk.walk(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
 

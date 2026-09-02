@@ -1,6 +1,7 @@
 """Tests driving the tools through the MCP server's own dispatch."""
 
 import json
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,7 @@ from mcp.client.session import ClientSession
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
-from outrage import eventlog, mountfile, shipped
+from outrage import bulk, eventlog, mountfile, shipped
 from outrage import mounts as mounts_module
 from outrage import server as server_module
 from outrage.eventlog import EventLog
@@ -73,10 +74,11 @@ def test_tools_are_registered(server):
         "keys_missing_meta",
         "delete_keys",
         "copy_tree",
+        "document_file",
     }
-    # `document_file` is deliberately not in that set: it writes files under the
-    # store directory, and this server was built without being told where that
-    # is. See `test_the_file_tool_is_offered_only_when_there_is_somewhere_to_write`.
+    # `document_file` included, though this server was built without a store
+    # directory: it writes below the system temporary directory, which always
+    # exists. See `test_the_file_tool_is_offered_without_a_store_directory`.
     assert tools["read_document"].annotations.read_only_hint is True
     assert tools["delete_keys"].annotations.destructive_hint is True
     for tool in tools.values():
@@ -1182,31 +1184,44 @@ def test_a_key_spelled_last_can_no_longer_be_written(server):
 
 
 @pytest.fixture
-def exporting(tmp_path):
-    """A server told where the store directory is, so `document_file` exists."""
+def exports(tmp_path, monkeypatch):
+    """Where this test's exports go.
+
+    The real one is a per-user directory below the system temporary directory,
+    which is exactly what these tests must not write into: pointing
+    ``gettempdir`` at ``tmp_path`` keeps each test's exports its own, and keeps
+    the sweep away from anything a real session left behind.
+    """
+    (tmp_path / "temp").mkdir()
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+    return bulk.export_root()
+
+
+@pytest.fixture
+def exporting(tmp_path, exports):
+    """A server over a small store, with its exports pointed somewhere safe."""
     with SqliteStore(tmp_path) as store:
         store.store_document("context/a1b2/design", "# Store schema", title="Store schema")
         store.store_document("notes/data", '{"a": 1}', format="json")
         yield build_server(store, directory=tmp_path)
 
 
-@pytest.fixture
-def exports(tmp_path):
-    return tmp_path / "export"
+def test_the_file_tool_is_offered_without_a_store_directory(exporting, server):
+    """It was registered only when there was somewhere to write; there always is.
 
-
-def test_the_file_tool_is_offered_only_when_there_is_somewhere_to_write(exporting, server):
+    ``build_server`` still takes ``directory`` -- the event log wants it -- but
+    the tool no longer depends on it. ``plans/robust-editing``.
+    """
     assert "document_file" in list_tools(exporting)
-    assert "document_file" not in list_tools(server)
+    assert "document_file" in list_tools(server)
 
 
-def test_exporting_writes_the_document_under_the_store_directory(exporting, exports):
+def test_exporting_writes_the_document_to_a_file_of_its_own(exporting, exports):
     result = call(exporting, "document_file", key="context/a1b2/design")
 
-    assert result["path"] == str(exports / "context" / "a1b2" / "design.md")
+    assert Path(result["path"]).parent == exports
     assert Path(result["path"]).read_text() == "# Store schema"
     assert result["exported"] == 14
-    assert result["replaced"] is False
     assert "call again with its path" in result["note"]
 
 
@@ -1232,25 +1247,73 @@ def test_a_document_that_shrank_is_said_to_have_shrunk(exporting):
     assert "shrank from 14 to 0" in imported["note"]
 
 
-def test_re_exporting_a_key_says_it_overwrote_the_file(exporting):
-    call(exporting, "document_file", key="context/a1b2/design")
+def test_re_exporting_a_key_leaves_the_first_export_alone(exporting):
+    """What the deterministic name cost: the second export destroyed an edit
+    the first session had not stored back yet."""
+    first = call(exporting, "document_file", key="context/a1b2/design")
+    Path(first["path"]).write_text("# Store schema, half edited")
 
     again = call(exporting, "document_file", key="context/a1b2/design")
 
-    assert again["replaced"] is True
-    assert "overwritten" in again["note"]
+    assert again["path"] != first["path"]
+    assert Path(first["path"]).read_text() == "# Store schema, half edited"
+
+
+def test_an_import_is_refused_when_somebody_else_wrote_the_document(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    Path(exported["path"]).write_text("# Store schema, my edit")
+    call(exporting, "store_document", key="context/a1b2/design", content="# Theirs")
+
+    message = call_expecting_error(
+        exporting, "document_file", key="context/a1b2/design", path=exported["path"]
+    )
+
+    assert "overwrite" in message
+    assert call(exporting, "read_document", key="context/a1b2/design")["content"] == "# Theirs"
+
+
+def test_overwrite_stores_it_anyway_and_says_what_went(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    Path(exported["path"]).write_text("# Store schema, my edit")
+    call(exporting, "store_document", key="context/a1b2/design", content="# Theirs")
+
+    imported = call(
+        exporting,
+        "document_file",
+        key="context/a1b2/design",
+        path=exported["path"],
+        overwrite=True,
+    )
+
+    assert "overwritten anyway" in imported["note"]
+    assert call(exporting, "read_document", key="context/a1b2/design")["content"] == (
+        "# Store schema, my edit"
+    )
+
+
+def test_a_round_trip_that_changed_nothing_says_so(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+
+    imported = call(exporting, "document_file", key="context/a1b2/design", path=exported["path"])
+
+    assert "identical to what was exported" in imported["note"]
 
 
 def test_an_export_and_an_import_may_name_different_keys(exporting):
     exported = call(exporting, "document_file", key="context/a1b2/design")
+    Path(exported["path"]).write_text("# Store schema, copied")
 
     imported = call(exporting, "document_file", key="context/c3d4/design", path=exported["path"])
 
     assert imported == {
         "key": "context/c3d4/design",
         "path": exported["path"],
-        "stored": 14,
+        "stored": 22,
         "previous": None,
+        # The record names the key it came from, so the staleness question does
+        # not apply and the answer says which key it was instead of refusing
+        # every copy around the store as stale.
+        "unchecked": "exported from 'context/a1b2/design'",
     }
 
 
@@ -1290,7 +1353,7 @@ def test_the_newest_context_can_be_exported_by_asking_for_it(exporting, exports)
     result = call(exporting, "document_file", key="context/?last/design")
 
     assert result["key"] == "context/a1b2/design"
-    assert result["path"] == str(exports / "context" / "a1b2" / "design.md")
+    assert Path(result["path"]).parent == exports
 
 
 def test_a_wildcard_key_is_not_a_round_trip(exporting):

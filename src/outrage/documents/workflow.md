@@ -61,6 +61,15 @@ ordinary file tools, then call it with the key and returned path to import.
 The import reports the old and new sizes, making accidental truncation visible,
 and unchanged text need not pass through the conversation twice.
 
+The export records what it handed out, so the import refuses to store a file
+whose document somebody else has written in the meantime; `overwrite` stores
+it anyway. A successful import renews that record, so you can keep editing the
+same file and importing it. Import the file the export gave you rather than a
+copy of it: the record lives beside it, and moving or renaming the file leaves
+the import unchecked rather than wrong. The check needs the file to have come
+from the key being written, so a deliberate copy to another key is stored and
+reported unchecked.
+
 To split a document, export it, place one facet at a new child key, and import
 the shortened parent. Use `copy_tree` for whole subtrees, not for splitting
 one document; a move is a successful copy followed by an explicit delete.

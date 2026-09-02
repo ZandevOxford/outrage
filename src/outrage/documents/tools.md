@@ -319,17 +319,24 @@ context.
 
 **Omit `path` to export**: the whole document at `key` is
 written to a file and the path returned, ready to be edited in place with
-e.g. `sed`.
+e.g. `sed`. Every export gets a file of its own, so a second session
+exporting the same key cannot overwrite an edit you have not stored back.
 
 **Pass `path` to import**: that file's content is stored at `key`, and the
 answer reports both the size written and the size that was there before, so
 an edit that truncated is visible. The path must be one this tool exported,
 but the keys do not need to match, so this can copy data.
 
+**A document written by somebody else since you exported it refuses the
+import** rather than losing their work: export it again and redo the edit, or
+pass `overwrite` if you have looked and mean to replace it. Only a file
+exported from the key being written can be checked this way.
+
 ### Parameters
 
 - `key` (string; required) — Key to export, or to import into, e.g. context/a1b2/design or context/?last/design for the newest
 - `path` (string or null; default null) — Omit to export the document to a file. Pass the path of a file this tool exported to store its content at `key` instead; the file may have been edited, and may be one exported for another key. Give the path the export returned, or one relative to the export directory - a relative path is taken from there, not from the working directory
+- `overwrite` (boolean; default false) — Store the file even though the document changed after it was exported. Only for a caller who has looked at what changed and means to replace it: the refusal is there because another agent's write is about to be lost
 
 ### Returns
 
@@ -337,7 +344,7 @@ but the keys do not need to match, so this can copy data.
 - `path` (string; required) — The exported file path
 - `exported` (integer or null; optional) — Characters exported, when exporting a document
 - `format` (string or null; optional) — The document format, when exporting a document
-- `replaced` (boolean or null; optional) — Whether an existing export file was overwritten
 - `stored` (integer or null; optional) — Characters stored, when importing an edited file
 - `previous` (integer or null; optional) — Previous document size, or null when it did not exist
+- `unchecked` (string or null; optional) — Why an import was not checked against what was exported, when it was not: there was no export record, or the file came from another key
 - `note` (string or null; optional) — Important qualification of the result

@@ -30,7 +30,6 @@ import os
 import sys
 import time
 from collections.abc import Callable, Generator
-from pathlib import Path
 from typing import Annotated, Any
 
 from mcp.server import MCPServer
@@ -397,14 +396,21 @@ class _DocumentFileResult(_ToolResult):
     format: Annotated[
         str | None, Field(description="The document format, when exporting a document")
     ] = None
-    replaced: Annotated[
-        bool | None, Field(description="Whether an existing export file was overwritten")
-    ] = None
     stored: Annotated[
         int | None, Field(description="Characters stored, when importing an edited file")
     ] = None
     previous: Annotated[
         int | None, Field(description="Previous document size, or null when it did not exist")
+    ] = None
+    unchecked: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Why an import was not checked against what was exported, when it "
+                "was not: there was no export record, or the file came from "
+                "another key"
+            )
+        ),
     ] = None
     note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
@@ -677,11 +683,14 @@ def build_server(
     ``directory`` is the store directory, and it has to be passed in: what is
     served is a :class:`~outrage.mounts.MountedStore`, which is a ``Store`` and
     not a :class:`~outrage.store.FileStore`, so it cannot be asked where it is.
-    :func:`main` has already resolved it for the event log. Given one,
-    ``document_file`` is registered and writes under
-    :data:`~outrage.store.EXPORT_DIR_NAME` inside it; without one there is
-    nowhere to put a file, and the tool is not offered rather than offered and
-    always failing.
+    :func:`main` has already resolved it for the event log, which is what still
+    wants it.
+
+    ``document_file`` no longer does. It was registered only when there was a
+    store directory to write under, because there was nowhere else to put a
+    file; since ``plans/robust-editing`` it writes to
+    :func:`~outrage.bulk.export_root`, a per-user directory below the system
+    temporary directory, which always exists. So the tool is always there.
     """
     log = log if log is not None else eventlog.NULL
     table = store if isinstance(store, MountedStore) else MountedStore.single(store)
@@ -1229,86 +1238,109 @@ def build_server(
             )
         return _CopyTreeResult.model_validate(result)
 
-    if directory is not None:
-        exports = Path(directory) / store_module.EXPORT_DIR_NAME
-
-        @server.tool(
-            annotations=ToolAnnotations(idempotent_hint=True),
-            description=tool_description("document_file"),
-        )
-        @_reported
-        def document_file(
-            key: Annotated[
-                str,
-                Field(
-                    description=(
-                        "Key to export, or to import into, e.g. "
-                        "context/a1b2/design or context/?last/design for the newest"
-                    )
-                ),
-            ],
-            path: Annotated[
-                str | None,
-                Field(
-                    description=(
-                        "Omit to export the document to a file. Pass the path of "
-                        "a file this tool exported to store its content at `key` "
-                        "instead; the file may have been edited, and may be one "
-                        "exported for another key. Give the path the export "
-                        "returned, or one relative to the export directory - a "
-                        "relative path is taken from there, not from the working "
-                        "directory"
-                    )
-                ),
-            ] = None,
-        ) -> _DocumentFileResult:
-            # No wildcard: `?` allocates a number, and a round trip is about a
-            # key that already exists on one end or the other. Allocating one
-            # is `store_document`'s business.
-            at = _named_key(table, key)
-            if path is None:
-                exported = bulk.export_document(table, at, exports)
-                result: dict[str, Any] = {
-                    "key": at,
-                    "path": str(exported.path),
-                    "exported": exported.excerpt.total,
-                    "format": exported.excerpt.format,
-                    "replaced": exported.replaced,
-                }
-                _add_note(
-                    result,
-                    "Edit this file in place and call again with its path to store it back.",
+    @server.tool(
+        annotations=ToolAnnotations(idempotent_hint=True),
+        description=tool_description("document_file"),
+    )
+    @_reported
+    def document_file(
+        key: Annotated[
+            str,
+            Field(
+                description=(
+                    "Key to export, or to import into, e.g. "
+                    "context/a1b2/design or context/?last/design for the newest"
                 )
-                if exported.replaced:
-                    # The fact, not a refusal: one file per key is what stops
-                    # exports accumulating, and this is the edge it costs.
-                    _add_note(
-                        result,
-                        "A file was already there and has been overwritten; if it "
-                        "held an edit that was never stored back, that edit is gone.",
-                    )
-                return _DocumentFileResult.model_validate(result)
-            imported = bulk.import_document(table, at, path, exports)
-            result = {
-                "key": imported.key,
-                "path": str(path),
-                "stored": imported.stored,
-                "previous": imported.previous,
+            ),
+        ],
+        path: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Omit to export the document to a file. Pass the path of "
+                    "a file this tool exported to store its content at `key` "
+                    "instead; the file may have been edited, and may be one "
+                    "exported for another key. Give the path the export "
+                    "returned, or one relative to the export directory - a "
+                    "relative path is taken from there, not from the working "
+                    "directory"
+                )
+            ),
+        ] = None,
+        overwrite: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Store the file even though the document changed after it "
+                    "was exported. Only for a caller who has looked at what "
+                    "changed and means to replace it: the refusal is there "
+                    "because another agent's write is about to be lost"
+                )
+            ),
+        ] = False,
+    ) -> _DocumentFileResult:
+        # Asked per call rather than once when the server is built, so that
+        # building one costs nothing on disk and a directory removed under a
+        # running server is remade rather than remembered.
+        exports = bulk.export_root()
+        # No wildcard: `?` allocates a number, and a round trip is about a
+        # key that already exists on one end or the other. Allocating one
+        # is `store_document`'s business.
+        at = _named_key(table, key)
+        if path is None:
+            exported = bulk.export_document(table, at, exports)
+            result: dict[str, Any] = {
+                "key": at,
+                "path": str(exported.path),
+                "exported": exported.excerpt.total,
+                "format": exported.excerpt.format,
             }
-            if imported.previous is not None and imported.stored < imported.previous:
-                # Reported rather than refused -- emptying a document is a thing
-                # a person may mean, and `planned/write-preconditions` is where
-                # enforcing anything is being considered. But the arithmetic is
-                # done here: this exact workflow through the command line wrote a
-                # 0-character document over a good one, and a shrink nobody
-                # subtracted is a shrink nobody saw. `context/60/findings`.
-                _add_note(
-                    result,
-                    f"the document shrank from {imported.previous} to "
-                    f"{imported.stored} characters; if that was not intended, the "
-                    f"previous content is gone.",
-                )
+            _add_note(
+                result,
+                "Edit this file in place and call again with its path to store it back.",
+            )
             return _DocumentFileResult.model_validate(result)
+        imported = bulk.import_document(table, at, path, exports, overwrite=overwrite)
+        result = {
+            "key": imported.key,
+            "path": str(path),
+            "stored": imported.stored,
+            "previous": imported.previous,
+            "unchecked": imported.unchecked,
+        }
+        if imported.overwritten:
+            # The refusal turned into a note, which is all `overwrite` does.
+            # Said loudly because what it means is that somebody else's write
+            # is now gone, and the person who lost it is not reading this.
+            _add_note(
+                result,
+                f"the document had changed since it was exported and has been "
+                f"overwritten anyway; what was written at "
+                f"{imported.changed_at} is gone.",
+            )
+        if imported.unedited:
+            # The silent no-op `plans/write-preconditions` names: the round trip
+            # was clean and the edit matched nothing. Free to notice, because
+            # the export recorded what it handed out.
+            _add_note(
+                result,
+                "the file is identical to what was exported, so the edit changed "
+                "nothing; if an edit was intended, it matched nothing.",
+            )
+        if imported.previous is not None and imported.stored < imported.previous:
+            # Reported rather than refused -- emptying a document is a thing
+            # a person may mean, and `plans/write-preconditions` is where
+            # enforcing anything is being considered. But the arithmetic is
+            # done here: this exact workflow through the command line wrote a
+            # 0-character document over a good one, and a shrink nobody
+            # subtracted is a shrink nobody saw. `context/60/findings`.
+            _add_note(
+                result,
+                f"the document shrank from {imported.previous} to "
+                f"{imported.stored} characters; if that was not intended, the "
+                f"previous content is gone.",
+            )
+        return _DocumentFileResult.model_validate(result)
 
     return server
 
@@ -1612,8 +1644,7 @@ def main(argv: list[str] | None = None) -> int:
 
     The console script ``outrage-server``, and the entry point an MCP client
     launches. It resolves the store directory once -- the event log defaults to
-    a file beside it, and ``document_file`` writes under it, so both need the
-    same answer -- opens the mount table, warns on stderr about any mount that
+    a file beside it -- opens the mount table, warns on stderr about any mount that
     shadows keys already held, and hands the table to :func:`build_server`.
 
     Returns rather than exits, for the same reason :func:`outrage.cli.main` does.

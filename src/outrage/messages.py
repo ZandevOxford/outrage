@@ -407,11 +407,11 @@ def _import_file_missing(
         return missing
     # A relative path is taken from the export directory, not from wherever the
     # caller is standing, and the joined result is the only thing this sentence
-    # would otherwise show: `.outrage/export/x.md` typed at the repository root
-    # is reported missing from `.../.outrage/export/.outrage/export/x.md`, and
-    # the doubled segment reads as a bug in the tool rather than as a path
-    # taken from somewhere else. Naming the directory is what makes it read as
-    # what it is. `context/66/state`.
+    # would otherwise show: `export/x.md` typed where a person is standing is
+    # reported missing from `<the export directory>/export/x.md`, and the
+    # doubled segment reads as a bug in the tool rather than as a path taken
+    # from somewhere else. Naming the directory is what makes it read as what
+    # it is. `context/66/state`.
     return f"{missing} - {given!r} is relative to the export directory {root}"
 
 
@@ -420,6 +420,43 @@ def _import_file_escapes_tree(name: Namer, /, *, key: str, path: str, **_: Any) 
     return (
         f"nothing to store at {name(key)!r}: the file at {path} is outside the "
         f"export directory, and only a file exported into it can be stored back"
+    )
+
+
+@template("export-root-unusable")
+def _export_root_unusable(name: Namer, /, *, path: str, because: str, **_: Any) -> str:
+    # The directory is shared with every other user on the machine, so a name
+    # somebody else got to first is refused rather than written into. Saying
+    # which of the reasons it was is what makes it fixable: the answers to a
+    # stale symbolic link and to a directory of another user's are different.
+    return (
+        f"cannot export: the export directory {path} cannot be used because "
+        f"{because}. Remove it, or set TMPDIR to somewhere this user owns"
+    )
+
+
+@template("import-stale")
+def _import_stale(
+    name: Namer,
+    /,
+    *,
+    key: str,
+    path: str,
+    exported_at: str,
+    changed_at: str | None = None,
+    **_: Any,
+) -> str:
+    # Both times, because the pair is the whole story and neither half tells
+    # it: a document written after this file last matched it is what makes the
+    # file stale. "In step with" rather than "exported at" because a successful
+    # import renews the record, so the moment is not always the export.
+    since = f"written again at {changed_at}" if changed_at else "deleted since"
+    return (
+        f"not storing {path} at {name(key)!r}: this file was last in step with "
+        f"the document at {exported_at}, and the document was {since}, so "
+        f"somebody else has written it and storing this file would lose their "
+        f"work. Export it again and redo the edit, or repeat the call with "
+        f"overwrite to store it anyway"
     )
 
 

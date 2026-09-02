@@ -167,11 +167,14 @@ code every call takes.
 `directory` is the store directory, and it has to be passed in: what is
 served is a [`MountedStore`](mounts.md#outrage.mounts.MountedStore), which is a `Store` and
 not a [`FileStore`](store.md#outrage.store.FileStore), so it cannot be asked where it is.
-[`main()`](#outrage.server.main) has already resolved it for the event log. Given one,
-`document_file` is registered and writes under
-[`EXPORT_DIR_NAME`](store.md#outrage.store.EXPORT_DIR_NAME) inside it; without one there is
-nowhere to put a file, and the tool is not offered rather than offered and
-always failing.
+[`main()`](#outrage.server.main) has already resolved it for the event log, which is what still
+wants it.
+
+`document_file` no longer does. It was registered only when there was a
+store directory to write under, because there was nowhere else to put a
+file; since `plans/robust-editing` it writes to
+[`export_root()`](bulk.md#outrage.bulk.export_root), a per-user directory below the system
+temporary directory, which always exists. So the tool is always there.
 
 ### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
@@ -219,8 +222,7 @@ stops.
 
 The console script `outrage-server`, and the entry point an MCP client
 launches. It resolves the store directory once -- the event log defaults to
-a file beside it, and `document_file` writes under it, so both need the
-same answer -- opens the mount table, warns on stderr about any mount that
+a file beside it -- opens the mount table, warns on stderr about any mount that
 shadows keys already held, and hands the table to [`build_server()`](#outrage.server.build_server).
 
 Returns rather than exits, for the same reason [`outrage.cli.main()`](cli.md#outrage.cli.main) does.

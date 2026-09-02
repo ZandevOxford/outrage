@@ -80,11 +80,6 @@ DEFAULT_DIR_NAME = ".outrage"
 #: directory.
 BACKUP_DIR_NAME = "backups"
 
-#: Where a document exported for editing is written, relative to the store
-#: directory. Beside the backups, and for the same reason: it is infrastructure
-#: about the stores rather than one store's own file. See ``context/66``.
-EXPORT_DIR_NAME = "export"
-
 #: How a backup is named within that directory. Sortable, so a listing is in
 #: age order without parsing anything, and to the second, because two backups
 #: in one minute is a thing that happens while working on the store itself.
@@ -2365,7 +2360,6 @@ __all__ = [
     "ENCODINGS",
     "ENV_DIR",
     "EVERYTHING",
-    "EXPORT_DIR_NAME",
     "FAILED",
     "FORMATS",
     "OVERWRITE",

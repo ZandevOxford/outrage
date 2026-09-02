@@ -9,7 +9,11 @@ status and the report are the only parts of that a caller ever sees.
 
 from __future__ import annotations
 
+import json
 import os
+import stat
+import tempfile
+import time
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
@@ -578,21 +582,28 @@ def test_an_omitted_key_exports_from_the_root(populated, tmp_path):
 # -- one document, to a file and back ------------------------------------
 
 
-def test_a_document_exports_to_the_file_its_key_maps_to(populated, tmp_path):
+def test_a_document_exports_to_a_file_named_by_an_id_and_its_format(populated, tmp_path):
     exported = bulk.export_document(populated, "project/reference/env", tmp_path / "export")
 
-    assert exported.path == tmp_path / "export" / "project" / "reference" / "env.json"
+    assert exported.path.parent == tmp_path / "export"
+    assert exported.path.name.startswith(bulk.FALLBACK_PREFIX)
+    assert exported.path.suffix == ".json"
     assert exported.path.read_text() == '{"python": "3.14"}'
-    assert exported.replaced is False
 
 
-def test_exporting_a_key_twice_reuses_one_file_and_says_it_replaced_one(populated, tmp_path):
+def test_exporting_a_key_twice_leaves_the_first_file_alone(populated, tmp_path):
+    """The collision that happens is two agents, not two keys.
+
+    The mapped name this replaces stopped two *keys* landing on one file and
+    did nothing about two sessions editing one key, where the second export
+    destroyed the first's unimported edit. ``plans/robust-editing``.
+    """
     first = bulk.export_document(populated, "project", tmp_path / "export")
     populated.store_document("project", "# Project, edited")
     second = bulk.export_document(populated, "project", tmp_path / "export")
 
-    assert second.path == first.path
-    assert second.replaced is True
+    assert second.path != first.path
+    assert first.path.read_text() == "# Project"
     assert second.path.read_text() == "# Project, edited"
 
 
@@ -605,35 +616,42 @@ def test_a_document_longer_than_one_read_is_exported_whole(store, tmp_path):
     assert exported.excerpt.total == store_module.DEFAULT_MAX_CHARS * 3
 
 
-def test_a_key_with_no_path_of_its_own_gets_a_name_that_keeps_its_format(store, tmp_path):
+def test_a_key_with_no_path_of_its_own_is_exported_like_any_other(store, tmp_path):
+    """What was the fallback is now the only naming, so this key is no longer a case."""
     store.store_document("a/./b", '{"traversal": true}', format="json")
 
     exported = bulk.export_document(store, "a/./b", tmp_path / "export")
 
     assert exported.path.parent == tmp_path / "export"
-    assert exported.path.name.startswith(bulk.FALLBACK_PREFIX)
     assert exported.path.suffix == ".json"
-    assert exported.replaced is False
+    assert exported.record.key == "a/./b"
 
 
-def test_two_unnameable_keys_do_not_land_on_one_file(store, tmp_path):
-    store.store_document("a/./b", "first")
-    store.store_document("c/./d", "second")
+def test_two_keys_never_land_on_one_file(store, tmp_path):
+    """Including the pair a case-insensitive filesystem used to collapse.
 
-    one = bulk.export_document(store, "a/./b", tmp_path / "export")
-    two = bulk.export_document(store, "c/./d", tmp_path / "export")
+    ``export A``, ``export a``, ``import A`` silently stored ``a``'s content,
+    which was accepted rather than fixed while the name came from the key.
+    """
+    store.store_document("A", "upper")
+    store.store_document("a", "lower")
+
+    one = bulk.export_document(store, "A", tmp_path / "export")
+    two = bulk.export_document(store, "a", tmp_path / "export")
 
     assert one.path != two.path
-    assert one.path.read_text() == "first"
-    assert two.path.read_text() == "second"
+    assert one.path.read_text() == "upper"
+    assert two.path.read_text() == "lower"
 
 
-def test_the_root_document_exports_to_the_extension_alone(store, tmp_path):
+def test_the_root_document_is_exported_like_any_other(store, tmp_path):
     store.store_document("", "# The store")
 
     exported = bulk.export_document(store, "", tmp_path / "export")
 
-    assert exported.path == tmp_path / "export" / ".md"
+    assert exported.path.parent == tmp_path / "export"
+    assert exported.path.read_text() == "# The store"
+    assert exported.record.key == ""
 
 
 def test_an_edited_file_imports_back_and_reports_both_sizes(populated, tmp_path):
@@ -652,6 +670,7 @@ def test_an_import_may_store_at_a_key_the_file_did_not_come_from(populated, tmp_
     imported = bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
 
     assert imported.previous is None
+    assert imported.unchecked == "exported from 'project'"
     assert populated.retrieve_document("project/copy").content == "# Project"
 
 
@@ -760,3 +779,297 @@ def test_an_import_refuses_a_file_that_is_not_text(populated, tmp_path):
         bulk.import_document(
             populated, "project", tmp_path / "export" / "binary.md", tmp_path / "export"
         )
+
+
+# -- the export record, and the check it makes possible --------------------
+#
+# The half of `plans/robust-editing` that is not about naming: an export
+# records what it handed out, and an import compares it with what is there now.
+# The three questions a record can answer are in `plans/robust-editing/record`.
+
+
+def test_an_export_records_what_it_handed_out(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+
+    written = bulk.ExportRecord.read(exported.path)
+    assert written == exported.record
+    assert written.key == "project"
+    assert written.content_sha256 == bulk.content_hash("# Project")
+    assert written.format == "markdown"
+    assert written.updated_at == populated.retrieve_document("project").updated_at
+    assert bulk.ExportRecord.path_for(exported.path).name.endswith(bulk.RECORD_SUFFIX)
+
+
+def test_an_import_is_refused_when_the_document_changed_underneath_it(populated, tmp_path):
+    """The reason for the whole thread: the second writer used to win silently."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, my edit")
+    populated.store_document("project", "# Project, somebody else's")
+
+    with pytest.raises(bulk.StaleImportError) as raised:
+        bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert raised.value.code == "import-stale"
+    assert populated.retrieve_document("project").content == "# Project, somebody else's"
+
+
+def test_a_refused_import_names_both_times_and_the_way_out(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project", "# Project, somebody else's")
+
+    with pytest.raises(bulk.StaleImportError) as raised:
+        bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    rendered = messages.render(raised.value)
+    assert exported.record.exported_at in rendered
+    assert populated.retrieve_document("project").updated_at in rendered
+    assert "overwrite" in rendered
+
+
+def test_overwrite_stores_the_stale_file_and_says_what_it_displaced(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, my edit")
+    populated.store_document("project", "# Project, somebody else's")
+    displaced = populated.retrieve_document("project").updated_at
+
+    imported = bulk.import_document(
+        populated, "project", exported.path, tmp_path / "export", overwrite=True
+    )
+
+    assert (imported.overwritten, imported.changed_at) == (True, displaced)
+    assert populated.retrieve_document("project").content == "# Project, my edit"
+
+
+def test_a_document_deleted_since_the_export_is_a_change_like_any_other(populated, tmp_path):
+    """The edit was made against content that is no longer what is there."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.delete("project")
+
+    with pytest.raises(bulk.StaleImportError) as raised:
+        bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert "deleted since" in messages.render(raised.value)
+
+
+def test_a_cross_key_import_is_not_refused_by_the_target_having_changed(populated, tmp_path):
+    """The record's hash is the *source* key's content.
+
+    Comparing it against a different target would refuse every copy around the
+    store as stale, so the question is asked only when the keys agree.
+    ``plans/robust-editing/record``.
+    """
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project/copy", "something else entirely")
+
+    imported = bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
+
+    assert imported.unchecked == "exported from 'project'"
+    assert populated.retrieve_document("project/copy").content == "# Project"
+
+
+def test_a_file_with_no_record_is_imported_and_reported_unchecked(populated, tmp_path):
+    """A missing record degrades to not getting the check, not to being wrong."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    bulk.ExportRecord.path_for(exported.path).unlink()
+    exported.path.write_text("# Project, edited")
+
+    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert imported.unchecked == "no export record"
+    assert populated.retrieve_document("project").content == "# Project, edited"
+
+
+def test_an_unreadable_record_degrades_to_no_check_rather_than_a_refusal(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    bulk.ExportRecord.path_for(exported.path).write_text("not json at all")
+
+    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert imported.unchecked == "no export record"
+
+
+def test_a_record_carrying_a_later_versions_field_is_still_read(populated, tmp_path):
+    """Unknown fields are ignored, so a newer writer does not cost this reader
+    the check it can still make."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    beside = bulk.ExportRecord.path_for(exported.path)
+    held = json.loads(beside.read_text())
+    held["recorded_by_something_later"] = "whatever it is"
+    beside.write_text(json.dumps(held))
+    exported.path.write_text("# Project, edited")
+
+    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert imported.unchecked is None
+
+
+def test_an_unedited_file_says_the_edit_changed_nothing(populated, tmp_path):
+    """The silent no-op: a replace whose anchor matched nothing round-trips
+    perfectly cleanly, and the record notices it for free."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+
+    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert imported.unedited is True
+
+
+def test_an_edited_file_is_not_reported_as_unedited(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, edited")
+
+    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert imported.unedited is False
+
+
+# -- the sweep, which is what a name of its own for every export costs ------
+
+
+def _age(path, seconds):
+    moment = time.time() - seconds
+    os.utime(path, (moment, moment))
+
+
+def test_the_sweep_removes_an_export_and_its_record_once_they_are_old(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    beside = bulk.ExportRecord.path_for(exported.path)
+    for path in (exported.path, beside):
+        _age(path, bulk.EXPORT_MAX_AGE.total_seconds() + 60)
+
+    removed = bulk.sweep_exports(tmp_path / "export")
+
+    assert removed == 2
+    assert not exported.path.exists()
+    assert not beside.exists()
+
+
+def test_the_sweep_keeps_a_record_whose_export_is_still_being_edited(populated, tmp_path):
+    """They age together, by the newer of the two.
+
+    A file edited days after it came out is still being worked on, and sweeping
+    the record out from under it would cost exactly the check it is there for.
+    """
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    beside = bulk.ExportRecord.path_for(exported.path)
+    _age(beside, bulk.EXPORT_MAX_AGE.total_seconds() + 60)
+
+    assert bulk.sweep_exports(tmp_path / "export") == 0
+    assert beside.exists()
+
+
+def test_the_sweep_keeps_what_is_not_yet_old(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    _age(exported.path, bulk.EXPORT_MAX_AGE.total_seconds() - 3600)
+
+    assert bulk.sweep_exports(tmp_path / "export") == 0
+    assert exported.path.exists()
+
+
+def test_an_export_sweeps_what_is_old_on_its_way_past(populated, tmp_path):
+    stale = bulk.export_document(populated, "project", tmp_path / "export")
+    for path in (stale.path, bulk.ExportRecord.path_for(stale.path)):
+        _age(path, bulk.EXPORT_MAX_AGE.total_seconds() + 60)
+
+    fresh = bulk.export_document(populated, "project", tmp_path / "export")
+
+    assert not stale.path.exists()
+    assert fresh.path.exists()
+
+
+def test_the_sweep_says_nothing_about_a_directory_that_is_not_there(tmp_path):
+    assert bulk.sweep_exports(tmp_path / "never-made") == 0
+
+
+# -- the export directory, which is now outside the project ----------------
+
+
+def test_the_export_root_is_created_private_to_this_user(tmp_path, monkeypatch):
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+
+    root = bulk.export_root()
+
+    assert root.parent == tmp_path
+    assert root.is_dir()
+    assert stat.S_IMODE(root.stat().st_mode) == 0o700
+    # Stable per user rather than per process: a restart mid-edit must not
+    # strand the file, because the session that comes back wanted it.
+    assert bulk.export_root() == root
+
+
+def test_the_export_root_refuses_a_path_that_is_not_a_directory(tmp_path, monkeypatch):
+    """``gettempdir()`` is shared, so a name another user got to first is
+    refused rather than written into."""
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    (tmp_path / bulk._export_dir_name()).write_text("somebody else's file")
+
+    with pytest.raises(bulk.ExportRootError) as raised:
+        bulk.export_root()
+
+    assert raised.value.code == "export-root-unusable"
+    assert "not a directory" in messages.render(raised.value)
+
+
+def test_the_export_root_refuses_a_symbolic_link(tmp_path, monkeypatch):
+    """Seen as itself rather than followed, which is the substitution refused."""
+    (tmp_path / "temp").mkdir()
+    (tmp_path / "elsewhere").mkdir()
+    (tmp_path / "temp" / bulk._export_dir_name()).symlink_to(tmp_path / "elsewhere")
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path / "temp"))
+
+    with pytest.raises(bulk.ExportRootError) as raised:
+        bulk.export_root()
+
+    assert "symbolic link" in messages.render(raised.value)
+
+
+def test_a_second_import_of_the_same_file_is_not_refused_by_the_first(populated, tmp_path):
+    """A successful import renews the record, or the tool is one edit per export.
+
+    Without it the next import is refused against a change this call made, and
+    an agent that hits that on its own second import learns to pass
+    ``overwrite`` -- which is the guard being thrown away. ``context/106/findings``.
+    """
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, first edit")
+    bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+    exported.path.write_text("# Project, second edit")
+
+    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert imported.unchecked is None
+    assert imported.overwritten is False
+    assert populated.retrieve_document("project").content == "# Project, second edit"
+
+
+def test_a_renewed_record_still_catches_another_writer(populated, tmp_path):
+    """The renewal must not become a way of never being refused again."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, my edit")
+    bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+    populated.store_document("project", "# Project, somebody else's")
+    exported.path.write_text("# Project, my second edit")
+
+    with pytest.raises(bulk.StaleImportError):
+        bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+
+def test_a_renewed_record_carries_what_was_stored(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, edited")
+
+    bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    renewed = bulk.ExportRecord.read(exported.path)
+    assert renewed.content_sha256 == bulk.content_hash("# Project, edited")
+    assert renewed.updated_at == populated.retrieve_document("project").updated_at
+    assert renewed.key == "project"
+
+
+def test_a_cross_key_import_leaves_the_record_naming_where_it_came_from(populated, tmp_path):
+    """Renewing it would silently turn a copy into an edit claim on the target."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, copied")
+
+    bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
+
+    assert bulk.ExportRecord.read(exported.path) == exported.record

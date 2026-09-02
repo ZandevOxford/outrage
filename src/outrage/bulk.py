@@ -30,11 +30,16 @@ is the copy that keeps all of it.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import tempfile
 from collections.abc import Generator, Iterator
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
+from dataclasses import fields as dataclass_fields
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
+from stat import S_ISDIR, S_ISLNK
 
 from . import keys, messages, store
 from .errors import OutrageError
@@ -802,16 +807,36 @@ def pack(
 # a key is called on disk. See ``context/66/decisions``.
 
 
-#: The mapping failures a single-document export answers with a random name
-#: instead of a refusal, and exactly those: a key that cannot be a path is
-#: still a key somebody wants to edit, and there is nowhere else for it to go.
-#: Anything else :func:`path_for_key` or :func:`contained_path` raises is a
-#: refusal, and stays one.
-UNNAMEABLE = ("key-segment-is-traversal", "key-escapes-tree")
+#: The per-user directory exports live in, below :func:`tempfile.gettempdir`.
+#: Not inside the store directory: one file per key there meant two sessions
+#: editing one key shared one file, and the second export overwrote the first's
+#: unimported edit. That is the collision that happens, and
+#: ``plans/robust-editing`` is why this moved.
+#:
+#: The uid is in the name because ``gettempdir()`` is shared between users on a
+#: POSIX machine. Windows has no uid and its temporary directory is already per
+#: user, so there the prefix is the whole name -- and that half is as untested
+#: as ``plans/hook-install/windows``, which is said rather than claimed.
+EXPORT_DIR_PREFIX = "outrage-export"
 
-#: What a key with no path of its own is named instead. Not
-#: :data:`TEMP_PREFIX`, which marks a file that is half written and that a
-#: reader must skip: this one is the export, and it is finished.
+#: What is written beside an export to record what was handed out, read back by
+#: an import. ``plans/robust-editing/record`` is the format and the three
+#: questions it answers.
+RECORD_SUFFIX = ".outrage.json"
+
+#: How long an export and its record are kept. Exports no longer overwrite one
+#: another, so nothing else removes them: a sweep by age is what a name of its
+#: own for every export costs. Seven days is John's call, 2026-09-02 - long
+#: enough that an edit picked up after a weekend still has its record.
+EXPORT_MAX_AGE = timedelta(days=7)
+
+#: What every export is named, an id and the format's extension and nothing
+#: else. Not :data:`TEMP_PREFIX`, which marks a file that is half written and
+#: that a reader must skip: this one is the export, and it is finished.
+#:
+#: This was the *fallback*, for a key with no path of its own. Since
+#: ``plans/robust-editing`` there is no other naming, and the constant survives
+#: its own exception: what it named is now what every export is called.
 FALLBACK_PREFIX = "document-"
 
 
@@ -819,19 +844,30 @@ class FileMissingError(OutrageError, FileNotFoundError):
     """Raised when the file to import one document from is not there."""
 
 
+class ExportRootError(OutrageError):
+    """Raised when the directory exports would go in is not safely this user's."""
+
+
+class StaleImportError(OutrageError):
+    """Raised when the document changed after the file being imported came out.
+
+    The lost-update problem, refused rather than reported: two agents editing
+    one key are both doing something reasonable, so a guard aimed at them
+    cannot be advisory. ``overwrite`` is what keeps the refusal from being a
+    hard bound - the caller who has looked and meant it has one word to say so.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class Exported:
-    """What exporting one document did: where it went, and what stood there."""
+    """What exporting one document did: where it went, and what was recorded."""
 
     path: Path
-    """The file written."""
+    """The file written, a fresh one on every export."""
     excerpt: store.Excerpt
     """The document written to it, whole."""
-    replaced: bool
-    """Whether a file was already at that path. A fact, not a refusal:
-    overwriting on re-export is the point of a deterministic name, and the case
-    it costs is an edit that had not been imported back yet. See
-    ``context/66/decisions``, call 1."""
+    record: ExportRecord
+    """What was written to the sidecar beside it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -846,48 +882,274 @@ class Imported:
     """Characters the key held before, or None if it held nothing. The
     distinction is kept because an empty document and no document are different
     things to have overwritten."""
+    unchecked: str | None = None
+    """Why the document was not compared with what was exported, or None when
+    it was. A missing record and a cross-key import both land here: the write
+    happens either way, and the caller is told the check did not."""
+    unedited: bool = False
+    """Whether the file is byte-identical to what the export handed out, so the
+    edit matched nothing. Not a refusal - storing an unchanged document is
+    harmless - but it is the silent no-op ``plans/write-preconditions`` names,
+    and the record closes it for free."""
+    overwritten: bool = False
+    """Whether ``overwrite`` allowed a write this check would have refused."""
+    changed_at: str | None = None
+    """What the displaced document's ``updated_at`` was, for the sentence that
+    says what ``overwrite`` overwrote. None when the key held nothing."""
 
 
-def file_for_key(
-    root: str | os.PathLike[str], key: str, format: str | None = None
-) -> tuple[Path, bool]:
-    """The file under ``root`` that ``key`` is exported to, and whether it is the
-    key's own.
+@dataclass(frozen=True, slots=True)
+class ExportRecord:
+    """What an export handed out, as the sidecar beside it records it.
 
-    The key's own mapped path, so exporting a key twice reuses one file:
-    nothing accumulates, and a stale copy of an earlier export cannot be picked
-    up by mistake. The cost is taken deliberately - a second export overwrites
-    an edit that had not been imported back yet.
+    A file rather than the filename or a table in the server process. The
+    filename caps the record at what fits, truncates the hash and loses the
+    check silently on a rename; a table dies with the server, and takes
+    :func:`export_document` and :func:`import_document`'s standalone usefulness
+    with it. A sidecar survives a restart, extends without a format change,
+    and when it is missing an import degrades to *not getting the check*
+    rather than to being wrong. John's call 1, 2026-09-02.
 
-    **A key with no path gets a random name here instead**, for the two cases
-    in :data:`UNNAMEABLE`. It still carries the format's extension, because
-    with the key and the path free to disagree the path is the only thing left
-    that says what the content is.
-
-    The root key is not one of those cases: it maps to the extension alone at
-    the top of ``root``, which is hidden and valid.
-
-    The flag says which of the two happened, because the answers differ in what
-    a caller may say about the file: a mapped path may already hold an earlier
-    export, and a fallback never does.
+    The fields are shaped for the precondition ``plans/write-preconditions``
+    will eventually put inside ``Store.store_document``, not for the comparison
+    below alone: the token is what a store-level precondition would take, and
+    it covers the body and nothing else, because that is exactly what a write
+    covers. **Unknown fields are ignored on read**, so a later writer can
+    record more without making the files an older reader must still import
+    unreadable.
     """
+
+    key: str
+    """The key that was exported. An import to a *different* key is how content
+    is copied around the store, not an edit, so the comparison does not apply
+    to it -- see :func:`import_document`."""
+    content_sha256: str
+    """Hex sha256 of the exported content as UTF-8. The token that decides.
+    Named for its algorithm rather than ``hash`` so a second one can be added
+    beside it rather than replacing it."""
+    exported_at: str
+    """When the export happened, UTC."""
+    format: str | None = None
+    """The document's stored format."""
+    updated_at: str | None = None
+    """What the document's ``updated_at`` was. **Recorded for the sentence, not
+    for the decision**: it is normalised to second precision, so two writes
+    inside one second are indistinguishable. The hash decides; this is what
+    makes a refusal readable by a person."""
+    store: str | None = None
+    """Where the store was, when it could be asked. Recorded and **not
+    enforced**: a file exported from one store and imported into another is a
+    copy between stores, which is a thing somebody may mean, and the record is
+    there so the answer can say it happened."""
+
+    @staticmethod
+    def path_for(file: str | os.PathLike[str]) -> Path:
+        """Where the record for the export at ``file`` is kept."""
+        path = Path(file)
+        return path.with_name(path.name + RECORD_SUFFIX)
+
+    def write(self, file: str | os.PathLike[str]) -> Path:
+        """Write this record beside the export at ``file``."""
+        beside = self.path_for(file)
+        _write_file(beside, json.dumps(asdict(self), indent=2, sort_keys=True) + "\n")
+        return beside
+
+    @classmethod
+    def read(cls, file: str | os.PathLike[str]) -> ExportRecord | None:
+        """The record beside the export at ``file``, or None if there is none to read.
+
+        None rather than a raise for every way it can be absent - not there,
+        not JSON, not an object, missing a field this needs. A hand-written
+        file dropped into the export directory is still importable, as it was
+        before there were records at all, and an import that cannot read one
+        says so and proceeds.
+        """
+        try:
+            written = cls.path_for(file).read_text(encoding="utf-8")
+        except (OSError, ValueError):
+            return None
+        try:
+            held = json.loads(written)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(held, dict):
+            return None
+        fields = {field.name for field in dataclass_fields(cls)}
+        # Unknown names dropped rather than refused, which is the half of the
+        # format promise a reader keeps: a newer writer's extra field must not
+        # cost this reader the check it can still make.
+        known = {name: value for name, value in held.items() if name in fields}
+        try:
+            return cls(**known)
+        except TypeError:
+            return None
+
+    def followed(self, opened: store.Store, key: str, content: str) -> ExportRecord:
+        """This record moved on to ``content``, which ``key`` now holds.
+
+        What an import writes back. The record is a claim about *what the edit
+        was made against*, and an import that succeeds makes the file and the
+        document agree again -- so the claim is renewed rather than left
+        pointing at the state before the write.
+
+        ``key`` is the key this record already names: an import to a different
+        one is a copy, and rewriting the record would silently turn the file
+        into an edit claim on a key it did not come from.
+        """
+        return replace(
+            self,
+            content_sha256=content_hash(content),
+            updated_at=_updated_at(opened, key),
+            exported_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        )
+
+
+def content_hash(content: str) -> str:
+    """The token a record carries: hex sha256 of ``content`` as UTF-8.
+
+    A hash rather than the length, which is what ``context/60/findings`` had
+    and is a weak token: a substitution that keeps the length is exactly the
+    edit a careless script makes. This costs one read an import already makes.
+    """
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def export_root() -> Path:
+    """This user's export directory, created if it is not already there.
+
+    A stable directory swept by age rather than a fresh one per server process,
+    which is John's call 3, 2026-09-02: a restart mid-edit must not strand the
+    file, because the session that comes back is the one that wanted it. What
+    it costs is that files accumulate, which :func:`sweep_exports` answers.
+
+    Created ``0700`` and, when it is already there, **required to be a
+    directory, ours, and not a symbolic link** - refused rather than written
+    into otherwise. ``gettempdir()`` is shared between users on a POSIX
+    machine, so a directory at a name another user could have pre-created is
+    the one new risk moving out of the project took on.
+    """
+    root = Path(tempfile.gettempdir()) / _export_dir_name()
     try:
-        return contained_path(root, path_for_key(key, format), key), True
-    except UnmappableError as exc:
-        if exc.code not in UNNAMEABLE:
-            raise
+        root.mkdir(mode=0o700, parents=True)
+    except FileExistsError:
+        # Verified only when we did not just create it, so there is no window
+        # between the check and the creation for anyone to land in.
+        _check_export_root(root)
+    else:
+        # Asked for again because `mkdir` masks its mode with the umask, and
+        # the mode is the whole point: nobody else reads what is being edited.
+        root.chmod(0o700)
+    return root
+
+
+def _export_dir_name() -> str:
+    """What :func:`export_root` is called, uid and all where there is one."""
+    uid = getattr(os, "getuid", None)
+    return EXPORT_DIR_PREFIX if uid is None else f"{EXPORT_DIR_PREFIX}-{uid()}"
+
+
+def _check_export_root(root: Path) -> None:
+    """Refuse ``root`` unless it is a directory this user owns."""
+    try:
+        found = os.lstat(root)
+    except OSError as exc:
+        raise ExportRootError(
+            "export-root-unusable", path=str(root), because=f"it cannot be examined: {exc}"
+        ) from exc
+    # `lstat`, so a symbolic link is seen as itself rather than followed to
+    # whatever it points at, which is the substitution being refused.
+    if S_ISLNK(found.st_mode):
+        raise ExportRootError(
+            "export-root-unusable", path=str(root), because="it is a symbolic link"
+        )
+    if not S_ISDIR(found.st_mode):
+        raise ExportRootError(
+            "export-root-unusable", path=str(root), because="it is not a directory"
+        )
+    owner = getattr(os, "geteuid", None)
+    if owner is not None and found.st_uid != owner():
+        raise ExportRootError(
+            "export-root-unusable", path=str(root), because=f"it is owned by uid {found.st_uid}"
+        )
+
+
+def new_export_file(root: str | os.PathLike[str], format: str | None = None) -> Path:
+    """A file under ``root`` for one export, and for nothing that came before it.
+
+    An id and the format's extension, with **no slug of the key in it**: John's
+    call, 2026-09-02. A name derived from the key stops two *keys* colliding
+    and does nothing about two *agents* colliding, which is the collision that
+    happens.
+
+    ``mkstemp`` for the guarantee that the name is free - the mechanism the
+    unnameable-key fallback already used, promoted from the exception to the
+    only path. The extension stays because with the key and the path free to
+    disagree, the path is the only thing left that says what the content is.
+
+    What this costs is discoverability, and it is accepted: a person can no
+    longer work out where a key's export is. The export result carries the
+    path, and :class:`ExportRecord` is what makes a directory of ids readable
+    after the fact - every file has one, and it names the key.
+    """
     directory = Path(root)
     directory.mkdir(parents=True, exist_ok=True)
-    # `mkstemp` rather than a name of our own, for the guarantee that the name
-    # is free: two unnameable keys must not land on one file, which is the one
-    # thing a random name is here to avoid.
     handle, named = tempfile.mkstemp(
         dir=directory,
         prefix=FALLBACK_PREFIX,
         suffix=EXTENSION_BY_FORMAT.get(format or "markdown", EXTENSION_BY_FORMAT["markdown"]),
     )
     os.close(handle)
-    return Path(named), False
+    return Path(named)
+
+
+def sweep_exports(
+    root: str | os.PathLike[str],
+    max_age: timedelta = EXPORT_MAX_AGE,
+    now: datetime | None = None,
+) -> int:
+    """Remove exports and records under ``root`` older than ``max_age``, and count them.
+
+    **An export and its record age together**, by the newer of the two: a file
+    edited days after it came out is still being worked on, and sweeping the
+    record out from under it would cost exactly the check it is there for.
+
+    Best effort throughout - a file that cannot be stat'd or removed is left
+    alone rather than raising. This runs on the way to an export, and failing
+    that export because somebody else's leftovers are unreadable would be a
+    worse answer than leaving them there.
+    """
+    directory = Path(root)
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        return 0
+    cutoff = (now or datetime.now(UTC)).timestamp() - max_age.total_seconds()
+    ages: dict[Path, float] = {}
+    for entry in entries:
+        name = entry.name
+        exported = (
+            entry.with_name(name[: -len(RECORD_SUFFIX)])
+            if name.endswith(RECORD_SUFFIX)
+            else entry
+        )
+        try:
+            if not entry.is_file():
+                continue
+            touched = entry.stat().st_mtime
+        except OSError:
+            continue
+        ages[exported] = max(ages.get(exported, touched), touched)
+    removed = 0
+    for exported, touched in ages.items():
+        if touched >= cutoff:
+            continue
+        for path in (exported, ExportRecord.path_for(exported)):
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            removed += 1
+    return removed
 
 
 def contained_file(root: str | os.PathLike[str], path: str | os.PathLike[str], key: str) -> Path:
@@ -923,44 +1185,84 @@ def contained_file(root: str | os.PathLike[str], path: str | os.PathLike[str], k
         raise UnmappableError("import-file-escapes-tree", key=key, path=str(given)) from exc
 
 
-def export_document(
-    opened: store.Store, key: str, root: str | os.PathLike[str]
-) -> Exported:
-    """Write the document at ``key`` to its file under ``root``, whole.
+def export_document(opened: store.Store, key: str, root: str | os.PathLike[str]) -> Exported:
+    """Write the document at ``key`` to a fresh file under ``root``, whole.
 
     The whole document rather than a slice, which is the only readable size: a
     slice edited and imported back is a silent truncation of everything the
     read stopped short of.
+
+    A file of its own every time, with :class:`ExportRecord` beside it saying
+    what was handed out, so :func:`import_document` can tell whether the store
+    still holds what the edit was made against. Nothing is overwritten here,
+    which is the whole of ``plans/robust-editing``: the old mapped name meant a
+    second session's export destroyed the first's unimported edit.
     """
     excerpt = store.read_all(opened, key)
-    path, mapped = file_for_key(root, key, excerpt.format)
-    # Asked before the write, which is the only moment it can be asked:
-    # `_write_file` replaces, and afterwards the file is there either way. Only
-    # of a mapped path -- a fallback name is allocated by creating the file, so
-    # the file being there says nothing about what was.
-    replaced = mapped and path.exists()
+    # Before the export rather than after, so that a failure to write the one
+    # file this call is for is not preceded by removing anything.
+    sweep_exports(root)
+    path = new_export_file(root, excerpt.format)
     _write_file(path, excerpt.content)
-    return Exported(path=path, excerpt=excerpt, replaced=replaced)
+    record = ExportRecord(
+        key=key,
+        content_sha256=content_hash(excerpt.content),
+        exported_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        format=excerpt.format,
+        updated_at=excerpt.updated_at,
+        store=_store_location(opened),
+    )
+    record.write(path)
+    return Exported(path=path, excerpt=excerpt, record=record)
+
+
+def _store_location(opened: store.Store) -> str | None:
+    """Where ``opened`` keeps what it holds, when there is one place to name.
+
+    A :class:`~outrage.mounts.MountedStore` is not a
+    :class:`~outrage.store.FileStore` and has no single location, so under the
+    server this is usually absent - which is why the field is recorded and not
+    enforced. What it is for is the sentence, not a decision.
+    """
+    path = getattr(opened, "path", None)
+    return None if path is None else str(path)
 
 
 def import_document(
-    opened: store.Store, key: str, path: str | os.PathLike[str], root: str | os.PathLike[str]
+    opened: store.Store,
+    key: str,
+    path: str | os.PathLike[str],
+    root: str | os.PathLike[str],
+    *,
+    overwrite: bool = False,
 ) -> Imported:
     """Store the content of ``path`` at ``key``, and say what it displaced.
 
-    ``path`` must be inside ``root``, which is the whole of the check: a tool
-    that stored any file the caller named would read anything the server can
-    read. See ``project/reference/planned/export-traversal``.
+    ``path`` must be inside ``root``, which is the whole of the security check:
+    a tool that stored any file the caller named would read anything the server
+    can read. See ``project/reference/planned/export-traversal``.
 
     **A relative ``path`` is relative to ``root``**, not to the working
     directory: it is relativised before it is checked, so the containment rule
-    is asked once. ``tmp/1.md`` is a good way to name an export; the same file
-    named ``.outrage/export/tmp/1.md`` from the repository root is not.
+    is asked once.
 
     **The key and the path do not have to agree.** The content is stored where
     the caller says, whatever file it came from, which is what makes an export,
     an edit and an import to a second key a way of copying content around the
     store.
+
+    **A document that changed after the export is refused**, unless
+    ``overwrite`` says to store it anyway. That is the lost-update problem, and
+    the reason for the record: another writer has been there since the export,
+    and this import would silently lose their write. The comparison is asked
+    only when the record names the key being written - the record's hash is the
+    *source* key's content, so comparing it against a different target would
+    refuse every cross-key import as stale.
+
+    What it is not is a compare-and-swap. The comparison happens here, between
+    a read and a write, so two imports in the same instant both pass. The real
+    precondition belongs inside ``Store.store_document`` and stays
+    ``plans/write-preconditions``.
 
     An empty file is stored rather than refused - emptying a document is a
     thing a person may legitimately mean. What guards the accident is the
@@ -985,12 +1287,83 @@ def import_document(
         ) from exc
     except UnicodeDecodeError as exc:
         raise NotTextError("files-not-text", key=key, path=str(file)) from exc
-    try:
-        previous: int | None = opened.retrieve_document(key, max_chars=1).total
-    except store.KeyNotFoundError:
-        previous = None
+
+    record = ExportRecord.read(file)
+    # Asked of the file against what went out, whatever key it is going to: an
+    # edit that matched nothing is a no-op wherever it is being stored.
+    unedited = record is not None and content_hash(content) == record.content_sha256
+    unchecked: str | None = None
+    overwritten = False
+    changed_at: str | None = None
+    if record is None:
+        unchecked = "no export record"
+    elif record.key != key:
+        unchecked = f"exported from {record.key!r}"
+    if record is None or unchecked is not None:
+        previous = _size_of(opened, key)
+    else:
+        try:
+            held: store.Excerpt | None = store.read_all(opened, key)
+        except store.KeyNotFoundError:
+            # Deleted since the export, which is a change like any other: the
+            # edit was made against content that is no longer what is there.
+            held = None
+        previous = None if held is None else held.total
+        changed_at = None if held is None else held.updated_at
+        if held is None or content_hash(held.content) != record.content_sha256:
+            if not overwrite:
+                raise StaleImportError(
+                    "import-stale",
+                    key=key,
+                    path=str(file),
+                    exported_at=record.exported_at,
+                    changed_at=changed_at,
+                )
+            overwritten = True
+
     written = opened.store_document(key, content, _format_of(file.name))
-    return Imported(key=written, stored=len(content), previous=previous)
+    if record is not None and unchecked is None:
+        # The import moved the store to what the file holds, so the record has
+        # to move with it or the *next* import of the same file is refused
+        # against a change this call made. Without this the tool is one edit
+        # per export, and an agent that hits the refusal on its own second
+        # import learns to pass `overwrite`, which is the guard being thrown
+        # away. `context/106/findings`.
+        record.followed(opened, written, content).write(file)
+    return Imported(
+        key=written,
+        stored=len(content),
+        previous=previous,
+        unchecked=unchecked,
+        unedited=unedited,
+        overwritten=overwritten,
+        changed_at=changed_at if overwritten else None,
+    )
+
+
+def _updated_at(opened: store.Store, key: str) -> str | None:
+    """When ``key`` was last written, or None if it holds nothing.
+
+    A one-character read, because the timestamp is metadata about the document
+    rather than part of it: this is for the record's sentence, not its decision.
+    """
+    try:
+        return opened.retrieve_document(key, max_chars=1).updated_at
+    except store.KeyNotFoundError:
+        return None
+
+
+def _size_of(opened: store.Store, key: str) -> int | None:
+    """What ``key`` holds, in characters, or None when it holds nothing.
+
+    The cheap read, for the paths that do not need the content: an empty
+    document and no document are different things to have overwritten, and the
+    report distinguishes them.
+    """
+    try:
+        return opened.retrieve_document(key, max_chars=1).total
+    except store.KeyNotFoundError:
+        return None
 
 
 def _format_of(name: str) -> str | None:
@@ -1014,34 +1387,42 @@ def _check_conflict(on_conflict: str) -> None:
 
 __all__ = [
     "Document",
+    "EXPORT_DIR_PREFIX",
+    "EXPORT_MAX_AGE",
     "EXTENSION_BY_FORMAT",
+    "ExportRecord",
     "Exported",
     "FALLBACK_PREFIX",
     "FORMAT_BY_EXTENSION",
     "Imported",
     "PAGE",
     "Packable",
+    "RECORD_SUFFIX",
     "TEMP_PREFIX",
     "TRAVERSAL",
-    "UNNAMEABLE",
+    "ExportRootError",
     "FileMissingError",
     "OverlappingCopyError",
     "SourceMissingError",
+    "StaleImportError",
     "UnmappableError",
     "contained_file",
     "contained_path",
+    "content_hash",
     "copied",
     "documents_from_store",
     "documents_from_tree",
     "export_document",
+    "export_root",
     "export_tree",
-    "file_for_key",
     "import_document",
     "import_tree",
     "pack",
     "key_for_path",
     "levels",
+    "new_export_file",
     "overlapping",
     "path_for_key",
+    "sweep_exports",
     "walk",
 ]

@@ -104,12 +104,6 @@ are tried in.
 Every key at and below the root: the default selection for a call that puts
 no bound of its own on which part of the hierarchy it reads.
 
-### outrage.store.EXPORT_DIR_NAME *= 'export'*
-
-Where a document exported for editing is written, relative to the store
-directory. Beside the backups, and for the same reason: it is infrastructure
-about the stores rather than one store's own file. See `context/66`.
-
 ### outrage.store.FAILED *= 'failed'*
 
 This one could not cross, and the rest were still tried. `reason` says why.
