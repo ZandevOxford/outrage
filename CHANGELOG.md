@@ -2,6 +2,35 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.6.0 - 2026-09-02
+
+0.6.0 makes editing a document through a file safe when more than one agent is
+writing the store, and renames the tool that does it.
+
+* **Breaking: the `document_file` MCP tool is now `document_edit`.** There is no
+  alias and the old name no longer exists; callers naming it must be changed to
+  the new one, whose arguments and behaviour are otherwise unchanged. The name
+  now says what the tool does - take a document out for editing and put it back
+  - rather than describing the file as the point of it.
+* **An edit exported to a file now survives another writer.** Every export gets
+  a file of its own and a record of what the document held when it came out, so
+  an import whose document has been written since is refused rather than
+  silently discarding that writer's work. `overwrite` stores it anyway, for a
+  caller who has looked at what changed. A successful import renews the record,
+  so one export can carry more than one edit.
+* **`store_document` and `document_edit` accept `against`, the path of an
+  exported file whose record checks the write.** Only the record is read and
+  never the file's content, so a document exported and then edited in context
+  gets the same staleness refusal as one edited on disk, and a cross-key import
+  can take its content from one file and its claim about the target from
+  another. A write that cannot be checked is refused as well as one that fails
+  the check, both liftable with `overwrite`.
+* **A verbatim cross-key copy is no longer reported as an edit that changed
+  nothing.** Importing an unedited exported file into a different key is how
+  content is copied around the store, and the document it lands on does change;
+  the note now describes the file rather than contradicting the sizes reported
+  beside it.
+
 ## 0.5.1 - 2026-09-02
 
 0.5.1 corrects mounted-store event logs, makes large Parquet stores much less
