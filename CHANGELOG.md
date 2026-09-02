@@ -2,6 +2,24 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.5.1 - 2026-09-02
+
+0.5.1 corrects mounted-store event logs, makes large Parquet stores much less
+expensive to open, and repairs the package's direct dependency metadata.
+
+* **Events from a mounted store now log keys in the outer namespace.** Logged
+  arguments, range bounds, cursors, allocated keys and bounded key lists carry
+  the mount point, matching the keys callers use without changing routing,
+  storage or returned values.
+* **The Parquet index now keeps Arrow columns instead of a Python object per
+  row.** It derives key lookup, child ranges and metadata names from the file's
+  existing order, substantially reducing memory use while preserving the
+  backend contract and improving its largest lookup paths.
+* **Pydantic is now a direct runtime dependency.** The server imports its
+  Pydantic 2 APIs directly, rather than relying on `mcp` to install them
+  transitively. Omnidep is included as a development dependency and its check
+  is documented alongside the existing test and lint commands.
+
 ## 0.5.0 - 2026-09-01
 
 0.5.0 adds bounded programmatic document search to the Python and MCP
