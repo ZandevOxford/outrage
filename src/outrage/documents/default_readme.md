@@ -32,7 +32,8 @@ Suggested namespace for documents where `?` represents an auto-incremented
 path segment. Create these as needed.
 
 * `current`: a brief summary of the current state, routing to what has just
-  been done and what is next.
+  been done and what may be next. This should be kept short, with just
+  routing and very brief notes on important open items.
 * `readme`: the conventions used throughout this project. Every session is
   told to read it first, so routing to particular subject matter belongs in
   `contents` instead.
