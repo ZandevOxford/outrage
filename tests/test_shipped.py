@@ -110,7 +110,7 @@ def test_the_tool_descriptions_are_the_documents_here():
         "keys_missing_meta",
         "delete_keys",
         "copy_tree",
-        "document_file",
+        "document_edit",
     )
     with shipped.open_documents() as store:
         descriptions = {name: store.retrieve_document(f"tools/{name}").content for name in names}
@@ -141,7 +141,7 @@ def test_default_readme_routes_detailed_working_practice():
     assert "`context/?/task`" in default
     assert "`!summary`" in default
     assert "`outrage/workflow`" in default
-    assert "`document_file`" in workflow
+    assert "`document_edit`" in workflow
     assert "Before handoff or compaction" in workflow
 
 

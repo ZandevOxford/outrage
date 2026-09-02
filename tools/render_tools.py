@@ -1,8 +1,8 @@
 """Render the MCP tools registered by ``build_server`` as Markdown.
 
 The built server is the source of truth for tool order, descriptions, input
-schemas and output schemas. Building it with a directory also includes tools
-that are conditional on having somewhere to write, such as ``document_file``.
+schemas and output schemas. Every tool is registered unconditionally, so a
+server built over any store renders the whole set.
 """
 
 from __future__ import annotations

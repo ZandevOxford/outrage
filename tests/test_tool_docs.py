@@ -24,7 +24,7 @@ def test_every_registered_tool_documents_its_schema():
     rendered = render_tools.render(tools)
 
     assert "## `read_document`" in rendered
-    assert "## `document_file`" in rendered
+    assert "## `document_edit`" in rendered
     assert "- `key` (string; required) — Key to read" in rendered
     assert "- `offset` (integer; default 0; minimum 0)" in rendered
     assert "- `meta_name` (array[string] or null; default null; minimum items 1)" in rendered

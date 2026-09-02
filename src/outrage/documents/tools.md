@@ -49,7 +49,7 @@ Use the `?` auto-increment path segment to add documents with incrementing
 ids. This is safe to use across parallel agents.
 
 **Pass `against` when you are storing back a document you read out with
-`document_file`** and edited here rather than on disk. It is that exported
+`document_edit`** and edited here rather than on disk. It is that exported
 file's path; only its record is read, never its content, and the write is
 refused if somebody else has written the document since it came out. Without
 it this call overwrites whatever is there.
@@ -61,7 +61,7 @@ it this call overwrites whatever is there.
 - `format` ("markdown" or "json" or "text" or "html" or null; default null) — 'markdown', 'json', 'text' or 'html'; detected from the content when omitted, though detection never chooses 'text'
 - `title` (string or null; default null) — Short title, stored as the key's '!title' metadata in the same write
 - `encoding` ("json-string" or null; default null) — How `content` and `title` are encoded in this call, not how they are stored. Pass 'json-string' to send each as a JSON string literal, quotes and escapes included; it is decoded before storing, so the stored document is plain text either way. Use it when the value is long or generated: a damaged value then fails loudly here instead of being stored as if it were correct. Omit to send the text as-is.
-- `against` (string or null; default null) — Path of a file `document_file` exported from `key`, to check this write against. Its content is not read - only its record of what the document held when it came out - so the write is refused if somebody else has written the document since. Pass it when storing back a document you exported and edited without editing the file
+- `against` (string or null; default null) — Path of a file `document_edit` exported from `key`, to check this write against. Its content is not read - only its record of what the document held when it came out - so the write is refused if somebody else has written the document since. Pass it when storing back a document you exported and edited without editing the file
 - `overwrite` (boolean; default false) — Store the content even though `against` refuses it: the document changed after that file came out, or the file cannot say. Only for a caller who has looked at what changed and means to replace it
 
 ### Returns
@@ -279,7 +279,7 @@ and `on_conflict` decides one key at a time.
 
 To move, copy and then delete_keys.
 
-To split one document into two keys use `document_file` instead.
+To split one document into two keys use `document_edit` instead.
 
 This copy is paged; pass `next_cursor` as `cursor` to continue.
 
@@ -322,11 +322,12 @@ With `reroot` the two subtrees must not overlap.
 - `key` (string or null; required) — Destination key that failed
 - `reason` (string or null; required) — Why it failed
 
-## `document_file`
+## `document_edit`
 
-Move one document between the store and a file, so a long document can be
-edited by shell tools without its unchanged text passing through the
-context.
+Take one document out for editing and put it back, so a long document can be
+changed by shell tools without its unchanged text passing through the
+context. A file is how the edit is carried, and a path handed back here is a
+claim about what was edited rather than just a source of bytes.
 
 **Omit `path` to export**: the whole document at `key` is
 written to a file and the path returned, ready to be edited in place with

@@ -1,6 +1,7 @@
-Move one document between the store and a file, so a long document can be
-edited by shell tools without its unchanged text passing through the
-context.
+Take one document out for editing and put it back, so a long document can be
+changed by shell tools without its unchanged text passing through the
+context. A file is how the edit is carried, and a path handed back here is a
+claim about what was edited rather than just a source of bytes.
 
 **Omit `path` to export**: the whole document at `key` is
 written to a file and the path returned, ready to be edited in place with

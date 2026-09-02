@@ -74,9 +74,9 @@ def test_tools_are_registered(server):
         "keys_missing_meta",
         "delete_keys",
         "copy_tree",
-        "document_file",
+        "document_edit",
     }
-    # `document_file` included, though this server was built without a store
+    # `document_edit` included, though this server was built without a store
     # directory: it writes below the system temporary directory, which always
     # exists. See `test_the_file_tool_is_offered_without_a_store_directory`.
     assert tools["read_document"].annotations.read_only_hint is True
@@ -98,7 +98,7 @@ def test_every_tool_description_is_the_shipped_document(exporting):
         "keys_missing_meta",
         "delete_keys",
         "copy_tree",
-        "document_file",
+        "document_edit",
     }
     for name, tool in tools.items():
         assert tool.description == server_module.tool_description(name)
@@ -170,7 +170,7 @@ def test_tool_schemas_describe_their_results(exporting):
     assert search["properties"]["matches"]["items"] == {"$ref": "#/$defs/_DocumentMatchResult"}
     assert search["properties"]["next_cursor"]["description"]
 
-    file_result = tools["document_file"].output_schema
+    file_result = tools["document_edit"].output_schema
     assert set(file_result["required"]) == {"key", "path"}
 
 
@@ -1212,12 +1212,12 @@ def test_the_file_tool_is_offered_without_a_store_directory(exporting, server):
     ``build_server`` still takes ``directory`` -- the event log wants it -- but
     the tool no longer depends on it. ``plans/robust-editing``.
     """
-    assert "document_file" in list_tools(exporting)
-    assert "document_file" in list_tools(server)
+    assert "document_edit" in list_tools(exporting)
+    assert "document_edit" in list_tools(server)
 
 
 def test_exporting_writes_the_document_to_a_file_of_its_own(exporting, exports):
-    result = call(exporting, "document_file", key="context/a1b2/design")
+    result = call(exporting, "document_edit", key="context/a1b2/design")
 
     assert Path(result["path"]).parent == exports
     assert Path(result["path"]).read_text() == "# Store schema"
@@ -1226,10 +1226,10 @@ def test_exporting_writes_the_document_to_a_file_of_its_own(exporting, exports):
 
 
 def test_a_file_edited_on_disk_is_stored_back(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     Path(exported["path"]).write_text("# Store schema, revised")
 
-    imported = call(exporting, "document_file", key="context/a1b2/design", path=exported["path"])
+    imported = call(exporting, "document_edit", key="context/a1b2/design", path=exported["path"])
 
     assert (imported["stored"], imported["previous"]) == (23, 14)
     assert "note" not in imported
@@ -1238,10 +1238,10 @@ def test_a_file_edited_on_disk_is_stored_back(exporting):
 
 
 def test_a_document_that_shrank_is_said_to_have_shrunk(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     Path(exported["path"]).write_text("")
 
-    imported = call(exporting, "document_file", key="context/a1b2/design", path=exported["path"])
+    imported = call(exporting, "document_edit", key="context/a1b2/design", path=exported["path"])
 
     assert (imported["stored"], imported["previous"]) == (0, 14)
     assert "shrank from 14 to 0" in imported["note"]
@@ -1250,22 +1250,22 @@ def test_a_document_that_shrank_is_said_to_have_shrunk(exporting):
 def test_re_exporting_a_key_leaves_the_first_export_alone(exporting):
     """What the deterministic name cost: the second export destroyed an edit
     the first session had not stored back yet."""
-    first = call(exporting, "document_file", key="context/a1b2/design")
+    first = call(exporting, "document_edit", key="context/a1b2/design")
     Path(first["path"]).write_text("# Store schema, half edited")
 
-    again = call(exporting, "document_file", key="context/a1b2/design")
+    again = call(exporting, "document_edit", key="context/a1b2/design")
 
     assert again["path"] != first["path"]
     assert Path(first["path"]).read_text() == "# Store schema, half edited"
 
 
 def test_an_import_is_refused_when_somebody_else_wrote_the_document(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     Path(exported["path"]).write_text("# Store schema, my edit")
     call(exporting, "store_document", key="context/a1b2/design", content="# Theirs")
 
     message = call_expecting_error(
-        exporting, "document_file", key="context/a1b2/design", path=exported["path"]
+        exporting, "document_edit", key="context/a1b2/design", path=exported["path"]
     )
 
     assert "overwrite" in message
@@ -1273,13 +1273,13 @@ def test_an_import_is_refused_when_somebody_else_wrote_the_document(exporting):
 
 
 def test_overwrite_stores_it_anyway_and_says_what_went(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     Path(exported["path"]).write_text("# Store schema, my edit")
     call(exporting, "store_document", key="context/a1b2/design", content="# Theirs")
 
     imported = call(
         exporting,
-        "document_file",
+        "document_edit",
         key="context/a1b2/design",
         path=exported["path"],
         overwrite=True,
@@ -1292,9 +1292,9 @@ def test_overwrite_stores_it_anyway_and_says_what_went(exporting):
 
 
 def test_a_round_trip_that_changed_nothing_says_so(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
 
-    imported = call(exporting, "document_file", key="context/a1b2/design", path=exported["path"])
+    imported = call(exporting, "document_edit", key="context/a1b2/design", path=exported["path"])
 
     assert "identical to what was exported" in imported["note"]
 
@@ -1303,12 +1303,12 @@ def test_an_export_and_an_import_may_name_different_keys(exporting):
     """Still allowed, and now said out loud: the record names the key it came
     from, so it cannot answer for the target and ``overwrite`` says to write
     regardless."""
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     Path(exported["path"]).write_text("# Store schema, copied")
 
     imported = call(
         exporting,
-        "document_file",
+        "document_edit",
         key="context/c3d4/design",
         path=exported["path"],
         overwrite=True,
@@ -1321,10 +1321,10 @@ def test_an_export_and_an_import_may_name_different_keys(exporting):
 
 
 def test_an_unchecked_import_is_refused_and_names_the_way_to_check_it(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
 
     message = call_expecting_error(
-        exporting, "document_file", key="context/c3d4/design", path=exported["path"]
+        exporting, "document_edit", key="context/c3d4/design", path=exported["path"]
     )
 
     assert "`against`" in message
@@ -1335,13 +1335,13 @@ def test_a_second_file_makes_a_cross_key_import_checked(exporting):
     """`plans/write-preconditions/by-file`: the content comes from one exported
     file and the claim about the target comes from another."""
     call(exporting, "store_document", key="context/c3d4/design", content="# The copy")
-    source = call(exporting, "document_file", key="context/a1b2/design")
+    source = call(exporting, "document_edit", key="context/a1b2/design")
     Path(source["path"]).write_text("# Store schema, copied")
-    target = call(exporting, "document_file", key="context/c3d4/design")
+    target = call(exporting, "document_edit", key="context/c3d4/design")
 
     imported = call(
         exporting,
-        "document_file",
+        "document_edit",
         key="context/c3d4/design",
         path=source["path"],
         against=target["path"],
@@ -1357,13 +1357,13 @@ def test_a_second_file_makes_a_cross_key_import_checked(exporting):
 def test_a_checked_cross_key_import_refuses_a_target_somebody_else_wrote(exporting):
     """The write that used to land silently on top of another agent's."""
     call(exporting, "store_document", key="context/c3d4/design", content="# The copy")
-    source = call(exporting, "document_file", key="context/a1b2/design")
-    target = call(exporting, "document_file", key="context/c3d4/design")
+    source = call(exporting, "document_edit", key="context/a1b2/design")
+    target = call(exporting, "document_edit", key="context/c3d4/design")
     call(exporting, "store_document", key="context/c3d4/design", content="# Theirs")
 
     message = call_expecting_error(
         exporting,
-        "document_file",
+        "document_edit",
         key="context/c3d4/design",
         path=source["path"],
         against=target["path"],
@@ -1377,7 +1377,7 @@ def test_store_document_checks_the_write_against_an_exported_file(exporting):
     """`plans/write-preconditions/by-file` piece 1: an agent that exported a
     document and edited it *in context* rather than on disk gets the same
     staleness refusal the import route gets."""
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
 
     stored = call(
         exporting,
@@ -1395,7 +1395,7 @@ def test_store_document_checks_the_write_against_an_exported_file(exporting):
 
 
 def test_store_document_is_refused_when_somebody_else_wrote_the_document(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     call(exporting, "store_document", key="context/a1b2/design", content="# Theirs")
 
     message = call_expecting_error(
@@ -1411,7 +1411,7 @@ def test_store_document_is_refused_when_somebody_else_wrote_the_document(exporti
 
 
 def test_store_document_overwrites_and_says_what_went(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     call(exporting, "store_document", key="context/a1b2/design", content="# Theirs")
 
     stored = call(
@@ -1429,7 +1429,7 @@ def test_store_document_overwrites_and_says_what_went(exporting):
 
 def test_store_document_does_not_read_the_file_it_is_checked_against(exporting):
     """The content comes from the call; the file is a claim, not a source."""
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     Path(exported["path"]).write_text("bytes nobody is storing")
 
     call(
@@ -1447,7 +1447,7 @@ def test_store_document_does_not_read_the_file_it_is_checked_against(exporting):
 
 def test_a_second_checked_store_is_not_refused_by_the_first(exporting):
     """The renewal reaches this route too, or it is one write per export."""
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     call(
         exporting,
         "store_document",
@@ -1471,7 +1471,7 @@ def test_a_second_checked_store_is_not_refused_by_the_first(exporting):
 def test_a_checked_store_of_an_encoded_call_renews_what_was_stored(exporting):
     """The record hashes what the store holds, and an encoded call did not send
     it: a record carrying the JSON literal would refuse the next write."""
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
     call(
         exporting,
         "store_document",
@@ -1493,7 +1493,7 @@ def test_a_checked_store_of_an_encoded_call_renews_what_was_stored(exporting):
 
 
 def test_a_check_file_exported_from_another_key_is_refused(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
 
     message = call_expecting_error(
         exporting,
@@ -1508,7 +1508,7 @@ def test_a_check_file_exported_from_another_key_is_refused(exporting):
 
 
 def test_a_store_that_shrank_under_a_check_is_said_to_have_shrunk(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
 
     stored = call(
         exporting,
@@ -1530,21 +1530,21 @@ def test_an_ordinary_store_document_is_unchanged_by_all_of_this(exporting):
 
 
 def test_a_check_file_on_an_export_is_refused_rather_than_ignored(exporting):
-    exported = call(exporting, "document_file", key="context/a1b2/design")
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
 
     message = call_expecting_error(
-        exporting, "document_file", key="context/a1b2/design", against=exported["path"]
+        exporting, "document_edit", key="context/a1b2/design", against=exported["path"]
     )
 
     assert "nothing to check" in message
 
 
 def test_the_file_name_is_what_says_what_format_came_back(exporting):
-    exported = call(exporting, "document_file", key="notes/data")
+    exported = call(exporting, "document_edit", key="notes/data")
     assert exported["format"] == "json"
     Path(exported["path"]).write_text('{"a": 2}')
 
-    call(exporting, "document_file", key="notes/data", path=exported["path"])
+    call(exporting, "document_edit", key="notes/data", path=exported["path"])
 
     assert call(exporting, "read_document", key="notes/data")["format"] == "json"
 
@@ -1554,7 +1554,7 @@ def test_a_file_outside_the_export_directory_is_refused(exporting, tmp_path):
     outside.write_text("never exported")
 
     message = call_expecting_error(
-        exporting, "document_file", key="context/a1b2/design", path=str(outside)
+        exporting, "document_edit", key="context/a1b2/design", path=str(outside)
     )
 
     assert "outside the export directory" in message
@@ -1565,21 +1565,21 @@ def test_a_file_outside_the_export_directory_is_refused(exporting, tmp_path):
 
 def test_a_file_that_is_not_there_is_refused_by_name(exporting, exports):
     message = call_expecting_error(
-        exporting, "document_file", key="context/a1b2/design", path=str(exports / "gone.md")
+        exporting, "document_edit", key="context/a1b2/design", path=str(exports / "gone.md")
     )
 
     assert "no file at" in message
 
 
 def test_the_newest_context_can_be_exported_by_asking_for_it(exporting, exports):
-    result = call(exporting, "document_file", key="context/?last/design")
+    result = call(exporting, "document_edit", key="context/?last/design")
 
     assert result["key"] == "context/a1b2/design"
     assert Path(result["path"]).parent == exports
 
 
 def test_a_wildcard_key_is_not_a_round_trip(exporting):
-    message = call_expecting_error(exporting, "document_file", key="context/?/design")
+    message = call_expecting_error(exporting, "document_edit", key="context/?/design")
 
     assert "?" in message
 

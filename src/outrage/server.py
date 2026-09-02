@@ -154,7 +154,7 @@ def _note_check(
 ) -> None:
     """Say what a write got past, when ``overwrite`` let it past a refusal.
 
-    Shared by ``store_document`` and ``document_file`` because the refusals
+    Shared by ``store_document`` and ``document_edit`` because the refusals
     are: :func:`~outrage.bulk.check_write` answers for both, so one place has
     to say what lifting it meant. The two sentences are separate because the
     situations are - a write that lost somebody's work is a thing you can go
@@ -457,7 +457,7 @@ class _CopyTreeResult(_ToolResult):
     note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
-class _DocumentFileResult(_ToolResult):
+class _DocumentEditResult(_ToolResult):
     key: Annotated[str, Field(description="The normalized document key")]
     path: Annotated[str, Field(description="The exported file path")]
     exported: Annotated[
@@ -757,7 +757,7 @@ def build_server(
     :func:`main` has already resolved it for the event log, which is what still
     wants it.
 
-    ``document_file`` no longer does. It was registered only when there was a
+    ``document_edit`` no longer does. It was registered only when there was a
     store directory to write under, because there was nowhere else to put a
     file; since ``plans/robust-editing`` it writes to
     :func:`~outrage.bulk.export_root`, a per-user directory below the system
@@ -850,7 +850,7 @@ def build_server(
             str | None,
             Field(
                 description=(
-                    "Path of a file `document_file` exported from `key`, to "
+                    "Path of a file `document_edit` exported from `key`, to "
                     "check this write against. Its content is not read - only "
                     "its record of what the document held when it came out - "
                     "so the write is refused if somebody else has written the "
@@ -876,7 +876,7 @@ def build_server(
         # file whose *record* says what this edit was made against, and the
         # content still comes from the call. An agent that exported a document
         # and edited it in context rather than on disk gets the staleness
-        # refusal `document_file` gets, which before this it could not ask for.
+        # refusal `document_edit` gets, which before this it could not ask for.
         # `plans/write-preconditions/by-file`.
         check = (
             None
@@ -1355,10 +1355,10 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(idempotent_hint=True),
-        description=tool_description("document_file"),
+        description=tool_description("document_edit"),
     )
     @_reported
-    def document_file(
+    def document_edit(
         key: Annotated[
             str,
             Field(
@@ -1407,7 +1407,7 @@ def build_server(
                 )
             ),
         ] = False,
-    ) -> _DocumentFileResult:
+    ) -> _DocumentEditResult:
         # No wildcard: `?` allocates a number, and a round trip is about a
         # key that already exists on one end or the other. Allocating one
         # is `store_document`'s business.
@@ -1433,7 +1433,7 @@ def build_server(
                 result,
                 "Edit this file in place and call again with its path to store it back.",
             )
-            return _DocumentFileResult.model_validate(result)
+            return _DocumentEditResult.model_validate(result)
         imported = bulk.import_document(
             table, at, path, exports, against=against, overwrite=overwrite
         )
@@ -1461,7 +1461,7 @@ def build_server(
                 "nothing; if an edit was intended, it matched nothing.",
             )
         _note_shrink(result, imported.previous, imported.stored)
-        return _DocumentFileResult.model_validate(result)
+        return _DocumentEditResult.model_validate(result)
 
     return server
 

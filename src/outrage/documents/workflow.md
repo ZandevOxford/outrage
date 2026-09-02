@@ -55,7 +55,7 @@ as `context/12/findings/?`.
 
 ## Editing files
 
-When changing a substantial document, prefer `document_file`: call it with the
+When changing a substantial document, prefer `document_edit`: call it with the
 key and no path to export the whole document, edit the returned file with
 ordinary file tools, then call it with the key and returned path to import.
 The import reports the old and new sizes, making accidental truncation visible,

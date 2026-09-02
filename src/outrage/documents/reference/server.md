@@ -170,7 +170,7 @@ not a [`FileStore`](store.md#outrage.store.FileStore), so it cannot be asked whe
 [`main()`](#outrage.server.main) has already resolved it for the event log, which is what still
 wants it.
 
-`document_file` no longer does. It was registered only when there was a
+`document_edit` no longer does. It was registered only when there was a
 store directory to write under, because there was nowhere else to put a
 file; since `plans/robust-editing` it writes to
 [`export_root()`](bulk.md#outrage.bulk.export_root), a per-user directory below the system

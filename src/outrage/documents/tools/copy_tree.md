@@ -13,7 +13,7 @@ and `on_conflict` decides one key at a time.
 
 To move, copy and then delete_keys.
 
-To split one document into two keys use `document_file` instead.
+To split one document into two keys use `document_edit` instead.
 
 This copy is paged; pass `next_cursor` as `cursor` to continue.
 
