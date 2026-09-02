@@ -50,10 +50,26 @@ contract obliges this backend to hold the small columns whole, in memory, and
 only `content` is read lazily. That is why `ParquetStore._index()` is
 built once per file and `content` never joins it.
 
+**How they are held is what decides how large a store can be.** They are the
+file's own Arrow columns, searched by bisecting `sort_key` and converted a
+row at a time for the rows an answer actually names. They were once a Python
+object per key with three dictionaries over them, which measured at 865 bytes
+a row -- fifteen times the file it came from, and 12.1 GB before a single read
+of a seven-million-document reference base. Holding the columns instead is 120
+bytes a row on the same corpus, and the eager dictionaries turn out to be
+derivable from the order the file is already in: see `_Index`.
+
 pyarrow is an optional dependency: `pip install outrage[parquet]`. It is
 imported inside this module and this module is imported only by
 `outrage.store._backend_for()`, so an install without it is unaffected until
 something names a `.parquet` file.
+
+### outrage.store_parquet.CHUNK *= 8192*
+
+How many rows a chunked walk converts at a time. Big enough that the
+per-call overhead of `to_pylist` is amortised away, small enough that the
+Python strings it makes are freed long before the walk ends -- which is the
+whole point of walking in chunks rather than converting a column.
 
 ### outrage.store_parquet.COMPRESSION *= 'zstd'*
 
@@ -68,6 +84,17 @@ What a parquet store's file is called when a caller names none. Beside
 it is the extension of this one that `outrage.store._backend_for()` reads
 to know which backend a file wants.
 
+### outrage.store_parquet.ENCODABLE *= ('format', 'updated_at')*
+
+Columns worth dictionary encoding **if it helps**, tested rather than
+assumed. In a store packed in one pass every row tends to carry the same
+`updated_at` and one of three formats, and encoding those is 4 bytes a row
+against 29; in a store imported from a corpus with a real timestamp per
+document it is 4 bytes a row *on top* of the 29, so it is measured and kept
+only when it wins. `key` and `sort_key` are never candidates -- they are
+distinct by construction, and encoding them costs more than it saves every
+time.
+
 ### outrage.store_parquet.FORMAT_VERSION *= 2*
 
 The layout this build writes, recorded in the file's own key-value metadata
@@ -81,12 +108,36 @@ file is repacked rather than upgraded.
 swallowed everything below the first `!`; both come off `key`, which the
 file carries, so `ParquetStore._build()` derives them on the way in.
 
+### outrage.store_parquet.HELD_COLUMNS *= ('key', 'meta_name', 'meta_path', 'format', 'updated_at', 'sort_key', 'chars')*
+
+Of those, the ones actually read into memory. `doc_key` and `parent`
+come off `key`, which the index is holding anyway, and between them they
+were a quarter of what an open store cost. `doc_key` is derived where a
+depth budget asks for it -- `ParquetStore._walked()`, the only question
+anything asks of it -- and `parent` turns out not to be read by any read
+at all: it was a denormalisation for listing a level, and a level is now
+found by walking the order instead.
+
+Both are written to the file all the same. The file is read by other things,
+a column a reader can recompute is still a column a query engine should not
+have to, and [`ParquetStore.audit_rows()`](#outrage.store_parquet.ParquetStore.audit_rows) checks the written ones against
+the keys they claim to describe.
+
 ### outrage.store_parquet.INDEX_COLUMNS *= ('key', 'doc_key', 'meta_name', 'meta_path', 'parent', 'format', 'updated_at', 'sort_key', 'chars')*
 
 The columns held whole once a file is opened: everything except `content`.
 Naming them is what keeps the promise in the module docstring checkable --
 the expensive column is absent from this list, and every read that does not
 return document text stops here.
+
+### outrage.store_parquet.PROBE *= 8*
+
+How far a child walk probes forward before it gives up and bisects. Most
+keys have a handful of rows beneath them -- a document, its title, perhaps a
+note -- so the next sibling is usually two or three rows along and a linear
+step finds it for the cost of one comparison. A bisect costs about twenty.
+Past this many steps the subtree is big enough that the bisect is cheaper,
+and the walk stops guessing. See `_Index.children()`.
 
 ### outrage.store_parquet.ROW_GROUP_SIZE *= 2048*
 
@@ -175,14 +226,15 @@ Refused, for the reason [`store_document()`](#outrage.store_parquet.ParquetStore
 
 #### exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
 
-One dict lookup, over the index rather than the file.
+One bisect, over the index rather than the file.
 
 #### level_entry(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Entry](store.md#outrage.store.Entry) | [None](https://docs.python.org/3/library/constants.html#None)
 
 The stored row if there is one, else whether anything lies below.
 
-The second half is a lookup rather than a scan because `children`
-already records implicit keys -- see `_Index`.
+The second half is two bisects rather than a scan, and it finds an
+implicit key the same way the listing does -- see
+`_Index.has_children()`.
 
 #### descendant_count(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [int](https://docs.python.org/3/library/functions.html#int)
 
@@ -205,13 +257,23 @@ different documents for the same call.
 
 #### list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
 
-One level, real and implicit keys together.
+One level, real and implicit keys together, walked in order.
 
-`children` holds both, so unlike SQLite there are no two halves to
-merge and no risk of cutting them separately -- which is the defect
-that shape has to be careful about. The level's totals are over the
-whole level and so unaffected by the cursor, and the characters come
-from `chars` without any content being read.
+`_Index.children()` yields both kinds in key order -- which is the
+order the file is already in, so nothing is sorted here. That is the
+difference this shape makes: the layout it replaced held a set of every
+child of every key, and then called `sort_form` on every name in the
+level on every call. At two hundred thousand keys a listing of the root
+took most of a second, all of it re-deriving an order the file was
+already written in.
+
+**One pass, and it holds a page.** The totals are over the whole level
+and so unaffected by the cursor, which means the level has to be walked
+whatever happens; what does not have to happen is an `Entry` per key
+surviving that walk. Only the page's worth is kept, plus one more --
+which is how `more` is known without counting the rest twice.
+
+The characters come from `chars` without any content being read.
 
 #### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Excerpt](store.md#outrage.store.Excerpt)]
 
@@ -276,12 +338,26 @@ so.
 
 #### audit_rows() → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[AuditRow](store.md#outrage.store.AuditRow)]
 
-Every row, from the index, without opening the content column.
+Every row **as the file stores it**, streamed a row group at a time.
 
-The index is exactly the columns a check wants and it is resident
-already -- `chars` most of all, which is the column this backend has
-and SQLite does not, precisely so that counting characters never costs
-a read of the text.
+From the file rather than from the index, and the difference is the
+point. The index no longer holds `doc_key` or `parent` -- which is
+what makes an open store a quarter of what it used to cost -- and what
+it does not hold it cannot check. Worse, both come off `key`, and a
+value derived from a key can never disagree with it. A check reading
+the index would therefore pass unconditionally on exactly the defect
+`_report_parents` exists to find -- a stored `parent` that does not
+match its key, written by something that was not this build -- and
+would report a clean file while saying nothing.
+
+So this reads the stored columns. It is the one caller that wants what
+is *written down* rather than what is true, and it is a check, which
+is allowed to be the expensive path. `iter_batches` streams, so a
+corpus that does not fit in memory is still checked without it.
+
+`chars` is the column this backend has and SQLite does not, precisely
+so that counting characters never costs a read of the text -- and this
+never opens `content` either.
 
 #### check_file(report: [Report](maintenance.md#outrage.maintenance.Report)) → [None](https://docs.python.org/3/library/constants.html#None)
 

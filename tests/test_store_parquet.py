@@ -1048,3 +1048,218 @@ def test_read_only_is_the_backend_and_the_mount_together(tmp_path):
     with open_mounts(tmp_path / "base", ["rw=rw.sqlite"], ["pq=ref.parquet"]) as table:
         assert table.resolve("pq/x").read_only
         assert not table.resolve("rw/x").read_only
+
+
+# -- the index, once it stopped being a row per key -----------------------
+#
+# `plans/wikipedia-import/reader` is why these exist. The index used to hold a
+# `_Row` per key and three dictionaries over them; it now holds the file's own
+# Arrow columns and derives all four from the order the file is written in. The
+# comparison against SQLite above is the specification and passes either way,
+# which is the point -- these are the invariants the *derivations* rest on, and
+# each one is a way the change could have been silently wrong.
+
+
+def test_an_implicit_key_is_listed_although_no_row_says_so(tmp_path):
+    """A key that holds nothing and has something beneath it still lists.
+
+    The `children` map recorded this eagerly, walking each key's ancestors on
+    the way in. The walk derives it instead: it lands on a row *below* the
+    child rather than on the child, which is the same fact read off the order.
+    Two levels of it, so a chain of implicit keys is covered rather than one.
+    """
+    ParquetStore.build(
+        tmp_path / "p" / "ref.parquet",
+        [("a/b/c/d", "deep", None, None), ("a/b/c/e", "also deep", None, None)],
+    )
+    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+        assert [entry.key for entry in store.list_keys().items] == ["a"]
+        assert store.level_entry("a").kind == "implicit"
+        assert store.level_entry("a/b").kind == "implicit"
+        assert [entry.key for entry in store.list_keys("a/b/c").items] == ["a/b/c/d", "a/b/c/e"]
+        # Nothing is stored at it, so it has no size, format or timestamp --
+        # rather than borrowing a descendant's.
+        assert store.level_entry("a").size is None
+        assert store.level_entry("a").updated_at is None
+
+
+def test_a_level_is_listed_in_order_without_the_level_being_sorted(tmp_path):
+    """The file's order is the level's order, including where they differ.
+
+    Nothing sorts a level any more, which is only sound because ``sort_form``
+    order is what the file is already in -- so the keys that sort *differently*
+    as plain text are what says it works. A numeric segment pads, so ``2``
+    comes before ``10``; and a child's own row may be absent while its subtree
+    still fixes where it sorts.
+    """
+    ParquetStore.build(
+        tmp_path / "p" / "ref.parquet",
+        [(key, "body", None, None) for key in ("x/2", "x/10", "x/9/under", "x/1")],
+    )
+    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+        assert [entry.key for entry in store.list_keys("x").items] == [
+            "x/1",
+            "x/2",
+            "x/9",
+            "x/10",
+        ]
+        assert store.level_entry("x/9").kind == "implicit"
+
+
+def test_a_child_with_a_long_subtree_is_skipped_by_bisecting_past_it(tmp_path):
+    """The walk steps over a small subtree and bisects over a large one.
+
+    Both paths have to reach the same next sibling, and `PROBE` is where they
+    part. So: one child with nothing beneath it, one with fewer descendants
+    than the probe allows, and one with many more.
+    """
+    from outrage.store_parquet import PROBE
+
+    rows = [("t/alone", "body", None, None)]
+    rows += [(f"t/small/{n}", "body", None, None) for n in range(PROBE - 2)]
+    rows += [(f"t/large/{n}", "body", None, None) for n in range(PROBE * 5)]
+    rows += [("t/last", "body", None, None)]
+    ParquetStore.build(tmp_path / "p" / "ref.parquet", rows)
+
+    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+        page = store.list_keys("t")
+        assert [entry.key for entry in page.items] == [
+            "t/alone",
+            "t/large",
+            "t/last",
+            "t/small",
+        ]
+        assert page.total == 4
+
+
+def test_metadata_is_found_by_looking_at_the_next_row_not_by_searching(tmp_path):
+    """A survey's "does this carry a title" is the rows adjacent to the key.
+
+    That is only true because ``sort_form`` marks a metadata segment below an
+    ordinary one, so a key's metadata sorts after it and before any subkey.
+    The corpus below is arranged so that a walk which stopped at the first
+    non-matching name, or which counted metadata one level too deep, would get
+    a different answer.
+    """
+    ParquetStore.build(
+        tmp_path / "p" / "ref.parquet",
+        [
+            ("a", "body", None, None),
+            ("a/!author", "someone", None, None),
+            ("a/!title", "A", None, None),
+            ("a/b", "below", None, None),
+            ("b", "body", None, None),
+            # Metadata of a's metadata, not of a: `a/!title` carries `of`, and
+            # `a` does not.
+            ("c", "body", None, None),
+            ("c/!title", "C", None, None),
+            ("c/!title/!of", "the title", None, None),
+        ],
+    )
+    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+        assert store.keys_missing_meta(meta_name="title").items == ["a/b", "b"]
+        # `author` sorts before `title`, so a walk that gave up on the first
+        # name it did not want would miss the title behind it -- `c` is here
+        # because it has a title and no author, and `a` is absent because it
+        # has both.
+        assert store.keys_missing_meta(meta_name="author").items == ["a/b", "b", "c"]
+        # `of` is a name on `a/!title`, and on nothing else -- so every
+        # document lacks it, `a` included.
+        assert store.keys_missing_meta(meta_name="of").items == ["a", "a/b", "b", "c"]
+
+
+def test_carrying_a_name_is_a_fact_about_the_store_not_about_the_range(tmp_path):
+    """A bound that cuts between a document and its title leaves it titled.
+
+    The lookahead deliberately reaches outside the selection. Whether a
+    document has a title is a fact about the store; a caller asking about a
+    stretch of the key order is not asking to have that fact re-decided. The
+    range below ends at ``a``, so ``a/!title`` is outside it.
+    """
+    ParquetStore.build(
+        tmp_path / "p" / "ref.parquet",
+        [("a", "body", None, None), ("a/!title", "A", None, None), ("z", "body", None, None)],
+    )
+    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+        within = KeyRange(before_inclusive="a")
+        assert store.keys_missing_meta(key_range=within).items == []
+        assert store.missing_meta_stats(key_range=within).total == 0
+
+
+def test_the_two_selection_paths_agree_where_a_depth_budget_forces_the_slow_one(sqlite, parquet):
+    """A depth budget takes the Python walk; without one the predicate vectorises.
+
+    Two implementations of one predicate is two chances to disagree, so the
+    pair is compared directly rather than only through the battery above --
+    against SQLite, which has neither.
+    """
+    for key in ("", "one", "one/two"):
+        for depth in (None, 0, 1, 2, 5):
+            subtree = BoundedSubtree(key=key or None, depth=depth)
+            answers_alike(sqlite, parquet, lambda s, t=subtree: page_facts(s.get_documents(t)))
+            answers_alike(sqlite, parquet, lambda s, t=subtree: page_facts(s.keys_missing_meta(t)))
+
+
+def test_a_repeated_column_is_dictionary_encoded_and_a_distinct_one_is_not(tmp_path):
+    """Encoding is measured against the column, not assumed to help.
+
+    A store packed in one pass carries one timestamp for every row and encoding
+    it is four bytes a row against twenty-nine. A store imported from a corpus
+    with a real timestamp per document carries distinct ones, and encoding
+    those is four bytes a row *on top*. Both files below are read by the same
+    code; what differs is only what it chose.
+    """
+    import pyarrow as pa
+
+    from outrage.store_parquet import ENCODABLE
+
+    same = [(f"k{n}", "body", "markdown", "2026-09-01T00:00:00+00:00") for n in range(200)]
+    apart = [
+        (f"k{n}", "body", "markdown", f"2026-09-01T00:{n // 60:02}:{n % 60:02}+00:00")
+        for n in range(200)
+    ]
+
+    def encoded(rows, name):
+        target = tmp_path / name / "ref.parquet"
+        ParquetStore.build(target, rows)
+        with ParquetStore(target.parent, filename="ref.parquet") as store:
+            column = store._index.columns["updated_at"]
+            # The values are what matters either way; the encoding is a
+            # representation and every read goes through the same accessors.
+            assert store.retrieve_document("k7").updated_at == rows[7][3]
+            return pa.types.is_dictionary(column.type)
+
+    assert "updated_at" in ENCODABLE
+    assert encoded(same, "one")
+    assert not encoded(apart, "many")
+
+
+def test_the_derived_columns_agree_with_the_ones_the_file_still_stores(packed):
+    """``doc_key`` and ``parent`` are recomputed, and must match what is written.
+
+    They are no longer read into the index -- between them they were a quarter
+    of what an open store cost -- but they are still written, and ``check``
+    still reads them from the file. If the derivation and the column ever
+    disagreed, a sound file would start reporting itself broken.
+    """
+    import pyarrow.parquet as pq
+
+    table = pq.read_table(packed.path)
+    stored = zip(
+        table.column("key").to_pylist(),
+        table.column("doc_key").to_pylist(),
+        table.column("parent").to_pylist(),
+        strict=True,
+    )
+    for key, doc_key, parent in stored:
+        # Against ``keys.parse``, which is what ``maintenance._report_parents``
+        # compares the stored column with -- so this is the same derivation the
+        # check will make, not a second opinion written beside it.
+        assert keys.parse(key).doc_key == doc_key
+        assert keys.parse(key).parent == parent
+
+    # And the audit reads the stored ones, so the two are compared for real by
+    # `maintenance.check` on every file it is given.
+    from outrage import maintenance
+
+    assert maintenance.check(packed).sound

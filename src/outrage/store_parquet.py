@@ -48,6 +48,15 @@ contract obliges this backend to hold the small columns whole, in memory, and
 only ``content`` is read lazily. That is why :meth:`ParquetStore._index` is
 built once per file and ``content`` never joins it.
 
+**How they are held is what decides how large a store can be.** They are the
+file's own Arrow columns, searched by bisecting ``sort_key`` and converted a
+row at a time for the rows an answer actually names. They were once a Python
+object per key with three dictionaries over them, which measured at 865 bytes
+a row -- fifteen times the file it came from, and 12.1 GB before a single read
+of a seven-million-document reference base. Holding the columns instead is 120
+bytes a row on the same corpus, and the eager dictionaries turn out to be
+derivable from the order the file is already in: see :class:`_Index`.
+
 pyarrow is an optional dependency: ``pip install outrage[parquet]``. It is
 imported inside this module and this module is imported only by
 :func:`outrage.store._backend_for`, so an install without it is unaffected until
@@ -58,7 +67,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
 import threading
+from array import array
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
@@ -136,6 +147,30 @@ INDEX_COLUMNS = (
     "chars",
 )
 
+#: Of those, the ones actually read into memory. ``doc_key`` and ``parent``
+#: come off ``key``, which the index is holding anyway, and between them they
+#: were a quarter of what an open store cost. ``doc_key`` is derived where a
+#: depth budget asks for it -- :meth:`ParquetStore._walked`, the only question
+#: anything asks of it -- and ``parent`` turns out not to be read by any read
+#: at all: it was a denormalisation for listing a level, and a level is now
+#: found by walking the order instead.
+#:
+#: Both are written to the file all the same. The file is read by other things,
+#: a column a reader can recompute is still a column a query engine should not
+#: have to, and :meth:`ParquetStore.audit_rows` checks the written ones against
+#: the keys they claim to describe.
+HELD_COLUMNS = tuple(name for name in INDEX_COLUMNS if name not in ("doc_key", "parent"))
+
+#: Columns worth dictionary encoding **if it helps**, tested rather than
+#: assumed. In a store packed in one pass every row tends to carry the same
+#: ``updated_at`` and one of three formats, and encoding those is 4 bytes a row
+#: against 29; in a store imported from a corpus with a real timestamp per
+#: document it is 4 bytes a row *on top* of the 29, so it is measured and kept
+#: only when it wins. ``key`` and ``sort_key`` are never candidates -- they are
+#: distinct by construction, and encoding them costs more than it saves every
+#: time.
+ENCODABLE = ("format", "updated_at")
+
 #: Rows per row group. The unit parquet reads content in, so it is the unit a
 #: page's text is paid for in: too large and a five-document read decompresses
 #: thousands, too small and the per-group statistics and headers outweigh the
@@ -165,72 +200,480 @@ def _arrow() -> tuple[Any, Any]:
     return pa, pq
 
 
+def _compute() -> tuple[Any, Any]:
+    """pyarrow and its compute kernels, through the same explanation.
+
+    Separate from :func:`_arrow` because only the three reads that evaluate a
+    predicate over a whole column want it, and because a caller wanting both
+    should say so once rather than import in the middle of a method.
+    """
+    pa, _ = _arrow()
+    import pyarrow.compute as pc
+
+    return pa, pc
+
+
+#: How many rows a chunked walk converts at a time. Big enough that the
+#: per-call overhead of ``to_pylist`` is amortised away, small enough that the
+#: Python strings it makes are freed long before the walk ends -- which is the
+#: whole point of walking in chunks rather than converting a column.
+CHUNK = 8192
+
+#: How far a child walk probes forward before it gives up and bisects. Most
+#: keys have a handful of rows beneath them -- a document, its title, perhaps a
+#: note -- so the next sibling is usually two or three rows along and a linear
+#: step finds it for the cost of one comparison. A bisect costs about twenty.
+#: Past this many steps the subtree is big enough that the bisect is cheaper,
+#: and the walk stops guessing. See :meth:`_Index.children`.
+PROBE = 8
+
+
 @dataclass(frozen=True, slots=True)
 class _Row:
     """One key's columns, less its content.
 
-    Slotted because there is one of these per key and the reference case has
-    tens of thousands: the point of leaving ``content`` out is that what stays
-    resident is small, and a dict per row would give most of that back.
+    **Made on demand and thrown away**, which is the change from the layout
+    that held one of these per key: at forty thousand rows that cost 37 MB and
+    was invisible, and at the fourteen million a whole-encyclopaedia reference
+    base needs it was 12.9 GB before a single read -- measured, not estimated.
+    So the columns stay in Arrow and a row is materialised for the handful of
+    rows an answer actually names.
+
+    Slotted still, because the transient ones are made in the inner loop of
+    every read.
+
+    **It carries what a returned row is asked for, and nothing else.** It used
+    to mirror the columns; a row read from a resident list may as well carry
+    every field, because they were already objects. Made on demand they are not
+    free: ``doc_key`` is a parse and ``sort_key``, ``meta_name``, ``meta_path``
+    and ``parent`` are a decode each, per document returned, for fields no
+    caller of :meth:`_Index.row` reads. The selections that *do* ask about
+    those read the column instead -- :meth:`_Index.matching` for the metadata
+    split, :meth:`ParquetStore._walked` for the one question ``doc_key``
+    answers -- and neither makes a row to do it.
 
     ``position`` is the row's index in the file, which is how the content it
     does not carry is found again.
     """
 
     key: str
-    doc_key: str
-    meta_name: str | None
-    meta_path: str | None
-    parent: str
     format: str | None
     updated_at: str
-    sort_key: str
     chars: int
     position: int
 
 
-@dataclass(frozen=True, slots=True)
-class _Index:
-    """Everything about a file that is not document text.
+class _Text(Sequence[str]):
+    """One string column, indexable a row at a time without decoding the rest.
 
-    Built once, on the first read, and thrown away when the store is closed.
-    Four structures, and each exists because one operation cannot be answered
-    from the others in less than a scan:
+    :func:`bisect_left` and :func:`bisect_right` need indexing and a length and
+    nothing else, so this is the whole adapter -- a bisect over fourteen
+    million rows reads about twenty-four rows of the column and leaves the rest
+    alone. Converting the column to a Python list to bisect it would give back
+    exactly the memory this exists to save.
 
-    ``rows`` is every row in ``sort_key`` order, which is the order the file is
-    written in, so a bound on the order is a slice of this list.
-
-    ``by_key`` answers "is this key stored, and where", which is
-    :meth:`ParquetStore.exists` and the first half of every read.
-
-    ``children`` maps a key to the keys immediately below it, **implicit ones
-    included**. A key that holds nothing and has something beneath it appears
-    in its parent's listing, and there is no row anywhere that says so; the
-    SQLite backend recovers it with a ``DISTINCT`` over truncated parents, and
-    here it is cheaper to record it while the rows are being read once anyway.
-
-    ``meta_names`` maps a key to the metadata names attached to it, which is
-    what turns SQLite's ``NOT EXISTS`` self-join into a set test. Keyed by the
-    key a value hangs from -- a value's own ``parent`` -- so it answers at any
-    scope, metadata namespaces included.
+    **It reads the Arrow buffers itself where it can.** ``array[i].as_py()``
+    builds a pyarrow scalar on the way to the string and measures at 400 ns;
+    slicing the offsets and the data directly is 210, and every bisect, every
+    child walk and every metadata lookahead pays that cost per row visited.
+    The fast path needs a single unsliced ``string`` array with no nulls, which
+    is what ``combine_chunks`` gives for the columns this is used on; anything
+    else -- a nullable column, a build of pyarrow that hands back something
+    else -- falls back to ``as_py`` and is merely correct.
     """
 
-    rows: list[_Row]
-    by_key: dict[str, _Row]
-    children: dict[str, set[str]]
-    meta_names: dict[str, set[str]]
+    __slots__ = ("_array", "_offsets", "_data")
 
-    #: ``rows`` projected onto ``sort_key``, so :func:`bisect` can seek without
-    #: a key function per comparison. Held rather than recomputed because every
-    #: bounded read bisects it at least twice.
-    order: list[str]
+    def __init__(self, array: Any) -> None:
+        self._array = array
+        self._offsets: Any = None
+        self._data: Any = None
+        try:
+            pa, _ = _arrow()
+            if array.type == pa.string() and array.offset == 0 and array.null_count == 0:
+                _, offsets, data = array.buffers()
+                if offsets is not None and data is not None:
+                    self._offsets = memoryview(offsets).cast("i")
+                    self._data = memoryview(data)
+        except (AttributeError, TypeError, ValueError):  # pragma: no cover - fallback
+            self._offsets = None
 
-    #: The first row position of each row group, cumulative, so a row's
-    #: position tells you which group to open for its content. Here rather than
-    #: lazily on the store because it is one more fact read off the file, and
-    #: a second piece of lazily built shared state is a second thing to get
-    #: right under threads for no gain.
-    group_starts: list[int]
+    def __len__(self) -> int:
+        return len(self._array)
+
+    def __getitem__(self, position: Any) -> Any:
+        offsets = self._offsets
+        if offsets is None:  # pragma: no cover - only a column the fast path refuses
+            return self._array[position].as_py()
+        return str(self._data[offsets[position] : offsets[position + 1]], "utf-8")
+
+
+class _Numbers(Sequence[int]):
+    """The ``chars`` column, read a row at a time straight off its buffer.
+
+    :class:`_Text` for integers, and for the same reason: a listing sums
+    ``chars`` over every key in a level and building a pyarrow scalar for each
+    is most of the cost of the listing. ``int64`` is fixed width, so there are
+    no offsets -- one cast and an index.
+    """
+
+    __slots__ = ("_array", "_data")
+
+    def __init__(self, array: Any) -> None:
+        self._array = array
+        self._data: Any = None
+        try:
+            pa, _ = _arrow()
+            if array.type == pa.int64() and array.offset == 0 and array.null_count == 0:
+                _, data = array.buffers()
+                if data is not None:
+                    self._data = memoryview(data).cast("q")
+        except (AttributeError, TypeError, ValueError):  # pragma: no cover - fallback
+            self._data = None
+
+    def __len__(self) -> int:
+        return len(self._array)
+
+    def __getitem__(self, position: Any) -> Any:
+        if self._data is None:  # pragma: no cover - only a column the fast path refuses
+            return self._array[position].as_py()
+        return self._data[position]
+
+
+def _positions(indices: Any) -> Any:
+    """Arrow row indices as a typed array of Python-indexable ints.
+
+    Eight bytes an entry and no object per row, which is what lets a selection
+    be the whole corpus. Copied off the Arrow buffer where the byte order
+    allows -- Arrow is little-endian everywhere and :mod:`array` is native --
+    and element by element where it does not, which is the same answer more
+    slowly rather than a different one.
+    """
+    out = array("q")
+    data = indices.buffers()[1]
+    # The width is checked rather than assumed. Both kernels that feed this
+    # return 64-bit indices today, and a build that returned 32-bit ones would
+    # otherwise be read as half as many rows at twice the value -- silently,
+    # and as a wrong answer rather than a crash. The fallback is the same
+    # answer more slowly.
+    wide = indices.type.bit_width == out.itemsize * 8
+    if wide and sys.byteorder == "little" and indices.offset == 0 and data is not None:
+        out.frombytes(memoryview(data)[: len(indices) * out.itemsize])
+    else:  # pragma: no cover - a narrower index or a big-endian machine
+        out.extend(indices.to_pylist())
+    return out
+
+
+class _Index:
+    """Every column but ``content``, held as Arrow and searched by bisecting.
+
+    Built once, on the first read, and dropped when the store is closed.
+
+    **The file is sorted by ``sort_key``, and that is now the only index there
+    is.** The layout this replaced also held a ``_Row`` per key, a ``by_key``
+    dict, a ``children`` map and a ``meta_names`` map, each because one
+    operation could not be answered from the others in less than a scan. All
+    four are derivable from the order, and the derivations are cheap:
+
+    * **"is this key stored, and where"** is :meth:`find`: one bisect for
+      ``sort_form(key)``, then one comparison to see whether the row landed on
+      is the key or merely where it would go.
+    * **the keys immediately below one key, implicit ones included**, is
+      :meth:`children`. A key's descendants are a contiguous run -- see
+      :func:`_subtree_range` -- so the walk takes the first row in it, reads
+      the child off that row's key, and skips that child's own run to reach the
+      next. A key that holds nothing and has something beneath it is found the
+      same way as one that holds something, which is what the ``children`` map
+      was recording eagerly.
+    * **the metadata names a key carries** is :meth:`carries`. Metadata sorts
+      immediately after the key it hangs from and before any subkey, because
+      ``!`` sorts below an ordinary segment mark -- so the names are the rows
+      *directly following* the key's own row, and finding them costs no search
+      at all.
+
+    What is left resident is the Arrow columns, which is the file's own small
+    columns and nothing per row on top of them.
+    """
+
+    __slots__ = ("columns", "order", "names", "sizes", "group_starts", "num_rows")
+
+    def __init__(self, columns: dict[str, Any], group_starts: list[int]) -> None:
+        #: One combined Arrow array per name in :data:`INDEX_COLUMNS`. Combined
+        #: rather than chunked so that indexing one is a buffer offset rather
+        #: than a search for the chunk holding it.
+        self.columns = columns
+        #: ``sort_key`` as a bisectable sequence. Held rather than made per
+        #: call because every bounded read bisects it at least twice.
+        self.order = _Text(columns["sort_key"])
+        #: ``key`` the same way. The child walk and the metadata lookahead read
+        #: it a row at a time and never want the whole column.
+        self.names = _Text(columns["key"])
+        #: ``chars`` the same way, for the listing that sums a level.
+        self.sizes = _Numbers(columns["chars"])
+        #: The first row position of each row group, cumulative, so a row's
+        #: position tells you which group to open for its content.
+        self.group_starts = group_starts
+        self.num_rows = len(columns["key"])
+
+    def __len__(self) -> int:
+        return self.num_rows
+
+    # -- one row at a time ------------------------------------------------
+
+    def at(self, name: str, position: int) -> Any:
+        """One cell, decoded."""
+        return self.columns[name][position].as_py()
+
+    def row(self, position: int) -> _Row:
+        """One row, materialised for a caller that is returning it.
+
+        Four columns and a position, which is what an :class:`Entry` and an
+        :class:`~outrage.store.Excerpt` are made of. See :class:`_Row` for why
+        it is not all of them.
+        """
+        columns = self.columns
+        return _Row(
+            key=self.names[position],
+            format=columns["format"][position].as_py(),
+            updated_at=columns["updated_at"][position].as_py(),
+            chars=self.sizes[position],
+            position=position,
+        )
+
+    def find(self, key: str) -> int | None:
+        """Where ``key`` is stored, or None if it is not stored at all.
+
+        The bisect lands where the key *would* go whether or not it is there,
+        so the comparison after it is not a formality -- it is the whole
+        difference between "stored" and "would sort here".
+        """
+        position = bisect_left(self.order, keys.sort_form(key), 0, self.num_rows)
+        if position < self.num_rows and self.names[position] == key:
+            return position
+        return None
+
+    # -- runs of rows -----------------------------------------------------
+
+    def column_in(self, name: str, start: int, stop: int) -> Iterator[Any]:
+        """One column over ``[start, stop)``, converted a chunk at a time.
+
+        The walk every count and every predicate runs on. Chunked so that a
+        count over a million rows holds a few thousand Python strings at a
+        time rather than a million: the conversion is the cost that has to be
+        paid to test a row, and holding the result afterwards is the cost that
+        does not.
+        """
+        column = self.columns[name]
+        for base in range(start, stop, CHUNK):
+            end = min(base + CHUNK, stop)
+            yield from column[base:end].to_pylist()
+
+    def columns_in(self, names: Sequence[str], start: int, stop: int) -> Iterator[tuple]:
+        """Several columns over ``[start, stop)``, chunk-aligned and zipped.
+
+        Separate from :meth:`column_in` because a predicate usually wants two
+        or three columns of the same row, and zipping whole-column iterators
+        would hold a chunk of each anyway -- this at least keeps them aligned
+        and converts each exactly once.
+        """
+        held = [self.columns[name] for name in names]
+        for base in range(start, stop, CHUNK):
+            end = min(base + CHUNK, stop)
+            yield from zip(*(column[base:end].to_pylist() for column in held), strict=True)
+
+    def span(self, key: str | None) -> tuple[int, int]:
+        """The run of rows ``key``'s whole subtree occupies, itself included."""
+        return _span(self.order, _subtree_range(key))
+
+    def children(self, parent: str) -> Iterator[tuple[str, int | None]]:
+        """Each key immediately below ``parent``, and where its own row is.
+
+        In key order, which is the order the file is already in, and lazily:
+        a level of seven million is counted by a caller that holds one child at
+        a time.
+
+        The position is None for an **implicit** child -- a key that holds
+        nothing and has something beneath it. Those appear in a listing and
+        there is no row anywhere that says so; here the walk arrives at a row
+        whose key is *below* the child rather than equal to it, which is the
+        same fact read off the order instead of recorded in a map.
+        """
+        start, stop = self.span(parent)
+        names = self.names
+        cut = 0 if parent == keys.ROOT else len(parent) + 1
+        position = start
+        # `parent`'s own row sorts first inside its subtree, and it is not a
+        # child of itself.
+        if position < stop and names[position] == parent:
+            position += 1
+
+        while position < stop:
+            key = names[position]
+            edge = key.find(keys.DELIMITER, cut)
+            child = key if edge < 0 else key[:edge]
+            yield child, (position if key == child else None)
+
+            # Past this child's own subtree to the next sibling. Everything
+            # under a key begins with that key and a delimiter, so a plain
+            # prefix test says whether a row is still inside it -- no parse, no
+            # sort form, and a child with nothing beneath it is found in one
+            # comparison, which is the overwhelmingly common case. Only a child
+            # deep enough to outrun :data:`PROBE` is worth a bisect, and that
+            # one pays the single ``sort_subtree_end`` it needs.
+            inside = child + keys.DELIMITER
+            probe = position + 1
+            ceiling = min(stop, probe + PROBE)
+            while probe < ceiling and names[probe].startswith(inside):
+                probe += 1
+            if probe == ceiling and probe < stop and names[probe].startswith(inside):
+                probe = bisect_left(self.order, keys.sort_subtree_end(child), probe, stop)
+            position = probe
+
+    def matching(self, start: int, stop: int, wanted: list[str] | None) -> tuple[Any, int]:
+        """The document or named-metadata rows in ``[start, stop)``, vectorised.
+
+        The predicate a survey runs on every row it considers, expressed as
+        Arrow compute over a slice of two columns rather than as a Python test
+        per row. That matters only at scale, and at scale it is the whole
+        difference: a survey of a seven-million-document reference base reports
+        a ``total`` over all of it, so the predicate really is evaluated seven
+        million times, and a Python loop doing it is seconds where this is
+        milliseconds.
+
+        **Only for a scope that is not itself metadata.** From inside a
+        metadata namespace the stored ``meta_name`` is a segment above the
+        question being asked and matches nothing --
+        :func:`outrage.store.meta_reader` is where that rule lives -- so the
+        caller keeps the general walk for that case.
+        """
+        pa, pc = _compute()
+        names = self.columns["meta_name"][start:stop]
+        if wanted is None:
+            # A document is a row whose key never turned to metadata.
+            mask = pc.is_null(names)
+        else:
+            mask = pc.and_(
+                pc.is_in(names, value_set=pa.array(wanted, pa.string())),
+                # The *value* of a name, not something below it: `a/!title` and
+                # not `a/!title/of`.
+                pc.is_null(self.columns["meta_path"][start:stop]),
+            )
+        chosen = pc.indices_nonzero(mask)
+        total = pc.sum(pc.filter(self.columns["chars"][start:stop], mask)).as_py() or 0
+
+        if start:
+            # `indices_nonzero` counts from the slice, and everything above
+            # counts from the file. Shifted in Arrow rather than in a Python
+            # loop, which would undo the point of the kernel above on exactly
+            # the reads that bound themselves.
+            chosen = pc.add(chosen, start)
+        return _positions(chosen), total
+
+    def has_children(self, key: str) -> bool:
+        """Whether anything at all is stored below ``key``.
+
+        Two bisects and a comparison. The subtree run holds ``key``'s own row
+        first when it has one, so what is left after stepping over it is
+        exactly what "has something beneath it" means.
+        """
+        start, stop = self.span(key)
+        if start < stop and self.names[start] == key:
+            start += 1
+        return start < stop
+
+    def carries(self, position: int, key: str, names: Sequence[str]) -> bool:
+        """Whether the row at ``position`` carries any metadata in ``names``.
+
+        No search: a key's metadata is the rows straight after its own. That
+        holds because ``sort_form`` marks a metadata segment below an ordinary
+        one, so ``a/!title`` sorts after ``a`` and before ``a/b``, and nothing
+        else can come between.
+
+        Only *direct* metadata counts, which is what the map this replaced
+        recorded: ``a/!title`` is a name on ``a`` and ``a/!title/!of`` is a
+        name on ``a/!title``. So a row deeper than one segment is skipped
+        rather than ending the walk -- it is still inside the metadata unit,
+        and a later row may still be a direct name.
+        """
+        # `keys.meta_range` says the same thing, and parses to say it. This
+        # is asked once per document in a survey of the whole store, and the
+        # key came out of the file already normalised, so the bounds are built
+        # rather than derived: everything in `key`'s metadata unit begins with
+        # the key, a delimiter and `!`, and nothing else does.
+        prefix = keys.META_PREFIX if key == keys.ROOT else key + keys.DELIMITER + keys.META_PREFIX
+        cut = len(prefix)
+        column = self.names
+        probe = position + 1
+        while probe < self.num_rows:
+            candidate = column[probe]
+            if not candidate.startswith(prefix):
+                return False
+            name = candidate[cut:]
+            if keys.DELIMITER not in name and name in names:
+                return True
+            probe += 1
+        return False
+
+
+class _Selection:
+    """The rows one read is about, as positions into the file.
+
+    **Positions rather than rows**, and that is the whole of it: a selection
+    can be the entire corpus -- ``get_documents()`` at the root reports a
+    ``total`` over every document there is -- and materialising a row object
+    per key to count them is what made a large reference base unopenable in
+    the first place. Eight bytes each in a typed array, and the two or three
+    dozen rows a page actually returns are made from the columns at the end.
+
+    ``total_chars`` is accumulated as the selection is built rather than
+    computed from it. The characters are in the chunk being walked anyway, and
+    adding them up there costs nothing; going back for them afterwards would
+    mean touching every selected row a second time.
+    """
+
+    __slots__ = ("index", "positions", "total_chars")
+
+    def __init__(self, index: _Index, positions: Any, total_chars: int) -> None:
+        self.index = index
+        self.positions = positions
+        self.total_chars = total_chars
+
+    def __len__(self) -> int:
+        return len(self.positions)
+
+    def column(self, name: str) -> list[Any]:
+        """One column at the selected rows, gathered in one vectorised take.
+
+        For the callers that need a value from every selected row rather than
+        from a page of them -- the survey window, which measures each document
+        at the position its metadata would have taken. Arrow gathers the whole
+        column at once; a Python loop over the positions would decode them one
+        at a time and is the thing worth avoiding at seven figures.
+        """
+        if not self.positions:
+            return []
+        pa, pc = _compute()
+        gathered = pa.array(self.positions, type=pa.int64())
+        return pc.take(self.index.columns[name], gathered).to_pylist()
+
+    def narrowed(self, lower: int, upper: int) -> _Selection:
+        """The selection cut down to ``[lower, upper)`` of its own positions."""
+        kept = self.positions[lower:upper]
+        sizes = self.index.sizes
+        return _Selection(self.index, kept, sum(sizes[position] for position in kept))
+
+    def after(self, bound: str | None) -> Any:
+        """The positions past a page cursor, which is a bisect like any other.
+
+        A cursor is *not* a bound on the selection: it moves as a caller pages
+        and deliberately does not reach the totals. Same mechanism, different
+        argument, and keeping the two apart is what stops one quietly becoming
+        the other.
+        """
+        if bound is None:
+            return self.positions
+        order = self.index.order
+        return self.positions[bisect_right(self.positions, bound, key=lambda p: order[p]) :]
 
 
 class ParquetStore(FileStore):
@@ -339,12 +782,16 @@ class ParquetStore(FileStore):
         still looking at the command that named it; the columns wait until
         something asks.
 
-        Read whole because the contract asks for totals. ``Page.total`` and
-        ``Page.total_chars`` describe the selection rather than the page, and
-        no row-group statistic answers "how many rows match this predicate" --
-        only "could any row in this group match". Recorded in
-        ``context/35/findings``: that field is what decides how much of a
-        columnar file a read has to open.
+        Held as Arrow rather than as Python objects because the contract asks
+        for totals. ``Page.total`` and ``Page.total_chars`` describe the
+        selection rather than the page, and no row-group statistic answers "how
+        many rows match this predicate" -- only "could any row in this group
+        match". Recorded in ``context/35/findings``: that field is what decides
+        how much of a columnar file a read has to open. So the small columns
+        are resident and only ``content`` is read lazily -- but resident as the
+        file's own columns, which is a buffer per column, and not as a row
+        object per key, which was fifteen times the size of the file it came
+        from.
         """
         built = self._built
         if built is None:
@@ -359,12 +806,13 @@ class ParquetStore(FileStore):
         return built
 
     def _read_index(self) -> _Index:
-        """Every column but ``content``, as rows and the three lookups over them.
+        """Every column but ``content``, combined and kept as Arrow.
 
-        A single pass. The columns arrive as Arrow arrays and are converted
-        once with ``to_pylist``; going through Arrow scalars per cell costs
-        more than the conversion does, and everything below wants Python
-        strings anyway.
+        A single pass, and nothing per row. ``combine_chunks`` is the one piece
+        of work done on the way in: a parquet read gives one chunk per row
+        group, and indexing a chunked array means finding the chunk first --
+        which a bisect would pay for on every one of its twenty-odd probes.
+        Combined once, an index is a buffer offset.
         """
         # A version 1 file has no `meta_path` column, and the `meta_name` it
         # does have was written under the rule that a name swallowed everything
@@ -372,45 +820,21 @@ class ParquetStore(FileStore):
         # carries, so the older file is read whole and re-split here rather
         # than repacked. Nothing is written back: this backend has no
         # migrations, and the derivation costs one parse per row on the one
-        # pass that builds the index anyway.
+        # pass that reads the columns anyway.
+        pa, _ = _arrow()
         derive = self._written_version < 2
-        held = [name for name in INDEX_COLUMNS if not (derive and name == "meta_path")]
+        held = [name for name in HELD_COLUMNS if not (derive and name == "meta_path")]
         table = self._parquet.read(columns=held)
-        columns = {name: table.column(name).to_pylist() for name in held}
+        columns = {name: table.column(name).combine_chunks() for name in held}
         if derive:
-            split = [keys.parse(key) for key in columns["key"]]
-            columns["meta_name"] = [parsed.meta_name for parsed in split]
-            columns["meta_path"] = [parsed.meta_path for parsed in split]
+            split = [keys.parse(key) for key in columns["key"].to_pylist()]
+            columns["meta_name"] = pa.array([parsed.meta_name for parsed in split], pa.string())
+            columns["meta_path"] = pa.array([parsed.meta_path for parsed in split], pa.string())
 
-        rows: list[_Row] = []
-        by_key: dict[str, _Row] = {}
-        children: dict[str, set[str]] = {}
-        meta_names: dict[str, set[str]] = {}
-
-        for position in range(table.num_rows):
-            row = _Row(
-                key=columns["key"][position],
-                doc_key=columns["doc_key"][position],
-                meta_name=columns["meta_name"][position],
-                meta_path=columns["meta_path"][position],
-                parent=columns["parent"][position],
-                format=columns["format"][position],
-                updated_at=columns["updated_at"][position],
-                sort_key=columns["sort_key"][position],
-                chars=columns["chars"][position],
-                position=position,
-            )
-            rows.append(row)
-            by_key[row.key] = row
-            # Recorded against the key's own parent, from its last segment.
-            # A value of `title` is the key `<document>/!title` and nothing
-            # else, at any scope, so this needs no reading of where the whole
-            # key first turned to metadata -- which from inside a metadata
-            # namespace is a segment above the question being asked.
-            name = row.key.rpartition(keys.DELIMITER)[2]
-            if name.startswith(keys.META_PREFIX):
-                meta_names.setdefault(row.parent, set()).add(name[len(keys.META_PREFIX) :])
-            _record_ancestry(children, row.key)
+        for name in ENCODABLE:
+            encoded = columns[name].dictionary_encode()
+            if encoded.nbytes < columns[name].nbytes:
+                columns[name] = encoded
 
         metadata = self._parquet.metadata
         starts = [0]
@@ -418,11 +842,7 @@ class ParquetStore(FileStore):
             starts.append(starts[-1] + metadata.row_group(group).num_rows)
 
         return _Index(
-            rows=rows,
-            by_key=by_key,
-            children=children,
-            meta_names=meta_names,
-            order=[row.sort_key for row in rows],
+            columns=columns,
             # The running total has one entry per group plus a tail past the
             # last, and the tail is dropped: a bisect over the starts alone
             # lands on the group a position is in, and an empty file keeps one
@@ -529,23 +949,25 @@ class ParquetStore(FileStore):
     # -- reading ---------------------------------------------------------
 
     def exists(self, key: str) -> bool:
-        """One dict lookup, over the index rather than the file."""
-        return keys.parse(key).key in self._index.by_key
+        """One bisect, over the index rather than the file."""
+        return self._index.find(keys.parse(key).key) is not None
 
     def level_entry(self, key: str) -> Entry | None:
         """The stored row if there is one, else whether anything lies below.
 
-        The second half is a lookup rather than a scan because ``children``
-        already records implicit keys -- see :class:`_Index`.
+        The second half is two bisects rather than a scan, and it finds an
+        implicit key the same way the listing does -- see
+        :meth:`_Index.has_children`.
         """
         parsed = keys.parse(key)
         if parsed.key == keys.ROOT:
             raise ValueError("the root is not a child of anything, so it has no listing entry")
 
-        row = self._index.by_key.get(parsed.key)
-        if row is not None:
-            return _entry(row)
-        if self._index.children.get(parsed.key):
+        index = self._index
+        position = index.find(parsed.key)
+        if position is not None:
+            return _entry(index.row(position))
+        if index.has_children(parsed.key):
             return Entry(key=parsed.key, kind="implicit", size=None, format=None, updated_at=None)
         return None
 
@@ -568,13 +990,15 @@ class ParquetStore(FileStore):
         # question -- `key` itself and its whole metadata unit sort inside them
         # and are not counted -- but it keeps a count of one subtree from
         # walking the corpus.
-        inner, outer = _span(index.order, _subtree_range(key))
+        inner, outer = index.span(key)
         below = _below(parsed.key)
         lo, hi = keys.meta_range(parsed.key)
+        # Only `key` is needed to answer this, so only `key` is converted, and
+        # a chunk of it at a time.
         return sum(
             1
-            for row in index.rows[max(lower, inner) : min(upper, outer)]
-            if below(row.key) and (whole_subtree or not lo <= row.key < hi)
+            for candidate in index.column_in("key", max(lower, inner), min(upper, outer))
+            if below(candidate) and (whole_subtree or not lo <= candidate < hi)
         )
 
     @_logged("retrieve_document")
@@ -596,13 +1020,15 @@ class ParquetStore(FileStore):
         different documents for the same call.
         """
         parsed = keys.parse(key)
-        row = self._index.by_key.get(parsed.key)
-        if row is None:
+        index = self._index
+        position = index.find(parsed.key)
+        if position is None:
             beneath = self.descendant_count(key)
             if beneath:
                 raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
             raise KeyNotFoundError("key-not-found", key=key)
 
+        row = index.row(position)
         content = self._content(row)
         if offset < 0:
             raise ValueError("offset must not be negative")
@@ -633,55 +1059,61 @@ class ParquetStore(FileStore):
         limit: int | None = None,
         cursor: str | None = None,
     ) -> Page[Entry]:
-        """One level, real and implicit keys together.
+        """One level, real and implicit keys together, walked in order.
 
-        ``children`` holds both, so unlike SQLite there are no two halves to
-        merge and no risk of cutting them separately -- which is the defect
-        that shape has to be careful about. The level's totals are over the
-        whole level and so unaffected by the cursor, and the characters come
-        from ``chars`` without any content being read.
+        :meth:`_Index.children` yields both kinds in key order -- which is the
+        order the file is already in, so nothing is sorted here. That is the
+        difference this shape makes: the layout it replaced held a set of every
+        child of every key, and then called ``sort_form`` on every name in the
+        level on every call. At two hundred thousand keys a listing of the root
+        took most of a second, all of it re-deriving an order the file was
+        already written in.
+
+        **One pass, and it holds a page.** The totals are over the whole level
+        and so unaffected by the cursor, which means the level has to be walked
+        whatever happens; what does not have to happen is an ``Entry`` per key
+        surviving that walk. Only the page's worth is kept, plus one more --
+        which is how ``more`` is known without counting the rest twice.
+
+        The characters come from ``chars`` without any content being read.
         """
         # The whole key, not its document part: a metadata namespace is a
         # level like any other and ``list_keys("a/!x")`` lists what is in it.
         parent = keys.parse(_scope(key)).key
-        names = self._index.children.get(parent, set())
+        index = self._index
         bound = _cursor_bound(cursor)
 
-        # Sorted on the form, and the form is kept rather than recomputed for
-        # the cursor test below: `sort_form` parses and pads a key, and a level
-        # of ten thousand would otherwise do it twice each.
-        ordered = sorted(
-            ((keys.sort_form(name), self._as_child(name)) for name in names),
-            key=lambda pair: pair[0],
-        )
-        entries = [entry for _, entry in ordered]
-        candidates = [entry for form, entry in ordered if bound is None or form > bound]
+        total = 0
+        total_chars = 0
+        items: list[Entry] = []
+        more = False
+        sizes = index.sizes
+        for child, position in index.children(parent):
+            total += 1
+            # The level's characters need one number per child, not a row. A
+            # row is ten columns decoded, and building one per key is what a
+            # listing of a large level cannot afford -- so only the page's
+            # worth are made, below.
+            if position is not None:
+                total_chars += sizes[position]
+            if bound is not None and keys.sort_form(child) <= bound:
+                continue
+            if limit is None or len(items) < limit:
+                items.append(
+                    _entry(index.row(position)) if position is not None else _implicit(child)
+                )
+            else:
+                # One past the page is all it takes to know there is a next
+                # one. Counting the rest would walk the level twice.
+                more = True
 
-        items = candidates if limit is None else candidates[:limit]
-        more = limit is not None and len(candidates) > limit
-        # Over the level rather than the page: what a caller cannot work out
-        # from a page is how much of the whole they are holding.
-        total_chars = sum(entry.size or 0 for entry in entries)
         return Page(
             items=items,
             returned=len(items),
-            total=len(entries),
+            total=total,
             total_chars=total_chars,
             next_cursor=items[-1].key if more and items else None,
         )
-
-    def _as_child(self, key: str) -> Entry:
-        """A child of some level as it appears there, stored or implicit.
-
-        Named apart from :meth:`level_entry`, which answers a different
-        question: that one is asked about a key that may not be there at all
-        and returns None when it is not, while this is asked about a name
-        already known to be in the level and so always has an answer.
-        """
-        row = self._index.by_key.get(key)
-        if row is not None:
-            return _entry(row)
-        return Entry(key=key, kind="implicit", size=None, format=None, updated_at=None)
 
     @_logged("get_documents")
     def get_documents(
@@ -706,24 +1138,26 @@ class ParquetStore(FileStore):
         -- which returns metadata, and whose documents are short -- opens the
         content column for a page's worth of rows and no more.
         """
+        index = self._index
         selection = self._selection(subtree, key_range, meta_name=meta_name)
-        total = len(selection)
-        total_chars = sum(row.chars for row in selection)
 
         items: list[Excerpt] = []
         spent = 0
         more = False
-        for row in _after(selection, _cursor_bound(cursor)):
+        for position in selection.after(_cursor_bound(cursor)):
             if limit is not None and len(items) >= limit:
                 more = True
                 break
-            expected = min(row.chars, max_chars)
+            # The budget is decided from `chars` alone, so a document the
+            # budget refuses is never materialised and never read.
+            expected = min(index.at("chars", position), max_chars)
             if items and max_total_chars is not None and spent + expected > max_total_chars:
                 # Never on the first document, or a budget smaller than one
                 # document returns an empty page with a cursor that does not
                 # move, and the caller loops forever making no progress.
                 more = True
                 break
+            row = index.row(position)
             excerpt = _excerpt(
                 row.key, self._content(row), row.format, row.updated_at, 0, None, max_chars
             )
@@ -733,8 +1167,8 @@ class ParquetStore(FileStore):
         return Page(
             items=items,
             returned=len(items),
-            total=total,
-            total_chars=total_chars,
+            total=len(selection),
+            total_chars=selection.total_chars,
             next_cursor=items[-1].key if more and items else None,
         )
 
@@ -771,15 +1205,21 @@ class ParquetStore(FileStore):
         # rather than one joined onto a previous.
         root = min(keys.sort_form(keys.META_PREFIX + name) for name in names)
 
-        def position(row: _Row) -> str:
-            return root if row.sort_key == keys.ROOT else row.sort_key + suffix
-
-        lower, upper = _span([position(row) for row in missing], window)
-        within = missing[lower:upper]
+        # Gathered in one take rather than a decode per row: this is the one
+        # read that needs a value from every selected row instead of from a
+        # page of them.
+        marks = [
+            root if sort_key == keys.ROOT else sort_key + suffix
+            for sort_key in missing.column("sort_key")
+        ]
+        lower, upper = _span(marks, window)
+        within = missing.narrowed(lower, upper)
         return MissingMeta(
             total=len(within),
-            total_chars=sum(row.chars for row in within),
-            sample=[row.key for row in within[:sample]] if sample > 0 else [],
+            total_chars=within.total_chars,
+            sample=[self._index.at("key", position) for position in within.positions[:sample]]
+            if sample > 0
+            else [],
         )
 
     @_logged("keys_missing_meta")
@@ -799,33 +1239,22 @@ class ParquetStore(FileStore):
         it could not see have to agree about what was in range, and two
         expressions of the same predicate are two chances to disagree.
         """
+        index = self._index
         missing = self._missing(subtree, key_range, _names(meta_name))
-        total_chars = sum(row.chars for row in missing)
 
-        found = list(_after(missing, _cursor_bound(cursor)))
+        found = missing.after(_cursor_bound(cursor))
         items = found if limit is None else found[:limit]
         more = limit is not None and len(found) > limit
+        listed = [index.at("key", position) for position in items]
         return Page(
-            items=[row.key for row in items],
-            returned=len(items),
+            items=listed,
+            returned=len(listed),
             total=len(missing),
-            total_chars=total_chars,
-            next_cursor=items[-1].key if more and items else None,
+            total_chars=missing.total_chars,
+            next_cursor=listed[-1] if more and listed else None,
         )
 
     # -- selecting -------------------------------------------------------
-
-    def _in_range(self, key_range: KeyRange) -> list[_Row]:
-        """The rows inside ``key_range``, as a slice of the file's own order.
-
-        The bisect, and the reason the file is sorted. Every bound a
-        :class:`~outrage.store.KeyRange` can carry is a comparison against a row's
-        position in the order the rows are already in, so the answer is a
-        contiguous run found by two searches rather than a predicate evaluated
-        against every row.
-        """
-        lower, upper = _span(self._index.order, key_range)
-        return self._index.rows[lower:upper]
 
     def _selection(
         self,
@@ -833,8 +1262,9 @@ class ParquetStore(FileStore):
         key_range: KeyRange,
         *,
         meta_name: str | Sequence[str] | None,
-    ) -> list[_Row]:
-        """The rows a subtree read is about, in key order.
+        keep: Callable[[int, str], bool] | None = None,
+    ) -> _Selection:
+        """The rows a subtree read is about, as positions in key order.
 
         The same three independent conditions the SQLite backend ANDs
         together, and all three are required to hold: a row is in the selection
@@ -844,47 +1274,128 @@ class ParquetStore(FileStore):
         of it.
 
         **Both the range and the subtree are bisected**, and their spans are
-        intersected before either is sliced -- see :func:`_subtree_range` for
+        intersected before either is walked -- see :func:`_subtree_range` for
         why a subtree is a stretch of the order too. What is left to test per
         row is the depth budget, which is not a bound on the order at all, and
         the metadata name -- the latter read as it is seen from the key the
         read was scoped at, which :func:`outrage.store.meta_reader` decides.
+
+        The walk converts the four columns those tests need a chunk at a time
+        and keeps a position and a character count. Nothing per row survives
+        it, which is what lets the selection be the whole corpus.
+
+        ``keep`` is a further test, given the row's position and key, for the
+        one caller that has one: :meth:`_missing` asks whether the document
+        already carries a name, and asking it here rather than over the result
+        means the walk happens once.
         """
         wanted = None if meta_name is None else _names(meta_name)
         index = self._index
         lower, upper = _span(index.order, key_range)
-        inner, outer = _span(index.order, _subtree_range(subtree.key))
-        rows = index.rows[max(lower, inner) : min(upper, outer)]
+        inner, outer = index.span(subtree.key)
+        start, stop = max(lower, inner), min(upper, outer)
 
+        scope = keys.parse(_scope(subtree.key))
+        if subtree.depth is None and not scope.is_metadata:
+            positions, total_chars = index.matching(start, stop, wanted)
+        else:
+            positions, total_chars = self._walked(subtree, start, stop, wanted)
+
+        if keep is not None:
+            positions, total_chars = self._kept(positions, keep)
+        return _Selection(index, positions, total_chars)
+
+    def _walked(
+        self, subtree: BoundedSubtree, start: int, stop: int, wanted: list[str] | None
+    ) -> tuple[Any, int]:
+        """:meth:`_selection`'s predicate as a Python walk, for when it must be.
+
+        Two things force it. A **depth budget** is not a bound on the order and
+        not a column either -- it is counted off ``doc_key`` per row. And a
+        scope that is **itself metadata** reads its split per row rather than
+        from the stored columns, which is
+        :func:`outrage.store.meta_reader`'s rule.
+
+        Neither is what a large reference base is surveyed with, so this is the
+        general answer and :meth:`_Index.matching` is the fast one. Both must
+        select the same rows, and ``test_the_two_backends_answer_every_read_identically``
+        is what says so: it runs every read at every bound against SQLite, and
+        a depth budget on the same subtree takes this path where the plain
+        survey took the other.
+        """
+        index = self._index
         deep_enough = _depth_test(subtree)
         seen_from = meta_reader(_scope(subtree.key))
 
-        def carries(row: _Row) -> bool:
-            name, path = seen_from(row.key, row.meta_name, row.meta_path)
+        positions = array("q")
+        total_chars = 0
+        walk = index.columns_in(("key", "meta_name", "meta_path", "chars"), start, stop)
+        for offset, (key, name, path, chars) in enumerate(walk):
+            seen_name, seen_path = seen_from(key, name, path)
             if wanted is None:
-                return name is None
-            return name in wanted and path is None
+                if seen_name is not None:
+                    continue
+            elif seen_name not in wanted or seen_path is not None:
+                continue
+            # The parse is paid here and nowhere else: this is the only walk
+            # that asks a question of `doc_key`, and it is the walk a depth
+            # budget forces. A survey without one never reaches this method.
+            if not deep_enough(keys.parse(key).doc_key):
+                continue
+            positions.append(start + offset)
+            total_chars += chars
+        return positions, total_chars
 
-        return [row for row in rows if deep_enough(row) and carries(row)]
+    def _kept(self, positions: Any, keep: Callable[[int, str], bool]) -> tuple[Any, int]:
+        """``positions`` narrowed by a test that needs the row's key.
+
+        The keys are gathered in one Arrow take rather than decoded one at a
+        time: this runs over a selection that may be every document in the
+        store, and the take is the difference between one vectorised gather and
+        seven million scalar builds.
+        """
+        index = self._index
+        if not positions:
+            return positions, 0
+
+        pa, pc = _compute()
+        gathered = pa.array(positions, type=pa.int64())
+        names = pc.take(index.columns["key"], gathered).to_pylist()
+
+        sizes = index.sizes
+        kept = array("q")
+        total_chars = 0
+        for position, key in zip(positions, names, strict=True):
+            if keep(position, key):
+                kept.append(position)
+                total_chars += sizes[position]
+        return kept, total_chars
 
     def _missing(
         self, subtree: BoundedSubtree, key_range: KeyRange, names: list[str]
-    ) -> list[_Row]:
+    ) -> _Selection:
         """Documents in the selection carrying none of ``names``.
 
-        SQLite's ``NOT EXISTS`` against a self-join, as a set test: the index
-        already records which metadata names each document key carries, so this
-        costs a dict lookup per document rather than a correlated subquery.
-        That is the one place the columnar layout is unambiguously the better
-        shape -- ``planned/parquet`` said this would stop being an anti-join,
-        and it has.
+        SQLite's ``NOT EXISTS`` against a self-join, as a look at the next row:
+        a key's metadata sorts immediately after it, so whether a document
+        carries a name is answered by the rows already adjacent to it rather
+        than by a correlated subquery -- see :meth:`_Index.carries`. That is
+        the one place the columnar layout is unambiguously the better shape --
+        ``planned/parquet`` said this would stop being an anti-join, and it
+        has.
+
+        **The lookahead deliberately reaches outside the selection.** Whether a
+        document has a title is a fact about the store, not about the range the
+        caller asked over, so a ``key_range`` that happens to cut between a
+        document and its title must not make the document look untitled.
         """
-        carried = self._index.meta_names
-        return [
-            row
-            for row in self._selection(subtree, key_range, meta_name=None)
-            if not carried.get(row.key, _NOTHING).intersection(names)
-        ]
+        index = self._index
+        return self._selection(
+            subtree,
+            key_range,
+            meta_name=None,
+            keep=lambda position, key: not index.carries(position, key, names),
+        )
 
     # -- maintenance -----------------------------------------------------
 
@@ -963,21 +1474,38 @@ class ParquetStore(FileStore):
         return int((self._parquet.schema_arrow.metadata or {})[VERSION_KEY])
 
     def audit_rows(self) -> Iterator[AuditRow]:
-        """Every row, from the index, without opening the content column.
+        """Every row **as the file stores it**, streamed a row group at a time.
 
-        The index is exactly the columns a check wants and it is resident
-        already -- ``chars`` most of all, which is the column this backend has
-        and SQLite does not, precisely so that counting characters never costs
-        a read of the text.
+        From the file rather than from the index, and the difference is the
+        point. The index no longer holds ``doc_key`` or ``parent`` -- which is
+        what makes an open store a quarter of what it used to cost -- and what
+        it does not hold it cannot check. Worse, both come off ``key``, and a
+        value derived from a key can never disagree with it. A check reading
+        the index would therefore pass unconditionally on exactly the defect
+        ``_report_parents`` exists to find -- a stored ``parent`` that does not
+        match its key, written by something that was not this build -- and
+        would report a clean file while saying nothing.
+
+        So this reads the stored columns. It is the one caller that wants what
+        is *written down* rather than what is true, and it is a check, which
+        is allowed to be the expensive path. ``iter_batches`` streams, so a
+        corpus that does not fit in memory is still checked without it.
+
+        ``chars`` is the column this backend has and SQLite does not, precisely
+        so that counting characters never costs a read of the text -- and this
+        never opens ``content`` either.
         """
-        for row in self._index.rows:
-            yield AuditRow(
-                key=row.key,
-                doc_key=row.doc_key,
-                meta_name=row.meta_name,
-                parent=row.parent,
-                chars=row.chars,
-            )
+        held = ("key", "doc_key", "meta_name", "parent", "chars")
+        for batch in self._parquet.iter_batches(batch_size=CHUNK, columns=list(held)):
+            columns = [batch.column(name).to_pylist() for name in held]
+            for key, doc_key, meta_name, parent, chars in zip(*columns, strict=True):
+                yield AuditRow(
+                    key=key,
+                    doc_key=doc_key,
+                    meta_name=meta_name,
+                    parent=parent,
+                    chars=chars,
+                )
 
     def check_file(self, report: Report) -> None:
         """Whether the file is still in the order every read of it assumes.
@@ -994,17 +1522,21 @@ class ParquetStore(FileStore):
         was written.
         """
         index = self._index
-        report.details["rows"] = str(len(index.rows))
+        report.details["rows"] = str(len(index))
         report.details["row groups"] = str(self._parquet.metadata.num_row_groups)
 
-        # ``order`` is the sort_key column in the order the file holds it,
-        # never re-sorted on the way in -- which is what makes comparing it
-        # with itself a check rather than a tautology.
-        out_of_order = [
-            index.rows[position].key
-            for position in range(1, len(index.order))
-            if index.order[position] < index.order[position - 1]
-        ]
+        # The ``sort_key`` column in the order the file holds it, never
+        # re-sorted on the way in -- which is what makes comparing it with
+        # itself a check rather than a tautology. Walked a chunk at a time and
+        # kept only as the previous value, so checking a corpus that does not
+        # fit in memory as rows does not need it to.
+        out_of_order: list[str] = []
+        previous: str | None = None
+        walk = index.columns_in(("key", "sort_key"), 0, len(index))
+        for key, sort_key in walk:
+            if previous is not None and sort_key < previous:
+                out_of_order.append(key)
+            previous = sort_key
         report.details["order"] = "sorted" if not out_of_order else "not sorted"
         if out_of_order:
             report.problems.append(
@@ -1251,21 +1783,8 @@ def _subtree_range(key: str | None) -> KeyRange:
     return KeyRange(after_inclusive=key, final_subtree=key)
 
 
-def _after(rows: list[_Row], bound: str | None) -> list[_Row]:
-    """The rows past a page cursor, which is a bisect like any other bound.
-
-    Separate from :func:`_bounded` because a cursor is *not* a bound on the
-    selection: it moves as a caller pages and deliberately does not reach the
-    totals. Same mechanism, different argument, and keeping the two apart is
-    what stops one quietly becoming the other.
-    """
-    if bound is None:
-        return rows
-    return rows[bisect_right([row.sort_key for row in rows], bound) :]
-
-
-def _depth_test(subtree: BoundedSubtree) -> Callable[[_Row], bool]:
-    """``subtree``'s depth budget as a test on a row, and nothing else.
+def _depth_test(subtree: BoundedSubtree) -> Callable[[str], bool]:
+    """``subtree``'s depth budget as a test on a row's ``doc_key``, and nothing else.
 
     The *key* half of a subtree is bisected rather than tested --
     :func:`_subtree_range` -- so all that is left per row is how far down it
@@ -1274,20 +1793,23 @@ def _depth_test(subtree: BoundedSubtree) -> Callable[[_Row], bool]:
     and ``a/b/!title`` are both at depth 2 and one budget covers a document and
     its metadata together.
 
+    Takes the ``doc_key`` rather than a row because that is all it reads, and
+    the walk that calls it has the column in hand and no row made yet.
+
     A budget of None is every depth, and says so by returning a test that is
     always true rather than by making every caller branch.
     """
     if subtree.depth is None:
-        return lambda row: True
+        return lambda doc_key: True
 
     limit = subtree.depth
     base = keys.depth(_scope(subtree.key))
 
-    def deep_enough(row: _Row) -> bool:
+    def deep_enough(doc_key: str) -> bool:
         # The root has no segments and so breaks the delimiters-plus-one
         # formula: it would come out at depth 1, and `depth=0` from the root
         # would then exclude the very document it names.
-        depth = 0 if row.doc_key == keys.ROOT else row.doc_key.count(keys.DELIMITER) + 1
+        depth = 0 if doc_key == keys.ROOT else doc_key.count(keys.DELIMITER) + 1
         return depth - base <= limit
 
     return deep_enough
@@ -1308,28 +1830,6 @@ def _below(scope: str) -> Callable[[str], bool]:
     return lambda candidate: lo <= candidate < hi
 
 
-def _record_ancestry(children: dict[str, set[str]], key: str) -> None:
-    """Record ``key`` and every key it brings into being under its parent.
-
-    Walks up until it reaches a key already recorded, so a corpus sharing deep
-    prefixes -- which a reference base is entirely made of -- costs one step
-    per key after the first that reaches a given directory.
-
-    The root is where it stops rather than something it records. The root is
-    its own parent, so recording it would list it as a child of itself and
-    count it into its own level's totals, which is the exception
-    ``_children_clause`` exists to make in the other backend.
-    """
-    current = key
-    while current != keys.ROOT:
-        parent = current.rpartition(keys.DELIMITER)[0]
-        siblings = children.setdefault(parent, set())
-        if current in siblings:
-            return
-        siblings.add(current)
-        current = parent
-
-
 def _entry(row: _Row) -> Entry:
     """A stored row as a listing entry.
 
@@ -1346,11 +1846,24 @@ def _entry(row: _Row) -> Entry:
     )
 
 
+def _implicit(key: str) -> Entry:
+    """A key that holds nothing and has something beneath it, as a listing entry.
+
+    It has no row, so it has no size, format or timestamp -- and saying so with
+    None three times is the honest answer rather than borrowing a descendant's.
+    """
+    return Entry(key=key, kind="implicit", size=None, format=None, updated_at=None)
+
+
 __all__ = [
+    "CHUNK",
     "COMPRESSION",
     "DEFAULT_STORE_FILE",
+    "ENCODABLE",
     "FORMAT_VERSION",
+    "HELD_COLUMNS",
     "INDEX_COLUMNS",
+    "PROBE",
     "ROW_GROUP_SIZE",
     "VERSION_KEY",
     "ParquetStore",
