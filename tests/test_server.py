@@ -1354,6 +1354,28 @@ def test_a_second_file_makes_a_cross_key_import_checked(exporting):
     )
 
 
+def test_a_verbatim_cross_key_copy_is_not_called_a_no_op(exporting):
+    """The copy route's ordinary case: the file is meant to be unedited, and
+    the document it lands on still changed. Saying "the edit changed nothing"
+    beside a `previous` and a `stored` that differ is the sentence contradicting
+    the answer it is attached to."""
+    call(exporting, "store_document", key="context/c3d4/design", content="# The copy")
+    source = call(exporting, "document_edit", key="context/a1b2/design")
+    target = call(exporting, "document_edit", key="context/c3d4/design")
+
+    imported = call(
+        exporting,
+        "document_edit",
+        key="context/c3d4/design",
+        path=source["path"],
+        against=target["path"],
+    )
+
+    assert imported["previous"] != imported["stored"]
+    assert "the edit changed nothing" not in imported["note"]
+    assert "unchanged since it was exported from 'context/a1b2/design'" in imported["note"]
+
+
 def test_a_checked_cross_key_import_refuses_a_target_somebody_else_wrote(exporting):
     """The write that used to land silently on top of another agent's."""
     call(exporting, "store_document", key="context/c3d4/design", content="# The copy")

@@ -905,6 +905,12 @@ class Imported:
     edit matched nothing. Not a refusal - storing an unchanged document is
     harmless - but it is the silent no-op ``plans/write-preconditions`` names,
     and the record closes it for free."""
+    copied_from: str | None = None
+    """The key the content file was exported from, when that is not the key
+    written, and None for a round trip. What it is for is ``unedited``: an
+    unedited file put back where it came from changed nothing, and the same
+    file imported to another key is a copy, which changes that key however
+    little the file moved. One flag, two true sentences."""
     overwritten: bool = False
     """Whether ``overwrite`` allowed a write this check would have refused."""
     changed_at: str | None = None
@@ -1450,9 +1456,12 @@ def import_document(
 
     record = ExportRecord.read(file)
     # Asked of the file against what went out, whatever key it is going to and
-    # whatever is checking it: an edit that matched nothing is a no-op wherever
-    # it is being stored.
+    # whatever is checking it: the question is about the bytes. What it means
+    # is not: unedited bytes put back are a no-op, and the same bytes sent to
+    # another key are a copy that changed it, so `copied_from` keeps the two
+    # apart for whoever writes the sentence.
     unedited = record is not None and content_hash(content) == record.content_sha256
+    copied_from = record.key if record is not None and record.key != key else None
     check = check_write(
         opened,
         key,
@@ -1472,6 +1481,7 @@ def import_document(
         previous=check.previous,
         unchecked=check.unchecked,
         unedited=unedited,
+        copied_from=copied_from,
         overwritten=check.overwritten,
         changed_at=check.changed_at if check.overwritten else None,
     )

@@ -1252,6 +1252,24 @@ def test_the_unedited_note_still_comes_from_the_content_file(populated, tmp_path
     assert imported.unedited is True
 
 
+def test_a_cross_key_import_names_the_key_the_file_came_from(populated, tmp_path):
+    """What tells the two unedited sentences apart: put back where it came
+    from the file is a no-op, and imported elsewhere it is a copy."""
+    source = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project/copy", "# The copy")
+    target = bulk.export_document(populated, "project/copy", tmp_path / "export")
+
+    copied = bulk.import_document(
+        populated, "project/copy", source.path, tmp_path / "export", against=target.path
+    )
+    round_tripped = bulk.import_document(
+        populated, "project", source.path, tmp_path / "export"
+    )
+
+    assert copied.copied_from == "project"
+    assert round_tripped.copied_from is None
+
+
 def test_a_checking_file_outside_the_export_directory_is_refused(populated, tmp_path):
     """The containment rule is one rule, asked of both files."""
     exported = bulk.export_document(populated, "project", tmp_path / "export")

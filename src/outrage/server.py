@@ -1451,7 +1451,7 @@ def build_server(
             unchecked=imported.unchecked,
             changed_at=imported.changed_at,
         )
-        if imported.unedited:
+        if imported.unedited and imported.copied_from is None:
             # The silent no-op `plans/write-preconditions` names: the round trip
             # was clean and the edit matched nothing. Free to notice, because
             # the export recorded what it handed out.
@@ -1459,6 +1459,18 @@ def build_server(
                 result,
                 "the file is identical to what was exported, so the edit changed "
                 "nothing; if an edit was intended, it matched nothing.",
+            )
+        elif imported.unedited:
+            # The same bytes going to another key are a copy, not a no-op: the
+            # document here did change, and `previous` beside `stored` says by
+            # how much. So the sentence is about the file, which is the only
+            # thing that did not move, and never about the write.
+            _add_note(
+                result,
+                f"the file is unchanged since it was exported from "
+                f"{keys.displayed(imported.copied_from)!r}, so this stored a "
+                f"copy of it as it came out; if an edit was intended, it "
+                f"matched nothing.",
             )
         _note_shrink(result, imported.previous, imported.stored)
         return _DocumentEditResult.model_validate(result)
