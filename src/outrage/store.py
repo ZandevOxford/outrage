@@ -594,7 +594,12 @@ def _logged(op: str) -> Callable[[_Method], _Method]:
             bound.apply_defaults()
             # Everything but `self`, so the record names the arguments the
             # caller actually passed, defaults included.
-            fields = log.arguments(dict(list(bound.arguments.items())[1:]))
+            fields = log.arguments(
+                {
+                    name: self._log_argument(name, value)
+                    for name, value in list(bound.arguments.items())[1:]
+                }
+            )
             started = time.monotonic_ns()
             try:
                 result = method(self, *args, **kwargs)
@@ -607,7 +612,13 @@ def _logged(op: str) -> Callable[[_Method], _Method]:
                     error={"type": type(exc).__name__, "message": str(exc)},
                 )
                 raise
-            log.emit("store", op=op, args=fields, ms=_ms(started), result=_summarise(log, result))
+            log.emit(
+                "store",
+                op=op,
+                args=fields,
+                ms=_ms(started),
+                result=_summarise(log, result, mount_point=self.mount_point),
+            )
             return result
 
         return wrapper  # type: ignore[return-value]
@@ -657,11 +668,48 @@ class Store(ABC):
     #: sentence about a store and the name of its file agree.
     backend_name: ClassVar[str]
 
-    def __init__(self, *, log: EventLog | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        log: EventLog | None = None,
+        mount_point: str | None = None,
+    ) -> None:
         # The one thing every store has, file or no file. A null log rather
         # than None, so nothing below has to ask whether logging is on before
         # recording anything.
         self._log = log if log is not None else eventlog.NULL
+        # A backend speaks in keys relative to itself. The mount point is only
+        # how those keys are rendered in the event log; storage, routing and
+        # every value returned to the caller remain unchanged.
+        self.mount_point = keys.parse(_scope(mount_point)).key
+
+    def _log_key(self, key: str | None) -> str | None:
+        """A backend-local key as seen from this store's mounted namespace."""
+        if not self.mount_point:
+            return key
+        return keys.with_prefix(self.mount_point, _scope(key))
+
+    def _log_argument(self, name: str, value: object) -> object:
+        """Translate key-bearing arguments without changing the call itself."""
+        if name == "key" and isinstance(value, str | None):
+            return self._log_key(value)
+        if name == "cursor" and isinstance(value, str):
+            return self._log_key(value)
+        if isinstance(value, BoundedSubtree):
+            return replace(value, key=self._log_key(value.key))
+        if isinstance(value, KeyRange):
+            return replace(
+                value,
+                **{
+                    name: (
+                        self._log_key(bound)
+                        if (bound := getattr(value, name)) is not None
+                        else None
+                    )
+                    for name, *_ in _BOUNDS
+                },
+            )
+        return value
 
     def __enter__(self) -> Self:
         return self
@@ -1294,8 +1342,9 @@ class FileStore(Store):
         *,
         filename: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
+        mount_point: str | None = None,
     ) -> None:
-        super().__init__(log=log)
+        super().__init__(log=log, mount_point=mount_point)
         # The directory holding this store, and the shared infrastructure
         # beside it -- the event log and the backups.
         self.directory = resolve_directory(directory)
@@ -1319,6 +1368,7 @@ class FileStore(Store):
         *,
         filename: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
+        mount_point: str | None = None,
     ) -> Self:
         """This backend's store, named as a file inside a store directory.
 
@@ -1335,7 +1385,7 @@ class FileStore(Store):
         two shapes a backend has stays the backend's business rather than
         something a mount table has to know.
         """
-        return cls(directory, filename=filename, log=log)
+        return cls(directory, filename=filename, log=log, mount_point=mount_point)
 
     def opened_at(self, path: Path) -> Self:
         """Another store of this class, kept at ``path``.
@@ -1664,6 +1714,7 @@ def default_store(
     filename: str | os.PathLike[str] | None = None,
     backend: str | None = None,
     log: EventLog | None = None,
+    mount_point: str | None = None,
 ) -> FileStore:
     """A store of the backend this build opens when nobody names one.
 
@@ -1679,7 +1730,12 @@ def default_store(
     :meth:`FileStore.in_directory` rather than the constructor, because that is
     the one thing a backend whose store is a directory spells differently.
     """
-    return _backend_for(filename, backend).in_directory(directory, filename=filename, log=log)
+    return _backend_for(filename, backend).in_directory(
+        directory,
+        filename=filename,
+        log=log,
+        mount_point=mount_point,
+    )
 
 
 @contextmanager
@@ -1689,9 +1745,16 @@ def open_store(
     filename: str | os.PathLike[str] | None = None,
     backend: str | None = None,
     log: EventLog | None = None,
+    mount_point: str | None = None,
 ) -> Iterator[FileStore]:
     """Open a store, closing it on exit."""
-    store = default_store(directory, filename=filename, backend=backend, log=log)
+    store = default_store(
+        directory,
+        filename=filename,
+        backend=backend,
+        log=log,
+        mount_point=mount_point,
+    )
     try:
         yield store
     finally:
@@ -2107,7 +2170,12 @@ def _stored_bytes(target: Path) -> int:
 _MAX_LOGGED_KEYS = 50
 
 
-def _summarise(log: EventLog, result: object) -> dict[str, object]:
+def _summarise(
+    log: EventLog,
+    result: object,
+    *,
+    mount_point: str = keys.ROOT,
+) -> dict[str, object]:
     """Describe a return value in the terms an investigation later asks in.
 
     Not the value itself. The point of a summary is that the questions being
@@ -2133,7 +2201,7 @@ def _summarise(log: EventLog, result: object) -> dict[str, object]:
                 "documents": result.documents,
             }
         case str():
-            return {"key": result}
+            return {"key": keys.with_prefix(mount_point, result)}
         case int():
             return {"count": result}
         case Page():
@@ -2144,7 +2212,11 @@ def _summarise(log: EventLog, result: object) -> dict[str, object]:
                 "count": result.returned,
                 "total": result.total,
                 "total_chars": result.total_chars,
-                "next_cursor": result.next_cursor,
+                "next_cursor": (
+                    keys.with_prefix(mount_point, result.next_cursor)
+                    if result.next_cursor is not None
+                    else None
+                ),
             }
             if result.items and isinstance(result.items[0], Excerpt):
                 summary["truncated"] = sum(1 for item in result.items if item.truncated)
@@ -2153,7 +2225,7 @@ def _summarise(log: EventLog, result: object) -> dict[str, object]:
                 and isinstance(result.items[0], str)
                 and result.returned <= _MAX_LOGGED_KEYS
             ):
-                summary["keys"] = result.items
+                summary["keys"] = [keys.with_prefix(mount_point, key) for key in result.items]
             return summary
         case []:
             return {"count": 0}
@@ -2167,7 +2239,7 @@ def _summarise(log: EventLog, result: object) -> dict[str, object]:
         case [str(), *_]:
             listed: dict[str, object] = {"count": len(result)}
             if len(result) <= _MAX_LOGGED_KEYS:
-                listed["keys"] = result
+                listed["keys"] = [keys.with_prefix(mount_point, key) for key in result]
             return listed
         case _:
             return {"type": type(result).__name__}

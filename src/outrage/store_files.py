@@ -73,7 +73,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Self
 
-from . import bulk, eventlog, keys
+from . import bulk, keys
 from .errors import OutrageError
 from .eventlog import EventLog
 from .maintenance import Problem, Repaired, Report, _listed
@@ -93,6 +93,7 @@ from .store import (
     MissingMeta,
     Page,
     PatternNotFoundError,
+    Store,
     _cursor_bound,
     _detect_format,
     _excerpt,
@@ -170,6 +171,7 @@ class FilesystemStore(FileStore):
         log: EventLog | None = None,
         hidden: bool = True,
         create: bool = True,
+        mount_point: str | None = None,
     ) -> None:
         """Open the tree at ``root``, creating it if it is not there.
 
@@ -196,7 +198,7 @@ class FilesystemStore(FileStore):
         it either way: it is named by its extension alone, which is the
         mapping's doing rather than an attempt to hide anything.
         """
-        self._log = log if log is not None else eventlog.NULL
+        Store.__init__(self, log=log, mount_point=mount_point)
         self.root = (
             resolve_directory() / DEFAULT_TREE_NAME if root is None else Path(root).expanduser()
         )
@@ -343,9 +345,7 @@ class FilesystemStore(FileStore):
             )
         return parsed.key
 
-    def _write(
-        self, key: str, content: str, format: str, updated_at: str | None = None
-    ) -> None:
+    def _write(self, key: str, content: str, format: str, updated_at: str | None = None) -> None:
         """Write one key's file, and remove any other file claiming that key.
 
         **The order is the guarantee.** The new file is written first and the
@@ -385,11 +385,7 @@ class FilesystemStore(FileStore):
         unrelated. Implicit children count -- a directory with no file of its
         own is as much in use as a document is.
         """
-        used = [
-            int(name)
-            for name in self._child_names(parent)
-            if keys.NUMERIC_RE.match(name)
-        ]
+        used = [int(name) for name in self._child_names(parent) if keys.NUMERIC_RE.match(name)]
         return str(max(used) + 1) if used else "1"
 
     def _child_names(self, parent: str) -> list[str]:
@@ -436,9 +432,7 @@ class FilesystemStore(FileStore):
         targets = [
             row
             for row in rows
-            if row.key == parsed.key
-            or lo <= row.key < hi
-            or (recursive and below(row.key))
+            if row.key == parsed.key or lo <= row.key < hi or (recursive and below(row.key))
         ]
 
         removed = []
@@ -511,9 +505,7 @@ class FilesystemStore(FileStore):
         return sum(
             1
             for row in self._subtree_rows(scope, measure=False)
-            if below(row.key)
-            and (whole_subtree or not lo <= row.key < hi)
-            and within(row.sort_key)
+            if below(row.key) and (whole_subtree or not lo <= row.key < hi) and within(row.sort_key)
         )
 
     @_logged("retrieve_document")
@@ -891,6 +883,7 @@ class FilesystemStore(FileStore):
         *,
         filename: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
+        mount_point: str | None = None,
     ) -> Self:
         """The tree ``filename`` names inside a store directory.
 
@@ -910,6 +903,7 @@ class FilesystemStore(FileStore):
                 cls.default_filename if filename is None else filename,
             ),
             log=log,
+            mount_point=mount_point,
         )
 
     def opened_at(self, path: Path) -> Self:
@@ -1007,9 +1001,7 @@ class FilesystemStore(FileStore):
             (binary, "files that are not UTF-8 text", "passed over by every read"),
         ):
             if names:
-                report.problems.append(
-                    Problem("warning", summary, f"{_listed(names)}: {detail}")
-                )
+                report.problems.append(Problem("warning", summary, f"{_listed(names)}: {detail}"))
 
     def repair(self) -> list[Repaired]:
         """Nothing, and that is the honest answer rather than a silence.

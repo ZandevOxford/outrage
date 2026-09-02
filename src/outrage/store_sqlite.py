@@ -135,11 +135,17 @@ class SqliteStore(FileStore):
         *,
         filename: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
+        mount_point: str | None = None,
     ) -> None:
         # Where the file is, and the directory around it, are the base's
         # business: they are the same question for every backend, and the
         # answer has to be settled before anything is opened.
-        super().__init__(directory, filename=filename, log=log)
+        super().__init__(
+            directory,
+            filename=filename,
+            log=log,
+            mount_point=mount_point,
+        )
         # One connection per thread, opened on first use. The server runs its
         # sync tool handlers in a worker pool, so a single shared connection
         # was being used from several threads at once -- which SQLite reported
@@ -338,9 +344,7 @@ class SqliteStore(FileStore):
         with no error at all.
         """
         rebuilt = [
-            _row_values(
-                keys.parse(row["key"]), row["content"], row["format"], row["updated_at"]
-            )
+            _row_values(keys.parse(row["key"]), row["content"], row["format"], row["updated_at"])
             for row in self._conn.execute(
                 "SELECT key, content, format, updated_at FROM documents"
             ).fetchall()
@@ -616,9 +620,7 @@ class SqliteStore(FileStore):
         if parsed.key == keys.ROOT:
             raise ValueError("the root is not a child of anything, so it has no listing entry")
 
-        row = self._conn.execute(
-            "SELECT * FROM documents WHERE key = ?", (parsed.key,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM documents WHERE key = ?", (parsed.key,)).fetchone()
         if row is not None:
             return _entry(row)
 
@@ -1358,7 +1360,7 @@ def _row_values(
 def _meta_clauses(
     scope: keys.Key, meta_name: str | Sequence[str] | None
 ) -> tuple[list[str], list[object]]:
-    """"Is this a document" and "is this the value of a name", at ``scope``.
+    """ "Is this a document" and "is this the value of a name", at ``scope``.
 
     Both questions are asked *relative to the key the read was scoped at*, and
     the stored ``meta_name`` and ``meta_path`` answer them only when that scope

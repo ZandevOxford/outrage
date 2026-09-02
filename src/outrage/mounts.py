@@ -470,9 +470,7 @@ def _renamed(mount: Mount) -> Iterator[None]:
     except OutrageError as exc:
         named = {
             detail: (
-                mount.outer(value)
-                if detail in _NAMED_DETAILS and isinstance(value, str)
-                else value
+                mount.outer(value) if detail in _NAMED_DETAILS and isinstance(value, str) else value
             )
             for detail, value in exc.details.items()
         }
@@ -952,9 +950,7 @@ class MountedStore(Store):
             )
         return narrowed
 
-    def _segments(
-        self, mount: Mount, inner: str, outer: str, budget: int | None
-    ) -> list[Segment]:
+    def _segments(self, mount: Mount, inner: str, outer: str, budget: int | None) -> list[Segment]:
         """``segments`` for one store, recursing into the mounts it contains."""
         subtree = BoundedSubtree(inner, budget)
         found: list[Segment] = []
@@ -1521,9 +1517,7 @@ def parse_options(value: str, *, spec: str | None = None) -> Spec:
                 assignment=OPTION_ASSIGNMENT,
             )
         if name not in OPTIONS:
-            raise MountError(
-                "mount-option-unknown", spec=quoted, option=name, known=list(OPTIONS)
-            )
+            raise MountError("mount-option-unknown", spec=quoted, option=name, known=list(OPTIONS))
         if name in options:
             raise MountError("mount-option-repeated", spec=quoted, option=name)
         options[name] = setting
@@ -1685,9 +1679,7 @@ def open_mounts(
     for prefix, spec in refusing:
         database = store_file(base, spec.path)
         if not database.exists():
-            raise MountError(
-                "mount-read-only-missing", mount=prefix, path=str(database)
-            )
+            raise MountError("mount-read-only-missing", mount=prefix, path=str(database))
 
     # Lent stores go in first, so that anything opened here is closed by the
     # failure path below whatever order the duplicate is found in -- and so
@@ -1702,12 +1694,17 @@ def open_mounts(
             filename=None if root is None else root.path,
             backend=None if root is None else root.type,
             log=log,
+            mount_point=keys.ROOT,
         )
         for prefix, spec in [*writable, *refusing]:
             if prefix in opened:
                 raise MountError("mount-duplicate", mount=prefix)
             opened[prefix] = store_module.default_store(
-                base, filename=spec.path, backend=spec.type, log=log
+                base,
+                filename=spec.path,
+                backend=spec.type,
+                log=log,
+                mount_point=prefix,
             )
         return MountedStore(opened, read_only=[prefix for prefix, _ in refusing] + list(lent))
     except Exception:

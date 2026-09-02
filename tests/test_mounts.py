@@ -7,6 +7,7 @@ about routing rather than about a tool result.
 """
 
 import itertools
+import json
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from conftest import answers_alike, page_facts, raises_rendered, walk_documents, walk_level
 from outrage import bulk, keys, messages
+from outrage.eventlog import EventLog
 from outrage.mounts import (
     MOUNT_KIND,
     READ_ONLY_MOUNT_KIND,
@@ -165,6 +167,23 @@ def test_an_allocated_segment_is_allocated_inside_the_mount(server, table):
     assert result["generated"] is True
     assert result["title_key"] == "ref/notes/1/!title"
     assert table.resolve("ref").store.exists("notes/1")
+
+
+def test_store_events_name_keys_in_the_mounted_namespace(tmp_path):
+    log = EventLog(tmp_path / "log.jsonl")
+    with open_mounts(tmp_path / "stores", ["ref=ref.sqlite"], log=log) as table:
+        assert table.store_document("ref/notes/?", "One.", title="One") == "ref/notes/1"
+        assert table.delete("ref/notes/1") == ["ref/notes/1", "ref/notes/1/!title"]
+    log.close()
+
+    recorded = [json.loads(line) for line in (tmp_path / "log.jsonl").read_text().splitlines()]
+    wrote = next(event for event in recorded if event.get("op") == "store_document")
+    deleted = next(event for event in recorded if event.get("op") == "delete")
+
+    assert wrote["args"]["key"] == "ref/notes/?"
+    assert wrote["result"]["key"] == "ref/notes/1"
+    assert deleted["args"]["key"] == "ref/notes/1"
+    assert deleted["result"]["keys"] == ["ref/notes/1", "ref/notes/1/!title"]
 
 
 def test_a_delete_crosses_a_mount(server, table):

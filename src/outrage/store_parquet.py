@@ -247,10 +247,16 @@ class ParquetStore(FileStore):
         *,
         filename: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
+        mount_point: str | None = None,
     ) -> None:
         # Where the file is, and the directory around it, are the base's
         # business, exactly as they are for SQLite.
-        super().__init__(directory, filename=filename, log=log)
+        super().__init__(
+            directory,
+            filename=filename,
+            log=log,
+            mount_point=mount_point,
+        )
         if not self.path.exists():
             # Refused rather than created. Every other backend can be opened
             # empty because a first write would fill it; this one has no first
@@ -510,9 +516,7 @@ class ParquetStore(FileStore):
         :meth:`build` is the way in, and ``outrage pack`` is the command line
         over it.
         """
-        self._validated(
-            key, content, format, title=title, encoding=encoding, updated_at=updated_at
-        )
+        self._validated(key, content, format, title=title, encoding=encoding, updated_at=updated_at)
         raise ReadOnlyStoreError("store-read-only", key=key, path=str(self.path), action="write")
 
     @_logged("delete")
@@ -520,9 +524,7 @@ class ParquetStore(FileStore):
         self, key: str, recursive: bool = False, *, key_range: KeyRange = UNBOUNDED
     ) -> list[str]:
         """Refused, for the reason :meth:`store_document` is."""
-        raise ReadOnlyStoreError(
-            "store-read-only", key=key, path=str(self.path), action="delete"
-        )
+        raise ReadOnlyStoreError("store-read-only", key=key, path=str(self.path), action="delete")
 
     # -- reading ---------------------------------------------------------
 
@@ -920,9 +922,7 @@ class ParquetStore(FileStore):
         try:
             copy = pq.ParquetFile(target)
         except Exception as exc:
-            raise BackupError(
-                "backup-corrupt", target=str(target), integrity=str(exc)
-            ) from exc
+            raise BackupError("backup-corrupt", target=str(target), integrity=str(exc)) from exc
         try:
             documents = copy.metadata.num_rows
             written = (copy.schema_arrow.metadata or {}).get(VERSION_KEY)
@@ -1035,9 +1035,7 @@ class ParquetStore(FileStore):
     # -- building --------------------------------------------------------
 
     @classmethod
-    def check_target(
-        cls, path: str | os.PathLike[str], *, overwrite: bool = False
-    ) -> Path:
+    def check_target(cls, path: str | os.PathLike[str], *, overwrite: bool = False) -> Path:
         """Where a build would write, refusing a file already there.
 
         Public and separate from :meth:`build` so a caller can hit the refusal
