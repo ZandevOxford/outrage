@@ -107,6 +107,7 @@ conda activate outrage
 pip install -e ".[dev]"
 pytest
 ruff check . && ruff format --check .
+omnidep --project pyproject.toml src/outrage
 ```
 
 The stores live in a directory given to the server by `--dir` or `OUTRAGE_DIR`,

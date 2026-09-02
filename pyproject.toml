@@ -22,7 +22,7 @@ classifiers = [
 # that it is carried in the wheel and the sdist rather than only in the repo.
 license = "MIT"
 license-files = ["LICENSE"]
-dependencies = ["mcp>=1.2"]
+dependencies = ["mcp>=1.2", "pydantic>=2"]
 
 [project.urls]
 # Homepage and Issues are the same repository; both are named because they are
@@ -45,7 +45,15 @@ parquet = ["pyarrow>=18"]
 # `reference/distribution` in the store has `twine check` as a step before
 # every upload, and nothing declared it, so preparing a release meant finding
 # an environment that happened to have it.
-dev = ["pytest>=8", "ruff>=0.6", "hatchling", "build>=1", "PyYAML>=6", "twine>=5"]
+dev = [
+    "build>=1",
+    "hatchling",
+    "omnidep>=0.4",
+    "pytest>=8",
+    "PyYAML>=6",
+    "ruff>=0.6",
+    "twine>=5",
+]
 # `sphinx-markdown-builder` is not optional within this extra even though only
 # `make markdown` uses it: `docs/conf.py` names it in `extensions`, so an
 # install without it cannot build the HTML either.
@@ -92,6 +100,11 @@ skip-excluded-dirs = true
 [tool.hatch.build.targets.wheel]
 core-metadata-version = "2.4"
 packages = ["src/outrage"]
+
+[tool.omnidep]
+# Omnidep 0.4 does not read PEP 621 optional dependencies, so it otherwise
+# reports the imports in store_parquet.py despite the `parquet` extra above.
+ignore-imports = ["pyarrow"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
