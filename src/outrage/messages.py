@@ -435,6 +435,21 @@ def _export_root_unusable(name: Namer, /, *, path: str, because: str, **_: Any) 
     )
 
 
+def _refused_write(name: Namer, key: str, path: str, storing: str | None) -> tuple[str, str]:
+    """How to open a refusal, and how to refer to the file that refused it.
+
+    Three shapes, because the file that *checks* a write and the file that
+    *supplies* it stopped being the same thing. Naming one of them as the other
+    sends a reader to look at the wrong file, and in the third shape there is
+    no file being stored at all -- the content came from the call.
+    """
+    if storing is None:
+        return f"not writing {name(key)!r}", f"{path}, which checks this write,"
+    if storing == path:
+        return f"not storing {path} at {name(key)!r}", "this file"
+    return f"not storing {storing} at {name(key)!r}", f"{path}, which checks it,"
+
+
 @template("import-stale")
 def _import_stale(
     name: Namer,
@@ -444,6 +459,7 @@ def _import_stale(
     path: str,
     exported_at: str,
     changed_at: str | None = None,
+    storing: str | None = None,
     **_: Any,
 ) -> str:
     # Both times, because the pair is the whole story and neither half tells
@@ -451,12 +467,50 @@ def _import_stale(
     # file stale. "In step with" rather than "exported at" because a successful
     # import renews the record, so the moment is not always the export.
     since = f"written again at {changed_at}" if changed_at else "deleted since"
+    lead, checker = _refused_write(name, key, path, storing)
     return (
-        f"not storing {path} at {name(key)!r}: this file was last in step with "
-        f"the document at {exported_at}, and the document was {since}, so "
-        f"somebody else has written it and storing this file would lose their "
-        f"work. Export it again and redo the edit, or repeat the call with "
-        f"overwrite to store it anyway"
+        f"{lead}: {checker} was last in step with the document at "
+        f"{exported_at}, and the document was {since}, so somebody else has "
+        f"written it and this write would lose their work. Export it again and "
+        f"redo the edit, or repeat the call with overwrite to write it anyway"
+    )
+
+
+@template("write-unchecked")
+def _write_unchecked(
+    name: Namer,
+    /,
+    *,
+    key: str,
+    path: str,
+    came_from: str | None = None,
+    storing: str | None = None,
+    **_: Any,
+) -> str:
+    # Names the file the caller could have passed instead, because the refusal
+    # is useless without it: an agent told only that this is unchecked reaches
+    # for `overwrite`, which is the guard being thrown away. The route out that
+    # keeps the check has to be the one in the sentence.
+    because = (
+        "carries no record of having been exported"
+        if came_from is None
+        else f"was exported from {name(came_from)!r}, not from {name(key)!r}"
+    )
+    lead, checker = _refused_write(name, key, path, storing)
+    return (
+        f"{lead}: {checker} {because}, so there is nothing to say whether "
+        f"somebody else has written that document since. Export {name(key)!r} "
+        f"and pass that file as `against` to check this write, or repeat the "
+        f"call with overwrite to write it unchecked"
+    )
+
+
+@template("check-without-write")
+def _check_without_write(name: Namer, /, *, key: str, **_: Any) -> str:
+    return (
+        f"nothing to check at {name(key)!r}: `against` checks a write, and "
+        f"omitting `path` exports rather than writes. Pass the file to store, "
+        f"or drop `against` to export"
     )
 
 

@@ -48,6 +48,12 @@ below.
 Use the `?` auto-increment path segment to add documents with incrementing
 ids. This is safe to use across parallel agents.
 
+**Pass `against` when you are storing back a document you read out with
+`document_file`** and edited here rather than on disk. It is that exported
+file's path; only its record is read, never its content, and the write is
+refused if somebody else has written the document since it came out. Without
+it this call overwrites whatever is there.
+
 ### Parameters
 
 - `key` (string; required) — Key to write
@@ -55,6 +61,8 @@ ids. This is safe to use across parallel agents.
 - `format` ("markdown" or "json" or "text" or "html" or null; default null) — 'markdown', 'json', 'text' or 'html'; detected from the content when omitted, though detection never chooses 'text'
 - `title` (string or null; default null) — Short title, stored as the key's '!title' metadata in the same write
 - `encoding` ("json-string" or null; default null) — How `content` and `title` are encoded in this call, not how they are stored. Pass 'json-string' to send each as a JSON string literal, quotes and escapes included; it is decoded before storing, so the stored document is plain text either way. Use it when the value is long or generated: a damaged value then fails loudly here instead of being stored as if it were correct. Omit to send the text as-is.
+- `against` (string or null; default null) — Path of a file `document_file` exported from `key`, to check this write against. Its content is not read - only its record of what the document held when it came out - so the write is refused if somebody else has written the document since. Pass it when storing back a document you exported and edited without editing the file
+- `overwrite` (boolean; default false) — Store the content even though `against` refuses it: the document changed after that file came out, or the file cannot say. Only for a caller who has looked at what changed and means to replace it
 
 ### Returns
 
@@ -62,6 +70,9 @@ ids. This is safe to use across parallel agents.
 - `stored` (integer; required) — Characters stored
 - `generated` (boolean; required) — Whether the store generated part of the key
 - `title_key` (string or null; optional) — Key where the supplied title was stored, when one was supplied
+- `previous` (integer or null; optional) — Previous document size when the write was checked against an exported file, or null when the key held nothing
+- `unchecked` (string or null; optional) — Why the write was not compared with what was exported, when 'against' was given and 'overwrite' allowed it through uncompared
+- `note` (string or null; optional) — Important qualification of the result
 
 ## `list_keys`
 
@@ -324,19 +335,26 @@ exporting the same key cannot overwrite an edit you have not stored back.
 
 **Pass `path` to import**: that file's content is stored at `key`, and the
 answer reports both the size written and the size that was there before, so
-an edit that truncated is visible. The path must be one this tool exported,
-but the keys do not need to match, so this can copy data.
+an edit that truncated is visible. The path must be one this tool exported.
 
-**A document written by somebody else since you exported it refuses the
-import** rather than losing their work: export it again and redo the edit, or
-pass `overwrite` if you have looked and mean to replace it. Only a file
-exported from the key being written can be checked this way.
+**A write that cannot be checked is refused**, as is one the check fails.
+The check is the export record beside the file: it says what the document
+held when it came out, so an import can tell whether somebody else has
+written it since and refuse rather than lose their work. Export it again and
+redo the edit, or pass `overwrite` if you have looked and mean to replace it.
+
+**Importing to a different key is how content is copied around the store**,
+and a file exported from one key says nothing about another. So either
+export the target too and pass that file as `against` - the content then
+comes from `path` and the check comes from `against`, and the copy is as
+safe as saving back - or pass `overwrite` to write it unchecked.
 
 ### Parameters
 
 - `key` (string; required) — Key to export, or to import into, e.g. context/a1b2/design or context/?last/design for the newest
 - `path` (string or null; default null) — Omit to export the document to a file. Pass the path of a file this tool exported to store its content at `key` instead; the file may have been edited, and may be one exported for another key. Give the path the export returned, or one relative to the export directory - a relative path is taken from there, not from the working directory
-- `overwrite` (boolean; default false) — Store the file even though the document changed after it was exported. Only for a caller who has looked at what changed and means to replace it: the refusal is there because another agent's write is about to be lost
+- `against` (string or null; default null) — Path of a second exported file, exported from `key`, whose record checks the import. Only its record is read, never its content. Pass it to import a file exported for another key: the content then comes from `path` and the check that nobody else has written `key` comes from here
+- `overwrite` (boolean; default false) — Store the file even though the check refuses it: the document changed after the checking file was exported, or there is no record naming `key` to check against. Only for a caller who has looked and means to replace it: the refusal is there because another agent's write is about to be lost
 
 ### Returns
 
@@ -346,5 +364,5 @@ exported from the key being written can be checked this way.
 - `format` (string or null; optional) — The document format, when exporting a document
 - `stored` (integer or null; optional) — Characters stored, when importing an edited file
 - `previous` (integer or null; optional) — Previous document size, or null when it did not exist
-- `unchecked` (string or null; optional) — Why an import was not checked against what was exported, when it was not: there was no export record, or the file came from another key
+- `unchecked` (string or null; optional) — Why an import was not compared with what was exported, when 'overwrite' allowed it through uncompared: there was no export record, or the file came from another key and no 'against' file was given
 - `note` (string or null; optional) — Important qualification of the result

@@ -65,10 +65,18 @@ The export records what it handed out, so the import refuses to store a file
 whose document somebody else has written in the meantime; `overwrite` stores
 it anyway. A successful import renews that record, so you can keep editing the
 same file and importing it. Import the file the export gave you rather than a
-copy of it: the record lives beside it, and moving or renaming the file leaves
-the import unchecked rather than wrong. The check needs the file to have come
-from the key being written, so a deliberate copy to another key is stored and
-reported unchecked.
+copy of it: the record lives beside it, and a file that has lost its record is
+refused rather than stored unchecked.
+
+The record answers for the key it came from and no other, so importing to a
+second key is refused too. Export the target as well and pass that file as
+`against`: the content then comes from the file you edited and the check that
+nobody else has written the target comes from the second file. `overwrite`
+writes it unchecked instead.
+
+`store_document` takes `against` as well, for a document you exported and then
+edited here rather than on disk: pass the exported path and the write is
+checked the same way, though the content still comes from the call.
 
 To split a document, export it, place one facet at a new child key, and import
 the shortened parent. Use `copy_tree` for whole subtrees, not for splitting

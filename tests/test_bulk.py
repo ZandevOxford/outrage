@@ -665,9 +665,13 @@ def test_an_edited_file_imports_back_and_reports_both_sizes(populated, tmp_path)
 
 
 def test_an_import_may_store_at_a_key_the_file_did_not_come_from(populated, tmp_path):
+    """Still allowed, and now it has to be asked for: the file cannot say
+    whether the target moved, so ``overwrite`` is what says to write anyway."""
     exported = bulk.export_document(populated, "project", tmp_path / "export")
 
-    imported = bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
+    imported = bulk.import_document(
+        populated, "project/copy", exported.path, tmp_path / "export", overwrite=True
+    )
 
     assert imported.previous is None
     assert imported.unchecked == "exported from 'project'"
@@ -697,7 +701,7 @@ def test_an_import_of_a_key_that_held_nothing_says_so(populated, tmp_path):
     (tmp_path / "export" / "new.md").write_text("fresh")
 
     imported = bulk.import_document(
-        populated, "new", tmp_path / "export" / "new.md", tmp_path / "export"
+        populated, "new", tmp_path / "export" / "new.md", tmp_path / "export", overwrite=True
     )
 
     assert imported.previous is None
@@ -851,40 +855,89 @@ def test_a_document_deleted_since_the_export_is_a_change_like_any_other(populate
     assert "deleted since" in messages.render(raised.value)
 
 
-def test_a_cross_key_import_is_not_refused_by_the_target_having_changed(populated, tmp_path):
-    """The record's hash is the *source* key's content.
-
-    Comparing it against a different target would refuse every copy around the
-    store as stale, so the question is asked only when the keys agree.
-    ``plans/robust-editing/record``.
-    """
+def test_a_cross_key_import_is_refused_because_it_cannot_be_checked(populated, tmp_path):
+    """The record's hash is the *source* key's content, so it says nothing
+    about the target -- and a write nobody can check is refused."""
     exported = bulk.export_document(populated, "project", tmp_path / "export")
     populated.store_document("project/copy", "something else entirely")
 
-    imported = bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
+    with pytest.raises(bulk.UncheckedWriteError) as raised:
+        bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
 
-    assert imported.unchecked == "exported from 'project'"
+    assert raised.value.code == "write-unchecked"
+    assert raised.value.details["came_from"] == "project"
+    assert populated.retrieve_document("project/copy").content == "something else entirely"
+
+
+def test_a_cross_key_import_is_still_not_compared_with_the_target(populated, tmp_path):
+    """Comparing the source's hash against a different target would call every
+    copy around the store stale. Overwritten, not stale.
+    ``plans/robust-editing/record``."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project/copy", "something else entirely")
+
+    imported = bulk.import_document(
+        populated, "project/copy", exported.path, tmp_path / "export", overwrite=True
+    )
+
+    assert (imported.unchecked, imported.overwritten) == ("exported from 'project'", False)
     assert populated.retrieve_document("project/copy").content == "# Project"
 
 
-def test_a_file_with_no_record_is_imported_and_reported_unchecked(populated, tmp_path):
-    """A missing record degrades to not getting the check, not to being wrong."""
+def test_the_refusal_names_the_file_that_would_have_checked_it(populated, tmp_path):
+    """Useless without it: an agent told only that this is unchecked reaches
+    for ``overwrite``, which is the guard being thrown away."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+
+    with pytest.raises(bulk.UncheckedWriteError) as raised:
+        bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
+
+    rendered = messages.render(raised.value)
+    assert "against" in rendered
+    assert "'project/copy'" in rendered
+    assert "overwrite" in rendered
+
+
+def test_a_file_with_no_record_is_refused_rather_than_written_unchecked(populated, tmp_path):
+    """John's call 2026-09-02: a write nobody could check is the *less*
+    informed of the two, so it must not be the more permissive."""
     exported = bulk.export_document(populated, "project", tmp_path / "export")
     bulk.ExportRecord.path_for(exported.path).unlink()
     exported.path.write_text("# Project, edited")
 
-    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+    with pytest.raises(bulk.UncheckedWriteError) as raised:
+        bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+
+    assert raised.value.details["came_from"] is None
+    assert "no record of having been exported" in messages.render(raised.value)
+    assert populated.retrieve_document("project").content == "# Project"
+
+
+def test_a_hand_written_file_is_still_importable_with_overwrite(populated, tmp_path):
+    """The promise the refusal narrows rather than withdraws: a file dropped
+    into the export directory imports, and now says one word to do it."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    bulk.ExportRecord.path_for(exported.path).unlink()
+    exported.path.write_text("# Project, edited")
+
+    imported = bulk.import_document(
+        populated, "project", exported.path, tmp_path / "export", overwrite=True
+    )
 
     assert imported.unchecked == "no export record"
     assert populated.retrieve_document("project").content == "# Project, edited"
 
 
-def test_an_unreadable_record_degrades_to_no_check_rather_than_a_refusal(populated, tmp_path):
+def test_an_unreadable_record_is_refused_like_a_missing_one(populated, tmp_path):
     exported = bulk.export_document(populated, "project", tmp_path / "export")
     bulk.ExportRecord.path_for(exported.path).write_text("not json at all")
 
-    imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
+    with pytest.raises(bulk.UncheckedWriteError):
+        bulk.import_document(populated, "project", exported.path, tmp_path / "export")
 
+    imported = bulk.import_document(
+        populated, "project", exported.path, tmp_path / "export", overwrite=True
+    )
     assert imported.unchecked == "no export record"
 
 
@@ -1070,6 +1123,257 @@ def test_a_cross_key_import_leaves_the_record_naming_where_it_came_from(populate
     exported = bulk.export_document(populated, "project", tmp_path / "export")
     exported.path.write_text("# Project, copied")
 
-    bulk.import_document(populated, "project/copy", exported.path, tmp_path / "export")
+    bulk.import_document(
+        populated, "project/copy", exported.path, tmp_path / "export", overwrite=True
+    )
 
     assert bulk.ExportRecord.read(exported.path) == exported.record
+
+
+# -- the check as a second file --------------------------------------------
+#
+# `plans/write-preconditions/by-file`: an exported file is a claim about what
+# an edit was made against, and that claim is useful apart from the bytes in
+# the file. So the content and the check no longer have to be the same file --
+# which is what makes "open a document, edit it, save it to a different key"
+# as safe as saving it back.
+
+
+def test_a_second_file_checks_a_cross_key_import(populated, tmp_path):
+    """The content comes from A's file and the claim about B comes from B's."""
+    source = bulk.export_document(populated, "project", tmp_path / "export")
+    source.path.write_text("# Project, edited for the copy")
+    populated.store_document("project/copy", "# The copy")
+    target = bulk.export_document(populated, "project/copy", tmp_path / "export")
+
+    imported = bulk.import_document(
+        populated,
+        "project/copy",
+        source.path,
+        tmp_path / "export",
+        against=target.path,
+    )
+
+    assert imported.unchecked is None
+    assert imported.overwritten is False
+    assert populated.retrieve_document("project/copy").content == "# Project, edited for the copy"
+
+
+def test_a_checked_cross_key_import_is_refused_when_the_target_moved(populated, tmp_path):
+    """The gap this closes: before, this write landed silently on top."""
+    source = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project/copy", "# The copy")
+    target = bulk.export_document(populated, "project/copy", tmp_path / "export")
+    populated.store_document("project/copy", "somebody else's copy")
+
+    with pytest.raises(bulk.StaleImportError) as raised:
+        bulk.import_document(
+            populated, "project/copy", source.path, tmp_path / "export", against=target.path
+        )
+
+    assert raised.value.code == "import-stale"
+    assert populated.retrieve_document("project/copy").content == "somebody else's copy"
+
+
+def test_the_checking_file_must_name_the_key_being_written(populated, tmp_path):
+    """Otherwise `against` is a claim about somewhere else, which checks nothing."""
+    source = bulk.export_document(populated, "project", tmp_path / "export")
+    elsewhere = bulk.export_document(populated, "project/reference/env", tmp_path / "export")
+
+    with pytest.raises(bulk.UncheckedWriteError) as raised:
+        bulk.import_document(
+            populated, "project/copy", source.path, tmp_path / "export", against=elsewhere.path
+        )
+
+    assert raised.value.details["came_from"] == "project/reference/env"
+
+
+def test_a_checked_import_renews_the_checking_file_not_the_content_one(populated, tmp_path):
+    """The claim that moved on is the one that was asked, and only that one:
+    the content file still came from where it came from."""
+    source = bulk.export_document(populated, "project", tmp_path / "export")
+    source.path.write_text("# Project, edited for the copy")
+    populated.store_document("project/copy", "# The copy")
+    target = bulk.export_document(populated, "project/copy", tmp_path / "export")
+
+    bulk.import_document(
+        populated, "project/copy", source.path, tmp_path / "export", against=target.path
+    )
+
+    assert bulk.ExportRecord.read(source.path) == source.record
+    renewed = bulk.ExportRecord.read(target.path)
+    assert renewed.key == "project/copy"
+    assert renewed.content_sha256 == bulk.content_hash("# Project, edited for the copy")
+
+
+def test_a_second_checked_cross_key_import_is_not_refused_by_the_first(populated, tmp_path):
+    """The renewal has to reach the checking file, or the two-file route is
+    one edit per export exactly as the one-file route was."""
+    source = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project/copy", "# The copy")
+    target = bulk.export_document(populated, "project/copy", tmp_path / "export")
+    source.path.write_text("# Project, first")
+    bulk.import_document(
+        populated, "project/copy", source.path, tmp_path / "export", against=target.path
+    )
+    source.path.write_text("# Project, second")
+
+    imported = bulk.import_document(
+        populated, "project/copy", source.path, tmp_path / "export", against=target.path
+    )
+
+    assert imported.unchecked is None
+    assert populated.retrieve_document("project/copy").content == "# Project, second"
+
+
+def test_a_checking_file_may_be_the_content_file_itself(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("# Project, edited")
+
+    imported = bulk.import_document(
+        populated, "project", exported.path, tmp_path / "export", against=exported.path
+    )
+
+    assert imported.unchecked is None
+    assert populated.retrieve_document("project").content == "# Project, edited"
+
+
+def test_the_unedited_note_still_comes_from_the_content_file(populated, tmp_path):
+    """Question 2 is about the bytes, so it is asked of the file that has them
+    however the write is being checked."""
+    source = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project/copy", "# The copy")
+    target = bulk.export_document(populated, "project/copy", tmp_path / "export")
+
+    imported = bulk.import_document(
+        populated, "project/copy", source.path, tmp_path / "export", against=target.path
+    )
+
+    assert imported.unedited is True
+
+
+def test_a_checking_file_outside_the_export_directory_is_refused(populated, tmp_path):
+    """The containment rule is one rule, asked of both files."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    outside = tmp_path / "elsewhere.md"
+    outside.write_text("not exported")
+
+    with pytest.raises(bulk.UnmappableError) as raised:
+        bulk.import_document(
+            populated, "project", exported.path, tmp_path / "export", against=outside
+        )
+
+    assert raised.value.code == "import-file-escapes-tree"
+
+
+def test_a_checking_file_that_is_not_there_says_where_it_looked(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+
+    with pytest.raises(bulk.FileMissingError) as raised:
+        bulk.import_document(
+            populated, "project", exported.path, tmp_path / "export", against="gone.md"
+        )
+
+    assert raised.value.code == "import-file-missing"
+    assert "relative to the export directory" in messages.render(raised.value)
+
+
+# -- the check without the file: `check_write` and `renew` -----------------
+#
+# What `store_document` uses. The write does not read the file's content --
+# that comes from the call -- and reads its record instead.
+
+
+def test_check_write_passes_when_the_store_still_holds_what_went_out(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+
+    check = bulk.check_write(populated, "project", exported.path, tmp_path / "export")
+
+    assert check.record == exported.record
+    assert (check.previous, check.unchecked, check.overwritten) == (9, None, False)
+
+
+def test_check_write_refuses_a_document_written_since(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project", "# Project, somebody else's")
+
+    with pytest.raises(bulk.StaleImportError):
+        bulk.check_write(populated, "project", exported.path, tmp_path / "export")
+
+
+def test_check_write_does_not_read_the_file_it_is_handed(populated, tmp_path):
+    """The claim is in the record; the bytes belong to whoever is writing."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    exported.path.write_text("bytes nobody is storing")
+
+    check = bulk.check_write(populated, "project", exported.path, tmp_path / "export")
+
+    assert check.unchecked is None
+
+
+def test_check_write_takes_a_path_relative_to_the_export_directory(populated, tmp_path):
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+
+    check = bulk.check_write(populated, "project", exported.path.name, tmp_path / "export")
+
+    assert check.file == exported.path
+
+
+def test_overwrite_drops_the_record_of_a_write_it_could_not_check(populated, tmp_path):
+    """Renewing it would turn the file into an edit claim on a key it did not
+    come from, which is the one thing the renewal must never do."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+
+    check = bulk.check_write(
+        populated, "project/copy", exported.path, tmp_path / "export", overwrite=True
+    )
+    populated.store_document("project/copy", "copied")
+    bulk.renew(populated, "project/copy", check, "copied")
+
+    assert check.record is None
+    assert bulk.ExportRecord.read(exported.path) == exported.record
+
+
+def test_renew_reads_the_document_back_when_it_is_not_given_the_content(populated, tmp_path):
+    """What a write that transformed what it was given needs: the record
+    hashes what the store holds, not what arrived."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    check = bulk.check_write(populated, "project", exported.path, tmp_path / "export")
+    populated.store_document("project", "# Project, stored by hand")
+
+    bulk.renew(populated, "project", check)
+
+    renewed = bulk.ExportRecord.read(exported.path)
+    assert renewed.content_sha256 == bulk.content_hash("# Project, stored by hand")
+
+
+def test_a_refusal_names_the_file_being_stored_and_the_file_checking_it(populated, tmp_path):
+    """They stopped being the same file, and naming one as the other sends a
+    reader to look at the wrong one."""
+    populated.store_document("project/copy", "# The copy")
+    source = bulk.export_document(populated, "project", tmp_path / "export")
+    target = bulk.export_document(populated, "project/copy", tmp_path / "export")
+    populated.store_document("project/copy", "somebody else's copy")
+
+    with pytest.raises(bulk.StaleImportError) as raised:
+        bulk.import_document(
+            populated, "project/copy", source.path, tmp_path / "export", against=target.path
+        )
+
+    rendered = messages.render(raised.value)
+    assert f"not storing {source.path} at 'project/copy'" in rendered
+    assert f"{target.path}, which checks it," in rendered
+
+
+def test_a_refusal_with_no_file_being_stored_does_not_claim_there_is_one(populated, tmp_path):
+    """What `store_document` sees: the content came from the call, so a
+    sentence saying the file is being stored would be plainly untrue."""
+    exported = bulk.export_document(populated, "project", tmp_path / "export")
+    populated.store_document("project", "# Project, somebody else's")
+
+    with pytest.raises(bulk.StaleImportError) as raised:
+        bulk.check_write(populated, "project", exported.path, tmp_path / "export")
+
+    rendered = messages.render(raised.value)
+    assert rendered.startswith("not writing 'project': ")
+    assert f"{exported.path}, which checks this write," in rendered

@@ -29,6 +29,49 @@ What this is not is a backup. updated_at does not survive the round trip and
 neither does anything else the database holds about a document; `FileStore.backup`
 is the copy that keeps all of it.
 
+### *class* outrage.bulk.Check(file: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), record: [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/library/constants.html#None), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), changed_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
+
+Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+
+What asking an exported file whether the store still holds it found.
+
+The answer to question 1 of `plans/robust-editing/record`, separated from
+the import that first asked it because a write's *content* and a write's
+*check* no longer have to be the same file. `plans/write-preconditions/by-file`
+is why: an exported path handed to a write is a claim about what the edit
+was made against, and that claim is useful apart from the bytes in the file.
+
+#### file *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+
+The file whose record was asked, so a caller that got past this can
+renew it -- see [`renew()`](#outrage.bulk.renew).
+
+#### record *: [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+The record that answered, or None when there was none to ask and
+`overwrite` allowed the write regardless. None is what stops
+[`renew()`](#outrage.bulk.renew) writing a claim about a key the file did not come from.
+
+#### previous *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Characters the key held before the write, or None if it held nothing.
+An empty document and no document are different things to have replaced.
+
+#### changed_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+`updated_at` of what was there, for the sentence `overwrite` owes.
+
+#### unchecked *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Why no comparison was made, when `overwrite` allowed one to be
+skipped. None when the comparison happened.
+
+#### overwritten *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+
+Whether `overwrite` allowed a write the staleness refusal would have
+stopped. Separate from `unchecked`: this one knows somebody's write is
+being lost, and that one does not know anything.
+
 ### outrage.bulk.Document
 
 One document as [`outrage.store_parquet.ParquetStore.build()`](store_parquet.md#outrage.store_parquet.ParquetStore.build) takes it:
@@ -306,11 +349,54 @@ one key are both doing something reasonable, so a guard aimed at them
 cannot be advisory. `overwrite` is what keeps the refusal from being a
 hard bound - the caller who has looked and meant it has one word to say so.
 
+### *exception* outrage.bulk.UncheckedWriteError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError)
+
+Raised when there is no record naming this key, so nothing can be checked.
+
+The other way a write can be unsafe, and John's call 2026-09-02: the two
+are one rule, because a write nobody could check is the *less* informed of
+the pair and must not therefore be the more permissive. A record that names
+another key and no readable record at all both land here.
+
+Both refusals lift with the same `overwrite`, which says "I have looked,
+write it anyway" once rather than twice. What lifting it costs is different
+in each case, so the message says which refusal it was.
+
 ### *exception* outrage.bulk.UnmappableError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
 
 Raised when a key has no file it can be written to, or a file no key.
+
+### outrage.bulk.check_write(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, storing: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Check](#outrage.bulk.Check)
+
+Refuse a write to `key` unless `path` says what it was made against.
+
+`path` is an exported file, resolved inside `root` by the one
+containment rule [`contained_file()`](#outrage.bulk.contained_file) holds. Its **record** is read and
+its content is not: what the write stores comes from somewhere else, and
+this answers only *has the document moved since that file came out*.
+
+Two refusals, and `overwrite` lifts either:
+
+* [`UncheckedWriteError`](#outrage.bulk.UncheckedWriteError) when there is no record naming `key` to
+  ask -- no readable record beside the file, or one that names the key it
+  was exported from rather than the key being written.
+* [`StaleImportError`](#outrage.bulk.StaleImportError) when the record answers no: somebody has
+  written the document since, and this write would lose their work.
+
+`storing` is the file whose content is being written, when one is, and
+exists for the **message** alone: the file that checks a write and the file
+that supplies it are no longer the same thing, so a refusal that named one
+of them as the other would send a reader to look at the wrong file. Left
+out when the content came from the call rather than from any file.
+
+What it is not is a compare-and-swap. The comparison happens here, between
+a read and a write, so two writers in the same instant both pass. The real
+precondition belongs inside `Store.store_document` and stays
+`plans/write-preconditions`.
 
 ### outrage.bulk.contained_file(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
@@ -480,7 +566,7 @@ key** rather than by one spelling of its file, so a document held as
 because it is written in terms of this one -- the mapping lives here and
 the store is expressed in it, not the other way round.
 
-### outrage.bulk.import_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Imported](#outrage.bulk.Imported)
+### outrage.bulk.import_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, against: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Imported](#outrage.bulk.Imported)
 
 Store the content of `path` at `key`, and say what it displaced.
 
@@ -497,18 +583,18 @@ the caller says, whatever file it came from, which is what makes an export,
 an edit and an import to a second key a way of copying content around the
 store.
 
-**A document that changed after the export is refused**, unless
-`overwrite` says to store it anyway. That is the lost-update problem, and
-the reason for the record: another writer has been there since the export,
-and this import would silently lose their write. The comparison is asked
-only when the record names the key being written - the record's hash is the
-*source* key's content, so comparing it against a different target would
-refuse every cross-key import as stale.
+**A write that cannot be checked is refused**, and so is one the check
+fails - see [`check_write()`](#outrage.bulk.check_write), which is where both refusals and the
+`overwrite` that lifts them live. By default the check is asked of
+`path`'s own record, which answers only when the file came out of the key
+being written.
 
-What it is not is a compare-and-swap. The comparison happens here, between
-a read and a write, so two imports in the same instant both pass. The real
-precondition belongs inside `Store.store_document` and stays
-`plans/write-preconditions`.
+**\`\`against\`\` is where the check comes from when the content is not.** It
+is a second exported file, exported *from* `key`, and only its record is
+read. That is what makes export A, edit, import to B safe: the content
+comes from A's file and the claim about B comes from B's, where before the
+cross-key route had no claim to make and went unchecked.
+`plans/write-preconditions/by-file`.
 
 An empty file is stored rather than refused - emptying a document is a
 thing a person may legitimately mean. What guards the accident is the
@@ -647,6 +733,23 @@ The relative path `key` is written to, extension included.
 >>> path_for_key("a/b/!title")
 PurePosixPath('a/b/!title.md')
 ```
+
+### outrage.bulk.renew(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), check: [Check](#outrage.bulk.Check), content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [None](https://docs.python.org/3/library/constants.html#None)
+
+Move `check`'s record on to what `key` now holds, after the write.
+
+Without this the tool is one edit per export: the *next* write checked
+against the same file is refused against a change this call made, and an
+agent that hits that refusal on its own second write learns to pass
+`overwrite`, which is the guard being thrown away. `context/106/findings`.
+
+Does nothing when there is no record to renew, which is the unchecked write
+`overwrite` allowed through: the file did not come from `key` and must
+not start claiming it did.
+
+`content` is what was written, when the caller already has it. Otherwise
+the document is read back -- which is what a write that transformed what it
+was given needs, since the record hashes what the store holds.
 
 ### outrage.bulk.sweep_exports(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], max_age: [timedelta](https://docs.python.org/3/library/datetime.html#datetime.timedelta) = EXPORT_MAX_AGE, now: [datetime](https://docs.python.org/3/library/datetime.html#datetime.datetime) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
 

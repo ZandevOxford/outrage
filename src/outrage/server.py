@@ -144,6 +144,56 @@ def _add_note(result: dict[str, Any], text: str) -> None:
     result["note"] = f"{result['note']} {text}" if result.get("note") else text
 
 
+def _note_check(
+    result: dict[str, Any],
+    key: str,
+    *,
+    overwritten: bool,
+    unchecked: str | None,
+    changed_at: str | None,
+) -> None:
+    """Say what a write got past, when ``overwrite`` let it past a refusal.
+
+    Shared by ``store_document`` and ``document_file`` because the refusals
+    are: :func:`~outrage.bulk.check_write` answers for both, so one place has
+    to say what lifting it meant. The two sentences are separate because the
+    situations are - a write that lost somebody's work is a thing you can go
+    and look at, and a write nobody could check is not.
+    """
+    if overwritten:
+        # Said loudly because what it means is that somebody else's write is
+        # now gone, and the person who lost it is not reading this.
+        _add_note(
+            result,
+            f"the document had changed since it was exported and has been "
+            f"overwritten anyway; what was written at {changed_at} is gone.",
+        )
+    if unchecked is not None:
+        _add_note(
+            result,
+            f"this write was not checked against the document ({unchecked}), so "
+            f"if somebody else had written {keys.displayed(key)!r} since it was "
+            f"exported, their work is now gone.",
+        )
+
+
+def _note_shrink(result: dict[str, Any], previous: int | None, stored: int) -> None:
+    """Do the subtraction a caller would otherwise have to do themselves.
+
+    Reported rather than refused -- emptying a document is a thing a person may
+    mean, and ``plans/write-preconditions`` is where enforcing anything is
+    being considered. But the arithmetic is done here: this exact workflow
+    through the command line wrote a 0-character document over a good one, and
+    a shrink nobody subtracted is a shrink nobody saw. ``context/60/findings``.
+    """
+    if previous is not None and stored < previous:
+        _add_note(
+            result,
+            f"the document shrank from {previous} to {stored} characters; if "
+            f"that was not intended, the previous content is gone.",
+        )
+
+
 def _forbid_unknown_arguments() -> None:
     """Make an unrecognised tool argument an error rather than a silent no-op.
 
@@ -241,6 +291,26 @@ class _StoreDocumentResult(_ToolResult):
         str | None,
         Field(description="Key where the supplied title was stored, when one was supplied"),
     ] = None
+    previous: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Previous document size when the write was checked against an "
+                "exported file, or null when the key held nothing"
+            )
+        ),
+    ] = None
+    unchecked: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Why the write was not compared with what was exported, when "
+                "'against' was given and 'overwrite' allowed it through "
+                "uncompared"
+            )
+        ),
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
 class _EntryResult(_ToolResult):
@@ -406,9 +476,10 @@ class _DocumentFileResult(_ToolResult):
         str | None,
         Field(
             description=(
-                "Why an import was not checked against what was exported, when it "
-                "was not: there was no export record, or the file came from "
-                "another key"
+                "Why an import was not compared with what was exported, when "
+                "'overwrite' allowed it through uncompared: there was no export "
+                "record, or the file came from another key and no 'against' file "
+                "was given"
             )
         ),
     ] = None
@@ -775,14 +846,44 @@ def build_server(
                 )
             ),
         ] = None,
+        against: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Path of a file `document_file` exported from `key`, to "
+                    "check this write against. Its content is not read - only "
+                    "its record of what the document held when it came out - "
+                    "so the write is refused if somebody else has written the "
+                    "document since. Pass it when storing back a document you "
+                    "exported and edited without editing the file"
+                )
+            ),
+        ] = None,
+        overwrite: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Store the content even though `against` refuses it: the "
+                    "document changed after that file came out, or the file "
+                    "cannot say. Only for a caller who has looked at what "
+                    "changed and means to replace it"
+                )
+            ),
+        ] = False,
     ) -> _StoreDocumentResult:
-        written = table.store_document(
-            _named_key(table, key, allow_wildcard=True),
-            content,
-            format,
-            title=title,
-            encoding=encoding,
+        at = _named_key(table, key, allow_wildcard=True)
+        # Before the write, and the whole of what `against` does: it names a
+        # file whose *record* says what this edit was made against, and the
+        # content still comes from the call. An agent that exported a document
+        # and edited it in context rather than on disk gets the staleness
+        # refusal `document_file` gets, which before this it could not ask for.
+        # `plans/write-preconditions/by-file`.
+        check = (
+            None
+            if against is None
+            else bulk.check_write(table, at, against, bulk.export_root(), overwrite=overwrite)
         )
+        written = table.store_document(at, content, format, title=title, encoding=encoding)
         result: dict[str, Any] = {
             "key": written,
             # `content` is what arrived, which is not what was stored once it
@@ -791,6 +892,20 @@ def build_server(
             "stored": len(content) if encoding is None else table.retrieve_document(written).total,
             "generated": written != key,
         }
+        if check is not None:
+            # `content` only when it is what was stored; the encoded path sent
+            # something else, and a record hashes what the store holds.
+            bulk.renew(table, written, check, content if encoding is None else None)
+            result["previous"] = check.previous
+            result["unchecked"] = check.unchecked
+            _note_check(
+                result,
+                written,
+                overwritten=check.overwritten,
+                unchecked=check.unchecked,
+                changed_at=check.changed_at,
+            )
+            _note_shrink(result, check.previous, result["stored"])
         if title is not None:
             # Parsed rather than joined: the root's title is `!title`, not
             # `/!title`, and a caller told the wrong key cannot read it back.
@@ -1267,26 +1382,45 @@ def build_server(
                 )
             ),
         ] = None,
+        against: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Path of a second exported file, exported from `key`, whose "
+                    "record checks the import. Only its record is read, never "
+                    "its content. Pass it to import a file exported for another "
+                    "key: the content then comes from `path` and the check that "
+                    "nobody else has written `key` comes from here"
+                )
+            ),
+        ] = None,
         overwrite: Annotated[
             bool,
             Field(
                 description=(
-                    "Store the file even though the document changed after it "
-                    "was exported. Only for a caller who has looked at what "
-                    "changed and means to replace it: the refusal is there "
-                    "because another agent's write is about to be lost"
+                    "Store the file even though the check refuses it: the "
+                    "document changed after the checking file was exported, or "
+                    "there is no record naming `key` to check against. Only for "
+                    "a caller who has looked and means to replace it: the "
+                    "refusal is there because another agent's write is about to "
+                    "be lost"
                 )
             ),
         ] = False,
     ) -> _DocumentFileResult:
-        # Asked per call rather than once when the server is built, so that
-        # building one costs nothing on disk and a directory removed under a
-        # running server is remade rather than remembered.
-        exports = bulk.export_root()
         # No wildcard: `?` allocates a number, and a round trip is about a
         # key that already exists on one end or the other. Allocating one
         # is `store_document`'s business.
         at = _named_key(table, key)
+        if path is None and against is not None:
+            # Refused rather than ignored, and before the export directory is
+            # touched: a caller who passed a check meant a write to be checked,
+            # and quietly exporting instead answers a question nobody asked.
+            raise store_module.InvalidArgumentError("check-without-write", key=at)
+        # Asked per call rather than once when the server is built, so that
+        # building one costs nothing on disk and a directory removed under a
+        # running server is remade rather than remembered.
+        exports = bulk.export_root()
         if path is None:
             exported = bulk.export_document(table, at, exports)
             result: dict[str, Any] = {
@@ -1300,7 +1434,9 @@ def build_server(
                 "Edit this file in place and call again with its path to store it back.",
             )
             return _DocumentFileResult.model_validate(result)
-        imported = bulk.import_document(table, at, path, exports, overwrite=overwrite)
+        imported = bulk.import_document(
+            table, at, path, exports, against=against, overwrite=overwrite
+        )
         result = {
             "key": imported.key,
             "path": str(path),
@@ -1308,16 +1444,13 @@ def build_server(
             "previous": imported.previous,
             "unchecked": imported.unchecked,
         }
-        if imported.overwritten:
-            # The refusal turned into a note, which is all `overwrite` does.
-            # Said loudly because what it means is that somebody else's write
-            # is now gone, and the person who lost it is not reading this.
-            _add_note(
-                result,
-                f"the document had changed since it was exported and has been "
-                f"overwritten anyway; what was written at "
-                f"{imported.changed_at} is gone.",
-            )
+        _note_check(
+            result,
+            imported.key,
+            overwritten=imported.overwritten,
+            unchecked=imported.unchecked,
+            changed_at=imported.changed_at,
+        )
         if imported.unedited:
             # The silent no-op `plans/write-preconditions` names: the round trip
             # was clean and the edit matched nothing. Free to notice, because
@@ -1327,19 +1460,7 @@ def build_server(
                 "the file is identical to what was exported, so the edit changed "
                 "nothing; if an edit was intended, it matched nothing.",
             )
-        if imported.previous is not None and imported.stored < imported.previous:
-            # Reported rather than refused -- emptying a document is a thing
-            # a person may mean, and `plans/write-preconditions` is where
-            # enforcing anything is being considered. But the arithmetic is
-            # done here: this exact workflow through the command line wrote a
-            # 0-character document over a good one, and a shrink nobody
-            # subtracted is a shrink nobody saw. `context/60/findings`.
-            _add_note(
-                result,
-                f"the document shrank from {imported.previous} to "
-                f"{imported.stored} characters; if that was not intended, the "
-                f"previous content is gone.",
-            )
+        _note_shrink(result, imported.previous, imported.stored)
         return _DocumentFileResult.model_validate(result)
 
     return server

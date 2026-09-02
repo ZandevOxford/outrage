@@ -1300,21 +1300,243 @@ def test_a_round_trip_that_changed_nothing_says_so(exporting):
 
 
 def test_an_export_and_an_import_may_name_different_keys(exporting):
+    """Still allowed, and now said out loud: the record names the key it came
+    from, so it cannot answer for the target and ``overwrite`` says to write
+    regardless."""
     exported = call(exporting, "document_file", key="context/a1b2/design")
     Path(exported["path"]).write_text("# Store schema, copied")
 
-    imported = call(exporting, "document_file", key="context/c3d4/design", path=exported["path"])
+    imported = call(
+        exporting,
+        "document_file",
+        key="context/c3d4/design",
+        path=exported["path"],
+        overwrite=True,
+    )
 
-    assert imported == {
-        "key": "context/c3d4/design",
-        "path": exported["path"],
-        "stored": 22,
-        "previous": None,
-        # The record names the key it came from, so the staleness question does
-        # not apply and the answer says which key it was instead of refusing
-        # every copy around the store as stale.
-        "unchecked": "exported from 'context/a1b2/design'",
-    }
+    assert imported["key"] == "context/c3d4/design"
+    assert imported["stored"] == 22
+    assert imported["unchecked"] == "exported from 'context/a1b2/design'"
+    assert "not checked against the document" in imported["note"]
+
+
+def test_an_unchecked_import_is_refused_and_names_the_way_to_check_it(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+
+    message = call_expecting_error(
+        exporting, "document_file", key="context/c3d4/design", path=exported["path"]
+    )
+
+    assert "`against`" in message
+    assert "overwrite" in message
+
+
+def test_a_second_file_makes_a_cross_key_import_checked(exporting):
+    """`plans/write-preconditions/by-file`: the content comes from one exported
+    file and the claim about the target comes from another."""
+    call(exporting, "store_document", key="context/c3d4/design", content="# The copy")
+    source = call(exporting, "document_file", key="context/a1b2/design")
+    Path(source["path"]).write_text("# Store schema, copied")
+    target = call(exporting, "document_file", key="context/c3d4/design")
+
+    imported = call(
+        exporting,
+        "document_file",
+        key="context/c3d4/design",
+        path=source["path"],
+        against=target["path"],
+    )
+
+    assert imported["unchecked"] is None
+    assert imported.get("note") is None
+    assert call(exporting, "read_document", key="context/c3d4/design")["content"] == (
+        "# Store schema, copied"
+    )
+
+
+def test_a_checked_cross_key_import_refuses_a_target_somebody_else_wrote(exporting):
+    """The write that used to land silently on top of another agent's."""
+    call(exporting, "store_document", key="context/c3d4/design", content="# The copy")
+    source = call(exporting, "document_file", key="context/a1b2/design")
+    target = call(exporting, "document_file", key="context/c3d4/design")
+    call(exporting, "store_document", key="context/c3d4/design", content="# Theirs")
+
+    message = call_expecting_error(
+        exporting,
+        "document_file",
+        key="context/c3d4/design",
+        path=source["path"],
+        against=target["path"],
+    )
+
+    assert "overwrite" in message
+    assert call(exporting, "read_document", key="context/c3d4/design")["content"] == "# Theirs"
+
+
+def test_store_document_checks_the_write_against_an_exported_file(exporting):
+    """`plans/write-preconditions/by-file` piece 1: an agent that exported a
+    document and edited it *in context* rather than on disk gets the same
+    staleness refusal the import route gets."""
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+
+    stored = call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="# Store schema, edited in context",
+        against=exported["path"],
+    )
+
+    assert stored["previous"] == 14
+    assert stored["unchecked"] is None
+    assert call(exporting, "read_document", key="context/a1b2/design")["content"] == (
+        "# Store schema, edited in context"
+    )
+
+
+def test_store_document_is_refused_when_somebody_else_wrote_the_document(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    call(exporting, "store_document", key="context/a1b2/design", content="# Theirs")
+
+    message = call_expecting_error(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="# Mine",
+        against=exported["path"],
+    )
+
+    assert "overwrite" in message
+    assert call(exporting, "read_document", key="context/a1b2/design")["content"] == "# Theirs"
+
+
+def test_store_document_overwrites_and_says_what_went(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    call(exporting, "store_document", key="context/a1b2/design", content="# Theirs")
+
+    stored = call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="# Mine",
+        against=exported["path"],
+        overwrite=True,
+    )
+
+    assert "overwritten anyway" in stored["note"]
+    assert call(exporting, "read_document", key="context/a1b2/design")["content"] == "# Mine"
+
+
+def test_store_document_does_not_read_the_file_it_is_checked_against(exporting):
+    """The content comes from the call; the file is a claim, not a source."""
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    Path(exported["path"]).write_text("bytes nobody is storing")
+
+    call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="# From the call",
+        against=exported["path"],
+    )
+
+    assert call(exporting, "read_document", key="context/a1b2/design")["content"] == (
+        "# From the call"
+    )
+
+
+def test_a_second_checked_store_is_not_refused_by_the_first(exporting):
+    """The renewal reaches this route too, or it is one write per export."""
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="# First",
+        against=exported["path"],
+    )
+
+    stored = call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="# Second",
+        against=exported["path"],
+    )
+
+    assert stored["unchecked"] is None
+    assert call(exporting, "read_document", key="context/a1b2/design")["content"] == "# Second"
+
+
+def test_a_checked_store_of_an_encoded_call_renews_what_was_stored(exporting):
+    """The record hashes what the store holds, and an encoded call did not send
+    it: a record carrying the JSON literal would refuse the next write."""
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+    call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content=json.dumps("# Decoded first"),
+        encoding="json-string",
+        against=exported["path"],
+    )
+
+    stored = call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="# Decoded second",
+        against=exported["path"],
+    )
+
+    assert stored["unchecked"] is None
+
+
+def test_a_check_file_exported_from_another_key_is_refused(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+
+    message = call_expecting_error(
+        exporting,
+        "store_document",
+        key="notes/data",
+        content="{}",
+        against=exported["path"],
+    )
+
+    assert "`against`" in message
+    assert "notes/data" in message
+
+
+def test_a_store_that_shrank_under_a_check_is_said_to_have_shrunk(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+
+    stored = call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="",
+        against=exported["path"],
+    )
+
+    assert (stored["stored"], stored["previous"]) == (0, 14)
+    assert "shrank from 14 to 0" in stored["note"]
+
+
+def test_an_ordinary_store_document_is_unchanged_by_all_of_this(exporting):
+    """Opt-in: no `against`, no check, no extra fields in the answer."""
+    stored = call(exporting, "store_document", key="context/a1b2/design", content="# Whatever")
+
+    assert stored == {"key": "context/a1b2/design", "stored": 10, "generated": False}
+
+
+def test_a_check_file_on_an_export_is_refused_rather_than_ignored(exporting):
+    exported = call(exporting, "document_file", key="context/a1b2/design")
+
+    message = call_expecting_error(
+        exporting, "document_file", key="context/a1b2/design", against=exported["path"]
+    )
+
+    assert "nothing to check" in message
 
 
 def test_the_file_name_is_what_says_what_format_came_back(exporting):

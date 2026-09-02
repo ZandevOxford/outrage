@@ -9,10 +9,16 @@ exporting the same key cannot overwrite an edit you have not stored back.
 
 **Pass `path` to import**: that file's content is stored at `key`, and the
 answer reports both the size written and the size that was there before, so
-an edit that truncated is visible. The path must be one this tool exported,
-but the keys do not need to match, so this can copy data.
+an edit that truncated is visible. The path must be one this tool exported.
 
-**A document written by somebody else since you exported it refuses the
-import** rather than losing their work: export it again and redo the edit, or
-pass `overwrite` if you have looked and mean to replace it. Only a file
-exported from the key being written can be checked this way.
+**A write that cannot be checked is refused**, as is one the check fails.
+The check is the export record beside the file: it says what the document
+held when it came out, so an import can tell whether somebody else has
+written it since and refuse rather than lose their work. Export it again and
+redo the edit, or pass `overwrite` if you have looked and mean to replace it.
+
+**Importing to a different key is how content is copied around the store**,
+and a file exported from one key says nothing about another. So either
+export the target too and pass that file as `against` - the content then
+comes from `path` and the check comes from `against`, and the copy is as
+safe as saving back - or pass `overwrite` to write it unchecked.
