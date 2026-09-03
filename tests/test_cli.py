@@ -1737,6 +1737,36 @@ def test_copy_dry_run_reports_the_moment_to_pass_back(tmp_path, capsys):
     )
 
 
+def test_copy_dry_run_under_overwrite_advises_a_repeat_that_lands(tmp_path, capsys):
+    """The repeat it recommends has to be a command that runs.
+
+    `--on-conflict overwrite` beside a watermark is refused, so advice naming
+    only `--unchanged-since` sends the caller to that refusal. The test types
+    back exactly what the message says rather than asserting its words.
+    """
+    directory = a_mounted_project(tmp_path / ".outrage")
+    run("set", "--dir", str(directory), "preview/team/plans/q3", "--content", "mine")
+
+    run(
+        "copy",
+        "--dir",
+        str(directory),
+        "team/plans",
+        "preview",
+        "--on-conflict",
+        "overwrite",
+        "--dry-run",
+    )
+    reported = capsys.readouterr().err
+
+    repeat = reported.rsplit("repeat with ", 1)[1].split(" to refuse")[0].split()
+    assert "--on-conflict" in repeat
+    assert (
+        main(["copy", "--dir", str(directory), "team/plans", "preview", *repeat], io.StringIO())
+        == 0
+    )
+
+
 def test_copy_refuses_when_the_target_moved_since_the_watermark(tmp_path, capsys):
     directory = a_mounted_project(tmp_path / ".outrage")
     run("set", "--dir", str(directory), "preview/team/plans/q3", "--content", "mine")

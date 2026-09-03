@@ -304,7 +304,7 @@ With `reroot` the two subtrees must not overlap.
 - `target` (string; required) — Key to copy it to: a prefix to graft beneath, or the new key itself with `reroot`
 - `reroot` (boolean; default false) — Land the keys at `target` itself rather than beneath their own source key, so source/x arrives as target/x
 - `depth` (integer or null; default null; minimum 0) — How many levels below source to descend; unlimited when omitted
-- `on_conflict` (string; default "skip") — What to do about a key already holding a document: 'skip' it, 'overwrite' it, or 'stop' the whole copy there
+- `on_conflict` (string; default "skip") — What to do about a key already holding a document: 'skip' it, 'overwrite' it, 'overwrite-unchanged' to replace only what has not moved since unchanged_since, or 'stop' the whole copy there
 - `unchanged_since` (string or null; default null) — When you looked, as an ISO 8601 timestamp such as 2026-09-03T10:15:00Z: a dry run reports one as `checked_at`. The copy is refused before anything is written if the target changed since, and with on_conflict='overwrite-unchanged' any key that changes after that is left alone and named in `changed`
 - `dry_run` (boolean; default false) — Report what would be copied without writing any of it
 - `limit` (integer; default 500; greater than 0) — Maximum documents to copy in this call

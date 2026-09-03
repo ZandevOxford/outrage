@@ -1260,8 +1260,10 @@ def build_server(
             str,
             Field(
                 description=(
-                    "What to do about a key already holding a document: 'skip' "
-                    "it, 'overwrite' it, or 'stop' the whole copy there"
+                    "What to do about a key already holding a document: "
+                    "'skip' it, 'overwrite' it, 'overwrite-unchanged' to "
+                    "replace only what has not moved since unchanged_since, "
+                    "or 'stop' the whole copy there"
                 )
             ),
         ] = store_module.SKIP,
@@ -1356,11 +1358,19 @@ def build_server(
             # The moment to hand back, which is the half of "look, then write
             # only what has not moved" a caller cannot work out for itself.
             result["checked_at"] = checked_at
+            # `overwrite` beside a watermark is the pairing `bulk` refuses, so
+            # advice to hand the moment back has to name the conflict rule that
+            # takes one. Unconditional, it recommended the call that fails.
+            guarded = (
+                " with on_conflict='overwrite-unchanged'"
+                if on_conflict == store_module.OVERWRITE
+                else ""
+            )
             _add_note(
                 result,
                 "Nothing was written; this is what the copy would have done. Pass "
-                "checked_at back as unchanged_since to refuse the real copy if "
-                "anything moves in between.",
+                f"checked_at back as unchanged_since{guarded} to refuse the real "
+                "copy if anything moves in between.",
             )
         if result.get("changed"):
             _add_note(
