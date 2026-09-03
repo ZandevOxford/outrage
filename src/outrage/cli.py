@@ -22,7 +22,7 @@ import json
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from . import (
     __version__,
@@ -2175,6 +2175,25 @@ def _print_command(label: str, entry: dict[str, object], out: TextIO) -> None:
     print(f"{label} {command}".rstrip(), file=out)
 
 
+def _flag(argument: str, value: Any = None) -> str:
+    """An argument as this front end spells it, for :func:`outrage.messages.render`.
+
+    ``argparse``'s own convention read backwards: a ``dest`` is its long option
+    with the dashes turned into underscores, so the way back is mechanical. It
+    is a rule rather than a table because a table is a second place to remember
+    a flag, and ``test_messages`` keeps the rule honest by checking every flag a
+    message can produce against the parser's own options -- inventing
+    ``--against`` for an argument only the tools take would be this same defect
+    one level down.
+
+    The defect it exists for: a message spelled for the tools told a command
+    line user to "Pass on_conflict='overwrite-unchanged'", which is not
+    something anyone can type. `context/111/findings` 5.
+    """
+    flag = f"--{argument.replace('_', '-')}"
+    return flag if value is None else f"{flag} {value}"
+
+
 def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     """Run one command and return its exit status.
 
@@ -2201,8 +2220,10 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
         # Rendered here, because this is a front end and the error is not. The
         # command line opens one store directory and knows nothing about a
         # mount table, so a key names itself: the default namer is the correct
-        # one here and the mount-aware one would be wrong. See `messages`.
-        print(f"outrage: {messages.render(exc)}", file=sys.stderr)
+        # one here and the mount-aware one would be wrong. An *argument* is the
+        # other way about -- the default spelling is the tools', and this front
+        # end has to say so. See `messages`.
+        print(f"outrage: {messages.render(exc, spell=_flag)}", file=sys.stderr)
         return 1
 
 

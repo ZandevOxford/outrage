@@ -652,6 +652,36 @@ def test_copy_tree_dry_run_reports_the_moment_to_pass_back(server):
     assert result["copied"] == {"wrote": 2}
 
 
+def test_a_paged_copy_names_the_one_argument_a_resume_cannot_keep(server):
+    """"Every other argument unchanged" and a watermark cannot both hold.
+
+    A copy carries the source's timestamps, so the page just written is itself
+    a change to the target whenever the source is newer than the moment being
+    measured against, and the resume the paging note recommends is refused.
+    Found by running it: `context/111/findings` 4.
+    """
+    looked = call(server, "copy_tree", source="context/a1b2", target="archive", dry_run=True)
+
+    paged = call(
+        server,
+        "copy_tree",
+        source="context/a1b2",
+        target="archive",
+        limit=1,
+        unchanged_since=looked["checked_at"],
+    )
+
+    assert paged["next_cursor"] is not None
+    assert "Except unchanged_since" in paged["note"]
+
+
+def test_a_paged_copy_without_a_watermark_keeps_the_short_note(server):
+    result = call(server, "copy_tree", source="context/a1b2", target="archive", limit=1)
+
+    assert result["next_cursor"] is not None
+    assert "unchanged_since" not in result["note"]
+
+
 def test_copy_tree_dry_run_advises_the_conflict_rule_a_watermark_works_with(server):
     """Advice that names only the time recommends the pairing the copy refuses.
 
