@@ -785,6 +785,38 @@ def test_rm_dry_run_previews_the_subtree_it_would_take(tmp_path):
     assert "notes/1/detail" in listing
 
 
+def test_rm_dry_run_names_exactly_what_the_run_takes(tmp_path):
+    """The preview walked the subtree itself, and drifted from the delete.
+
+    A plain delete carries the key's metadata unit away with it and the preview
+    did not say so: `rm notes/1 --dry-run` named one key where `rm notes/1`
+    removed two. It asks the store for the delete's own selection now, so there
+    is one list rather than two spellings of the rule.
+    """
+    directory = str(tmp_path / ".outrage")
+
+    # The third case is a container holding no document of its own, which is
+    # where the headline used to name a key the run said nothing about.
+    for recursive, container in (([], False), (["--recursive"], False), (["--recursive"], True)):
+        run("set", "--dir", directory, "notes/1", "--content", "body", "--title", "A note")
+        run("set", "--dir", directory, "notes/1/detail", "--content", "more")
+        if container:
+            run("rm", "--dir", directory, "notes/1")
+
+        _, previewed = run("rm", "--dir", directory, "notes/1", *recursive, "--dry-run")
+        _, taken = run("rm", "--dir", directory, "notes/1", *recursive)
+
+        assert [
+            line.removeprefix("would delete ").removeprefix("  and below: ")
+            for line in previewed.splitlines()
+            if line.startswith(("would delete ", "  and below: "))
+        ] == [
+            line.removeprefix("deleted ")
+            for line in taken.splitlines()
+            if line.startswith("deleted ")
+        ]
+
+
 def test_rm_recursive_takes_the_subtree(tmp_path):
     a_tree(tmp_path / ".outrage")
 

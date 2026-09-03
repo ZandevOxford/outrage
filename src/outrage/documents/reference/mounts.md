@@ -450,7 +450,7 @@ maximum needs.
 None when no mount the range touches holds anything, which is what
 every empty selection answers here.
 
-#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 As [`delete()`](store.md#outrage.store.Store.delete), and it **crosses**.
 
@@ -472,6 +472,13 @@ refuse a run the first two had already carried out -- which is the half
 finished outcome the precondition exists to prevent. Asked of the table
 it is one aggregate per mount and the refusal comes before any of them
 is asked to delete anything.
+
+`dry_run` is passed inward, to every segment: a preview of a crossing
+delete has to name what each store would take, and a table that
+previewed only its own stretch would report a fraction of the answer as
+though it were all of it. A read-only mount is skipped in a preview
+exactly as it is skipped in the delete, which is what makes the two
+lists the same list.
 
 #### list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
 

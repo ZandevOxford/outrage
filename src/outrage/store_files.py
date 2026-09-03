@@ -414,8 +414,11 @@ class FilesystemStore(FileStore):
         *,
         key_range: KeyRange = UNBOUNDED,
         unchanged_since: str | None = None,
+        dry_run: bool = False,
     ) -> list[str]:
         """Unlink the files the selection names, then prune what that emptied.
+
+        ``dry_run`` names them and unlinks nothing, from the same selection.
 
         The selection is the other backends' exactly: a metadata key is itself
         alone, a document key takes its metadata with it, and descendants come
@@ -462,8 +465,9 @@ class FilesystemStore(FileStore):
         for row in targets:
             if not within(row.sort_key):
                 continue
-            row.path.unlink(missing_ok=True)
-            self._prune(row.path.parent)
+            if not dry_run:
+                row.path.unlink(missing_ok=True)
+                self._prune(row.path.parent)
             removed.append(row.key)
         return sorted(removed, key=keys.sort_form)
 

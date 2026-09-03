@@ -431,6 +431,18 @@ class _DeleteKeysResult(_ToolResult):
         list[str] | None,
         Field(description="Read-only mounted stores which refused the delete, when any"),
     ] = None
+    checked_at: Annotated[
+        str | None,
+        Field(
+            description=(
+                "When this dry run looked, to pass back as `unchanged_since` on the real delete"
+            )
+        ),
+    ] = None
+    dry_run: Annotated[
+        bool | None,
+        Field(description="True when this result reports a dry run and nothing was deleted"),
+    ] = None
     note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
@@ -1173,10 +1185,14 @@ def build_server(
                     "Refuse the whole delete if anything it would remove has "
                     "changed since this ISO 8601 timestamp, e.g. "
                     "2026-09-03T10:15:00Z. Nothing is deleted when it has. "
-                    "Unchecked when omitted"
+                    "A dry run reports one as `checked_at`. Unchecked when "
+                    "omitted"
                 )
             ),
         ] = None,
+        dry_run: Annotated[
+            bool, Field(description="Report what would be deleted without deleting any of it")
+        ] = False,
     ) -> _DeleteKeysResult:
         at = _named_key(table, key)
         # A delete crosses a mount boundary, exactly as a read does, and the
@@ -1185,7 +1201,13 @@ def build_server(
         # that stopped at a boundary while every other tool crossed it would
         # leave the caller to discover the rule from the wreckage. See
         # `planned/mounts/crossing`.
-        deleted = table.delete(at, recursive=recursive, unchanged_since=unchanged_since)
+        # Read before the delete, so that anything written while this call runs
+        # is later than the moment a second call is measured against. The copy's
+        # dry run takes its watermark the same way and for the same reason.
+        checked_at = _now()
+        deleted = table.delete(
+            at, recursive=recursive, unchanged_since=unchanged_since, dry_run=dry_run
+        )
         # What a read-only mount kept back is not a key, so it is not in that
         # answer. Asked separately, and for a *non*-recursive delete too:
         # `remaining` is about to count what is below, and a caller told to pass
@@ -1194,6 +1216,20 @@ def build_server(
         refused = table.read_only_below(at)
 
         result: dict[str, Any] = {"key": at, "deleted": deleted, "count": len(deleted)}
+        if dry_run:
+            result["dry_run"] = True
+            # The moment to hand back, which is the half of "look, then delete
+            # only what has not moved" a caller cannot work out for itself. The
+            # command line has printed one on `rm --dry-run` since the watermark
+            # was built; a session had no way to ask for one at all, which is
+            # what this tool exists to fix. `context/111/findings` 3.
+            result["checked_at"] = checked_at
+            _add_note(
+                result,
+                "Nothing was deleted; `deleted` is what the delete would have "
+                "taken. Pass checked_at back as unchanged_since to refuse the "
+                "real delete if anything moves in between.",
+            )
         if not recursive:
             # Without this a no-op delete and a successful one look identical,
             # so a key left standing reads as a key removed. Counted across the
@@ -1204,7 +1240,8 @@ def build_server(
                 result["remaining"] = remaining
                 _add_note(
                     result,
-                    f"{remaining} key(s) below {key!r} were kept; "
+                    f"{remaining} key(s) below {key!r} "
+                    f"{'would be kept' if dry_run else 'were kept'}; "
                     f"pass recursive=true to delete them too",
                 )
         if refused:
