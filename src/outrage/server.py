@@ -30,7 +30,7 @@ import os
 import sys
 import time
 from collections.abc import Callable, Generator
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
 from mcp.server.context import CallNext, HandlerResult, ServerRequestContext
@@ -45,7 +45,7 @@ from pydantic import (
     model_serializer,
 )
 
-from . import __version__, bulk, eventlog, keys, messages, mountfile, shipped
+from . import __version__, bulk, eventlog, ingest, keys, messages, mountfile, shipped
 from . import mounts as mounts_module
 from . import store as store_module
 from .errors import OutrageError
@@ -312,6 +312,23 @@ class _StoreDocumentResult(_ToolResult):
         ),
     ] = None
     note: Annotated[str | None, Field(description="Important qualification of the result")] = None
+
+
+class _IngestDocumentResult(_ToolResult):
+    source: Annotated[str, Field(description="The absolute local source file converted")]
+    key: Annotated[str, Field(description="The normalized destination key")]
+    title: Annotated[str, Field(description="The title selected for the document")]
+    characters: Annotated[int, Field(description="Markdown characters produced")]
+    format: Annotated[
+        Literal["markdown"], Field(description="The document format, always markdown")
+    ]
+    title_key: Annotated[
+        str | None,
+        Field(description="The metadata key written for the title, absent on a dry run"),
+    ] = None
+    dry_run: Annotated[
+        bool, Field(description="Whether conversion was performed without writing")
+    ]
 
 
 class _EntryResult(_ToolResult):
@@ -947,6 +964,50 @@ def build_server(
                 max_segments=keys.MAX_JOINED_SEGMENTS,
             ).key
         return _StoreDocumentResult.model_validate(result)
+
+    @server.tool(
+        annotations=ToolAnnotations(idempotent_hint=True),
+        description=tool_description("ingest_document"),
+    )
+    @_reported
+    def ingest_document(
+        source: Annotated[str, Field(description="Path to a local regular file")],
+        key: Annotated[str, Field(description="Destination key")],
+        title: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Title to store; MarkItDown's title and then the source filename "
+                    "stem are used when omitted"
+                )
+            ),
+        ] = None,
+        overwrite: Annotated[
+            bool, Field(description="Replace a document already stored at the destination")
+        ] = False,
+        dry_run: Annotated[
+            bool, Field(description="Convert and report without writing the document or title")
+        ] = False,
+    ) -> _IngestDocumentResult:
+        converted = ingest.ingest_document(
+            table,
+            source,
+            _named_key(table, key),
+            title=title,
+            overwrite=overwrite,
+            dry_run=dry_run,
+        )
+        result: dict[str, Any] = {
+            "source": str(converted.source),
+            "key": converted.key,
+            "title": converted.title,
+            "characters": converted.characters,
+            "format": converted.format,
+            "dry_run": converted.dry_run,
+        }
+        if converted.title_key is not None:
+            result["title_key"] = converted.title_key
+        return _IngestDocumentResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),

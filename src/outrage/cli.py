@@ -28,6 +28,7 @@ from . import (
     __version__,
     bulk,
     eventlog,
+    ingest,
     install,
     keys,
     logread,
@@ -54,7 +55,18 @@ from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND
 #:
 #: Read by :func:`parse_args` to decide whether a mount configuration file is
 #: spliced in, and by the loop that adds the options, so the two cannot drift.
-MOUNTED = ("get", "set", "ls", "dump", "copy", "rm", "export", "import", "mounts")
+MOUNTED = (
+    "get",
+    "set",
+    "ingest",
+    "ls",
+    "dump",
+    "copy",
+    "rm",
+    "export",
+    "import",
+    "mounts",
+)
 
 #: The rules a command with no watermark can offer. ``overwrite-unchanged``
 #: is measured against ``--unchanged-since``, which only ``copy`` takes: an
@@ -411,6 +423,34 @@ def argument_parser() -> argparse.ArgumentParser:
         help="Detected from the content when omitted.",
     )
     set_.set_defaults(handler=_set_command)
+
+    ingest_ = subcommands.add_parser(
+        "ingest",
+        help="convert one local file to Markdown and store it",
+        description=(
+            "Convert one local regular file with MarkItDown and store the resulting "
+            "Markdown as one document. URLs are refused, converter plugins are disabled, "
+            "and the optional documents extra must be installed. An existing destination "
+            "is preserved unless --overwrite is passed. The title comes from --title, "
+            "then the converted document, then the source filename stem."
+        ),
+    )
+    _store_option(ingest_)
+    _table_options(ingest_)
+    ingest_.add_argument("source", metavar="SOURCE", help="Local regular file to convert.")
+    ingest_.add_argument("key", metavar="KEY", help="Destination key for the Markdown document.")
+    ingest_.add_argument(
+        "--title", default=None, help="Title to store instead of the detected title."
+    )
+    ingest_.add_argument(
+        "--overwrite", action="store_true", help="Replace a document already at the destination."
+    )
+    ingest_.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Perform conversion and report the result without writing anything.",
+    )
+    ingest_.set_defaults(handler=_ingest_command)
 
     ls = subcommands.add_parser(
         "ls",
@@ -1396,6 +1436,34 @@ def _set_command(args: argparse.Namespace, out: TextIO) -> int:
     # The resolved path, not the one asked for: a mistyped --dir creates a
     # store rather than failing, so the only defence is saying where it went.
     print(f"{keys.displayed(written)}  {len(content)} characters in {where}", file=out)
+    return 0
+
+
+def _ingest_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Convert one local file and report the document and store it lands in."""
+    with _open_table(args, create=True) as opened:
+        _resolved(opened, args)
+        converted = ingest.ingest_document(
+            opened,
+            args.source,
+            args.key,
+            title=args.title,
+            overwrite=args.overwrite,
+            dry_run=args.dry_run,
+        )
+        where = _file_holding(opened, converted.key)
+
+    action = "would store" if converted.dry_run else "stored"
+    title_at = (
+        f"with title {converted.title!r} (not written)"
+        if converted.title_key is None
+        else f"with title {converted.title!r} at {keys.displayed(converted.title_key)}"
+    )
+    print(
+        f"{action} {converted.source} at {keys.displayed(converted.key)}: "
+        f"{converted.characters} characters as {converted.format}, {title_at}, in {where}",
+        file=out,
+    )
     return 0
 
 

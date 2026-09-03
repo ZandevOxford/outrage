@@ -41,6 +41,14 @@ PACKAGE = REPO / "src" / "outrage"
 TEST_INSTALLED = bool(os.environ.get("OUTRAGE_TEST_INSTALLED"))
 
 
+def test_documents_extra_installs_the_bounded_common_format_readers():
+    project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+
+    assert project["optional-dependencies"]["documents"] == [
+        "markitdown[docx,pdf,pptx,xlsx]>=0.1.7,<0.2"
+    ]
+
+
 def _data_files() -> list[str]:
     """Every non-Python file under ``src/outrage``, package-relative.
 

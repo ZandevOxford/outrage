@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from outrage import ingest as ingest_module
 from outrage import install as install_module
 from outrage import mountfile, mounts, shipped
 from outrage.cli import main, parse_args
@@ -252,6 +253,60 @@ def test_scope_defaults_to_project():
 def test_a_command_is_required():
     with pytest.raises(SystemExit):
         parse_args([])
+
+
+def test_ingest_stores_markdown_and_reports_every_resolved_destination(
+    tmp_path, monkeypatch
+):
+    source = tmp_path / "Report.docx"
+    source.write_bytes(b"input")
+    directory = tmp_path / "store"
+    monkeypatch.setattr(ingest_module, "_convert", lambda path: ("# Converted\n", "Q1"))
+
+    status, output = run(
+        "ingest", "--dir", str(directory), str(source), "/reports//q1/"
+    )
+
+    assert status == 0
+    assert str(source.resolve()) in output
+    assert "reports/q1" in output
+    assert "12 characters as markdown" in output
+    assert "title 'Q1' at reports/q1/!title" in output
+    assert str(directory / "store.sqlite") in output
+
+    status, content = run("get", "--dir", str(directory), "reports/q1")
+    assert (status, content) == (0, "# Converted\n")
+
+
+def test_ingest_dry_run_reports_without_storing_a_document(tmp_path, monkeypatch):
+    source = tmp_path / "Report.docx"
+    source.write_bytes(b"input")
+    directory = tmp_path / "store"
+    monkeypatch.setattr(ingest_module, "_convert", lambda path: ("preview", None))
+
+    status, output = run(
+        "ingest", "--dir", str(directory), str(source), "reports/q1", "--dry-run"
+    )
+
+    assert status == 0
+    assert "would store" in output
+    assert "title 'Report' (not written)" in output
+    status, _ = run("get", "--dir", str(directory), "reports/q1")
+    assert status == 1
+
+
+def test_ingest_collision_is_a_cli_message_spelling_its_flag(tmp_path, monkeypatch, capsys):
+    source = tmp_path / "Report.docx"
+    source.write_bytes(b"input")
+    directory = tmp_path / "store"
+    monkeypatch.setattr(ingest_module, "_convert", lambda path: ("new", None))
+    run("set", "--dir", str(directory), "reports/q1", "--content", "mine")
+
+    status, _ = run("ingest", "--dir", str(directory), str(source), "reports/q1")
+
+    assert status == 1
+    assert "--overwrite" in capsys.readouterr().err
+    assert run("get", "--dir", str(directory), "reports/q1") == (0, "mine")
 
 
 # -- backup --------------------------------------------------------------

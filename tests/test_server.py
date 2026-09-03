@@ -69,6 +69,7 @@ def test_tools_are_registered(server):
     assert set(tools) == {
         "read_document",
         "store_document",
+        "ingest_document",
         "list_keys",
         "get_documents",
         "find_documents",
@@ -93,6 +94,7 @@ def test_every_tool_description_is_the_shipped_document(exporting):
     assert set(tools) == {
         "read_document",
         "store_document",
+        "ingest_document",
         "list_keys",
         "get_documents",
         "find_documents",
@@ -132,6 +134,60 @@ def test_known_arguments_still_pass(server):
     """The strictness must not cost the optional arguments."""
     assert call(server, "store_document", key="a/b", content="x", title="T", format="markdown")
     assert call(server, "list_keys")["entries"]
+
+
+def test_ingest_document_returns_a_typed_preview(server, tmp_path, monkeypatch):
+    source = tmp_path / "report.docx"
+    source.write_bytes(b"input")
+    monkeypatch.setattr(server_module.ingest, "_convert", lambda path: ("# Report\n", "Report"))
+
+    result = call(
+        server,
+        "ingest_document",
+        source=str(source),
+        key="reports/q1",
+        dry_run=True,
+    )
+
+    assert result == {
+        "source": str(source.resolve()),
+        "key": "reports/q1",
+        "title": "Report",
+        "characters": 9,
+        "format": "markdown",
+        "dry_run": True,
+    }
+    assert "nothing is stored" in call_expecting_error(server, "read_document", key="reports/q1")
+
+
+def test_ingest_document_writes_markdown_and_title(server, tmp_path, monkeypatch):
+    source = tmp_path / "report.docx"
+    source.write_bytes(b"input")
+    monkeypatch.setattr(server_module.ingest, "_convert", lambda path: ("# Report\n", None))
+
+    result = call(server, "ingest_document", source=str(source), key="reports/q1")
+
+    assert result["title"] == "report"
+    assert result["title_key"] == "reports/q1/!title"
+    assert call(server, "read_document", key="reports/q1")["format"] == "markdown"
+    assert call(server, "read_document", key="reports/q1/!title")["content"] == "report"
+
+
+def test_ingest_collision_is_a_tool_message_spelling_its_argument(
+    server, tmp_path, monkeypatch
+):
+    source = tmp_path / "report.docx"
+    source.write_bytes(b"input")
+    monkeypatch.setattr(server_module.ingest, "_convert", lambda path: ("new", None))
+    call(server, "store_document", key="reports/q1", content="mine")
+
+    message = call_expecting_error(
+        server, "ingest_document", source=str(source), key="reports/q1"
+    )
+
+    assert "overwrite" in message
+    assert "--overwrite" not in message
+    assert call(server, "read_document", key="reports/q1")["content"] == "mine"
 
 
 def test_tool_schemas_describe_their_arguments(server):

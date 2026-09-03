@@ -1090,4 +1090,58 @@ def _unchanged_since_unguarded(
     )
 
 
+# -- local document ingestion --------------------------------------------
+
+
+@template("ingest-source-url")
+def _ingest_source_url(name: Namer, /, *, source: str, **_: Any) -> str:
+    return f"{source!r} is a URL; document ingestion accepts only a local file path"
+
+
+@template("ingest-source-not-file")
+def _ingest_source_not_file(
+    name: Namer, /, *, source: str, reason: str, **_: Any
+) -> str:
+    return f"cannot ingest {source}: it {reason}"
+
+
+@template("ingest-source-unreadable")
+def _ingest_source_unreadable(
+    name: Namer, /, *, source: str, reason: str, **_: Any
+) -> str:
+    return f"cannot read local document {source}: {reason}"
+
+
+@template("ingest-documents-extra-missing")
+def _ingest_documents_extra_missing(name: Namer, /, **_: Any) -> str:
+    return "document conversion is not installed; install outrage with the 'documents' extra"
+
+
+@template("ingest-format-unsupported")
+def _ingest_format_unsupported(name: Namer, /, *, source: str, **_: Any) -> str:
+    return f"MarkItDown has no converter for {source}"
+
+
+@template("ingest-converter-dependency-missing")
+def _ingest_converter_dependency_missing(
+    name: Namer, /, *, source: str, reason: str, **_: Any
+) -> str:
+    return f"the converter for {source} is missing a dependency: {reason}"
+
+
+@template("ingest-conversion-failed")
+def _ingest_conversion_failed(
+    name: Namer, /, *, source: str, reason: str, **_: Any
+) -> str:
+    return f"MarkItDown could not convert {source}: {reason}"
+
+
+@template("ingest-target-exists")
+def _ingest_target_exists(name: Namer, /, *, spell: Speller, key: str, **_: Any) -> str:
+    return (
+        f"refusing to replace the document already stored at {name(key)!r}; "
+        f"pass {spell('overwrite')} to replace it"
+    )
+
+
 __all__ = ["Namer", "Speller", "codes", "keyword", "render", "template"]

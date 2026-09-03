@@ -15,7 +15,7 @@ page from being a list of twelve near-identical `(args, out) -> int` entries
 in place of an orientation. The interface people actually use here is the
 command line, and `outrage --help` is what states it.
 
-### outrage.cli.MOUNTED *= ('get', 'set', 'ls', 'dump', 'copy', 'rm', 'export', 'import', 'mounts')*
+### outrage.cli.MOUNTED *= ('get', 'set', 'ingest', 'ls', 'dump', 'copy', 'rm', 'export', 'import', 'mounts')*
 
 The subcommands that act across a whole mount table rather than on one
 store file. Everything that reads or writes documents is here; `check` and

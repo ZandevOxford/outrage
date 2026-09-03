@@ -74,6 +74,37 @@ it this call overwrites whatever is there.
 - `unchecked` (string or null; optional) — Why the write was not compared with what was exported, when 'against' was given and 'overwrite' allowed it through uncompared
 - `note` (string or null; optional) — Important qualification of the result
 
+## `ingest_document`
+
+Convert one local file to Markdown and store it as an Outrage document.
+
+The source must be a regular file on the server's filesystem. URLs and other
+non-file sources are refused. Conversion uses MarkItDown's built-in converters
+through `convert_local`; plugins, remote fetching, Azure services and LLM
+conversion options are not enabled.
+
+The optional `documents` extra must be installed. Existing destinations are
+preserved unless `overwrite` is true. A dry run performs the conversion and
+reports its result without writing the document or its title.
+
+### Parameters
+
+- `source` (string; required) — Path to a local regular file
+- `key` (string; required) — Destination key
+- `title` (string or null; default null) — Title to store; MarkItDown's title and then the source filename stem are used when omitted
+- `overwrite` (boolean; default false) — Replace a document already stored at the destination
+- `dry_run` (boolean; default false) — Convert and report without writing the document or title
+
+### Returns
+
+- `source` (string; required) — The absolute local source file converted
+- `key` (string; required) — The normalized destination key
+- `title` (string; required) — The title selected for the document
+- `characters` (integer; required) — Markdown characters produced
+- `format` ("markdown"; required) — The document format, always markdown
+- `title_key` (string or null; optional) — The metadata key written for the title, absent on a dry run
+- `dry_run` (boolean; required) — Whether conversion was performed without writing
+
 ## `list_keys`
 
 List the keys immediately below a key, including subkeys and metadata.

@@ -8,7 +8,7 @@ Command line tool for the Outrage document store
 
 ```text
 outrage [-h] [--version]
-        {init,sessionstart,config,backup,log,get,set,ls,dump,copy,export,import,pack,rm,check,mounts}
+        {init,sessionstart,config,backup,log,get,set,ingest,ls,dump,copy,export,import,pack,rm,check,mounts}
         ...
 ```
 
@@ -26,6 +26,7 @@ outrage [-h] [--version]
 - [`log`](#log) - read back the event log
 - [`get`](#get) - print the document stored at a key
 - [`set`](#set) - store a document, from a file or from standard input
+- [`ingest`](#ingest) - convert one local file to Markdown and store it
 - [`ls`](#ls) - list the keys immediately below a key
 - [`dump`](#dump) - print every document at and below a key
 - [`copy`](#copy) - copy a range of documents within the mounted namespace
@@ -243,6 +244,40 @@ outrage set [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--file PATH` - Read the content from a file.
 - `--title TITLE` - Title to store alongside, as the key's !title metadata. What later surveys find the document by. Not allowed on a metadata key.
 - `--format {markdown,json,text,html}` - Detected from the content when omitted.
+
+## `ingest`
+
+Convert one local regular file with MarkItDown and store the resulting Markdown as one document.
+URLs are refused, converter plugins are disabled, and the optional documents extra must be
+installed. An existing destination is preserved unless --overwrite is passed. The title comes from
+--title, then the converted document, then the source filename stem.
+
+### Usage
+
+```text
+outrage ingest [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+               [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+               [--mount-config FILE] [--no-mount-config]
+               [--title TITLE] [--overwrite] [--dry-run]
+               SOURCE KEY
+```
+
+### Arguments
+
+- `-h, --help` - show this help message and exit
+- `--dir PATH` - Store directory. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
+- `--store FILE, --root-mount FILE` - Which store in that directory, as a file relative to it (default: store.sqlite). On a command that takes mounts this is the root mount -- the store answering for every key no mount claims -- and --root-mount is the same option. Takes the same options a --mount does, so --store documents,type=files reads a directory of files as the whole store.
+- `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: files, parquet, sqlite. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
+- `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
+- `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
+- `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
+- `SOURCE` - Local regular file to convert.
+- `KEY` - Destination key for the Markdown document.
+- `--title TITLE` - Title to store instead of the detected title.
+- `--overwrite` - Replace a document already at the destination.
+- `--dry-run` - Perform conversion and report the result without writing anything.
 
 ## `ls`
 

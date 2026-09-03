@@ -38,6 +38,10 @@ Issues = "https://github.com/ZandevOxford/outrage/issues"
 # `outrage.store._backend_for` imports that module only when a `.parquet` file is
 # named, so nothing here is touched until something asks for one.
 parquet = ["pyarrow>=18"]
+# MarkItDown and the format-specific readers needed by the local document
+# ingestion path. Kept out of the base installation so a store that only holds
+# hand-written context does not import or install a conversion stack.
+documents = ["markitdown[docx,pdf,pptx,xlsx]>=0.1.7,<0.2"]
 # hatchling and build are here because the suite builds the sdist and the wheel
 # and asserts what is in them - tests/test_packaging.py. Without them that
 # check skips, and a release can drop a file the way 0.1.0 did.
