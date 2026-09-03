@@ -14,6 +14,7 @@ from mcp.shared.memory import create_client_server_memory_streams
 from outrage import bulk, eventlog, mountfile, shipped
 from outrage import mounts as mounts_module
 from outrage import server as server_module
+from outrage import store as store_module
 from outrage.eventlog import EventLog
 from outrage.server import RequestLog, build_server, instructions, parse_args
 from outrage.store_sqlite import SqliteStore
@@ -138,6 +139,20 @@ def test_tool_schemas_describe_their_arguments(server):
     properties = tool.input_schema["properties"]
     assert tool.input_schema["required"] == ["key"]
     assert "regex" in properties["pattern"]["description"]
+
+
+def test_the_conflict_rules_are_all_named_where_one_is_chosen(server):
+    """A choice absent from its own argument's description is a choice nobody finds.
+
+    `overwrite-unchanged` was added to `CONFLICTS` and to the tool's text while
+    `on_conflict` went on listing the other three, so a session reading the
+    argument that takes it saw three of four. The CLI lists them from `choices`
+    and cannot drift; this is what keeps the schema honest instead.
+    """
+    described = list_tools(server)["copy_tree"].input_schema["properties"]["on_conflict"]
+
+    for rule in store_module.CONFLICTS:
+        assert rule in described["description"], rule
 
 
 def test_tool_schemas_describe_their_results(exporting):
@@ -635,6 +650,43 @@ def test_copy_tree_dry_run_reports_the_moment_to_pass_back(server):
         unchanged_since=looked["checked_at"],
     )
     assert result["copied"] == {"wrote": 2}
+
+
+def test_copy_tree_dry_run_advises_the_conflict_rule_a_watermark_works_with(server):
+    """Advice that names only the time recommends the pairing the copy refuses.
+
+    `overwrite` beside `unchanged_since` is an `InvalidArgumentError`, so a dry
+    run under `overwrite` that says "pass checked_at back as unchanged_since"
+    sends the caller to a failure. The test follows the sentence rather than
+    matching it: whatever the note tells a caller to do has to be a call that
+    lands.
+    """
+    looked = call(
+        server,
+        "copy_tree",
+        source="context/a1b2",
+        target="archive",
+        on_conflict="overwrite",
+        dry_run=True,
+    )
+
+    assert "on_conflict='overwrite-unchanged'" in looked["note"]
+    result = call(
+        server,
+        "copy_tree",
+        source="context/a1b2",
+        target="archive",
+        on_conflict="overwrite-unchanged",
+        unchanged_since=looked["checked_at"],
+    )
+    assert result["copied"] == {"wrote": 2}
+
+
+def test_copy_tree_dry_run_says_nothing_about_a_conflict_rule_it_does_not_need(server):
+    """The default takes a watermark as it stands, so the advice stays the short one."""
+    looked = call(server, "copy_tree", source="context/a1b2", target="archive", dry_run=True)
+
+    assert "overwrite-unchanged" not in looked["note"]
 
 
 def test_copy_tree_with_a_watermark_writes_nothing_when_the_target_moved(server):

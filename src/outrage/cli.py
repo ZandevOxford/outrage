@@ -1638,12 +1638,21 @@ def _report_watermark(args: argparse.Namespace, checked_at: str) -> None:
     get right by hand -- too early refuses a run nothing is wrong with, and too
     late is a guard that was never armed.
     """
-    if args.dry_run:
-        print(
-            f"outrage: looked at {checked_at}; repeat with "
-            f"--unchanged-since {checked_at} to refuse if anything moves first",
-            file=sys.stderr,
-        )
+    if not args.dry_run:
+        return
+    # `--on-conflict overwrite` beside a watermark is the pairing `bulk`
+    # refuses, so the repeat has to name the rule that takes one. Unconditional,
+    # this recommended the call that fails. `rm` carries no --on-conflict.
+    guarded = (
+        " --on-conflict overwrite-unchanged"
+        if getattr(args, "on_conflict", None) == store.OVERWRITE
+        else ""
+    )
+    print(
+        f"outrage: looked at {checked_at}; repeat with "
+        f"--unchanged-since {checked_at}{guarded} to refuse if anything moves first",
+        file=sys.stderr,
+    )
 
 
 #: What to call each action when counting them up, as against when reporting
