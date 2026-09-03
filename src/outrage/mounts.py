@@ -1278,6 +1278,7 @@ class MountedStore(Store):
         *,
         key_range: KeyRange = UNBOUNDED,
         unchanged_since: str | None = None,
+        dry_run: bool = False,
     ) -> list[str]:
         """As :meth:`~outrage.store.Store.delete`, and it **crosses**.
 
@@ -1299,6 +1300,13 @@ class MountedStore(Store):
         finished outcome the precondition exists to prevent. Asked of the table
         it is one aggregate per mount and the refusal comes before any of them
         is asked to delete anything.
+
+        ``dry_run`` is passed inward, to every segment: a preview of a crossing
+        delete has to name what each store would take, and a table that
+        previewed only its own stretch would report a fraction of the answer as
+        though it were all of it. A read-only mount is skipped in a preview
+        exactly as it is skipped in the delete, which is what makes the two
+        lists the same list.
         """
         check_unchanged(
             self,
@@ -1317,7 +1325,9 @@ class MountedStore(Store):
             if inward is None:
                 return []
             with _renamed(found.mount):
-                return _outward_keys(found, found.store.delete(found.key, key_range=inward))
+                return _outward_keys(
+                    found, found.store.delete(found.key, key_range=inward, dry_run=dry_run)
+                )
 
         removed: list[str] = []
         for segment in self.segments(found.outer, key_range=key_range):
@@ -1325,7 +1335,10 @@ class MountedStore(Store):
                 continue
             with _renamed(segment.mount):
                 gone = segment.store.delete(
-                    segment.subtree.key, recursive=True, key_range=segment.key_range
+                    segment.subtree.key,
+                    recursive=True,
+                    key_range=segment.key_range,
+                    dry_run=dry_run,
                 )
             removed += _named_keys(segment, gone)
         return removed

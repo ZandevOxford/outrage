@@ -220,7 +220,7 @@ refusal beside the arguments and re-raises.
 [`build()`](#outrage.store_parquet.ParquetStore.build) is the way in, and `outrage pack` is the command line
 over it.
 
-#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 Refused, for the reason [`store_document()`](#outrage.store_parquet.ParquetStore.store_document) is.
 
@@ -228,6 +228,10 @@ Before the watermark is looked at rather than after: a store that
 cannot delete anything refuses whether or not the subtree moved, and
 checking first would answer a caller's second question while leaving
 their first one to a different sentence.
+
+`dry_run` is refused with the rest of it. A preview whose answer is
+"these keys would go" from a store where they never could is the one
+thing a preview must not say.
 
 #### exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
 

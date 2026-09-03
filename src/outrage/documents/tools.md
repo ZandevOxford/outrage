@@ -252,11 +252,18 @@ Storing an empty document is not a delete.
 anything it would take has been written since that time. It sees edits, not
 what somebody else already deleted.
 
+`dry_run` removes nothing and answers with the keys the delete would take, and
+with the moment it looked as `checked_at` — pass that back as
+`unchanged_since`, which is the pair `copy_tree` takes. The keys are the
+delete's own selection rather than a second guess at it, so a preview of a
+delete that would be refused is refused too.
+
 ### Parameters
 
 - `key` (string; required) — Key to delete
 - `recursive` (boolean; default false) — Also delete everything beneath the key
-- `unchanged_since` (string or null; default null) — Refuse the whole delete if anything it would remove has changed since this ISO 8601 timestamp, e.g. 2026-09-03T10:15:00Z. Nothing is deleted when it has. Unchecked when omitted
+- `unchanged_since` (string or null; default null) — Refuse the whole delete if anything it would remove has changed since this ISO 8601 timestamp, e.g. 2026-09-03T10:15:00Z. Nothing is deleted when it has. A dry run reports one as `checked_at`. Unchecked when omitted
+- `dry_run` (boolean; default false) — Report what would be deleted without deleting any of it
 
 ### Returns
 
@@ -265,6 +272,8 @@ what somebody else already deleted.
 - `count` (integer; required) — Number of keys deleted
 - `remaining` (integer or null; optional) — Descendants kept by a non-recursive delete, when any remain
 - `mounts_kept` (array[string] or null; optional) — Read-only mounted stores which refused the delete, when any
+- `checked_at` (string or null; optional) — When this dry run looked, to pass back as `unchanged_since` on the real delete
+- `dry_run` (boolean or null; optional) — True when this result reports a dry run and nothing was deleted
 - `note` (string or null; optional) — Important qualification of the result
 
 ## `copy_tree`

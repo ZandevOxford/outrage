@@ -531,8 +531,13 @@ class SqliteStore(FileStore):
         *,
         key_range: KeyRange = UNBOUNDED,
         unchanged_since: str | None = None,
+        dry_run: bool = False,
     ) -> list[str]:
         """The rows to remove are selected first, then deleted by key.
+
+        Which is what makes ``dry_run`` a branch rather than a second query:
+        the selection has already run, and a preview is that answer with the
+        ``DELETE`` left out.
 
         Selected rather than deleted in one statement because the return value
         is the keys actually removed, and ``DELETE`` does not report them. The
@@ -576,8 +581,11 @@ class SqliteStore(FileStore):
             )
         ]
 
-        with self._conn:
-            self._conn.executemany("DELETE FROM documents WHERE key = ?", [(k,) for k in targets])
+        if not dry_run:
+            with self._conn:
+                self._conn.executemany(
+                    "DELETE FROM documents WHERE key = ?", [(k,) for k in targets]
+                )
         return sorted(targets, key=keys.sort_form)
 
     @_logged("descendant_count")

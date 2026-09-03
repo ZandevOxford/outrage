@@ -995,8 +995,17 @@ class Store(ABC):
         *,
         key_range: KeyRange = UNBOUNDED,
         unchanged_since: str | None = None,
+        dry_run: bool = False,
     ) -> list[str]:
         """Delete ``key``, returning the keys actually removed.
+
+        ``dry_run`` reports that same list without removing any of it. It
+        belongs here rather than in a front end because every backend already
+        selects the keys before it takes them: a preview computed anywhere else
+        is a second spelling of the selection, and the way that fails is a
+        preview which quietly disagrees with the delete it previews. The
+        watermark is checked either way, so a preview of a delete that would be
+        refused is refused rather than listing keys it would never take.
 
         A document key takes its metadata with it -- the whole metadata
         subtree, since a document and its metadata are one unit and contiguous

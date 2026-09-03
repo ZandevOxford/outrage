@@ -1000,9 +1000,17 @@ returns. A copy into a directory of files is worth reading as key to
 path, and the store on the far end is the only thing that knows which
 path, so [`Transfer`](#outrage.store.Transfer) carries it and this is where it comes from.
 
-#### *abstractmethod* delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### *abstractmethod* delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 Delete `key`, returning the keys actually removed.
+
+`dry_run` reports that same list without removing any of it. It
+belongs here rather than in a front end because every backend already
+selects the keys before it takes them: a preview computed anywhere else
+is a second spelling of the selection, and the way that fails is a
+preview which quietly disagrees with the delete it previews. The
+watermark is checked either way, so a preview of a delete that would be
+refused is refused rather than listing keys it would never take.
 
 A document key takes its metadata with it -- the whole metadata
 subtree, since a document and its metadata are one unit and contiguous

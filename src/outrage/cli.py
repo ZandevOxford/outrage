@@ -1733,40 +1733,36 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
         checked_at = store._now()
         beneath = opened.descendant_count(args.key)
         if args.dry_run:
-            # The watermark too, so that a preview of a delete that would be
-            # refused says so rather than listing keys it would never take.
-            # The copy's dry run gets this for free -- its pre-pass runs
-            # whether or not anything is written -- and a preview that differs
-            # from the run it previews is the defect a dry run exists to avoid.
-            store.check_unchanged(
-                opened,
+            # The delete's own selection, asked of the store: it walked the
+            # subtree itself before, which is a second spelling of the rule and
+            # drifted from it -- a plain delete takes the key's metadata unit
+            # and the preview did not say so, so `rm notes/1 --dry-run` named
+            # one key and `rm notes/1` removed two. The watermark is checked by
+            # the same call, so a preview of a delete that would be refused
+            # says so rather than listing keys it would never take.
+            would_take = opened.delete(
                 args.key,
-                args.unchanged_since,
-                action="delete",
-                subtree=args.recursive,
+                recursive=args.recursive,
+                unchanged_since=args.unchanged_since,
+                dry_run=True,
             )
-            # Asking the store rather than predicting: a dry run that computes
-            # its own answer is one that can disagree with what it previews.
-            print(f"would delete {keys.displayed(args.key)}", file=out)
-            if args.recursive:
-                # The whole subtree, not one level of it: a preview that shows
-                # the first level of a deletion reaching five is not a preview
-                # of what --recursive takes.
-                #
-                # And counted the same way it is walked. `beneath` reports what
-                # a plain delete would *keep*, so it leaves out the key's own
-                # metadata unit -- which this walk reports, because a recursive
-                # delete takes it. Subtracting one from the other said "and 1
-                # more" where three were left, and went negative once the limit
-                # reached past the ordinary children.
-                taken = opened.descendant_count(args.key, whole_subtree=True)
-                previewed = 0
-                for entry in bulk.walk(opened, args.key):
-                    if args.limit is not None and previewed >= args.limit:
-                        print(f"  and {taken - previewed} more", file=out)
-                        break
-                    print(f"  and below: {entry.key}", file=out)
-                    previewed += 1
+            # Shaped like the run below it, line for line: the key itself
+            # where the delete would take it, everything else as what lies
+            # below, and the same sentence when there is nothing to take. A
+            # headline naming a key the run never reports is the drift again,
+            # one key smaller.
+            if not would_take:
+                print(f"nothing stored at {keys.displayed(args.key)}", file=out)
+            if args.key in would_take:
+                print(f"would delete {keys.displayed(args.key)}", file=out)
+            # The whole subtree rather than one level of it, since that is what
+            # the delete takes.
+            below = [key for key in would_take if key != args.key]
+            for shown, key in enumerate(below):
+                if args.limit is not None and shown >= args.limit:
+                    print(f"  and {len(below) - shown} more", file=out)
+                    break
+                print(f"  and below: {key}", file=out)
             _report_remainder(args, beneath, out, dry_run=True)
             _report_watermark(args, checked_at)
             return 0

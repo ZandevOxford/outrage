@@ -789,6 +789,68 @@ def test_delete_keys_with_a_watermark_nothing_moved_since_deletes(server):
     assert result["count"] == 2
 
 
+def test_delete_keys_dry_run_names_exactly_what_the_delete_takes(server):
+    """The preview is the delete's own selection, not a second guess at it.
+
+    Asked of the store rather than worked out above it, so the two cannot
+    drift: a preview that disagrees with the run it previews is the one thing a
+    preview must not do.
+    """
+    previewed = call(server, "delete_keys", key="context/a1b2", recursive=True, dry_run=True)
+
+    assert previewed["dry_run"] is True
+    assert keys_below(server, "context/a1b2") == ["context/a1b2/design"]
+
+    taken = call(server, "delete_keys", key="context/a1b2", recursive=True)
+    assert previewed["deleted"] == taken["deleted"]
+
+
+def test_delete_keys_dry_run_reports_the_moment_to_pass_back(server):
+    """The half of "look, then delete only what has not moved" a session could not get.
+
+    The command line has printed a moment on `rm --dry-run` since the watermark
+    was built and the tool reported none, so a session had to take one from a
+    `copy_tree` dry run against an unrelated target, or guess at the clock.
+    `context/111/findings` 3.
+    """
+    looked = call(server, "delete_keys", key="context/a1b2", recursive=True, dry_run=True)
+
+    assert looked["checked_at"]
+    assert "unchanged_since" in looked["note"]
+    result = call(
+        server,
+        "delete_keys",
+        key="context/a1b2",
+        recursive=True,
+        unchanged_since=looked["checked_at"],
+    )
+    assert result["count"] == len(looked["deleted"])
+
+
+def test_delete_keys_dry_run_refuses_rather_than_previewing_a_refusal(server):
+    """A preview of a delete that would be refused has to refuse.
+
+    Otherwise it answers the caller's second question -- what would go -- while
+    the delete it previews never happens, which reads as a plan that works.
+    """
+    message = call_expecting_error(
+        server,
+        "delete_keys",
+        key="context/a1b2",
+        recursive=True,
+        unchanged_since="2020-01-01T00:00:00Z",
+        dry_run=True,
+    )
+
+    assert "refusing to delete" in message
+
+
+def test_delete_keys_says_nothing_about_a_dry_run_it_was_not_asked_for(server):
+    result = call(server, "delete_keys", key="context/a1b2", recursive=True)
+
+    assert "checked_at" not in result and "dry_run" not in result
+
+
 def test_copy_tree_refuses_a_target_inside_its_source(server):
     message = call_expecting_error(server, "copy_tree", source="context", target="context/archive")
 

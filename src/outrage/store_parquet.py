@@ -947,6 +947,7 @@ class ParquetStore(FileStore):
         *,
         key_range: KeyRange = UNBOUNDED,
         unchanged_since: str | None = None,
+        dry_run: bool = False,
     ) -> list[str]:
         """Refused, for the reason :meth:`store_document` is.
 
@@ -954,6 +955,10 @@ class ParquetStore(FileStore):
         cannot delete anything refuses whether or not the subtree moved, and
         checking first would answer a caller's second question while leaving
         their first one to a different sentence.
+
+        ``dry_run`` is refused with the rest of it. A preview whose answer is
+        "these keys would go" from a store where they never could is the one
+        thing a preview must not say.
         """
         raise ReadOnlyStoreError("store-read-only", key=key, path=str(self.path), action="delete")
 
