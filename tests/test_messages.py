@@ -11,12 +11,13 @@ See ``project/reference/planned/error-naming`` for the defect that prompted it.
 
 from __future__ import annotations
 
+import argparse
 import ast
 import pathlib
 
 import pytest
 
-from outrage import keys, messages
+from outrage import cli, keys, messages
 from outrage.errors import OutrageError
 from outrage.mounts import Mount, MountedStore, ReadOnlyMountError
 from outrage.store import KeyNotFoundError
@@ -180,6 +181,83 @@ def test_the_container_advice_names_the_key_the_caller_would_use(tmp_path):
     rendered = messages.render(error, name=mount.outer)
     assert "'ref/python'" in rendered
     assert "'python'," not in rendered
+
+
+def _long_options(parser: argparse.ArgumentParser) -> set[str]:
+    """Every long option the command line takes, subcommands included.
+
+    Read from the parser the way ``tools/render_cli.py`` reads it, because the
+    parser is the only honest answer to "is that a flag": a list here would be
+    a second place to remember one.
+    """
+    found = set()
+    for action in parser._actions:
+        found.update(option for option in action.option_strings if option.startswith("--"))
+        # A subparsers action holds its commands in a mapping; `choices` on an
+        # ordinary option is the tuple of values it accepts, and holds no parser.
+        choices = getattr(action, "choices", None)
+        if isinstance(choices, dict):
+            for inner in choices.values():
+                if isinstance(inner, argparse.ArgumentParser):
+                    found |= _long_options(inner)
+    return found
+
+
+def test_the_command_line_only_names_arguments_it_actually_has():
+    """A flag in a sentence has to be a flag somebody can type.
+
+    `cli._flag` is a rule rather than a table -- a dest is its long option with
+    the dashes turned into underscores -- and this is what keeps the rule
+    honest. A template converted to `spell` for an argument only the tools take
+    would produce `--against`, and the failure would look exactly like the
+    defect the speller exists to fix, one level down.
+    """
+    options = _long_options(cli.argument_parser())
+
+    for filename, lineno, call in _raises():
+        named: list[str] = []
+
+        def spell(argument: str, value: object = None, seen: list[str] = named) -> str:
+            seen.append(f"--{argument.replace('_', '-')}")
+            return cli._flag(argument, value)
+
+        details = {keyword.arg: _stand_in(keyword.arg) for keyword in call.keywords if keyword.arg}
+        messages.render(OutrageError(call.args[0].value, **details), spell=spell)
+        for flag in named:
+            assert flag in options, (
+                f"{filename}:{lineno} names {flag}, which the command line has no option for"
+            )
+
+
+def test_no_detail_is_called_spell():
+    """`spell` reaches a template as a keyword, so a detail of that name would win.
+
+    The same collision the namer avoids by being positional-only, in the one
+    place that argument cannot be positional: adding it to ninety templates
+    that do not want it is the churn this shape exists to skip.
+    """
+    for filename, lineno, call in _raises():
+        assert "spell" not in {keyword.arg for keyword in call.keywords}, (
+            f"{filename}:{lineno} passes a detail called 'spell', which the "
+            f"speller is passed as; call it something else"
+        )
+
+
+def test_the_speller_is_what_makes_one_argument_two_spellings():
+    """The namer's rule for the other half: a flag is not what a tool is passed.
+
+    A command line user told to pass `on_conflict='overwrite-unchanged'` is
+    told to type something that does not exist. `context/111/findings` 5.
+    """
+    error = OutrageError("unchanged-since-needed", on_conflict="overwrite-unchanged")
+
+    assert messages.render(error).startswith("on_conflict='overwrite-unchanged' overwrites")
+    assert "it needs unchanged_since to measure against" in messages.render(error)
+
+    typed = messages.render(error, spell=cli._flag)
+    assert typed.startswith("--on-conflict overwrite-unchanged overwrites")
+    assert "it needs --unchanged-since to measure against" in typed
+    assert "Pass the time you looked, or --on-conflict overwrite to replace" in typed
 
 
 def test_a_render_without_a_template_raises_rather_than_guessing():

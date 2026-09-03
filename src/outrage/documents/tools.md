@@ -294,6 +294,11 @@ this would land on has changed since then; with
 `on_conflict='overwrite-unchanged'` a key that changes after that check is left
 as it is and named in `changed`. It sees edits, not deletions.
 
+Resuming a paged copy takes a **fresh** moment rather than the one the first
+call used: a copy carries the source's timestamps, so a page already written is
+itself a change to `target` whenever the source is newer than the watermark. A
+dry run from the cursor you are resuming reports the moment to use.
+
 `target` may not be at or below `source`.
 
 With `reroot` the two subtrees must not overlap.

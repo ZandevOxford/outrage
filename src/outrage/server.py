@@ -1380,12 +1380,24 @@ def build_server(
                 f"them before deciding whether the copy should still land.",
             )
         if result["next_cursor"] is not None:
-            _add_note(
-                result,
+            paging = (
                 f"The limit of {limit} stopped this call and more is left to "
                 f"copy; call again with cursor set to next_cursor and every "
-                f"other argument unchanged.",
+                f"other argument unchanged."
             )
+            if unchanged_since:
+                # The watermark is the exception to "unchanged", and the two
+                # notes contradicted each other without this: a copy carries the
+                # source's timestamps, so the page just written is itself a
+                # change to the target whenever the source is newer than the
+                # moment being measured against. `context/111/findings` 4.
+                paging += (
+                    " Except unchanged_since, where the source is newer than it: "
+                    "the page just written carries the source's own timestamps "
+                    "into the target, so take the moment again from a dry run at "
+                    "that cursor rather than have it refuse the next call."
+                )
+            _add_note(result, paging)
         failed = result["copied"].get(store_module.FAILED, 0)
         if failed > len(result["failures"]):
             # A sample presented as a list is a list that lies. The count is

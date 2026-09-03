@@ -32,8 +32,27 @@ from typing import Any
 from . import keys
 from .errors import OutrageError
 
+# The conflict rules by their constants rather than as literals: a message that
+# tells a caller to pass `overwrite-unchanged` is a place the value is written
+# down, and `plans/hook-install/marker-rename` is what renaming one of those
+# behind a written-down copy costs.
+from .store import OVERWRITE, OVERWRITE_UNCHANGED
+
 #: How a key is named when nobody says otherwise: as one store sees it.
 Namer = Callable[[str], str]
+
+#: How an *argument* is spelled where the message will be read, and the second
+#: half of the same rule :data:`Namer` is the first half of. A key is called
+#: something different behind a mount; an argument is called something
+#: different at each front end -- ``unchanged_since`` to a tool call and
+#: ``--unchanged-since`` to a shell -- and a sentence naming one of them in the
+#: other's spelling tells its reader to type something that does not exist.
+#: Live testing found exactly that: a command line user told to "Pass
+#: on_conflict='overwrite-unchanged'", which is not a flag.
+#:
+#: Called with the argument's name, and its value where naming the value is
+#: what the sentence is about.
+Speller = Callable[..., str]
 
 #: Every code, and the sentence it renders to. One flat table keyed by code
 #: rather than by exception class, because the class says what *kind* of
@@ -61,19 +80,36 @@ def template(code: str) -> Callable[[Callable[..., str]], Callable[..., str]]:
     return register
 
 
-def render(error: OutrageError, name: Namer | None = None) -> str:
-    """``error`` as one line, with keys named the way ``name`` says.
+def keyword(argument: str, value: Any = None) -> str:
+    """An argument as a keyword call writes it: what an MCP tool is passed.
+
+    The default, because it is the spelling a library's own argument already
+    has -- a sentence naming ``unchanged_since`` is right for anything calling
+    Python or the tools, and only a front end whose arguments are spelled some
+    other way has to say so.
+    """
+    return argument if value is None else f"{argument}={value!r}"
+
+
+def render(
+    error: OutrageError, name: Namer | None = None, *, spell: Speller | None = None
+) -> str:
+    """``error`` as one line, named the way ``name`` and ``spell`` say.
 
     Front ends call this; nothing else should. A code with no template is a
     programming error and raises rather than falling back on something
     plausible -- a message that silently degrades is how a caller ends up
     reading a sentence that is not about their problem.
+
+    ``spell`` reaches a template as a keyword, so only the templates that name
+    an argument declare it and the rest go on absorbing it in ``**_``. That is
+    why no error detail may be called ``spell``, which ``test_messages`` pins.
     """
     try:
         write = _TEMPLATES[error.code]
     except KeyError:  # pragma: no cover - guarded by test_messages
         raise AssertionError(f"no message template for {error.code!r}") from None
-    return write(name or keys.displayed, **error.details)
+    return write(name or keys.displayed, spell=spell or keyword, **error.details)
 
 
 def codes() -> Mapping[str, Callable[..., str]]:
@@ -989,6 +1025,7 @@ def _changed_since(
     name: Namer,
     /,
     *,
+    spell: Speller,
     key: str,
     action: str,
     unchanged_since: str,
@@ -1010,40 +1047,47 @@ def _changed_since(
         f"written at {changed_at}, after the {unchanged_since} you say you "
         f"looked at, so this would act on work done since. Nothing has been "
         f"changed. Look again and repeat the call with the newer time, or drop "
-        f"unchanged_since to go ahead regardless"
+        f"{spell('unchanged_since')} to go ahead regardless"
     )
 
 
 @template("unchanged-since-unreadable")
-def _unchanged_since_unreadable(name: Namer, /, *, unchanged_since: str, **_: Any) -> str:
+def _unchanged_since_unreadable(
+    name: Namer, /, *, spell: Speller, unchanged_since: str, **_: Any
+) -> str:
     return (
-        f"unchanged_since must be an ISO 8601 timestamp, like "
+        f"{spell('unchanged_since')} must be an ISO 8601 timestamp, like "
         f"2026-09-03T10:15:00Z, and {unchanged_since!r} is not one"
     )
 
 
 @template("unchanged-since-needed")
-def _unchanged_since_needed(name: Namer, /, *, on_conflict: str, **_: Any) -> str:
+def _unchanged_since_needed(
+    name: Namer, /, *, spell: Speller, on_conflict: str, **_: Any
+) -> str:
     return (
-        f"on_conflict={on_conflict!r} overwrites only what has not changed "
-        f"since you looked, so it needs unchanged_since to measure against. "
-        f"Pass the time you looked, or on_conflict='overwrite' to replace "
-        f"whatever is there"
+        f"{spell('on_conflict', on_conflict)} overwrites only what has not "
+        f"changed since you looked, so it needs {spell('unchanged_since')} to "
+        f"measure against. Pass the time you looked, or "
+        f"{spell('on_conflict', OVERWRITE)} to replace whatever is there"
     )
 
 
 @template("unchanged-since-unguarded")
-def _unchanged_since_unguarded(name: Namer, /, *, unchanged_since: str, **_: Any) -> str:
+def _unchanged_since_unguarded(
+    name: Namer, /, *, spell: Speller, unchanged_since: str, **_: Any
+) -> str:
     # The trap this exists for: a watermark beside plain `overwrite` reads like
     # a guard and is not one. It would refuse before the copy started and then
     # replace every collision after that, which is the half of the check nobody
     # asked for by itself.
     return (
-        f"on_conflict='overwrite' replaces what is already there whatever "
-        f"unchanged_since={unchanged_since!r} says, so the two disagree. Pass "
-        f"on_conflict='overwrite-unchanged' to keep what changed since, or "
-        f"drop unchanged_since to overwrite regardless"
+        f"{spell('on_conflict', OVERWRITE)} replaces what is already there "
+        f"whatever {spell('unchanged_since', unchanged_since)} says, so the "
+        f"two disagree. Pass {spell('on_conflict', OVERWRITE_UNCHANGED)} to "
+        f"keep what changed since, or drop {spell('unchanged_since')} to "
+        f"overwrite regardless"
     )
 
 
-__all__ = ["Namer", "codes", "render", "template"]
+__all__ = ["Namer", "Speller", "codes", "keyword", "render", "template"]
