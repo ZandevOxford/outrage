@@ -26,6 +26,10 @@ Keep one facet per document and about 8k characters or less, so it can be read
 in one `read_document` call. Add a numbered subdocument for further detail
 instead of making one document answer several questions.
 
+**A document is not finished until there is a route to it**. The conventions
+live in `readme`; the subject matter lives in `contents`. The routing may be
+via `contents`, but for some documents the `readme` conventions may be enough.
+
 ## Where to store information
 
 Suggested namespace for documents where `?` represents an auto-incremented
@@ -36,19 +40,28 @@ path segment. Create these as needed.
   routing and very brief notes on important open items.
 * `readme`: the conventions used throughout this project. Every session is
   told to read it first, so routing to particular subject matter belongs in
-  `contents` instead.
+  `contents` instead. This should mostly be a static document.
 * `contents`: an index routing to the other documents, for when there are more
   than the conventions can name. Route by *when* a document applies, since a
-  title survey already says what one is about.
+  title survey already says what one is about. Use sub-documents where needed
+  to keep this a reasonable size.
 * `context/?/task`: allocate one numbered thread for each significant piece
   of work, then use the returned number for its related documents:
   `context/<n>/state` for where it got to and what comes next, and documents
   such as `decisions`, `findings` or numbered notes for what it produced.
 * `plans/<feature>`: plans for features and retained reasoning about features
   already built. Carry a `!status` so a survey separates open from completed.
-* `issues/?`: bugs or other issues, with a `!status` likewise.
+  Important open plans should have routing, but it's not essential for all
+  plans.
+* `issues/?`: bugs or other issues, with a `!status` likewise. Typically
+  issues can be searched and don't need routing, but note in `current` if
+  relevant.
 * `reference/<topic>`: durable project facts: conventions and processes,
-  history and releases, environment and implementation detail.
-* `glossary/<term>`: project-specific terms and keywords.
+  history and releases, environment and implementation detail. Reference
+  documents do not need routing, but can be referenced where relevant.
+* `glossary/<term>`: project-specific terms and keywords. Glossary documents
+  do not need routing, but can be referenced where relevant.
 * `file_notes/<path>`: notes about one file, mirroring the project tree.
+  File notes do not need routing, as they can be found by name.
 * `scratch/?`: temporary notes and mailboxes between simultaneous agents.
+  Scratch documents do not need routing.
