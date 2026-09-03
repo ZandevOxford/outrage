@@ -436,7 +436,21 @@ See [`outrage.keys.meta_range()`](keys.md#outrage.keys.meta_range).
 that includes keys a mount has made unreachable tells a caller to pass
 `recursive` to remove keys that are not there to remove.
 
-#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+
+The newest change any mount the range touches holds below `key`.
+
+The maximum over the segments, where a count is the sum over them: the
+merge differs by the aggregate and the segments are the same ones. Each
+store answers about its own stretch, and a store mounted further down
+contributes its root row too, because everything it holds is below the
+key -- the asymmetry `_kept_below()` exists for, in the shape a
+maximum needs.
+
+None when no mount the range touches holds anything, which is what
+every empty selection answers here.
+
+#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 As [`delete()`](store.md#outrage.store.Store.delete), and it **crosses**.
 
@@ -450,6 +464,14 @@ one such mount deep in a subtree should not veto a delete that is legal
 everywhere else in it. What it kept back is not returned here -- this
 answers with the keys that went -- and a front end that has to say so
 asks [`read_only_below()`](#outrage.mounts.MountedStore.read_only_below).
+
+`unchanged_since` is checked **here, over the whole table**, and is
+not passed inward. A recursive delete is one store's call at a time, so
+a watermark handed to each of them in turn would let the third mount
+refuse a run the first two had already carried out -- which is the half
+finished outcome the precondition exists to prevent. Asked of the table
+it is one aggregate per mount and the refusal comes before any of them
+is asked to delete anything.
 
 #### list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
 

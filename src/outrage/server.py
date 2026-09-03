@@ -64,6 +64,7 @@ from .store import (
     SearchCriterion,
     SearchTarget,
     Store,
+    _now,
 )
 
 
@@ -445,6 +446,22 @@ class _CopyTreeResult(_ToolResult):
     documents: Annotated[int, Field(description="Documents considered in this call")]
     characters: Annotated[int, Field(description="Characters considered in this call")]
     failures: Annotated[list[_CopyFailureResult], Field(description="A bounded sample of failures")]
+    changed: Annotated[
+        list[str] | None,
+        Field(
+            description=(
+                "Keys left alone because they changed since `unchanged_since`, when any did"
+            )
+        ),
+    ] = None
+    checked_at: Annotated[
+        str | None,
+        Field(
+            description=(
+                "When this dry run looked, to pass back as `unchanged_since` on the real copy"
+            )
+        ),
+    ] = None
     next_cursor: Annotated[str | None, Field(description="Where to resume, or null at the end")]
     dry_run: Annotated[
         bool | None,
@@ -1149,6 +1166,17 @@ def build_server(
         recursive: Annotated[
             bool, Field(description="Also delete everything beneath the key")
         ] = False,
+        unchanged_since: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Refuse the whole delete if anything it would remove has "
+                    "changed since this ISO 8601 timestamp, e.g. "
+                    "2026-09-03T10:15:00Z. Nothing is deleted when it has. "
+                    "Unchecked when omitted"
+                )
+            ),
+        ] = None,
     ) -> _DeleteKeysResult:
         at = _named_key(table, key)
         # A delete crosses a mount boundary, exactly as a read does, and the
@@ -1157,7 +1185,7 @@ def build_server(
         # that stopped at a boundary while every other tool crossed it would
         # leave the caller to discover the rule from the wreckage. See
         # `planned/mounts/crossing`.
-        deleted = table.delete(at, recursive=recursive)
+        deleted = table.delete(at, recursive=recursive, unchanged_since=unchanged_since)
         # What a read-only mount kept back is not a key, so it is not in that
         # answer. Asked separately, and for a *non*-recursive delete too:
         # `remaining` is about to count what is below, and a caller told to pass
@@ -1237,6 +1265,19 @@ def build_server(
                 )
             ),
         ] = store_module.SKIP,
+        unchanged_since: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "When you looked, as an ISO 8601 timestamp such as "
+                    "2026-09-03T10:15:00Z: a dry run reports one as "
+                    "`checked_at`. The copy is refused before anything is "
+                    "written if the target changed since, and with "
+                    "on_conflict='overwrite-unchanged' any key that changes "
+                    "after that is left alone and named in `changed`"
+                )
+            ),
+        ] = None,
         dry_run: Annotated[
             bool, Field(description="Report what would be copied without writing any of it")
         ] = False,
@@ -1293,6 +1334,9 @@ def build_server(
                 )
             }
         )
+        # Read before the walk starts, so that a document written while this
+        # call runs is later than the moment a second call is measured against.
+        checked_at = _now()
         transfers = table.copy_from(
             table,
             BoundedSubtree(at_source, depth),
@@ -1300,6 +1344,7 @@ def build_server(
             prefix=at_target,
             reroot=reroot,
             on_conflict=on_conflict,
+            unchanged_since=unchanged_since,
             dry_run=dry_run,
             cursor=cursor,
             limit=limit,
@@ -1308,7 +1353,22 @@ def build_server(
         result = {"source": at_source, "target": at_target} | result
         if dry_run:
             result["dry_run"] = True
-            _add_note(result, "Nothing was written; this is what the copy would have done.")
+            # The moment to hand back, which is the half of "look, then write
+            # only what has not moved" a caller cannot work out for itself.
+            result["checked_at"] = checked_at
+            _add_note(
+                result,
+                "Nothing was written; this is what the copy would have done. Pass "
+                "checked_at back as unchanged_since to refuse the real copy if "
+                "anything moves in between.",
+            )
+        if result.get("changed"):
+            _add_note(
+                result,
+                f"{len(result['changed'])} key(s) changed since {unchanged_since!r} "
+                f"and were left as they are; they are named in `changed`. Read "
+                f"them before deciding whether the copy should still land.",
+            )
         if result["next_cursor"] is not None:
             _add_note(
                 result,
@@ -1497,21 +1557,34 @@ def _copied_result(
     counted: dict[str, int] = {}
     characters = 0
     failures: list[dict[str, str | None]] = []
+    changed: list[str] = []
     while True:
         try:
             transfer = next(transfers)
         except StopIteration as ended:
-            return {
+            answer: dict[str, Any] = {
                 "copied": counted,
                 "documents": sum(counted.values()),
                 "characters": characters,
                 "failures": failures,
                 "next_cursor": ended.value,
             }
+            if changed:
+                # Absent rather than empty, so a copy that asked for no
+                # watermark reports exactly what it always did, and a field
+                # that is there means something was left behind.
+                answer["changed"] = changed
+            return answer
         counted[transfer.action] = counted.get(transfer.action, 0) + 1
         characters += transfer.characters
         if transfer.action == store_module.FAILED and len(failures) < COPY_FAILURE_SAMPLE:
             failures.append({"key": transfer.key, "reason": transfer.reason})
+        # Named in full rather than sampled, unlike the failures: a caller told
+        # that three keys moved and shown two has to go looking for the third,
+        # and the whole value of this answer is that it is the list to look at.
+        # It is bounded by what a page of the copy can collide with.
+        if transfer.action == store_module.CHANGED and transfer.key is not None:
+            changed.append(transfer.key)
 
 
 def _excerpt_result(excerpt: Excerpt) -> _ExcerptResult:

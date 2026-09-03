@@ -100,6 +100,11 @@ confuse existing references; it can also make a reader using its last-seen key
 as a high-water mark miss the replacement entirely. In a namespace used for
 communication between agents, treat the allocated sequence as append-only.
 
+Where another agent may be writing in the same subtree, pass `unchanged_since`
+to `delete_keys` or `copy_tree`: the time you last looked at the target. The
+call is refused, having changed nothing, if anything it would write over or
+remove has been written since.
+
 ## Before handoff or compaction
 
 Most harnesses give no good way to catch session end or compaction, so

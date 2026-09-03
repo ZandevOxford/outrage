@@ -56,6 +56,12 @@ from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND
 #: spliced in, and by the loop that adds the options, so the two cannot drift.
 MOUNTED = ("get", "set", "ls", "dump", "copy", "rm", "export", "import", "mounts")
 
+#: The rules a command with no watermark can offer. ``overwrite-unchanged``
+#: is measured against ``--unchanged-since``, which only ``copy`` takes: an
+#: export or an import offering it would be offering a choice whose only
+#: outcome is a refusal from a layer that cannot say which flag is missing.
+_UNWATERMARKED_CONFLICTS = tuple(c for c in store.CONFLICTS if c != store.OVERWRITE_UNCHANGED)
+
 _RANGE_ARGUMENTS = (
     "after",
     "after_inclusive",
@@ -517,7 +523,8 @@ def argument_parser() -> argparse.ArgumentParser:
         help="Copy at most this many levels below SOURCE. Metadata adds no level.",
     )
     _range_options(copy)
-    _conflict_option(copy, "A key already holding a document is")
+    _conflict_option(copy, "A key already holding a document is", watermarked=True)
+    _unchanged_since_option(copy, "anything under TARGET")
     copy.add_argument(
         "--dry-run", action="store_true", help="Report what would be copied without writing it."
     )
@@ -671,6 +678,7 @@ def argument_parser() -> argparse.ArgumentParser:
     rm.add_argument(
         "--recursive", "-r", action="store_true", help="Also delete everything beneath the key."
     )
+    _unchanged_since_option(rm, "anything this would delete")
     rm.add_argument(
         "--dry-run", action="store_true", help="Report what would go without deleting it."
     )
@@ -778,22 +786,60 @@ def _limit_option(parser: argparse.ArgumentParser, what: str) -> None:
     )
 
 
-def _conflict_option(parser: argparse.ArgumentParser, what: str) -> None:
+def _unchanged_since_option(parser: argparse.ArgumentParser, what: str) -> None:
+    """``--unchanged-since``, the watermark saying when the caller looked.
+
+    One spelling for both commands that take it, and the same word the library
+    and the tools use. Absent, the command behaves exactly as it always has:
+    an unwatermarked run is an unchecked one, which is why adding this moved no
+    default.
+
+    A --dry-run prints the time it looked, so the pair reads as what it is --
+    look, then write only what has not moved since -- with the second call
+    taking back what the first one printed.
+    """
+    parser.add_argument(
+        "--unchanged-since",
+        dest="unchanged_since",
+        default=None,
+        metavar="TIME",
+        help=(
+            f"Refuse if {what} changed since TIME, an ISO 8601 timestamp such "
+            f"as 2026-09-03T10:15:00Z. Nothing is written when it has. "
+            f"Unchecked by default."
+        ),
+    )
+
+
+def _conflict_option(
+    parser: argparse.ArgumentParser, what: str, *, watermarked: bool = False
+) -> None:
     """What to do about something already at the far end, spelled once.
 
     Per item rather than for the run as a whole, which is the only promise a
     stream can keep: 'stop' stops at the first conflict and says what it had
     already done, rather than claiming an all-or-nothing it would have to
     abandon the moment the source stopped being a directory it can pre-walk.
+
+    ``watermarked`` is what a command with ``--unchanged-since`` adds:
+    overwrite-unchanged measures each collision against that time, so offering
+    it to a command that cannot take one would be a choice whose only outcome
+    is a refusal.
     """
+    choices = store.CONFLICTS if watermarked else _UNWATERMARKED_CONFLICTS
+    narrowed = (
+        "replaced unless it changed since --unchanged-since (overwrite-unchanged), "
+        if watermarked
+        else ""
+    )
     parser.add_argument(
         "--on-conflict",
         dest="on_conflict",
-        choices=store.CONFLICTS,
+        choices=choices,
         default=store.SKIP,
         help=(
-            f"{what} left alone (skip, the default), replaced (overwrite), or "
-            f"stops the run where it stands (stop)."
+            f"{what} left alone (skip, the default), replaced (overwrite), "
+            f"{narrowed}or stops the run where it stands (stop)."
         ),
     )
 
@@ -1515,6 +1561,9 @@ def _copy_command(args: argparse.Namespace, out: TextIO) -> int:
         # rule itself is `bulk`'s, so the server refuses the same pairs.
         bulk.overlapping(source, target, reroot=args.reroot)
         key_range = store.KeyRange(**{name: getattr(args, name) for name in _RANGE_ARGUMENTS})
+        # Read before the walk starts, so that anything written while the copy
+        # runs is later than what a second call would be measured against.
+        checked_at = store._now()
         transfers = opened.copy_from(
             opened,
             store.BoundedSubtree(source, args.depth),
@@ -1522,9 +1571,12 @@ def _copy_command(args: argparse.Namespace, out: TextIO) -> int:
             prefix=target,
             reroot=args.reroot,
             on_conflict=args.on_conflict,
+            unchanged_since=args.unchanged_since,
             dry_run=args.dry_run,
         )
-        return _report_transfers(transfers, args, out, source_first=None)
+        status = _report_transfers(transfers, args, out, source_first=None)
+        _report_watermark(args, checked_at)
+        return status
 
 
 def _report_transfers(
@@ -1566,8 +1618,32 @@ def _report_transfers(
         prefix = "dry run, nothing changed: " if args.dry_run else ""
         print(f"outrage: {prefix}{counts}", file=sys.stderr)
     # A run that stopped or failed is not a run that worked, and the exit
-    # status is the only part of that a script can see.
-    return 1 if counted.get(store.FAILED) or counted.get(store.STOPPED) else 0
+    # status is the only part of that a script can see. A key left behind
+    # because it changed counts here too: the guard did its job, and the copy
+    # still did not do all of what it was asked, which is what a script that
+    # goes on to delete the source has to notice.
+    return (
+        1
+        if counted.get(store.FAILED) or counted.get(store.STOPPED) or counted.get(store.CHANGED)
+        else 0
+    )
+
+
+def _report_watermark(args: argparse.Namespace, checked_at: str) -> None:
+    """After a dry run, the time to hand back as ``--unchanged-since``.
+
+    The other half of "look, then write only what has not moved": a preview
+    that reports what would cross and not *when it looked* leaves the caller to
+    type a timestamp of their own, which is the one part of this they cannot
+    get right by hand -- too early refuses a run nothing is wrong with, and too
+    late is a guard that was never armed.
+    """
+    if args.dry_run:
+        print(
+            f"outrage: looked at {checked_at}; repeat with "
+            f"--unchanged-since {checked_at} to refuse if anything moves first",
+            file=sys.stderr,
+        )
 
 
 #: What to call each action when counting them up, as against when reporting
@@ -1576,6 +1652,7 @@ _NOUNS = {
     store.READ: "packed",
     store.WROTE: "written",
     store.SKIPPED: "skipped",
+    store.CHANGED: "changed since",
     store.FAILED: "failed",
     store.STOPPED: "stopped",
 }
@@ -1589,6 +1666,7 @@ def _verb(action: str, dry_run: bool) -> str:
         store.WROTE: "would write",
         store.READ: "would pack",
         store.SKIPPED: "would skip",
+        store.CHANGED: "would leave",
         store.STOPPED: "would stop",
     }.get(action, action)
 
@@ -1643,8 +1721,21 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
     """Delete a key, saying what went and what stayed."""
     with _open_table(args) as opened:
         _resolved(opened, args)
+        checked_at = store._now()
         beneath = opened.descendant_count(args.key)
         if args.dry_run:
+            # The watermark too, so that a preview of a delete that would be
+            # refused says so rather than listing keys it would never take.
+            # The copy's dry run gets this for free -- its pre-pass runs
+            # whether or not anything is written -- and a preview that differs
+            # from the run it previews is the defect a dry run exists to avoid.
+            store.check_unchanged(
+                opened,
+                args.key,
+                args.unchanged_since,
+                action="delete",
+                subtree=args.recursive,
+            )
             # Asking the store rather than predicting: a dry run that computes
             # its own answer is one that can disagree with what it previews.
             print(f"would delete {keys.displayed(args.key)}", file=out)
@@ -1668,9 +1759,12 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
                     print(f"  and below: {entry.key}", file=out)
                     previewed += 1
             _report_remainder(args, beneath, out, dry_run=True)
+            _report_watermark(args, checked_at)
             return 0
 
-        removed = opened.delete(args.key, recursive=args.recursive)
+        removed = opened.delete(
+            args.key, recursive=args.recursive, unchanged_since=args.unchanged_since
+        )
 
     for key in removed:
         print(f"deleted {keys.displayed(key)}", file=out)

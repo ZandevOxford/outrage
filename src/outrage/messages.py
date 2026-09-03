@@ -984,4 +984,66 @@ def _copy_source_inside_target(name: Namer, /, *, source: str, target: str, **_:
     )
 
 
+@template("changed-since")
+def _changed_since(
+    name: Namer,
+    /,
+    *,
+    key: str,
+    action: str,
+    unchanged_since: str,
+    changed_at: str,
+    subtree: bool = True,
+    **_: Any,
+) -> str:
+    # Both moments, because neither half is the story: what makes this a
+    # refusal is that one is later than the other. The key named is the one the
+    # run was about, not the document that moved -- an aggregate answers with a
+    # time and not with a key, which is what makes it cost one query.
+    #
+    # What was looked at, because a plain delete takes the key and its metadata
+    # and nothing else: saying "at or below it" there would send the reader
+    # looking through a subtree the guard never asked about.
+    moved = "something at or below it" if subtree else "it or its metadata"
+    return (
+        f"refusing to {action} {name(key)!r}: {moved} was "
+        f"written at {changed_at}, after the {unchanged_since} you say you "
+        f"looked at, so this would act on work done since. Nothing has been "
+        f"changed. Look again and repeat the call with the newer time, or drop "
+        f"unchanged_since to go ahead regardless"
+    )
+
+
+@template("unchanged-since-unreadable")
+def _unchanged_since_unreadable(name: Namer, /, *, unchanged_since: str, **_: Any) -> str:
+    return (
+        f"unchanged_since must be an ISO 8601 timestamp, like "
+        f"2026-09-03T10:15:00Z, and {unchanged_since!r} is not one"
+    )
+
+
+@template("unchanged-since-needed")
+def _unchanged_since_needed(name: Namer, /, *, on_conflict: str, **_: Any) -> str:
+    return (
+        f"on_conflict={on_conflict!r} overwrites only what has not changed "
+        f"since you looked, so it needs unchanged_since to measure against. "
+        f"Pass the time you looked, or on_conflict='overwrite' to replace "
+        f"whatever is there"
+    )
+
+
+@template("unchanged-since-unguarded")
+def _unchanged_since_unguarded(name: Namer, /, *, unchanged_since: str, **_: Any) -> str:
+    # The trap this exists for: a watermark beside plain `overwrite` reads like
+    # a guard and is not one. It would refuse before the copy started and then
+    # replace every collision after that, which is the half of the check nobody
+    # asked for by itself.
+    return (
+        f"on_conflict='overwrite' replaces what is already there whatever "
+        f"unchanged_since={unchanged_since!r} says, so the two disagree. Pass "
+        f"on_conflict='overwrite-unchanged' to keep what changed since, or "
+        f"drop unchanged_since to overwrite regardless"
+    )
+
+
 __all__ = ["Namer", "codes", "render", "template"]

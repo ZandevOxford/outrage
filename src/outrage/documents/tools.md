@@ -248,10 +248,15 @@ Non-metadata descendants are not deleted unless `recursive` is set.
 
 Storing an empty document is not a delete.
 
+`unchanged_since` refuses the whole delete, having removed nothing, when
+anything it would take has been written since that time. It sees edits, not
+what somebody else already deleted.
+
 ### Parameters
 
 - `key` (string; required) — Key to delete
 - `recursive` (boolean; default false) — Also delete everything beneath the key
+- `unchanged_since` (string or null; default null) — Refuse the whole delete if anything it would remove has changed since this ISO 8601 timestamp, e.g. 2026-09-03T10:15:00Z. Nothing is deleted when it has. Unchecked when omitted
 
 ### Returns
 
@@ -283,6 +288,12 @@ To split one document into two keys use `document_edit` instead.
 
 This copy is paged; pass `next_cursor` as `cursor` to continue.
 
+`unchanged_since` says when you looked, and a dry run reports the moment to
+pass back as `checked_at`. Nothing is written at all if anything under the keys
+this would land on has changed since then; with
+`on_conflict='overwrite-unchanged'` a key that changes after that check is left
+as it is and named in `changed`. It sees edits, not deletions.
+
 `target` may not be at or below `source`.
 
 With `reroot` the two subtrees must not overlap.
@@ -294,6 +305,7 @@ With `reroot` the two subtrees must not overlap.
 - `reroot` (boolean; default false) — Land the keys at `target` itself rather than beneath their own source key, so source/x arrives as target/x
 - `depth` (integer or null; default null; minimum 0) — How many levels below source to descend; unlimited when omitted
 - `on_conflict` (string; default "skip") — What to do about a key already holding a document: 'skip' it, 'overwrite' it, or 'stop' the whole copy there
+- `unchanged_since` (string or null; default null) — When you looked, as an ISO 8601 timestamp such as 2026-09-03T10:15:00Z: a dry run reports one as `checked_at`. The copy is refused before anything is written if the target changed since, and with on_conflict='overwrite-unchanged' any key that changes after that is left alone and named in `changed`
 - `dry_run` (boolean; default false) — Report what would be copied without writing any of it
 - `limit` (integer; default 500; greater than 0) — Maximum documents to copy in this call
 - `cursor` (string or null; default null) — Resume a copy after this key, from a previous result's next_cursor
@@ -312,6 +324,8 @@ With `reroot` the two subtrees must not overlap.
 - `documents` (integer; required) — Documents considered in this call
 - `characters` (integer; required) — Characters considered in this call
 - `failures` (array[CopyFailure]; required) — A bounded sample of failures
+- `changed` (array[string] or null; optional) — Keys left alone because they changed since `unchanged_since`, when any did
+- `checked_at` (string or null; optional) — When this dry run looked, to pass back as `unchanged_since` on the real copy
 - `next_cursor` (string or null; required) — Where to resume, or null at the end
 - `dry_run` (boolean or null; optional) — True when this result reports a dry run and nothing was written
 - `mounts_kept` (array[string] or null; optional) — Read-only mounted stores which refused writes, when any

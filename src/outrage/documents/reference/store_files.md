@@ -150,7 +150,7 @@ either file at any moment anyway. What is atomic is each file, which is
 `outrage.bulk._write_file()`'s `os.replace`: a write interrupted
 halfway leaves whole files and no half of one.
 
-#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 Unlink the files the selection names, then prune what that emptied.
 
@@ -162,6 +162,15 @@ too only when `recursive` says so. `key_range` bounds both halves.
 empty directory is not a key -- nothing is below it, so nothing puts it
 in a listing -- and leaving one behind would make a delete visible in
 the shape of the tree without being visible in the namespace.
+
+The watermark is checked before the first `unlink`, which is the only
+place it can be: unlinking is not undoable and there is no transaction
+here to abandon.
+
+A tree's timestamps are the filesystem's, so a watermark compared
+against one is comparing against an mtime rather than against something
+this store wrote. Touching a file is a change here and would not be in
+a database -- which is the honest reading for a tree a person edits.
 
 #### exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
 

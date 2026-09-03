@@ -56,7 +56,14 @@ How a backup is named within that directory. Sortable, so a listing is in
 age order without parsing anything, and to the second, because two backups
 in one minute is a thing that happens while working on the store itself.
 
-### outrage.store.CONFLICTS *= ('skip', 'overwrite', 'stop')*
+### outrage.store.CHANGED *= 'changed'*
+
+Left alone under [`OVERWRITE_UNCHANGED`](#outrage.store.OVERWRITE_UNCHANGED) **because it changed since**
+the watermark. Its own action rather than a [`SKIPPED`](#outrage.store.SKIPPED) with a different
+reason: a caller who gets an empty list learns the copy was clean, and one
+who gets three keys learns exactly which three to go and look at.
+
+### outrage.store.CONFLICTS *= ('skip', 'overwrite', 'overwrite-unchanged', 'stop')*
 
 What to do about something already there, at the far end.
 
@@ -73,6 +80,33 @@ Every backend a store may be opened as, by name.
 What a `type=` option may say, for the front ends that document it and
 the refusal that lists it -- one answer from the registry rather than a
 list retyped in each place that needs to name them.
+
+### outrage.store.check_unchanged(opened: [Store](#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), \*, action: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'write over', subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = True, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED) → [None](https://docs.python.org/3/library/constants.html#None)
+
+Refuse, before anything is written, if `key` moved since the watermark.
+
+The pre-pass every `unchanged_since` gets: one question to the range a
+run is about to write over or delete, asked while nothing has happened yet.
+That converts "half done, then refused" into "refused having written
+nothing", which is the difference the argument exists for. It does not make
+the operation atomic -- see [`ChangedSinceError`](#outrage.store.ChangedSinceError) -- and it costs one
+aggregate per store rather than a walk, which is what
+[`Store.latest_change()`](#outrage.store.Store.latest_change) is for.
+
+`action` is what the caller was about to do, as the verb the refusal is
+built on -- `delete` for one, and the default for a copy. A fact rather
+than a sentence, exactly as [`ReadOnlyStoreError`](#outrage.store.ReadOnlyStoreError) carries one: a
+delete refused with "this would land on work done since" is the copy's
+sentence read out at the wrong operation.
+
+`subtree` is what a recursive run asks and a single-key one does not: a
+plain delete takes `key` and its metadata unit, so a child changing since
+the watermark is not a change to what it is about to remove, and refusing
+on it would be a guard about the wrong keys.
+
+Does nothing at all when `unchanged_since` is None. An absent watermark
+is an unchecked run, which is what every caller that has not asked for this
+gets and why nothing that worked before behaves differently.
 
 ### outrage.store.DEFAULT_BULK_MAX_CHARS *= 2000*
 
@@ -118,6 +152,14 @@ schema that advertises a format the store then refuses.
 ### outrage.store.OVERWRITE *= 'overwrite'*
 
 Replace what is already there.
+
+### outrage.store.OVERWRITE_UNCHANGED *= 'overwrite-unchanged'*
+
+Replace what is already there, unless it has changed since the caller
+looked. [`OVERWRITE`](#outrage.store.OVERWRITE) narrowed by a watermark: one word covers both
+"replace the stale copy I mean to replace" and "replace the edit somebody
+made while I was deciding", and this is the narrower spelling of the first.
+Needs `unchanged_since`, which is the watermark it is measured against.
 
 ### outrage.store.READ *= 'read'*
 
@@ -240,6 +282,23 @@ segments from `key`, and None is unlimited.
 #### key *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
 
 #### depth *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+### *exception* outrage.store.ChangedSinceError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+
+Raised when what a write was about to land on moved since the caller looked.
+
+The precondition `unchanged_since` asks for, refused **before anything is
+written** rather than half way through: a copy or a delete that stopped in
+the middle would leave the caller reasoning about what had already gone.
+See [`check_unchanged()`](#outrage.store.check_unchanged), which is the one place this is raised from.
+
+It does not make the operation atomic. The comparison sits between a read
+and a write, so a writer racing it still wins; what it does is shrink the
+window from the length of the run to the gap between the check and the
+write. And it sees **edits, not deletions** -- a key removed since the
+watermark leaves no row to carry a timestamp.
 
 ### *class* outrage.store.DocumentMatch(document: [Entry](#outrage.store.Entry), witnesses: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[MatchWitness](#outrage.store.MatchWitness), ...])
 
@@ -860,7 +919,7 @@ legitimately restamp are copying something that was already stamped.
 Every refusal above is `_validated()`'s, which an implementation
 calls before it writes anything.
 
-#### copy_from(source: [Store](#outrage.store.Store), subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Generator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Generator)[[Transfer](#outrage.store.Transfer), [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+#### copy_from(source: [Store](#outrage.store.Store), subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Generator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Generator)[[Transfer](#outrage.store.Transfer), [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
 
 Write every document `source` holds in `subtree` into this store.
 
@@ -903,8 +962,19 @@ Yields a [`Transfer`](#outrage.store.Transfer) per document as it goes, so that 
 can report the transfer while it happens and an interrupted one has
 reported exactly what it did. `on_conflict` decides what happens to a
 key already here, one key at a time: [`SKIP`](#outrage.store.SKIP) leaves it,
-[`OVERWRITE`](#outrage.store.OVERWRITE) replaces it, [`STOP`](#outrage.store.STOP) ends the run at the first
-collision having kept what it already wrote.
+[`OVERWRITE`](#outrage.store.OVERWRITE) replaces it, [`OVERWRITE_UNCHANGED`](#outrage.store.OVERWRITE_UNCHANGED) replaces
+what has not moved since `unchanged_since` and reports the rest as
+[`CHANGED`](#outrage.store.CHANGED), and [`STOP`](#outrage.store.STOP) ends the run at the first collision
+having kept what it already wrote.
+
+`unchanged_since` is a watermark -- when the caller looked -- and it
+buys two things. Before anything crosses, the keys this copy is about
+to land on are asked whether any of them moved since; if one did the
+run is refused having written nothing ([`check_unchanged()`](#outrage.store.check_unchanged)). Then
+under [`OVERWRITE_UNCHANGED`](#outrage.store.OVERWRITE_UNCHANGED) each collision is measured against it
+again, which is what catches a write made between the check and the
+copy reaching that key. A copy left unwatermarked behaves exactly as it
+always has.
 
 The default implementation reads each document and writes it here,
 which is every store's answer until it has a better one. A backend
@@ -930,7 +1000,7 @@ returns. A copy into a directory of files is worth reading as key to
 path, and the store on the far end is the only thing that knows which
 path, so [`Transfer`](#outrage.store.Transfer) carries it and this is where it comes from.
 
-#### *abstractmethod* delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### *abstractmethod* delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 Delete `key`, returning the keys actually removed.
 
@@ -956,6 +1026,15 @@ defect this argument exists for -- see
 
 It bounds *both* halves. The key itself and its metadata are as capable
 of lying inside a shadowed stretch as any descendant is.
+
+`unchanged_since` is a precondition rather than a bound: the keys
+this delete would take are asked whether any of them moved since the
+caller looked, and the whole delete is refused if one did. **Refused
+rather than narrowed**, because a delete is one call and a partial
+subtree is the outcome nobody asked for -- a caller told which key
+moved can look at it and run the delete again, and a caller handed half
+a subtree cannot put it back. See [`check_unchanged()`](#outrage.store.check_unchanged), and note
+that what it cannot see is a key somebody else *deleted* since.
 
 #### *abstractmethod* descendant_count(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [int](https://docs.python.org/3/library/functions.html#int)
 
@@ -986,6 +1065,39 @@ See [`outrage.keys.meta_range()`](keys.md#outrage.keys.meta_range).
 `key_range` bounds it for the reason it bounds `delete`: a count
 that includes keys a mount has made unreachable tells a caller to pass
 `recursive` to remove keys that are not there to remove.
+
+#### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+
+The newest `updated_at` below `key`, or None where nothing is.
+
+The aggregate a write precondition asks: one value whatever the size of
+the subtree, so "has anything here moved since I looked" costs a query
+rather than a walk. The selection is [`descendant_count()`](#outrage.store.Store.descendant_count)'s exactly
+-- strictly below `key`, less the metadata unit a plain delete takes
+with it, and `whole_subtree` keeps that unit -- so the two answer
+about the same set of keys and a caller can hold one meaning for both.
+
+**Metadata counts**, as it does there and for the same reason: a
+`!title` written since the watermark is a change to the subtree, and
+an aggregate with a second unstated meaning is what `context/59`
+cost.
+
+**What it cannot see is a deletion.** The row that would carry the
+timestamp is the row that has gone, so the newest change in a range
+says nothing about what was *removed* from it. A guard built on this
+covers edits and no more; when an archive exists, asking it the same
+question over the same range is what answers the other half.
+
+Timestamps are normalised to seconds ([`store_document()`](#outrage.store.Store.store_document)), so a
+write inside the same second as a watermark is invisible to a
+comparison against one. That is the weakness `content_sha256` exists
+to avoid elsewhere, inherited here deliberately and named in
+`plans/write-preconditions/copy-tree`.
+
+The default implementation walks the subtree and takes the maximum,
+which is every store's answer until it has a better one: a database
+has `max()`, a sorted file has a row range, and a directory of files
+has the walk this does.
 
 #### *abstractmethod* exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
 

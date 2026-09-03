@@ -133,7 +133,7 @@ A caller's `updated_at` stamps the title row too. The pair is written
 as one thing and read back as one thing, and a title dated later than
 the document it titles would say an edit happened that did not.
 
-#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 The rows to remove are selected first, then deleted by key.
 
@@ -141,6 +141,9 @@ Selected rather than deleted in one statement because the return value
 is the keys actually removed, and `DELETE` does not report them. The
 range bounds are appended to both halves of the selection -- the key's
 own row and, when recursive, the subtree beneath it.
+
+The watermark is checked over the same two halves before any of it
+goes, which is one aggregate query rather than a second selection.
 
 #### descendant_count(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [int](https://docs.python.org/3/library/functions.html#int)
 
@@ -154,6 +157,16 @@ counted here. See `_below()` and [`outrage.keys.meta_range()`](keys.md#outrage.k
 `whole_subtree` **drops** the second scan rather than adding a third:
 the question is then the subtree itself, and one range scan is all of
 it.
+
+#### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+
+A `max(updated_at)` over the same bounds the count scans.
+
+[`descendant_count()`](#outrage.store_sqlite.SqliteStore.descendant_count)'s query with the aggregate changed and nothing
+else, deliberately: the two are one selection asked two questions, and
+a guard that measured a different set of keys from the count beside it
+would be answering about a subtree nobody named. `max()` over no rows
+is NULL, which is the None a caller reads as "nothing here to change".
 
 #### exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
 

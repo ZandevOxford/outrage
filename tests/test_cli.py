@@ -1706,6 +1706,113 @@ def test_copy_dry_run_writes_nothing(tmp_path):
     assert "preview/team/plans/q3" not in listed
 
 
+def test_copy_dry_run_reports_the_moment_to_pass_back(tmp_path, capsys):
+    """Look, then write only what has not moved: the second call needs the first's time.
+
+    The one part of this a caller cannot get right by hand -- too early refuses
+    a run nothing is wrong with, too late arms nothing.
+    """
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    status, _ = run("copy", "--dir", str(directory), "team/plans", "preview", "--dry-run")
+    reported = capsys.readouterr().err
+
+    assert status == 0
+    assert "--unchanged-since " in reported
+    watermark = reported.rsplit("--unchanged-since ", 1)[1].split()[0]
+    assert (
+        main(
+            [
+                "copy",
+                "--dir",
+                str(directory),
+                "team/plans",
+                "preview",
+                "--unchanged-since",
+                watermark,
+            ],
+            io.StringIO(),
+        )
+        == 0
+    )
+
+
+def test_copy_refuses_when_the_target_moved_since_the_watermark(tmp_path, capsys):
+    directory = a_mounted_project(tmp_path / ".outrage")
+    run("set", "--dir", str(directory), "preview/team/plans/q3", "--content", "mine")
+
+    status = main(
+        [
+            "copy",
+            "--dir",
+            str(directory),
+            "team/plans",
+            "preview",
+            "--on-conflict",
+            "overwrite-unchanged",
+            "--unchanged-since",
+            "2020-01-01T00:00:00Z",
+        ],
+        io.StringIO(),
+    )
+
+    assert status == 1
+    assert "would act on work done since" in capsys.readouterr().err
+    _, kept = run("get", "--dir", str(directory), "preview/team/plans/q3")
+    assert kept.strip() == "mine"
+
+
+def test_rm_refuses_when_what_it_would_delete_moved_since(tmp_path, capsys):
+    a_tree(tmp_path / ".outrage")
+
+    status = main(
+        [
+            "rm",
+            "--dir",
+            str(tmp_path / ".outrage"),
+            "notes/1",
+            "--recursive",
+            "--unchanged-since",
+            "2020-01-01T00:00:00Z",
+        ],
+        io.StringIO(),
+    )
+
+    assert status == 1
+    assert "refusing to delete" in capsys.readouterr().err
+    _, listing = run("ls", "--dir", str(tmp_path / ".outrage"), "notes/1")
+    assert "notes/1/detail" in listing
+
+
+def test_rm_with_a_watermark_nothing_moved_since_deletes(tmp_path):
+    a_tree(tmp_path / ".outrage")
+
+    status, output = run(
+        "rm",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "notes/1",
+        "--recursive",
+        "--unchanged-since",
+        "2099-01-01T00:00:00Z",
+    )
+
+    assert status == 0
+    assert "deleted notes/1/detail" in output
+
+
+def test_a_watermark_that_is_not_a_timestamp_is_one_line(tmp_path, capsys):
+    a_tree(tmp_path / ".outrage")
+
+    status = main(
+        ["rm", "--dir", str(tmp_path / ".outrage"), "notes/1", "--unchanged-since", "yesterday"],
+        io.StringIO(),
+    )
+
+    assert status == 1
+    assert "must be an ISO 8601 timestamp" in capsys.readouterr().err
+
+
 def test_copy_refuses_a_target_inside_its_streaming_source(tmp_path, capsys):
     directory = a_mounted_project(tmp_path / ".outrage")
 

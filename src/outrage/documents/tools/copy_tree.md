@@ -17,6 +17,12 @@ To split one document into two keys use `document_edit` instead.
 
 This copy is paged; pass `next_cursor` as `cursor` to continue.
 
+`unchanged_since` says when you looked, and a dry run reports the moment to
+pass back as `checked_at`. Nothing is written at all if anything under the keys
+this would land on has changed since then; with
+`on_conflict='overwrite-unchanged'` a key that changes after that check is left
+as it is and named in `changed`. It sees edits, not deletions.
+
 `target` may not be at or below `source`.
 
 With `reroot` the two subtrees must not overlap.

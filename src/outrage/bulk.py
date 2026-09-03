@@ -44,14 +44,18 @@ from stat import S_ISDIR, S_ISLNK
 from . import keys, messages, store
 from .errors import OutrageError
 from .store import (
+    CHANGED,
     CONFLICTS,
     FAILED,
+    OVERWRITE,
+    OVERWRITE_UNCHANGED,
     READ,
     SKIP,
     SKIPPED,
     STOP,
     STOPPED,
     WROTE,
+    InvalidArgumentError,
     Transfer,
 )
 
@@ -310,6 +314,7 @@ def copied(
     prefix: str | None = None,
     reroot: bool = False,
     on_conflict: str = SKIP,
+    unchanged_since: str | None = None,
     dry_run: bool = False,
     cursor: str | None = None,
     limit: int | None = None,
@@ -359,13 +364,47 @@ def copied(
     it costs: the walk is filtered rather than sought, as every bound here is,
     so resuming re-lists the keys already crossed. It does not re-read them,
     which is where the expense in a copy is.
+
+    ``unchanged_since`` says when the caller looked at the far end, and it is
+    what keeps :data:`OVERWRITE` from covering two intentions at once --
+    replacing the stale copy they meant to replace, and replacing the edit
+    somebody made while they were deciding. Two layers, and they answer
+    different questions:
+
+    * **Before anything crosses**, the landing zone is asked whether it moved
+      since. If it did, the run is refused having written nothing, which is the
+      one outcome better than a copy that stops half way through.
+    * **Then at each collision**, under :data:`OVERWRITE_UNCHANGED`, the key
+      itself is measured against the watermark again. What has moved is left
+      alone and reported as :data:`CHANGED` rather than folded in with the
+      ordinary skips, so an empty list means the copy was clean and three keys
+      name three documents to go and look at.
+
+    Skipping rather than refusing is deliberate at the second layer, and the
+    opposite call to the first: a mid-run refusal leaves the copy half done and
+    the caller reasoning about a cursor, where skipping completes the copy,
+    loses nothing, and hands the awkward case back.
     """
-    _check_conflict(on_conflict)
+    _check_conflict(on_conflict, unchanged_since)
 
     # What re-rooting strips: the key the copy is *about*, so that what crosses
     # lands at ``prefix`` rather than beneath its whole source key. The root
     # strips nothing, which is why grafting needs no second branch here.
     inner = keys.parse(subtree.key).key if reroot and subtree.key is not None else keys.ROOT
+
+    # The pre-pass, over the whole landing zone rather than over the keys this
+    # call would actually write. That over-reaches in one direction only -- a
+    # bounded or resumed copy can be refused by a change to a key it was never
+    # going to touch -- and the direction is the safe one. Mapping a source
+    # range onto target keys to narrow it would be a second spelling of the
+    # graft, and a guard is the last place to keep one of those.
+    #
+    # Here rather than beside :func:`overlapping`, which the front ends call:
+    # this one needs the store, and a resumed call has to ask again.
+    store.check_unchanged(target, _landing(subtree, prefix, inner=inner), unchanged_since)
+    # Normalised once rather than at each collision: the comparison below is a
+    # string comparison, and an offset spelled differently is the same moment.
+    watermark = None if unchanged_since is None else store._watermark(unchanged_since)
 
     crossed: str | None = None
     counted = 0
@@ -388,6 +427,15 @@ def copied(
             if on_conflict == SKIP:
                 yield Transfer(SKIPPED, landed, path, "already stored")
                 continue
+            if on_conflict == OVERWRITE_UNCHANGED:
+                # Asked of the target, which is the only end that knows when
+                # the document being written over was last written. The
+                # pre-pass has already covered the copy as a whole; this is
+                # what catches a write made since it ran.
+                moved = _updated_at(target, landed)
+                if moved is not None and watermark is not None and moved > watermark:
+                    yield Transfer(CHANGED, landed, path, f"written again at {moved}")
+                    continue
 
         try:
             excerpt = store.read_all(source, key)
@@ -1526,9 +1574,37 @@ def _format_of(name: str) -> str | None:
 
 
 
-def _check_conflict(on_conflict: str) -> None:
+def _check_conflict(on_conflict: str, unchanged_since: str | None = None) -> None:
+    """The rule, and whether it and the watermark say the same thing.
+
+    Both pairings that do not are refused rather than resolved, and neither is
+    a front end's to catch: ``choices`` can check the rule and a schema can
+    check the type, but nothing below here knows the two were meant to agree.
+
+    A rule with no watermark cannot decide anything. A watermark under plain
+    :data:`OVERWRITE` is the trap the other way about -- it reads as a guard,
+    and it would buy only the pre-pass while every collision after that was
+    replaced unasked -- so it names the rule that means what the caller wrote.
+    """
     if on_conflict not in CONFLICTS:
         raise ValueError(f"on_conflict must be one of {CONFLICTS}, got {on_conflict!r}")
+    if on_conflict == OVERWRITE_UNCHANGED and unchanged_since is None:
+        raise InvalidArgumentError("unchanged-since-needed", on_conflict=on_conflict)
+    if on_conflict == OVERWRITE and unchanged_since is not None:
+        raise InvalidArgumentError("unchanged-since-unguarded", unchanged_since=unchanged_since)
+
+
+def _landing(
+    subtree: store.BoundedSubtree, prefix: str | None, *, inner: str = keys.ROOT
+) -> str:
+    """Where the copy's own key lands, which is the top of what it writes over.
+
+    :func:`_grafted` applied to the key the copy is about, so the two cannot
+    disagree about where a graft puts things: grafted, ``a/b`` copied to
+    ``tmp`` lands at ``tmp/a/b`` and the zone is everything below that;
+    re-rooted, it lands at ``tmp`` itself.
+    """
+    return _grafted(keys.ROOT if subtree.key is None else subtree.key, prefix, inner=inner)
 
 
 __all__ = [

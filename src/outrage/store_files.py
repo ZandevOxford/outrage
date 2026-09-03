@@ -101,6 +101,7 @@ from .store import (
     _logged,
     _scope,
     _within,
+    check_unchanged,
     entry_kind,
     meta_reader,
     resolve_directory,
@@ -407,7 +408,12 @@ class FilesystemStore(FileStore):
 
     @_logged("delete")
     def delete(
-        self, key: str, recursive: bool = False, *, key_range: KeyRange = UNBOUNDED
+        self,
+        key: str,
+        recursive: bool = False,
+        *,
+        key_range: KeyRange = UNBOUNDED,
+        unchanged_since: str | None = None,
     ) -> list[str]:
         """Unlink the files the selection names, then prune what that emptied.
 
@@ -419,7 +425,24 @@ class FilesystemStore(FileStore):
         empty directory is not a key -- nothing is below it, so nothing puts it
         in a listing -- and leaving one behind would make a delete visible in
         the shape of the tree without being visible in the namespace.
+
+        The watermark is checked before the first ``unlink``, which is the only
+        place it can be: unlinking is not undoable and there is no transaction
+        here to abandon.
+
+        A tree's timestamps are the filesystem's, so a watermark compared
+        against one is comparing against an mtime rather than against something
+        this store wrote. Touching a file is a change here and would not be in
+        a database -- which is the honest reading for a tree a person edits.
         """
+        check_unchanged(
+            self,
+            key,
+            unchanged_since,
+            action="delete",
+            subtree=recursive,
+            key_range=key_range,
+        )
         parsed = keys.parse(key)
         within = _within(key_range)
         rows = list(self._subtree_rows(parsed.key, measure=False))

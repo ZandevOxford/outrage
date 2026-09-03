@@ -493,6 +493,92 @@ def test_copy_from_stops_at_the_first_collision_keeping_what_it_wrote(store, sou
     assert not store.exists("project/reference/implementation")
 
 
+def test_copy_from_with_a_watermark_writes_nothing_when_the_target_moved(store, source):
+    """The pre-pass: refused having written nothing, rather than half way through.
+
+    The one outcome better than a copy that stops in the middle, and the whole
+    reason the question is asked before the walk rather than at the collision.
+    """
+    store.store_document("context/a1b2/task", "Mine.", updated_at=NEW)
+
+    with raises_rendered(store_module.ChangedSinceError, "written at 2026-06-01"):
+        list(
+            store.copy_from(
+                source, on_conflict=store_module.OVERWRITE_UNCHANGED, unchanged_since=OLD
+            )
+        )
+    assert not store.exists("context/a1b2/design")
+
+
+def test_copy_from_overwrites_what_has_not_moved_since_the_watermark(store, source):
+    store.store_document("context/a1b2/task", "Mine.", updated_at=OLD)
+
+    actions = {
+        t.key: t.action
+        for t in store.copy_from(
+            source, on_conflict=store_module.OVERWRITE_UNCHANGED, unchanged_since=NEW
+        )
+    }
+
+    assert actions["context/a1b2/task"] == store_module.WROTE
+    assert store.retrieve_document("context/a1b2/task").content == "Add a delete tool."
+
+
+def test_copy_from_leaves_a_key_written_after_the_check_and_names_it(store, source):
+    """The second layer, which only a write racing the copy can reach.
+
+    Skipping rather than refusing here is the opposite call to the pre-pass and
+    deliberate: a refusal in the middle leaves the copy half done and the
+    caller reasoning about a cursor, where this completes the copy and hands
+    the awkward case back as its own action.
+    """
+    store.store_document("context/a1b2/task", "Mine.", updated_at=OLD)
+    transfers = store.copy_from(
+        source, on_conflict=store_module.OVERWRITE_UNCHANGED, unchanged_since=NEW
+    )
+    first = next(transfers)
+    # Between the check and the copy reaching that key, which is the window
+    # the pre-pass shrinks and cannot close.
+    store.store_document("context/a1b2/task", "Mine, since.", updated_at="2027-01-01T00:00:00Z")
+
+    rest = {t.key: t for t in transfers}
+
+    assert first.action == store_module.WROTE
+    assert rest["context/a1b2/task"].action == store_module.CHANGED
+    assert "2027-01-01" in rest["context/a1b2/task"].reason
+    assert store.retrieve_document("context/a1b2/task").content == "Mine, since."
+    # The rest of the copy still crossed.
+    assert store.exists("project/reference/implementation")
+
+
+def test_copy_from_measures_the_watermark_against_where_the_copy_lands(store, source):
+    """The landing zone, not the whole target: a key nothing writes over is not a change."""
+    store.store_document("elsewhere", "Mine.", updated_at=NEW)
+
+    list(
+        store.copy_from(
+            source,
+            prefix="archive",
+            on_conflict=store_module.OVERWRITE_UNCHANGED,
+            unchanged_since=OLD,
+        )
+    )
+
+    assert store.exists("archive/context/a1b2/design")
+
+
+def test_copy_from_refuses_a_rule_and_a_watermark_that_disagree(store, source):
+    """Both pairings that mean nothing, rather than one of them resolved quietly.
+
+    A watermark under plain ``overwrite`` reads as a guard and would buy only
+    the pre-pass, replacing every collision after it unasked.
+    """
+    with raises_rendered(InvalidArgumentError, "needs unchanged_since"):
+        list(store.copy_from(source, on_conflict=store_module.OVERWRITE_UNCHANGED))
+    with raises_rendered(InvalidArgumentError, "the two disagree"):
+        list(store.copy_from(source, on_conflict=store_module.OVERWRITE, unchanged_since=OLD))
+
+
 def test_copy_from_refuses_a_conflict_mode_it_does_not_have(store, source):
     with pytest.raises(ValueError, match="on_conflict"):
         list(store.copy_from(source, on_conflict="clobber"))
@@ -1269,6 +1355,136 @@ def test_descendant_count_does_not_cross_a_sibling_prefix(store):
     assert store.descendant_count("a/b") == 1
 
 
+# -- the newest change, and the watermark measured against it -------------
+
+OLD = "2026-01-01T00:00:00+00:00"
+NEW = "2026-06-01T00:00:00+00:00"
+
+
+def test_latest_change_is_the_newest_timestamp_below_the_key(store):
+    store.store_document("a/b", "x", updated_at=OLD)
+    store.store_document("a/c", "y", updated_at=NEW)
+
+    assert store.latest_change("a") == NEW
+
+
+def test_latest_change_is_none_where_the_selection_is_empty(store):
+    assert store.latest_change("a") is None
+
+
+def test_latest_change_counts_metadata(store):
+    store.store_document("a/b", "x", updated_at=OLD)
+    store.store_document("a/b/!title", "T", updated_at=NEW)
+
+    # A title written since the watermark is a change to the subtree: the
+    # aggregate has one meaning and it is the same one the count has.
+    assert store.latest_change("a") == NEW
+
+
+def test_latest_change_leaves_out_the_unit_a_plain_delete_takes(store):
+    store.store_document("a", "x", updated_at=OLD)
+    store.store_document("a/!title", "T", updated_at=NEW)
+
+    assert store.latest_change("a") is None
+    assert store.latest_change("a", whole_subtree=True) == NEW
+
+
+def test_latest_change_selects_what_the_count_counts(populated):
+    """The two are one selection asked two questions, so they agree on emptiness.
+
+    Differential rather than by expectation: whatever the corpus, a key with
+    nothing below it has no newest change, and a key with something below it
+    has one. A guard measuring a different set from the count beside it would
+    be answering about a subtree nobody named.
+    """
+    for key in ("", "context", "context/a1b2", "context/a1b2/design", "project"):
+        for whole in (False, True):
+            counted = populated.descendant_count(key, whole_subtree=whole)
+            newest = populated.latest_change(key, whole_subtree=whole)
+            assert (counted > 0) == (newest is not None), (key, whole)
+
+
+def test_latest_change_does_not_cross_a_sibling_prefix(store):
+    store.store_document("a/b/c", "x", updated_at=OLD)
+    store.store_document("a/beta/d", "y", updated_at=NEW)
+
+    assert store.latest_change("a/b") == OLD
+
+
+def test_latest_change_is_bounded_by_the_range(store):
+    store.store_document("a/b", "x", updated_at=OLD)
+    store.store_document("a/c", "y", updated_at=NEW)
+
+    assert store.latest_change("a", key_range=KeyRange(before="a/c")) == OLD
+
+
+def test_a_delete_with_no_watermark_is_unchecked(store):
+    store.store_document("a/b", "x", updated_at=NEW)
+
+    assert store.delete("a/b") == ["a/b"]
+
+
+def test_a_delete_is_refused_when_the_key_moved_since(store):
+    store.store_document("a/b", "x", updated_at=NEW)
+
+    with raises_rendered(store_module.ChangedSinceError, "written at 2026-06-01"):
+        store.delete("a/b", unchanged_since=OLD)
+    assert store.exists("a/b")
+
+
+def test_a_delete_goes_through_when_nothing_moved_since(store):
+    store.store_document("a/b", "x", updated_at=OLD)
+
+    assert store.delete("a/b", unchanged_since=NEW) == ["a/b"]
+
+
+def test_a_plain_delete_is_measured_over_the_unit_it_takes(store):
+    """The metadata goes with the key, so a title written since is a change.
+
+    And a child does not go, so a child written since is not one: a guard on
+    the wrong keys refuses a delete that would have taken nothing anybody
+    touched.
+    """
+    store.store_document("a", "x", updated_at=OLD)
+    store.store_document("a/!title", "T", updated_at=NEW)
+    store.store_document("a/b", "y", updated_at=NEW)
+
+    with raises_rendered(store_module.ChangedSinceError):
+        store.delete("a", unchanged_since=OLD)
+
+    store.store_document("a/!title", "T", updated_at=OLD)
+    assert store.delete("a", unchanged_since=OLD) == ["a", "a/!title"]
+
+
+def test_a_recursive_delete_is_measured_over_the_subtree_it_takes(store):
+    store.store_document("a", "x", updated_at=OLD)
+    store.store_document("a/b/c", "y", updated_at=NEW)
+
+    with raises_rendered(store_module.ChangedSinceError):
+        store.delete("a", recursive=True, unchanged_since=OLD)
+    assert store.exists("a/b/c")
+
+
+def test_a_watermark_that_is_not_a_timestamp_is_a_sentence(store):
+    store.store_document("a/b", "x")
+
+    with raises_rendered(InvalidArgumentError, "ISO 8601"):
+        store.delete("a/b", unchanged_since="last tuesday")
+
+
+def test_a_watermark_is_compared_in_one_spelling(store):
+    """An offset is not an hour of difference in the wrong direction.
+
+    The comparison is a string comparison, so a caller writing 11:15+01:00 and
+    a store holding 10:15+00:00 have named the same moment and must compare
+    equal -- unnormalised, the first sorts after the second and the guard
+    passes a write it should have refused.
+    """
+    store.store_document("a/b", "x", updated_at="2026-01-01T10:15:00+00:00")
+
+    assert store.delete("a/b", unchanged_since="2026-01-01T11:15:00+01:00") == ["a/b"]
+
+
 def test_storing_an_empty_document_is_not_a_deletion(store):
     store.store_document("a/b", "body")
     store.store_document("a/b", "")
@@ -1300,6 +1516,7 @@ def test_a_store_without_a_log_writes_nothing(tmp_path):
         (lambda s: s.get_documents(BoundedSubtree("a")).items, "get_documents"),
         (lambda s: s.keys_missing_meta(BoundedSubtree("a")).items, "keys_missing_meta"),
         (lambda s: s.descendant_count("a"), "descendant_count"),
+        (lambda s: s.latest_change("a"), "latest_change"),
         (lambda s: s.delete("a/b"), "delete"),
     ],
 )

@@ -220,9 +220,14 @@ refusal beside the arguments and re-raises.
 [`build()`](#outrage.store_parquet.ParquetStore.build) is the way in, and `outrage pack` is the command line
 over it.
 
-#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 Refused, for the reason [`store_document()`](#outrage.store_parquet.ParquetStore.store_document) is.
+
+Before the watermark is looked at rather than after: a store that
+cannot delete anything refuses whether or not the subtree moved, and
+checking first would answer a caller's second question while leaving
+their first one to a different sentence.
 
 #### exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
 
@@ -245,6 +250,16 @@ range is bisected; what is left per row is whether the key is one a
 plain delete of `key` would *keep*, which the bounds narrow but do
 not answer -- and under `whole_subtree` there is nothing left to ask,
 since the bisected stretch is the answer.
+
+#### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+
+The newest `updated_at` over the rows [`descendant_count()`](#outrage.store_parquet.ParquetStore.descendant_count) counts.
+
+The same bisected stretch and the same per-row question, taking a
+maximum instead of a total. Two columns are converted rather than one,
+in step and a chunk at a time: the timestamp is only wanted for a row
+the key test keeps, and pairing them is what says which row it belongs
+to.
 
 #### retrieve_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int) = 0, length: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/library/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
 

@@ -196,6 +196,10 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
     for key in _KEYS:
         answers_alike(sqlite, parquet, lambda s, k=key: s.exists(k))
         answers_alike(sqlite, parquet, lambda s, k=key: s.descendant_count(k))
+        answers_alike(sqlite, parquet, lambda s, k=key: s.latest_change(k))
+        answers_alike(
+            sqlite, parquet, lambda s, k=key: s.latest_change(k, whole_subtree=True)
+        )
         answers_alike(sqlite, parquet, lambda s, k=key: s.retrieve_document(k))
         if key != keys.ROOT:
             answers_alike(sqlite, parquet, lambda s, k=key: s.level_entry(k))
@@ -204,6 +208,11 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
         # Paged to the end at a page size of two, so a level of three or more
         # crosses a boundary and the totals are asserted on every page.
         answers_alike(sqlite, parquet, lambda s, k=key: walk_level(s, k))
+
+    for key, key_range in itertools.product(_KEYS, _RANGES):
+        answers_alike(
+            sqlite, parquet, lambda s, k=key, r=key_range: s.latest_change(k, key_range=r)
+        )
 
     for subtree, key_range, meta in itertools.product(_SUBTREES, _RANGES, _METAS):
         answers_alike(

@@ -328,7 +328,8 @@ outrage copy [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
              [--depth DEPTH] [--after-inclusive KEY] [--after KEY]
              [--after-subtree KEY] [--before KEY]
              [--before-inclusive KEY] [--final-subtree KEY]
-             [--on-conflict {skip,overwrite,stop}] [--dry-run]
+             [--on-conflict {skip,overwrite,overwrite-unchanged,stop}]
+             [--unchanged-since TIME] [--dry-run]
              source target
 ```
 
@@ -353,7 +354,8 @@ outrage copy [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--before KEY` - Copy strictly before KEY and its subtree.
 - `--before-inclusive KEY` - Copy KEY and everything before it in the selection.
 - `--final-subtree KEY` - Copy no later than the end of KEY's subtree.
-- `--on-conflict {skip,overwrite,stop}` - A key already holding a document is left alone (skip, the default), replaced (overwrite), or stops the run where it stands (stop).
+- `--on-conflict {skip,overwrite,overwrite-unchanged,stop}` - A key already holding a document is left alone (skip, the default), replaced (overwrite), replaced unless it changed since --unchanged-since (overwrite-unchanged), or stops the run where it stands (stop).
+- `--unchanged-since TIME` - Refuse if anything under TARGET changed since TIME, an ISO 8601 timestamp such as 2026-09-03T10:15:00Z. Nothing is written when it has. Unchecked by default.
 - `--dry-run` - Report what would be copied without writing it.
 
 ## `export`
@@ -471,7 +473,7 @@ mistyped key cannot silently discard a subtree; what was left behind is reported
 outrage rm [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
            [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
            [--mount-config FILE] [--no-mount-config] [--recursive]
-           [--dry-run] [--limit N]
+           [--unchanged-since TIME] [--dry-run] [--limit N]
            key
 ```
 
@@ -488,6 +490,7 @@ outrage rm [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `key` - Key to delete, ?last for the newest.
 - `--recursive, -r` - Also delete everything beneath the key.
+- `--unchanged-since TIME` - Refuse if anything this would delete changed since TIME, an ISO 8601 timestamp such as 2026-09-03T10:15:00Z. Nothing is written when it has. Unchecked by default.
 - `--dry-run` - Report what would go without deleting it.
 - `--limit N` - Show at most N keys previewed by --dry-run, and say so on stderr. Everything by default.
 

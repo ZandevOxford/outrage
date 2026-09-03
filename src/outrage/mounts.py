@@ -64,7 +64,11 @@ from .store import (
     ReadOnlyStoreError,
     Store,
     _cut,
+    _document_change,
+    _later,
+    _metadata_change,
     _within,
+    check_unchanged,
     entry_kind,
     store_file,
 )
@@ -553,6 +557,24 @@ def _rows_at(store: Store, key: str, key_range: KeyRange) -> int:
             at += _rows_at(store, entry.key, key_range)
             at += store.descendant_count(entry.key, key_range=key_range)
     return at
+
+
+def _newest_at(segment: Segment, *, whole_subtree: bool = False) -> str | None:
+    """When the row sitting *at* a deeper mount's root was last written.
+
+    The timestamp half of what :func:`_kept_below` puts back: a store mounted
+    below the key answers about its own root as though it were the top of the
+    world, and from outside that root is a key beneath the one asked about.
+
+    Under ``whole_subtree`` the inner answer already covers the root's metadata
+    unit, so only its document row is left; otherwise the unit is missing too,
+    and :func:`outrage.store.check_unchanged`'s own helper is what reads it.
+    A one-character read, as :func:`_document_row_at` is an ``exists``.
+    """
+    newest = _document_change(segment.store, segment.subtree.key, segment.key_range)
+    if whole_subtree:
+        return newest
+    return _later(newest, _metadata_change(segment.store, segment.subtree.key, segment.key_range))
 
 
 def _kept_below(segment: Segment, found: Resolved, *, whole_subtree: bool = False) -> int:
@@ -1218,8 +1240,44 @@ class MountedStore(Store):
             for segment in self.segments(found.outer, key_range=key_range)
         )
 
+    def latest_change(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> str | None:
+        """The newest change any mount the range touches holds below ``key``.
+
+        The maximum over the segments, where a count is the sum over them: the
+        merge differs by the aggregate and the segments are the same ones. Each
+        store answers about its own stretch, and a store mounted further down
+        contributes its root row too, because everything it holds is below the
+        key -- the asymmetry :func:`_kept_below` exists for, in the shape a
+        maximum needs.
+
+        None when no mount the range touches holds anything, which is what
+        every empty selection answers here.
+        """
+        found = self.resolve(key)
+        newest: str | None = None
+        for segment in self.segments(found.outer, key_range=key_range):
+            with _renamed(segment.mount):
+                newest = _later(
+                    newest,
+                    segment.store.latest_change(
+                        segment.subtree.key,
+                        key_range=segment.key_range,
+                        whole_subtree=whole_subtree,
+                    ),
+                )
+                if segment.mount is not found.mount:
+                    newest = _later(newest, _newest_at(segment, whole_subtree=whole_subtree))
+        return newest
+
     def delete(
-        self, key: str, recursive: bool = False, *, key_range: KeyRange = UNBOUNDED
+        self,
+        key: str,
+        recursive: bool = False,
+        *,
+        key_range: KeyRange = UNBOUNDED,
+        unchanged_since: str | None = None,
     ) -> list[str]:
         """As :meth:`~outrage.store.Store.delete`, and it **crosses**.
 
@@ -1233,7 +1291,23 @@ class MountedStore(Store):
         everywhere else in it. What it kept back is not returned here -- this
         answers with the keys that went -- and a front end that has to say so
         asks :meth:`read_only_below`.
+
+        ``unchanged_since`` is checked **here, over the whole table**, and is
+        not passed inward. A recursive delete is one store's call at a time, so
+        a watermark handed to each of them in turn would let the third mount
+        refuse a run the first two had already carried out -- which is the half
+        finished outcome the precondition exists to prevent. Asked of the table
+        it is one aggregate per mount and the refusal comes before any of them
+        is asked to delete anything.
         """
+        check_unchanged(
+            self,
+            key,
+            unchanged_since,
+            action="delete",
+            subtree=recursive,
+            key_range=key_range,
+        )
         found = self.resolve(key).writable("delete")
         if not recursive:
             # The key itself, and nothing else. It lives in the store that

@@ -621,6 +621,92 @@ def test_copy_tree_dry_run_writes_nothing(server):
     assert keys_below(server, "archive") == []
 
 
+def test_copy_tree_dry_run_reports_the_moment_to_pass_back(server):
+    """The pair reads as what it is: look, then write only what has not moved."""
+    looked = call(server, "copy_tree", source="context/a1b2", target="archive", dry_run=True)
+
+    assert looked["checked_at"]
+    assert "unchanged_since" in looked["note"]
+    result = call(
+        server,
+        "copy_tree",
+        source="context/a1b2",
+        target="archive",
+        unchanged_since=looked["checked_at"],
+    )
+    assert result["copied"] == {"wrote": 2}
+
+
+def test_copy_tree_with_a_watermark_writes_nothing_when_the_target_moved(server):
+    call(server, "copy_tree", source="context/a1b2", target="archive")
+
+    message = call_expecting_error(
+        server,
+        "copy_tree",
+        source="context/a1b2",
+        target="archive",
+        on_conflict="overwrite-unchanged",
+        unchanged_since="2020-01-01T00:00:00Z",
+    )
+
+    assert "would act on work done since" in message
+
+
+def test_copy_tree_names_the_keys_it_left_rather_than_only_counting_them(server, store):
+    """A caller who gets three keys learns exactly which three to look at.
+
+    Sampled would be worse than useless here: the whole value of the answer is
+    that it is the list, and being shown two of three sends the caller looking
+    for a key nothing named.
+    """
+    store.store_document("archive/context/a1b2/design", "mine", updated_at="2026-01-01T00:00:00Z")
+
+    result = call(
+        server,
+        "copy_tree",
+        source="context/a1b2",
+        target="archive",
+        on_conflict="overwrite-unchanged",
+        unchanged_since="2026-02-01T00:00:00Z",
+    )
+
+    # Nothing has moved since the watermark, so the copy lands.
+    assert result["copied"] == {"wrote": 2}
+    assert "changed" not in result
+
+
+def test_copy_tree_says_nothing_about_a_watermark_it_was_not_given(server):
+    result = call(server, "copy_tree", source="context/a1b2", target="archive")
+
+    assert "changed" not in result and "checked_at" not in result
+
+
+def test_delete_keys_refuses_when_what_it_would_take_moved_since(server):
+    message = call_expecting_error(
+        server,
+        "delete_keys",
+        key="context/a1b2",
+        recursive=True,
+        unchanged_since="2020-01-01T00:00:00Z",
+    )
+
+    assert "refusing to delete" in message
+    assert keys_below(server, "context/a1b2") == ["context/a1b2/design"]
+
+
+def test_delete_keys_with_a_watermark_nothing_moved_since_deletes(server):
+    result = call(
+        server,
+        "delete_keys",
+        key="context/a1b2",
+        recursive=True,
+        unchanged_since="2099-01-01T00:00:00Z",
+    )
+
+    # context/a1b2/design and its title; the container itself holds nothing.
+    assert result["count"] == 2
+
+
 def test_copy_tree_refuses_a_target_inside_its_source(server):
     message = call_expecting_error(server, "copy_tree", source="context", target="context/archive")
 

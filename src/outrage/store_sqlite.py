@@ -62,6 +62,7 @@ from .store import (
     _now,
     _position,
     _scope,
+    check_unchanged,
     entry_kind,
 )
 
@@ -524,7 +525,12 @@ class SqliteStore(FileStore):
 
     @_logged("delete")
     def delete(
-        self, key: str, recursive: bool = False, *, key_range: KeyRange = UNBOUNDED
+        self,
+        key: str,
+        recursive: bool = False,
+        *,
+        key_range: KeyRange = UNBOUNDED,
+        unchanged_since: str | None = None,
     ) -> list[str]:
         """The rows to remove are selected first, then deleted by key.
 
@@ -532,7 +538,18 @@ class SqliteStore(FileStore):
         is the keys actually removed, and ``DELETE`` does not report them. The
         range bounds are appended to both halves of the selection -- the key's
         own row and, when recursive, the subtree beneath it.
+
+        The watermark is checked over the same two halves before any of it
+        goes, which is one aggregate query rather than a second selection.
         """
+        check_unchanged(
+            self,
+            key,
+            unchanged_since,
+            action="delete",
+            subtree=recursive,
+            key_range=key_range,
+        )
         parsed = keys.parse(key)
         bounds, params = _range_clauses(key_range)
         within = "".join(f" AND {clause}" for clause in bounds)
@@ -593,6 +610,34 @@ class SqliteStore(FileStore):
             [*bounds, *unit, *params],
         ).fetchone()
         return row["n"]
+
+    @_logged("latest_change")
+    def latest_change(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> str | None:
+        """A ``max(updated_at)`` over the same bounds the count scans.
+
+        :meth:`descendant_count`'s query with the aggregate changed and nothing
+        else, deliberately: the two are one selection asked two questions, and
+        a guard that measured a different set of keys from the count beside it
+        would be answering about a subtree nobody named. ``max()`` over no rows
+        is NULL, which is the None a caller reads as "nothing here to change".
+        """
+        parsed = keys.parse(key)
+        below, bounds = _below("key", parsed.key)
+        clauses, params = _range_clauses(key_range)
+        within = "".join(f" AND {clause}" for clause in clauses)
+        kept = ""
+        unit: list[str] = []
+        if not whole_subtree:
+            lo, hi = keys.meta_range(parsed.key)
+            kept = " AND NOT (key >= ? AND key < ?)"
+            unit = [lo, hi]
+        row = self._conn.execute(
+            f"SELECT max(updated_at) AS newest FROM documents WHERE {below}{kept}{within}",
+            [*bounds, *unit, *params],
+        ).fetchone()
+        return row["newest"]
 
     def exists(self, key: str) -> bool:
         """One indexed lookup on the primary key, selecting no content.

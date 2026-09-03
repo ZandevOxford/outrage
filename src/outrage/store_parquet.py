@@ -941,9 +941,20 @@ class ParquetStore(FileStore):
 
     @_logged("delete")
     def delete(
-        self, key: str, recursive: bool = False, *, key_range: KeyRange = UNBOUNDED
+        self,
+        key: str,
+        recursive: bool = False,
+        *,
+        key_range: KeyRange = UNBOUNDED,
+        unchanged_since: str | None = None,
     ) -> list[str]:
-        """Refused, for the reason :meth:`store_document` is."""
+        """Refused, for the reason :meth:`store_document` is.
+
+        Before the watermark is looked at rather than after: a store that
+        cannot delete anything refuses whether or not the subtree moved, and
+        checking first would answer a caller's second question while leaving
+        their first one to a different sentence.
+        """
         raise ReadOnlyStoreError("store-read-only", key=key, path=str(self.path), action="delete")
 
     # -- reading ---------------------------------------------------------
@@ -1000,6 +1011,37 @@ class ParquetStore(FileStore):
             for candidate in index.column_in("key", max(lower, inner), min(upper, outer))
             if below(candidate) and (whole_subtree or not lo <= candidate < hi)
         )
+
+    @_logged("latest_change")
+    def latest_change(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> str | None:
+        """The newest ``updated_at`` over the rows :meth:`descendant_count` counts.
+
+        The same bisected stretch and the same per-row question, taking a
+        maximum instead of a total. Two columns are converted rather than one,
+        in step and a chunk at a time: the timestamp is only wanted for a row
+        the key test keeps, and pairing them is what says which row it belongs
+        to.
+        """
+        index = self._index
+        parsed = keys.parse(key)
+        lower, upper = _span(index.order, key_range)
+        inner, outer = index.span(key)
+        start, stop = max(lower, inner), min(upper, outer)
+        below = _below(parsed.key)
+        lo, hi = keys.meta_range(parsed.key)
+        newest: str | None = None
+        for candidate, moment in zip(
+            index.column_in("key", start, stop),
+            index.column_in("updated_at", start, stop),
+            strict=True,
+        ):
+            if not below(candidate) or (not whole_subtree and lo <= candidate < hi):
+                continue
+            if moment is not None and (newest is None or moment > newest):
+                newest = moment
+        return newest
 
     @_logged("retrieve_document")
     def retrieve_document(

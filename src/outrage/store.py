@@ -193,6 +193,22 @@ class BackendError(OutrageError, RuntimeError):
     did not write."""
 
 
+class ChangedSinceError(OutrageError, ValueError):
+    """Raised when what a write was about to land on moved since the caller looked.
+
+    The precondition ``unchanged_since`` asks for, refused **before anything is
+    written** rather than half way through: a copy or a delete that stopped in
+    the middle would leave the caller reasoning about what had already gone.
+    See :func:`check_unchanged`, which is the one place this is raised from.
+
+    It does not make the operation atomic. The comparison sits between a read
+    and a write, so a writer racing it still wins; what it does is shrink the
+    window from the length of the run to the gap between the check and the
+    write. And it sees **edits, not deletions** -- a key removed since the
+    watermark leaves no row to carry a timestamp.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class Excerpt:
     """Some or all of one document's content."""
@@ -381,12 +397,19 @@ SKIP = "skip"
 #: Replace what is already there.
 OVERWRITE = "overwrite"
 
+#: Replace what is already there, unless it has changed since the caller
+#: looked. :data:`OVERWRITE` narrowed by a watermark: one word covers both
+#: "replace the stale copy I mean to replace" and "replace the edit somebody
+#: made while I was deciding", and this is the narrower spelling of the first.
+#: Needs ``unchanged_since``, which is the watermark it is measured against.
+OVERWRITE_UNCHANGED = "overwrite-unchanged"
+
 #: Stop the whole transfer at the first collision, having written what came
 #: before it. What a caller wants when a collision means the wrong target.
 STOP = "stop"
 
 #: What to do about something already there, at the far end.
-CONFLICTS = (SKIP, OVERWRITE, STOP)
+CONFLICTS = (SKIP, OVERWRITE, OVERWRITE_UNCHANGED, STOP)
 
 #: The outcome recorded on a :class:`Transfer`: it crossed.
 WROTE = "wrote"
@@ -407,6 +430,12 @@ READ = "read"
 #: swallowed, so a caller can see where the transfer stopped and why; nothing
 #: after it is yielded at all.
 STOPPED = "stopped"
+
+#: Left alone under :data:`OVERWRITE_UNCHANGED` **because it changed since**
+#: the watermark. Its own action rather than a :data:`SKIPPED` with a different
+#: reason: a caller who gets an empty list learns the copy was clean, and one
+#: who gets three keys learns exactly which three to go and look at.
+CHANGED = "changed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -855,6 +884,7 @@ class Store(ABC):
         prefix: str | None = None,
         reroot: bool = False,
         on_conflict: str = SKIP,
+        unchanged_since: str | None = None,
         dry_run: bool = False,
         cursor: str | None = None,
         limit: int | None = None,
@@ -900,8 +930,19 @@ class Store(ABC):
         can report the transfer while it happens and an interrupted one has
         reported exactly what it did. ``on_conflict`` decides what happens to a
         key already here, one key at a time: :data:`SKIP` leaves it,
-        :data:`OVERWRITE` replaces it, :data:`STOP` ends the run at the first
-        collision having kept what it already wrote.
+        :data:`OVERWRITE` replaces it, :data:`OVERWRITE_UNCHANGED` replaces
+        what has not moved since ``unchanged_since`` and reports the rest as
+        :data:`CHANGED`, and :data:`STOP` ends the run at the first collision
+        having kept what it already wrote.
+
+        ``unchanged_since`` is a watermark -- when the caller looked -- and it
+        buys two things. Before anything crosses, the keys this copy is about
+        to land on are asked whether any of them moved since; if one did the
+        run is refused having written nothing (:func:`check_unchanged`). Then
+        under :data:`OVERWRITE_UNCHANGED` each collision is measured against it
+        again, which is what catches a write made between the check and the
+        copy reaching that key. A copy left unwatermarked behaves exactly as it
+        always has.
 
         The default implementation reads each document and writes it here,
         which is every store's answer until it has a better one. A backend
@@ -924,6 +965,7 @@ class Store(ABC):
                 prefix=prefix,
                 reroot=reroot,
                 on_conflict=on_conflict,
+                unchanged_since=unchanged_since,
                 dry_run=dry_run,
                 cursor=cursor,
                 limit=limit,
@@ -947,7 +989,12 @@ class Store(ABC):
 
     @abstractmethod
     def delete(
-        self, key: str, recursive: bool = False, *, key_range: KeyRange = UNBOUNDED
+        self,
+        key: str,
+        recursive: bool = False,
+        *,
+        key_range: KeyRange = UNBOUNDED,
+        unchanged_since: str | None = None,
     ) -> list[str]:
         """Delete ``key``, returning the keys actually removed.
 
@@ -973,6 +1020,15 @@ class Store(ABC):
 
         It bounds *both* halves. The key itself and its metadata are as capable
         of lying inside a shadowed stretch as any descendant is.
+
+        ``unchanged_since`` is a precondition rather than a bound: the keys
+        this delete would take are asked whether any of them moved since the
+        caller looked, and the whole delete is refused if one did. **Refused
+        rather than narrowed**, because a delete is one call and a partial
+        subtree is the outcome nobody asked for -- a caller told which key
+        moved can look at it and run the delete again, and a caller handed half
+        a subtree cannot put it back. See :func:`check_unchanged`, and note
+        that what it cannot see is a key somebody else *deleted* since.
         """
 
     @abstractmethod
@@ -1007,6 +1063,61 @@ class Store(ABC):
         that includes keys a mount has made unreachable tells a caller to pass
         ``recursive`` to remove keys that are not there to remove.
         """
+
+    @_logged("latest_change")
+    def latest_change(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> str | None:
+        """The newest ``updated_at`` below ``key``, or None where nothing is.
+
+        The aggregate a write precondition asks: one value whatever the size of
+        the subtree, so "has anything here moved since I looked" costs a query
+        rather than a walk. The selection is :meth:`descendant_count`'s exactly
+        -- strictly below ``key``, less the metadata unit a plain delete takes
+        with it, and ``whole_subtree`` keeps that unit -- so the two answer
+        about the same set of keys and a caller can hold one meaning for both.
+
+        **Metadata counts**, as it does there and for the same reason: a
+        ``!title`` written since the watermark is a change to the subtree, and
+        an aggregate with a second unstated meaning is what ``context/59``
+        cost.
+
+        **What it cannot see is a deletion.** The row that would carry the
+        timestamp is the row that has gone, so the newest change in a range
+        says nothing about what was *removed* from it. A guard built on this
+        covers edits and no more; when an archive exists, asking it the same
+        question over the same range is what answers the other half.
+
+        Timestamps are normalised to seconds (:meth:`store_document`), so a
+        write inside the same second as a watermark is invisible to a
+        comparison against one. That is the weakness ``content_sha256`` exists
+        to avoid elsewhere, inherited here deliberately and named in
+        ``plans/write-preconditions/copy-tree``.
+
+        The default implementation walks the subtree and takes the maximum,
+        which is every store's answer until it has a better one: a database
+        has ``max()``, a sorted file has a row range, and a directory of files
+        has the walk this does.
+        """
+        from . import bulk
+
+        scope = keys.parse(key).key
+        lo, hi = keys.meta_range(scope)
+        inside = _within(key_range)
+        newest: str | None = None
+        for entry in bulk.walk(self, scope):
+            # An implicit container holds no document and so carries no
+            # timestamp; it is a position in the order rather than a change to
+            # anything, and the key beneath it that *is* stored is walked too.
+            if entry.updated_at is None:
+                continue
+            if not whole_subtree and lo <= entry.key < hi:
+                continue
+            if not inside(keys.sort_form(entry.key)):
+                continue
+            if newest is None or entry.updated_at > newest:
+                newest = entry.updated_at
+        return newest
 
     @abstractmethod
     def exists(self, key: str) -> bool:
@@ -1797,6 +1908,137 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
     return replace(first, content=content, returned=len(content), next_offset=offset)
 
 
+def check_unchanged(
+    opened: Store,
+    key: str,
+    unchanged_since: str | None,
+    *,
+    action: str = "write over",
+    subtree: bool = True,
+    key_range: KeyRange = UNBOUNDED,
+) -> None:
+    """Refuse, before anything is written, if ``key`` moved since the watermark.
+
+    The pre-pass every ``unchanged_since`` gets: one question to the range a
+    run is about to write over or delete, asked while nothing has happened yet.
+    That converts "half done, then refused" into "refused having written
+    nothing", which is the difference the argument exists for. It does not make
+    the operation atomic -- see :class:`ChangedSinceError` -- and it costs one
+    aggregate per store rather than a walk, which is what
+    :meth:`Store.latest_change` is for.
+
+    ``action`` is what the caller was about to do, as the verb the refusal is
+    built on -- ``delete`` for one, and the default for a copy. A fact rather
+    than a sentence, exactly as :class:`ReadOnlyStoreError` carries one: a
+    delete refused with "this would land on work done since" is the copy's
+    sentence read out at the wrong operation.
+
+    ``subtree`` is what a recursive run asks and a single-key one does not: a
+    plain delete takes ``key`` and its metadata unit, so a child changing since
+    the watermark is not a change to what it is about to remove, and refusing
+    on it would be a guard about the wrong keys.
+
+    Does nothing at all when ``unchanged_since`` is None. An absent watermark
+    is an unchecked run, which is what every caller that has not asked for this
+    gets and why nothing that worked before behaves differently.
+    """
+    if unchanged_since is None:
+        return
+    watermark = _watermark(unchanged_since)
+    newest = _document_change(opened, key, key_range)
+    if subtree:
+        newest = _later(newest, opened.latest_change(key, key_range=key_range, whole_subtree=True))
+    else:
+        newest = _later(newest, _metadata_change(opened, key, key_range))
+    if newest is not None and newest > watermark:
+        raise ChangedSinceError(
+            "changed-since",
+            key=key,
+            action=action,
+            subtree=subtree,
+            unchanged_since=watermark,
+            changed_at=newest,
+        )
+
+
+def _watermark(unchanged_since: str) -> str:
+    """``unchanged_since`` in the one spelling stored timestamps are written in.
+
+    Normalised rather than compared as it arrives, because the comparison is a
+    string comparison: a caller writing ``2026-09-03T11:15:00+01:00`` and a
+    store holding ``2026-09-03T10:15:00+00:00`` are naming the same moment, and
+    an unnormalised comparison would read the offset as an hour of difference
+    in the wrong direction.
+
+    An :class:`InvalidArgumentError` rather than the ``ValueError``
+    :func:`_timestamp` raises, because this one reaches a person: no front end
+    can check a timestamp in its own argument layer, so a mistyped watermark
+    arrives here and deserves a sentence.
+    """
+    try:
+        moment = _timestamp(unchanged_since)
+    except ValueError as exc:
+        raise InvalidArgumentError(
+            "unchanged-since-unreadable", unchanged_since=unchanged_since
+        ) from exc
+    assert moment is not None  # noqa: S101 - None in is None out, and it is not None here
+    return moment
+
+
+def _document_change(opened: Store, key: str, key_range: KeyRange) -> str | None:
+    """When the document at ``key`` was last written, if it holds one.
+
+    A one-character read, because the timestamp is metadata about the document
+    rather than part of it, and because the root has no listing entry to ask
+    instead. Tested against the range here rather than by the store, for the
+    reason :func:`outrage.mounts._rows_at` does the same: this named the key,
+    so it can say whether the range keeps it.
+    """
+    try:
+        moment = opened.retrieve_document(key, max_chars=1).updated_at
+    except KeyNotFoundError:
+        return None
+    if moment is None or not _within(key_range)(keys.sort_form(keys.parse(key).key)):
+        return None
+    return moment
+
+
+def _metadata_change(opened: Store, key: str, key_range: KeyRange) -> str | None:
+    """The newest change inside ``key``'s own metadata unit.
+
+    What a *plain* delete takes with the key, which
+    :meth:`Store.latest_change` leaves out by default and reports as part of
+    the subtree under ``whole_subtree``: neither answers this on its own, so a
+    caller guarding one key asks for it here.
+
+    Recursive, because a metadata namespace has a subtree: ``a/!changelog`` may
+    hold notes, and a note written since the watermark is a change to the unit.
+    By the segment rather than by ``kind``, exactly as
+    :func:`outrage.mounts._rows_at` is, since a namespace holding only what is
+    below it appears as an implicit entry and is no less part of the unit.
+    """
+    inside = _within(key_range)
+    newest: str | None = None
+    for entry in opened.list_keys(key).items:
+        if entry_kind(entry.key) != "metadata":
+            continue
+        if entry.updated_at is not None and inside(keys.sort_form(entry.key)):
+            newest = _later(newest, entry.updated_at)
+        newest = _later(
+            newest, opened.latest_change(entry.key, key_range=key_range, whole_subtree=True)
+        )
+    return newest
+
+
+def _later(one: str | None, other: str | None) -> str | None:
+    """The newer of two timestamps, either of which may be absent."""
+    if one is None:
+        return other
+    if other is None:
+        return one
+    return max(one, other)
+
+
 _MATCH_MODES = ("contains", "line", "regex")
 _SEARCH_TARGETS = ("document", "metadata")
 _SEARCH_COMBINATIONS = ("any", "all")
@@ -2351,9 +2593,11 @@ def _excerpt(
 __all__ = [
     "BACKUP_DIR_NAME",
     "BACKUP_STAMP",
+    "CHANGED",
     "CONFLICTS",
     "DEFAULT_BACKEND",
     "backend_names",
+    "check_unchanged",
     "DEFAULT_BULK_MAX_CHARS",
     "DEFAULT_DIR_NAME",
     "DEFAULT_MAX_CHARS",
@@ -2363,6 +2607,7 @@ __all__ = [
     "FAILED",
     "FORMATS",
     "OVERWRITE",
+    "OVERWRITE_UNCHANGED",
     "READ",
     "SKIP",
     "SKIPPED",
@@ -2375,6 +2620,7 @@ __all__ = [
     "BackendError",
     "BackupError",
     "BoundedSubtree",
+    "ChangedSinceError",
     "DocumentMatch",
     "Encoding",
     "Entry",

@@ -38,6 +38,7 @@ from outrage.store import (
     WROTE,
     BackendError,
     BoundedSubtree,
+    ChangedSinceError,
     FileStore,
     KeyNotFoundError,
     KeyRange,
@@ -1677,6 +1678,8 @@ def test_a_split_table_answers_every_read_the_way_one_store_holding_it_all_does(
     for key in _SPLIT_KEYS:
         answers_alike(whole, split, lambda s, k=key: s.exists(k))
         answers_alike(whole, split, lambda s, k=key: s.descendant_count(k))
+        answers_alike(whole, split, lambda s, k=key: s.latest_change(k))
+        answers_alike(whole, split, lambda s, k=key: s.latest_change(k, whole_subtree=True))
         answers_alike(whole, split, lambda s, k=key: _read(s, k))
         answers_alike(whole, split, lambda s, k=key: s.last_child(k))
         if key != keys.ROOT:
@@ -1833,6 +1836,62 @@ def test_a_whole_subtree_count_across_a_boundary_does_not_count_the_unit_twice(t
             "a/b/c",
         ]
         assert table.descendant_count("a", whole_subtree=True) == 4
+
+
+def test_the_newest_change_crosses_a_boundary_the_way_a_count_does(tmp_path):
+    """The maximum over the mounts, including the two rows the inside cannot see.
+
+    A store mounted below the key answers about its own root as though it were
+    the top of the world, so from outside its root row and that row's metadata
+    are changes *beneath* the key -- the asymmetry ``_kept_below`` exists for,
+    in the shape a maximum needs. Asked of the same corpus in one store, which
+    is the only statement of what the right answer is.
+    """
+    single = SqliteStore(tmp_path, filename="single.sqlite")
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    old, new, newest = (
+        "2026-01-01T00:00:00+00:00",
+        "2026-06-01T00:00:00+00:00",
+        "2026-09-01T00:00:00+00:00",
+    )
+    for store in (single, outer):
+        store.store_document("a/kept", "kept", updated_at=old)
+    for key, moment in (("", new), ("!title", newest), ("c", old)):
+        inner.store_document(key, "x", updated_at=moment)
+        outside = keys.with_prefix("a/b", key) if key else "a/b"
+        single.store_document(outside, "x", updated_at=moment)
+
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        assert table.latest_change("a") == single.latest_change("a") == newest
+        # The mount point's own row, which the store inside it reports as its
+        # root and no count taken from in there can see.
+        inner.store_document("!title", "x", updated_at=old)
+        single.store_document("a/b/!title", "x", updated_at=old)
+        assert table.latest_change("a") == single.latest_change("a") == new
+
+
+def test_a_delete_across_a_boundary_is_refused_before_any_mount_is_asked(tmp_path):
+    """The watermark is checked over the table, not handed to each store in turn.
+
+    A recursive delete is one store's call at a time, so a mount asked to
+    measure its own stretch would let the second refuse a run the first had
+    already carried out. The whole point of the precondition is that a refused
+    run has removed nothing.
+    """
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    old, new = "2026-01-01T00:00:00+00:00", "2026-06-01T00:00:00+00:00"
+    outer.store_document("a", "a", updated_at=old)
+    outer.store_document("a/kept", "kept", updated_at=old)
+    inner.store_document("c", "below", updated_at=new)
+
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        with raises_rendered(ChangedSinceError, "written at 2026-06-01"):
+            table.delete("a", recursive=True, unchanged_since=old)
+        # Nothing went, including from the mount that had not moved.
+        assert table.exists("a/kept")
+        assert table.exists("a/b/c")
 
 
 def test_a_container_count_crosses_into_what_is_mounted_below_it(tmp_path):
