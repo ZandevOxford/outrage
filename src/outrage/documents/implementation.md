@@ -5,11 +5,11 @@
 Environment: Python 3.12 or later, which is what `requires-python` asks for.
 Developed against SQLite 3.53 and, for the optional parquet backend, pyarrow 25.
 Package installed in editable mode with `pip install -e ".[dev]"`; the parquet
-backend needs `.[parquet]` as well. 993 tests and 18 doctests passing,
-`ruff check .` clean, as of 2026-08-24. Doctests are not in
+backend needs `.[parquet]` as well. 2049 tests and 20 doctests passing,
+`ruff check .` clean, as of 2026-09-05. Doctests are not in
 `testpaths` and need a second run: `pytest --doctest-modules src/outrage`.
-`ruff format --check` reports six files it would reformat and has done for
-some time; the project lints and does not enforce the formatter.
+`ruff format --check` is clean across the tree as well, since the whole
+repository was brought up to the formatter.
 
 ### 0. Project scaffolding - done
 
@@ -523,7 +523,7 @@ Two things the build found that prose would not have:
 
 ## Planned work
 
-Not recorded here. The CLI and everything after it live in the outrage store, under
-`project/reference/planned`, so that a plan being worked from cannot go stale
-against a file nobody reopened. Deferred and unscheduled work stays in the
-Deferred section of design.md.
+Not recorded here. The CLI and everything after it live in the outrage store,
+under `plans`, so that a plan being worked from cannot go stale against a file
+nobody reopened. Deferred and unscheduled work stays in the Deferred section of
+design.md.

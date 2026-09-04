@@ -40,8 +40,9 @@ to open one.
 
 Independent of MCP: everything here is callable and testable on its own. Read
 :mod:`outrage.keys` first for what a key is, which everything below is written in
-terms of; the key namespace and the tool semantics are argued in ``design.md``
-**at the root of the repository**, which is not part of this reference.
+terms of; the key namespace and the tool semantics are argued in ``design.md``,
+which ships beside these pages as ``outrage/design`` and is not part of this
+generated reference.
 """
 
 from __future__ import annotations

@@ -20,8 +20,16 @@ If reading this via the MCP server,
 * [cli](cli.md) - the command line.
 * [default_readme](default_readme.md) is a default readme suggesting a project
   structure.
+* [design](design.md) - why outrage is built the way it is. The components,
+  the key namespace and its grammar, what text is and how it is encoded, the
+  tool semantics and the schema, with the reasoning and the roads not taken.
 * [hooks](hooks.md) - the harness hooks.
-* [keys](keys.md) - detailed definition of keys.
+* [implementation](implementation.md) - what is built and what is left, stage
+  by stage. A snapshot of the project's own progress rather than a manual, and
+  the one document here that is about outrage's development instead of its
+  use.
+* [keys](keys.md) - detailed definition of keys. The short version;
+  [design](design.md) argues it.
 * [reference](reference.md) - the API reference. The [reference](reference)
   folder contains the detailed pages generated from the code.
 * [skills](skills.md) - the instructions delivered by the MCP server.
