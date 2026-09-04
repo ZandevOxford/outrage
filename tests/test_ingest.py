@@ -66,6 +66,23 @@ def store(tmp_path):
         yield opened
 
 
+def test_a_converted_document_is_stored_with_lf(store, source, monkeypatch):
+    """Rule (b) of `plans/line-endings`: a conversion authors its output.
+
+    The one place in that plan where something is deliberately changed rather
+    than left alone. Nothing is being converted away -- the endings MarkItDown
+    emits are an artefact of whatever it read, not a property of the Markdown
+    it wrote -- and the reported character count has to be of what was stored.
+    """
+    _fake_markitdown(monkeypatch, markdown="# Body\r\n\r\nline\rtail\r\n")
+
+    result = ingest.ingest_document(store, source, "reference/report")
+
+    stored = "# Body\n\nline\ntail\n"
+    assert store.retrieve_document("reference/report").content == stored
+    assert result.characters == len(stored)
+
+
 def test_importing_ingest_does_not_import_markitdown():
     assert "markitdown" not in sys.modules
 
