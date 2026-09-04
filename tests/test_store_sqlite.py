@@ -54,7 +54,6 @@ def test_rejects_a_newer_schema(tmp_path):
         SqliteStore(tmp_path)
 
 
-
 # -- migrations ----------------------------------------------------------
 
 
@@ -219,8 +218,16 @@ def test_schema_3_metadata_keys_migrate_to_a_segment(tmp_path):
             ("a", "a", None, "", "body", "markdown", "2026-01-01T00:00:00+00:00", "a"),
             ("a/b", "a/b", None, "a", "body", "markdown", "2026-01-01T00:00:00+00:00", "a/b"),
             ("a:title", "a", "title", "a", "A", "markdown", "2026-01-01T00:00:00+00:00", "a:title"),
-            ("a/b:title", "a/b", "title", "a/b", "B", "markdown",
-             "2026-01-01T00:00:00+00:00", "a/b:title"),
+            (
+                "a/b:title",
+                "a/b",
+                "title",
+                "a/b",
+                "B",
+                "markdown",
+                "2026-01-01T00:00:00+00:00",
+                "a/b:title",
+            ),
         ],
     )
     con.execute("PRAGMA user_version=3")
@@ -398,7 +405,6 @@ def test_schema_4_sort_keys_are_rebuilt_for_the_marked_sort_form(tmp_path):
     assert rows["a"] < rows["a-x"]
     assert rows["a/!title"] < rows["a-x/!title"]
     opened.connection.close()
-
 
 
 # -- connections ---------------------------------------------------------

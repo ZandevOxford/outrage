@@ -85,9 +85,7 @@ EXTENSION_BY_FORMAT = {
 #: as they are -- an export never writes one, so an import reads it as part of
 #: the name. Not to be confused with :data:`outrage.store.FORMATS`, which is what
 #: a document may be *stored* as; this is what a file name says it is.
-FORMAT_BY_EXTENSION = {
-    extension: format for format, extension in EXTENSION_BY_FORMAT.items()
-}
+FORMAT_BY_EXTENSION = {extension: format for format, extension in EXTENSION_BY_FORMAT.items()}
 
 #: What a half-written file is called while it is being written. Named rather
 #: than spelled inline because a store that *reads* a tree has to skip one:
@@ -101,6 +99,7 @@ TEMP_PREFIX = ".outrage-"
 #: component of `..` does not mirror anything, it climbs out of the directory
 #: the caller named.
 TRAVERSAL = (".", "..")
+
 
 class UnmappableError(OutrageError, ValueError):
     """Raised when a key has no file it can be written to, or a file no key."""
@@ -704,9 +703,7 @@ def import_tree(
         raise SourceMissingError("import-source-missing", source=str(source))
 
     with FilesystemStore(source, hidden=hidden, create=False) as tree:
-        yield from opened.copy_from(
-            tree, prefix=key, on_conflict=on_conflict, dry_run=dry_run
-        )
+        yield from opened.copy_from(tree, prefix=key, on_conflict=on_conflict, dry_run=dry_run)
 
 
 def _entries(root: Path, *, hidden: bool, top: bool = True) -> Iterator[tuple[Path, str]]:
@@ -785,9 +782,7 @@ def documents_from_tree(
         )
 
 
-def documents_from_store(
-    opened: store.Store, key: str | None = None
-) -> Iterator[Packable]:
+def documents_from_store(opened: store.Store, key: str | None = None) -> Iterator[Packable]:
     """Every document at and below ``key`` in ``opened``, beside the report.
 
     The other half of a pack, and the one a reference base is usually made
@@ -1228,9 +1223,7 @@ def sweep_exports(
     for entry in entries:
         name = entry.name
         exported = (
-            entry.with_name(name[: -len(RECORD_SUFFIX)])
-            if name.endswith(RECORD_SUFFIX)
-            else entry
+            entry.with_name(name[: -len(RECORD_SUFFIX)]) if name.endswith(RECORD_SUFFIX) else entry
         )
         try:
             if not entry.is_file():
@@ -1573,7 +1566,6 @@ def _format_of(name: str) -> str | None:
     return FORMAT_BY_EXTENSION.get(os.path.splitext(name)[1])
 
 
-
 def _check_conflict(on_conflict: str, unchanged_since: str | None = None) -> None:
     """The rule, and whether it and the watermark say the same thing.
 
@@ -1594,9 +1586,7 @@ def _check_conflict(on_conflict: str, unchanged_since: str | None = None) -> Non
         raise InvalidArgumentError("unchanged-since-unguarded", unchanged_since=unchanged_since)
 
 
-def _landing(
-    subtree: store.BoundedSubtree, prefix: str | None, *, inner: str = keys.ROOT
-) -> str:
+def _landing(subtree: store.BoundedSubtree, prefix: str | None, *, inner: str = keys.ROOT) -> str:
     """Where the copy's own key lands, which is the top of what it writes over.
 
     :func:`_grafted` applied to the key the copy is about, so the two cannot

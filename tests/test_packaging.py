@@ -118,8 +118,7 @@ def test_the_checkout_is_what_is_under_test():
         )
     else:
         assert where == PACKAGE.resolve(), (
-            f"the suite is testing {where}, not this checkout; "
-            "an installed copy is shadowing src/"
+            f"the suite is testing {where}, not this checkout; an installed copy is shadowing src/"
         )
 
 
@@ -166,11 +165,7 @@ def test_the_sdist_leaves_out_the_dogfood_config(sdist_names):
     # `.mcp.json` is the same file's neighbour: this repository registering the
     # server for itself, naming a conda environment and a OneDrive folder that
     # exist on one machine. It shipped in 0.3.0 and in the first 0.4.0 build.
-    intruders = [
-        name
-        for name in sdist_names
-        if name.startswith(".claude") or name == ".mcp.json"
-    ]
+    intruders = [name for name in sdist_names if name.startswith(".claude") or name == ".mcp.json"]
     assert not intruders, intruders
 
 

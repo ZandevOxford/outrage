@@ -101,8 +101,7 @@ def test_no_smartquote_reached_the_markdown():
     and the change should be deliberate rather than a surprise.
     """
     offenders = {
-        p.name: p.read_text().count("–") + p.read_text().count("—")
-        for p in pages(shipped.tree())
+        p.name: p.read_text().count("–") + p.read_text().count("—") for p in pages(shipped.tree())
     }
     assert not {name: n for name, n in offenders.items() if n}
 

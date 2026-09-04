@@ -1262,9 +1262,7 @@ def test_a_cross_key_import_names_the_key_the_file_came_from(populated, tmp_path
     copied = bulk.import_document(
         populated, "project/copy", source.path, tmp_path / "export", against=target.path
     )
-    round_tripped = bulk.import_document(
-        populated, "project", source.path, tmp_path / "export"
-    )
+    round_tripped = bulk.import_document(populated, "project", source.path, tmp_path / "export")
 
     assert copied.copied_from == "project"
     assert round_tripped.copied_from is None

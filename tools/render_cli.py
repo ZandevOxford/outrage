@@ -34,8 +34,7 @@ def _usage(parser: argparse.ArgumentParser) -> str:
         lines[0] = lines[0][len(prefix) :]
         indentation = " " * len(prefix)
         lines[1:] = [
-            line[len(indentation) :] if line.startswith(indentation) else line
-            for line in lines[1:]
+            line[len(indentation) :] if line.startswith(indentation) else line for line in lines[1:]
         ]
     return "\n".join(lines)
 

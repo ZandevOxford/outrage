@@ -449,9 +449,12 @@ def entry_with(*args: str) -> dict:
 
 def test_a_re_run_with_no_flags_keeps_the_mounts_and_the_log():
     previous = entry_with(
-        "--dir", "/p/.outrage",
-        "--mount", "test=test.sqlite",
-        "--mount-ro", "ref=ref.sqlite",
+        "--dir",
+        "/p/.outrage",
+        "--mount",
+        "test=test.sqlite",
+        "--mount-ro",
+        "ref=ref.sqlite",
         "--log",
     )
     plain = entry_with("--dir", "/p/.outrage")
@@ -463,9 +466,12 @@ def test_naming_an_option_replaces_that_option_and_only_it():
     """All of a flag's occurrences go together: a re-run naming one mount means
     one mount, not one added to the three that were there."""
     previous = entry_with(
-        "--dir", "/p/.outrage",
-        "--mount", "a=a.sqlite",
-        "--mount", "b=b.sqlite",
+        "--dir",
+        "/p/.outrage",
+        "--mount",
+        "a=a.sqlite",
+        "--mount",
+        "b=b.sqlite",
         "--log",
     )
     new = entry_with("--dir", "/p/.outrage", "--mount", "c=c.sqlite")
@@ -520,9 +526,12 @@ def test_init_twice_leaves_a_configured_project_untouched(tmp_path):
     entry = {
         "command": "/env/bin/outrage-server",
         "args": [
-            "--dir", str(tmp_path / ".outrage"),
-            "--mount", "test=test.sqlite",
-            "--mount-ro", "ref=ref.sqlite",
+            "--dir",
+            str(tmp_path / ".outrage"),
+            "--mount",
+            "test=test.sqlite",
+            "--mount-ro",
+            "ref=ref.sqlite",
             "--log",
         ],
     }

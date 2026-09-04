@@ -757,8 +757,8 @@ def test_both_harnesses_deliver_the_same_sentence():
 def test_a_v2_copilot_entry_is_recognised_and_upgraded(tmp_path):
     old = {
         "type": "command",
-        "bash": "echo '{\"additionalContext\":\"old\"}'",
-        "powershell": "Write-Output '{\"additionalContext\":\"old\"}'",
+        "bash": 'echo \'{"additionalContext":"old"}\'',
+        "powershell": 'Write-Output \'{"additionalContext":"old"}\'',
         "comment": f"{MARKER}:v2",
     }
     path = copilot_path(tmp_path)

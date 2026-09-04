@@ -224,9 +224,7 @@ def _check_rows(store: FileStore, report: Report) -> None:
             wrong_parent.append(f"{row.key} is not a valid key")
         else:
             if row.parent != expected:
-                wrong_parent.append(
-                    f"{row.key} claims parent {row.parent!r}, implies {expected!r}"
-                )
+                wrong_parent.append(f"{row.key} claims parent {row.parent!r}, implies {expected!r}")
 
     _report_depth(over_deep, report)
     _report_parents(wrong_parent, report)

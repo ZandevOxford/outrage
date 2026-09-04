@@ -148,9 +148,7 @@ def test_a_hook_printing_no_context_is_not_a_delivery_question(tmp_path):
 
 
 def test_sources_survive_several_events(tmp_path):
-    session = session_from(
-        tmp_path, ran("startup", "A"), got("A"), ran("resume", "B"), got("B")
-    )
+    session = session_from(tmp_path, ran("startup", "A"), got("A"), ran("resume", "B"), got("B"))
 
     assert session.sources == ["resume", "startup"]
     assert session.verdict() == "delivered"

@@ -481,6 +481,7 @@ def install(
 #: interpreter or an absolute path, and a copy of it is complete on its own.
 ASSET_DIRS = ("skills", "agents")
 
+
 @dataclass(frozen=True, slots=True)
 class FileChange:
     """What installing one packaged file would do, or did."""
@@ -509,9 +510,7 @@ def asset_sources() -> list[tuple[Path, Path]]:
             if source.is_file() and not source.name.startswith("."):
                 found.append((source, Path(name) / source.relative_to(root)))
     if not found:  # pragma: no cover - a broken install
-        raise InstallError(
-            "assets-empty", asset=CLAUDE_DIR, path=str(Path(__file__).parent)
-        )
+        raise InstallError("assets-empty", asset=CLAUDE_DIR, path=str(Path(__file__).parent))
     return found
 
 

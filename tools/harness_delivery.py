@@ -440,8 +440,11 @@ def _report(sessions: list[Session], canaries: list[tuple[dict[str, Any], str]])
     print(f"  {'session':10}  {'source':17}  {'ran':4}  {'got':4}  {'rpt':4}  verdict")
     for s in sessions:
         counts = (
-            (f"{len(s.session_start_runs):<4}", f"{len(s.delivered_runs):<4}",
-             f"{len(s.repeat_runs):<4}")
+            (
+                f"{len(s.session_start_runs):<4}",
+                f"{len(s.delivered_runs):<4}",
+                f"{len(s.repeat_runs):<4}",
+            )
             if s.session_start_ran
             else ("-   ", "-   ", "-   ")
         )

@@ -439,10 +439,7 @@ def _value(spec: Spec) -> str:
     """
     if spec.type is None:
         return _string(str(spec.path))
-    return (
-        f"{{ path = {_string(str(spec.path))}, "
-        f"{TYPE_OPTION} = {_string(spec.type)} }}"
-    )
+    return f"{{ path = {_string(str(spec.path))}, {TYPE_OPTION} = {_string(spec.type)} }}"
 
 
 def _key(point: str) -> str:
@@ -838,9 +835,7 @@ def _items(table: MountTable, source: int) -> list[_Item]:
         items.append(_Item(source, [ROOT_FLAG, unparse(table.root)], None))
     for flag, entries in ((MOUNT_FLAG, table.mounts), (READ_ONLY_FLAG, table.read_only)):
         for point, spec in entries:
-            items.append(
-                _Item(source, [flag, f"{point}{SPEC_DELIMITER}{unparse(spec)}"], point)
-            )
+            items.append(_Item(source, [flag, f"{point}{SPEC_DELIMITER}{unparse(spec)}"], point))
     return items
 
 

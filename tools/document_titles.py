@@ -92,9 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="replace titles that are already there, rather than skipping them",
     )
-    parser.add_argument(
-        "-n", "--dry-run", action="store_true", help="report without writing"
-    )
+    parser.add_argument("-n", "--dry-run", action="store_true", help="report without writing")
     args = parser.parse_args(argv)
 
     if not args.tree.is_dir():

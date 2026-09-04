@@ -54,18 +54,18 @@ def test_a_filename_like_key_nests_under_its_directory():
 @pytest.mark.parametrize(
     "key",
     [
-        "café",                  # the namespace is unicode
-        "notes/mon café.md",     # spaces and all
+        "café",  # the namespace is unicode
+        "notes/mon café.md",  # spaces and all
         "con text",
-        "notes/where?.md",       # `?` is only special as a whole segment
-        "context/a1b2!",         # `!` is only special at the start of one
-        "a/./b",                 # keys are never resolved, so these navigate
-        "a/../b",                # nothing and are ordinary text
-        "a/b:title",             # `:` is an ordinary character since schema 5
+        "notes/where?.md",  # `?` is only special as a whole segment
+        "context/a1b2!",  # `!` is only special at the start of one
+        "a/./b",  # keys are never resolved, so these navigate
+        "a/../b",  # nothing and are ordinary text
+        "a/b:title",  # `:` is an ordinary character since schema 5
         "a:.",
         "notes/c++/main.cpp",
         "notes/50%.txt",
-        "context\n",             # only characters *below* tab are excluded
+        "context\n",  # only characters *below* tab are excluded
     ],
 )
 def test_a_segment_may_hold_almost_anything(key):
@@ -211,9 +211,9 @@ def test_a_wildcard_at_the_top_level_allocates_under_the_root():
 @pytest.mark.parametrize(
     "key",
     [
-        "context/!",    # a metadata segment with no name
+        "context/!",  # a metadata segment with no name
         "context/!/x",
-        "a/?",          # a wildcard outside a write
+        "a/?",  # a wildcard outside a write
     ],
 )
 def test_parse_rejects_invalid_keys(key):
@@ -314,9 +314,7 @@ def test_meta_sort_suffix_takes_one_segment_and_gives_one():
     # segment, so there is no name this can be handed that it would mark and
     # pad as though it were single when it was not.
     for name in ("title", "changelog", "2"):
-        assert keys.sort_form("a") + keys.meta_sort_suffix(name) == keys.sort_form(
-            f"a/!{name}"
-        )
+        assert keys.sort_form("a") + keys.meta_sort_suffix(name) == keys.sort_form(f"a/!{name}")
 
 
 def test_parent_is_the_key_without_its_last_segment():
@@ -651,8 +649,20 @@ def test_distinct_keys_never_share_a_sort_form():
     # index, so two rows sharing a sort key would mean resuming past one
     # silently skipped the other.
     written = [
-        "a", "a/b", "a-x", "a.y", "ab", "a/!title", "a/!title/b", "a/b/!title",
-        "a/\x01x", "a/\x02x", "a/\x03x", "a/!1", "a/1", "a/01",
+        "a",
+        "a/b",
+        "a-x",
+        "a.y",
+        "ab",
+        "a/!title",
+        "a/!title/b",
+        "a/b/!title",
+        "a/\x01x",
+        "a/\x02x",
+        "a/\x03x",
+        "a/!1",
+        "a/1",
+        "a/01",
     ]
     stored = {keys.parse(k).key for k in written if keys.is_valid(k)}
     assert len({keys.sort_form(k) for k in stored}) == len(stored)

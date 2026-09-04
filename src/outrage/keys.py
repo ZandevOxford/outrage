@@ -530,9 +530,7 @@ def _check_segment(segment: str, key: str) -> None:
     if segment.startswith(RESERVED_PREFIX) and segment not in RESERVED_SEGMENTS:
         raise InvalidKeyError("key-reserved-segment", key=key, segment=segment)
     if len(segment) > MAX_SEGMENT_CHARS:
-        raise InvalidKeyError(
-            "key-segment-too-long", key=key, what=what, length=len(segment)
-        )
+        raise InvalidKeyError("key-segment-too-long", key=key, what=what, length=len(segment))
     for character in segment:
         if character < MIN_SEGMENT_CHAR:
             raise InvalidKeyError(

@@ -197,9 +197,7 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
         answers_alike(sqlite, parquet, lambda s, k=key: s.exists(k))
         answers_alike(sqlite, parquet, lambda s, k=key: s.descendant_count(k))
         answers_alike(sqlite, parquet, lambda s, k=key: s.latest_change(k))
-        answers_alike(
-            sqlite, parquet, lambda s, k=key: s.latest_change(k, whole_subtree=True)
-        )
+        answers_alike(sqlite, parquet, lambda s, k=key: s.latest_change(k, whole_subtree=True))
         answers_alike(sqlite, parquet, lambda s, k=key: s.retrieve_document(k))
         if key != keys.ROOT:
             answers_alike(sqlite, parquet, lambda s, k=key: s.level_entry(k))

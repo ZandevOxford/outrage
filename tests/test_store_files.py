@@ -203,9 +203,7 @@ def test_a_store_and_a_tree_answer_every_read_identically(sqlite, tree):
         answers_alike(sqlite, tree, lambda s, k=key: s.exists(k))
         answers_alike(sqlite, tree, lambda s, k=key: s.descendant_count(k))
         answers_alike(sqlite, tree, lambda s, k=key: s.latest_change(k))
-        answers_alike(
-            sqlite, tree, lambda s, k=key: s.latest_change(k, whole_subtree=True)
-        )
+        answers_alike(sqlite, tree, lambda s, k=key: s.latest_change(k, whole_subtree=True))
         answers_alike(sqlite, tree, lambda s, k=key: s.retrieve_document(k))
         if key != keys.ROOT:
             answers_alike(sqlite, tree, lambda s, k=key: s.level_entry(k))
@@ -214,9 +212,7 @@ def test_a_store_and_a_tree_answer_every_read_identically(sqlite, tree):
         answers_alike(sqlite, tree, lambda s, k=key: walk_level(s, k))
 
     for key, key_range in itertools.product(_KEYS, _RANGES):
-        answers_alike(
-            sqlite, tree, lambda s, k=key, r=key_range: s.latest_change(k, key_range=r)
-        )
+        answers_alike(sqlite, tree, lambda s, k=key, r=key_range: s.latest_change(k, key_range=r))
 
     for subtree, key_range, meta in itertools.product(_SUBTREES, _RANGES, _METAS):
         answers_alike(

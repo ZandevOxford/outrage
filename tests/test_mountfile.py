@@ -282,9 +282,7 @@ def test_the_directory_is_found_before_it_is_consumed(tmp_path):
     """
     a_table(tmp_path / ".outrage", '[mount]\nref = "reference.sqlite"\n')
 
-    assert mountfile.directory_in([f"--dir={tmp_path / '.outrage'}"]) == str(
-        tmp_path / ".outrage"
-    )
+    assert mountfile.directory_in([f"--dir={tmp_path / '.outrage'}"]) == str(tmp_path / ".outrage")
     assert "--mount" in mountfile.spliced([f"--dir={tmp_path / '.outrage'}"])
 
 
@@ -408,9 +406,7 @@ def test_an_option_this_module_never_heard_of_passes_through(tmp_path):
     """It reorders nothing it does not recognise, so a newer flag is untouched."""
     a_table(tmp_path / ".outrage", '[mount]\nref = "reference.sqlite"\n')
 
-    spliced = mountfile.spliced(
-        ["--dir", str(tmp_path / ".outrage"), "--something-new", "a", "b"]
-    )
+    spliced = mountfile.spliced(["--dir", str(tmp_path / ".outrage"), "--something-new", "a", "b"])
 
     assert spliced[-3:] == ["--something-new", "a", "b"]
 
@@ -557,9 +553,7 @@ def test_an_unmount_that_removes_nothing_is_refused(tmp_path):
     a_table(tmp_path / ".outrage", '[mount]\nref = "reference.sqlite"\n')
 
     with raises_rendered(MountError, "removes nothing"):
-        mountfile.spliced(
-            ["--dir", str(tmp_path / ".outrage"), mountfile.UNMOUNT_FLAG, "rf"]
-        )
+        mountfile.spliced(["--dir", str(tmp_path / ".outrage"), mountfile.UNMOUNT_FLAG, "rf"])
 
 
 def test_the_root_cannot_be_unmounted(tmp_path):

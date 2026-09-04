@@ -70,9 +70,7 @@ def test_importing_ingest_does_not_import_markitdown():
     assert "markitdown" not in sys.modules
 
 
-def test_conversion_is_local_plugins_are_off_and_markdown_is_stored(
-    store, source, monkeypatch
-):
+def test_conversion_is_local_plugins_are_off_and_markdown_is_stored(store, source, monkeypatch):
     calls = _fake_markitdown(monkeypatch, markdown="# Body\n", title="From file")
 
     result = ingest.ingest_document(store, source, "/reference//report/")
@@ -206,9 +204,7 @@ def test_unsupported_format_is_distinct_from_conversion_failure(store, source, m
 def test_wrapped_missing_converter_dependency_is_recognised(store, source, monkeypatch):
     missing = _MissingDependencyException("install the pdf\nreader")
     attempt = SimpleNamespace(exc_info=(_MissingDependencyException, missing, None))
-    _fake_markitdown(
-        monkeypatch, failure=_FileConversionException("one attempt failed", [attempt])
-    )
+    _fake_markitdown(monkeypatch, failure=_FileConversionException("one attempt failed", [attempt]))
 
     with pytest.raises(ingest.IngestError) as raised:
         ingest.ingest_document(store, source, "document")
