@@ -1,0 +1,16 @@
+# Line endings are preserved, never converted.
+#
+# `-text` turns off git's newline translation in both directions: a file is
+# committed and checked out with the bytes it has. So a tree checked out on
+# Windows holds LF, as it does everywhere else, and a file that deliberately
+# holds CRLF -- a fixture for `issues/3` and `plans/line-endings` -- survives a
+# round trip through the repository instead of being normalised on the way in.
+#
+# The alternative, `text=auto eol=lf`, also gives LF on Windows, but by
+# *converting*: it would make a CRLF fixture impossible to commit, and it is
+# the opposite of the rule this project applies to a document's line endings.
+#
+# The cost, stated: nothing normalises a CRLF file somebody commits by
+# accident. `git ls-files --eol` is what shows one; every tracked file was
+# `i/lf w/lf` when this was written.
+* -text
