@@ -2,6 +2,62 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.7.0 - 2026-09-04
+
+0.7.0 makes a copy or a delete refusable when the target has moved since you
+looked, previews a delete before it takes anything, brings local files into the
+store as Markdown, and indexes a long document's headings so a reader can jump
+into it.
+
+* **`copy_tree`, `delete_keys` and their command line halves take
+  `unchanged_since`, the time you looked at the target.** Nothing is written if
+  anything there has changed since: a copy is refused before it starts rather
+  than part way through, and a delete refuses rather than skipping the keys
+  that moved, since a partial subtree cannot be put back. The window is
+  measured over what the run would actually take - a key and its metadata unit,
+  or the whole subtree under `recursive`. A deletion is invisible to the guard,
+  because the row that would carry the timestamp is the row that has gone, and
+  a write inside the same second as the watermark is invisible too.
+* **`delete_keys` takes `dry_run`, and a preview now comes from the store.**
+  `Store.delete` performs the selection and leaves the removal out, so a
+  preview and the run it precedes name the same keys. This corrects
+  `outrage rm --dry-run`, which walked the subtree itself and so named one key
+  where the delete removed two - a plain delete carries the key's metadata unit
+  away and the preview did not say so.
+* **A dry run reports when it looked**, as `checked_at` from the tools and a
+  line on standard error from the command line, so the pair reads as look, then
+  write only what has not moved.
+* **`ingest_document` and `outrage ingest` convert one local file to Markdown
+  and store it.** The source must be a regular file on the server's
+  filesystem; URLs and other non-file sources are refused, and converter
+  plugins, remote fetching, Azure services and LLM conversion are not enabled.
+  The title comes from `--title`, then the converted document, then the source
+  filename. Needs the new optional `documents` extra, which carries MarkItDown
+  and its `docx`, `pdf`, `pptx` and `xlsx` readers; it is kept out of the base
+  installation so a store that only holds session context does not pay for it.
+* **`make_contents` indexes a Markdown document's headings by character
+  offset**, in the library, the MCP server and the command line. Each literal
+  ATX or setext heading is kept in source order with its section body replaced
+  by the zero-based character offset where that heading begins - the offset
+  `read_document` already takes, so an entry in the index is a read that lands
+  on its heading. The result is stored as direct metadata, `<key>/!contents` by
+  default, and the source is never changed. Headings inside fenced code blocks
+  are not headings, and a document whose headings did not survive conversion
+  indexes as empty.
+* **Messages now spell an argument the way its reader types it.** A command
+  line user was being told to "pass `on_conflict='overwrite-unchanged'`", which
+  is not a flag anybody can type; the command line renders the flag and the
+  tools render the keyword. The four watermark messages are converted and the
+  rest of the file still reads one way for both.
+* **`on_conflict` lists all four of its choices** in the description of the
+  argument that takes one, having gone on naming three after
+  `overwrite-unchanged` became the fourth, and a dry run names
+  `overwrite-unchanged` when that is the rule the advice needs.
+* **The shipped default readme says which documents need a route** - important
+  open plans do; issues are searched instead, and reference, glossary, file
+  notes and scratch are found by name - and tells a new store to keep `current`
+  to routing and brief notes on the open items rather than everything recent.
+
 ## 0.6.0 - 2026-09-02
 
 0.6.0 makes editing a document through a file safe when more than one agent is

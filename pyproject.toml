@@ -107,8 +107,10 @@ packages = ["src/outrage"]
 
 [tool.omnidep]
 # Omnidep 0.4 does not read PEP 621 optional dependencies, so it otherwise
-# reports the imports in store_parquet.py despite the `parquet` extra above.
-ignore-imports = ["pyarrow"]
+# reports the imports in store_parquet.py and ingest.py despite the `parquet`
+# and `documents` extras above. One entry per extra, so adding an extra without
+# adding its import here fails the check rather than passing quietly.
+ignore-imports = ["pyarrow", "markitdown"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
