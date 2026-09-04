@@ -2053,6 +2053,40 @@ def test_mount_help_says_surveys_and_recursive_deletes_cross(capsys):
     assert "surveys and recursive deletes cross mount boundaries" in help_text
 
 
+def test_the_command_line_carries_crlf_in_and_out_again(tmp_path, monkeypatch):
+    """Rule (a) of `plans/line-endings` on all three of this front end's roads.
+
+    ``--file`` and a pipe both used to translate on the way in, so a CRLF
+    document could not be put into the store from a shell at all. Going out,
+    ``outrage get > file`` writes the document and nothing else, which is what
+    makes a byte offset the store handed out valid against the redirected file.
+    """
+    directory = str(tmp_path / ".outrage")
+    document = "# One\r\n\r\nbody\r\n"
+    source = tmp_path / "in.md"
+    source.write_bytes(document.encode())
+
+    run("set", "--dir", directory, "from/file", "--file", str(source))
+
+    with source.open("rb") as handle:
+        monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(handle, encoding="utf-8"))
+        run("set", "--dir", directory, "from/pipe")
+
+    # Text mode translates a newline to `os.linesep` on the way out, which is
+    # a no-op here and every offset past the first one on Windows. Nothing in
+    # this suite runs there -- `plans/export-traversal` records that -- so the
+    # stream is opened the way Windows would behave and the property is
+    # asserted directly rather than the platform.
+    written = tmp_path / "out.md"
+    with written.open("w", encoding="utf-8", newline="\r\n") as out:
+        assert main(["get", "--dir", directory, "from/file"], out) == 0
+
+    for key in ("from/file", "from/pipe"):
+        _, shown = run("get", "--dir", directory, key)
+        assert shown == document
+    assert written.read_bytes() == document.encode()
+
+
 def test_set_reports_the_file_the_document_landed_in(tmp_path):
     """Not the root: a key below a mount point is in that mount's store."""
     a_mounted_project(tmp_path / ".outrage")

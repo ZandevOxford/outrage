@@ -45,7 +45,9 @@ from outrage.store_sqlite import SqliteStore
 #: document at the root, metadata on the root, JSON beside markdown, a document
 #: with children, and -- the addition -- a key whose last segment already ends
 #: in something that looks like an extension, which is the one shape a mapping
-#: through file names can lose.
+#: through file names can lose. ``crlf`` is a second addition, from
+#: `plans/line-endings`: a document whose line endings the two backends have to
+#: agree about, where one holds a string and the other holds a file.
 CORPUS = [
     ("", "root document"),
     ("!title", "The store itself"),
@@ -70,6 +72,7 @@ CORPUS = [
     ("context/2/design", "design two"),
     ("context/10/design", "design ten"),
     ("context/10/design/!title", "Ten"),
+    ("crlf", "# One\r\n\r\nbody\r\n"),
     ("notes/src/file.py", "note"),
     ("z", "last"),
 ]
@@ -88,6 +91,7 @@ _KEYS = [
     "a/b/c",
     "a/!changelog",
     "a/!changelog/22",
+    "crlf",
 ]
 
 _RANGES = [
@@ -391,13 +395,33 @@ def test_a_byte_offset_addresses_the_file_as_it_is_on_disk(files):
     assert byte_read.content == "\r\nbody\r\n"
     assert byte_read.total_bytes == 15
 
-    # And the character path disagrees, because it decodes with universal
-    # newlines and hands back text this file does not hold. That is `issues/3`
-    # and not this read: until it is settled, a contents index built over a
-    # CRLF document in this backend carries two numbers that do not name the
-    # same place.
-    assert files.retrieve_document("crlf").content == "# One\n\nbody\n"
-    assert files.retrieve_document("crlf").total_bytes == 12
+    # And the character path agrees, which is what `plans/line-endings` fixed:
+    # this asserted the divergence until rule (a) settled which way round it
+    # went. A directory of files returns what is on disk, so both numbers on a
+    # `!contents` line over this document name the same place.
+    assert files.retrieve_document("crlf").content == "# One\r\n\r\nbody\r\n"
+    assert files.retrieve_document("crlf").total_bytes == 15
+
+
+def test_a_directory_of_files_returns_the_bytes_that_are_on_disk(files):
+    """Rule (a) of `plans/line-endings`, asked of the backend it changed.
+
+    Reading with universal newlines gave a store that returned text its own
+    file did not hold and counted a length the file did not have -- `issues/3`,
+    and the worse half of it, because the file on disk was right and the
+    document reported was not. So the two things asserted are the two that were
+    wrong: the content encodes back to the file byte for byte, and the size in
+    a listing is the length of the content a read returns.
+    """
+    written = "# One\r\n\r\nbody \u00e9\r\n".encode()
+    (files.root / "crlf.md").write_bytes(written)
+
+    read = files.retrieve_document("crlf")
+
+    assert read.content.encode() == written
+    assert read.total_bytes == len(written)
+    entry = next(item for item in files.list_keys().items if item.key == "crlf")
+    assert entry.size == len(read.content)
 
 
 def test_two_files_claiming_one_key_read_once_and_are_reported(files):

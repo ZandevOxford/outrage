@@ -666,6 +666,23 @@ def _write_file(path: Path, content: str) -> None:
         raise
 
 
+def _read_file(path: Path) -> str:
+    """Read ``path`` as UTF-8 text, keeping the line endings it holds.
+
+    The other half of :func:`_write_file`'s ``newline=""``, and rule (a) of
+    `plans/line-endings`: **a transfer without a format conversion converts
+    nothing**, so an export and an unchanged import round-trip byte for byte.
+
+    Text mode translates CRLF and a lone CR to LF by default, which is a
+    conversion nobody asked for. It rewrote every line of a CRLF document on
+    the way back in through ``document_edit``, the recommended editing route,
+    with the export record none the wiser: the hash it checks is of the
+    content that went out. `issues/3` is that, run rather than reasoned.
+    """
+    with path.open(encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
 # -- into the store ------------------------------------------------------
 
 
@@ -788,7 +805,7 @@ def documents_from_tree(
             yield Transfer(FAILED, None, path, messages.render(exc)), None
             continue
         try:
-            content = path.read_text(encoding="utf-8")
+            content = _read_file(path)
         except (OSError, UnicodeDecodeError) as exc:
             yield Transfer(FAILED, stored, path, str(exc)), None
             continue
@@ -1496,7 +1513,7 @@ def import_document(
 
     file = contained_file(root, path, key)
     try:
-        content = file.read_text(encoding="utf-8")
+        content = _read_file(file)
     except (FileNotFoundError, IsADirectoryError) as exc:
         # `given` and `root` beside the joined path, because the two disagree
         # in the case most likely to be got wrong: a relative path is taken

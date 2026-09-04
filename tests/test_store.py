@@ -1380,6 +1380,32 @@ def test_find_documents_supports_whole_lines_and_python_regex(store):
     assert [(w.criterion, w.start, w.end) for w in witnesses] == [(0, 9, 15), (1, 16, 17)]
 
 
+def test_a_whole_line_criterion_matches_in_a_crlf_document(store):
+    """Rule (c) of `plans/line-endings`: CRLF is an ordinary document shape.
+
+    True before the rules and asserted after them, because rules (a) and (b)
+    are what make such a document ordinary rather than rare: a store now keeps
+    the endings a document arrived with, so every backend has to serve one.
+    ``line`` strips the ending before comparing, deliberately.
+
+    The regex criterion beside it is the documented limit, pinned rather than
+    repaired: the pattern is the caller's own expression, ``$`` sits after the
+    carriage return, and the store cannot rewrite what they asked for.
+    `plans/line-endings/coping` is the audit, and ``find_documents``'s own
+    description is where a caller reads it.
+    """
+    store.store_document("notes/1", "# One\r\n\r\nbody\r\nlast\r\n")
+
+    lines = store.find_documents(BoundedSubtree("notes"), criteria=[criterion("body", "line")])
+    anchored = store.find_documents(
+        BoundedSubtree("notes"), criteria=[criterion("(?m)body$", "regex")]
+    )
+
+    witness = lines.matches[0].witnesses[0]
+    assert (witness.start, witness.end) == (9, 13)
+    assert anchored.matches == ()
+
+
 def test_find_documents_groups_direct_metadata_evidence_onto_its_document(store):
     store.store_document("notes/1", "body without it")
     store.store_document("notes/1/!keywords", "Rust\nPython\nSearch")

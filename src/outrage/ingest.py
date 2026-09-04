@@ -100,6 +100,22 @@ def _reason(error: BaseException) -> str:
     return " ".join(str(error).split())
 
 
+def _prefer_lf(markdown: str) -> str:
+    """Every line ending in converted output as LF.
+
+    Rule (b) of `plans/line-endings`: **where there is no line ending to
+    preserve, prefer LF.** A conversion *authors* its output rather than
+    carrying it, so nothing here is a transfer being converted -- the CRLF
+    MarkItDown emits is an artefact of whatever it read, not a property of the
+    Markdown it wrote, and one canonical answer beats whatever the source
+    happened to use.
+
+    The two real endings only. A lone CR is one, so it is included; the exotic
+    endings ``str.splitlines`` also breaks on are out of scope.
+    """
+    return markdown.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def _convert(path: Path) -> tuple[str, str | None]:
     """Convert one local file with MarkItDown's built-ins and no plugins."""
     try:
@@ -145,7 +161,7 @@ def _convert(path: Path) -> tuple[str, str | None]:
         raise TypeError(
             f"MarkItDown returned {type(converted_title).__name__} as title, not str or None"
         )
-    return markdown, converted_title
+    return _prefer_lf(markdown), converted_title
 
 
 def ingest_document(
