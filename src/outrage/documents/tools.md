@@ -105,6 +105,31 @@ reports its result without writing the document or its title.
 - `title_key` (string or null; optional) — The metadata key written for the title, absent on a dry run
 - `dry_run` (boolean; required) — Whether conversion was performed without writing
 
+## `make_contents`
+
+Create an offset index from the headings in one stored Markdown document.
+
+The source document is left unchanged. Its ATX and setext headings are copied
+in source order, with all intervening content replaced by the zero-based Python
+character offset of the corresponding heading. Headings inside fenced code
+blocks are ignored.
+
+The generated Markdown overwrites direct metadata named by `metadata_name`,
+which defaults to `contents`. Pass the name without its leading `!`.
+
+### Parameters
+
+- `key` (string; required) — Markdown document key
+- `metadata_name` (string; default "contents"; minimum length 1) — Direct metadata name to write, without the leading '!'
+
+### Returns
+
+- `source_key` (string; required) — The normalized Markdown source key
+- `metadata_key` (string; required) — The metadata key written
+- `headings` (integer; required) — Markdown headings found
+- `source_characters` (integer; required) — Source characters scanned
+- `characters` (integer; required) — Contents characters stored
+
 ## `list_keys`
 
 List the keys immediately below a key, including subkeys and metadata.

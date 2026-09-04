@@ -45,7 +45,7 @@ from pydantic import (
     model_serializer,
 )
 
-from . import __version__, bulk, eventlog, ingest, keys, messages, mountfile, shipped
+from . import __version__, bulk, contents, eventlog, ingest, keys, messages, mountfile, shipped
 from . import mounts as mounts_module
 from . import store as store_module
 from .errors import OutrageError
@@ -329,6 +329,14 @@ class _IngestDocumentResult(_ToolResult):
     dry_run: Annotated[
         bool, Field(description="Whether conversion was performed without writing")
     ]
+
+
+class _MakeContentsResult(_ToolResult):
+    source_key: Annotated[str, Field(description="The normalized Markdown source key")]
+    metadata_key: Annotated[str, Field(description="The metadata key written")]
+    headings: Annotated[int, Field(description="Markdown headings found")]
+    source_characters: Annotated[int, Field(description="Source characters scanned")]
+    characters: Annotated[int, Field(description="Contents characters stored")]
 
 
 class _EntryResult(_ToolResult):
@@ -1008,6 +1016,24 @@ def build_server(
         if converted.title_key is not None:
             result["title_key"] = converted.title_key
         return _IngestDocumentResult.model_validate(result)
+
+    @server.tool(
+        annotations=ToolAnnotations(idempotent_hint=True),
+        description=tool_description("make_contents"),
+    )
+    @_reported
+    def make_contents(
+        key: Annotated[str, Field(description="Markdown document key")],
+        metadata_name: Annotated[
+            str,
+            Field(
+                description="Direct metadata name to write, without the leading '!'",
+                min_length=1,
+            ),
+        ] = "contents",
+    ) -> _MakeContentsResult:
+        made = contents.make_contents(table, _named_key(table, key), metadata_name=metadata_name)
+        return _MakeContentsResult.model_validate(dataclasses.asdict(made))
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),

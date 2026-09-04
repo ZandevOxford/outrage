@@ -309,6 +309,39 @@ def test_ingest_collision_is_a_cli_message_spelling_its_flag(tmp_path, monkeypat
     assert run("get", "--dir", str(directory), "reports/q1") == (0, "mine")
 
 
+def test_make_contents_stores_and_reports_the_heading_index(tmp_path):
+    directory = tmp_path / "store"
+    source = "# First\nBody.\n\n## Second\nMore.\n"
+    run("set", "--dir", str(directory), "manual", "--content", source)
+
+    status, output = run("make_contents", "--dir", str(directory), "manual")
+
+    assert status == 0
+    assert "stored 2 headings from manual" in output
+    assert "at manual/!contents" in output
+    assert run("get", "--dir", str(directory), "manual") == (0, source)
+    expected = f"# First\n0\n\n## Second\n{source.index('## Second')}\n"
+    assert run("get", "--dir", str(directory), "manual/!contents") == (0, expected)
+
+
+def test_make_contents_uses_the_requested_metadata_name(tmp_path):
+    directory = tmp_path / "store"
+    run("set", "--dir", str(directory), "manual", "--content", "# First\n")
+
+    status, output = run(
+        "make_contents",
+        "--dir",
+        str(directory),
+        "manual",
+        "--metadata-name",
+        "outline",
+    )
+
+    assert status == 0
+    assert "manual/!outline" in output
+    assert run("get", "--dir", str(directory), "manual/!outline") == (0, "# First\n0\n")
+
+
 # -- backup --------------------------------------------------------------
 
 

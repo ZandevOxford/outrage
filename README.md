@@ -147,8 +147,9 @@ is how a committed table gets one entry overridden for a single run.
 `--unmount KEY` removes one the file declares, which is the one thing an
 override cannot do; `--no-mount-config` ignores the default file entirely.
 
-`outrage get`, `set`, `ls`, `dump`, `copy`, `rm`, `export` and `import` all take
-the mount options, so a person sees the same namespace the MCP server serves.
+`outrage get`, `set`, `ingest`, `make_contents`, `ls`, `dump`, `copy`, `rm`,
+`export` and `import` all take the mount options, so a person sees the same
+namespace the MCP server serves.
 `outrage copy SOURCE TARGET` copies a subtree or key-order range beneath another
 prefix in that namespace, including between mounted stores; `--reroot` lands it
 *at* TARGET instead of beneath its own source key, which is what moving a

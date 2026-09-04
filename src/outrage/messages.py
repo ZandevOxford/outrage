@@ -1144,4 +1144,20 @@ def _ingest_target_exists(name: Namer, /, *, spell: Speller, key: str, **_: Any)
     )
 
 
+# -- Markdown contents ---------------------------------------------------
+
+
+@template("contents-metadata-name")
+def _contents_metadata_name(name: Namer, /, *, metadata_name: str, **_: Any) -> str:
+    return (
+        f"{metadata_name!r} is not a metadata name; pass one non-empty key "
+        "segment without the leading '!'"
+    )
+
+
+@template("contents-not-markdown")
+def _contents_not_markdown(name: Namer, /, *, key: str, format: str | None, **_: Any) -> str:
+    return f"cannot make contents for {name(key)!r}: its format is {format!r}, not 'markdown'"
+
+
 __all__ = ["Namer", "Speller", "codes", "keyword", "render", "template"]

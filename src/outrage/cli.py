@@ -27,6 +27,7 @@ from typing import Any, TextIO
 from . import (
     __version__,
     bulk,
+    contents,
     eventlog,
     ingest,
     install,
@@ -59,6 +60,7 @@ MOUNTED = (
     "get",
     "set",
     "ingest",
+    "make_contents",
     "ls",
     "dump",
     "copy",
@@ -451,6 +453,26 @@ def argument_parser() -> argparse.ArgumentParser:
         help="Perform conversion and report the result without writing anything.",
     )
     ingest_.set_defaults(handler=_ingest_command)
+
+    make_contents = subcommands.add_parser(
+        "make_contents",
+        help="store a character-offset index of a Markdown document's headings",
+        description=(
+            "Read one stored Markdown document and write an index containing its "
+            "literal headings and their zero-based Python character offsets. The "
+            "source is unchanged. The generated index overwrites direct metadata "
+            "named by --metadata-name, which defaults to contents."
+        ),
+    )
+    _store_option(make_contents)
+    _table_options(make_contents)
+    make_contents.add_argument("key", metavar="KEY", help="Markdown document key to index.")
+    make_contents.add_argument(
+        "--metadata-name",
+        default="contents",
+        help="Direct metadata name to write, without the leading '!'. Default contents.",
+    )
+    make_contents.set_defaults(handler=_make_contents_command)
 
     ls = subcommands.add_parser(
         "ls",
@@ -1462,6 +1484,22 @@ def _ingest_command(args: argparse.Namespace, out: TextIO) -> int:
     print(
         f"{action} {converted.source} at {keys.displayed(converted.key)}: "
         f"{converted.characters} characters as {converted.format}, {title_at}, in {where}",
+        file=out,
+    )
+    return 0
+
+
+def _make_contents_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Build a Markdown heading index and report the metadata destination."""
+    with _open_table(args, create=True) as opened:
+        _resolved(opened, args)
+        made = contents.make_contents(opened, args.key, metadata_name=args.metadata_name)
+        where = _file_holding(opened, made.metadata_key)
+
+    print(
+        f"stored {made.headings} headings from {keys.displayed(made.source_key)} "
+        f"({made.source_characters} characters) at "
+        f"{keys.displayed(made.metadata_key)}: {made.characters} characters in {where}",
         file=out,
     )
     return 0

@@ -70,6 +70,7 @@ def test_tools_are_registered(server):
         "read_document",
         "store_document",
         "ingest_document",
+        "make_contents",
         "list_keys",
         "get_documents",
         "find_documents",
@@ -95,6 +96,7 @@ def test_every_tool_description_is_the_shipped_document(exporting):
         "read_document",
         "store_document",
         "ingest_document",
+        "make_contents",
         "list_keys",
         "get_documents",
         "find_documents",
@@ -171,6 +173,40 @@ def test_ingest_document_writes_markdown_and_title(server, tmp_path, monkeypatch
     assert result["title_key"] == "reports/q1/!title"
     assert call(server, "read_document", key="reports/q1")["format"] == "markdown"
     assert call(server, "read_document", key="reports/q1/!title")["content"] == "report"
+
+
+def test_make_contents_writes_a_typed_heading_index(server):
+    source = "# Store schema\n\nbody\n\n## Detail\ntext\n"
+    call(server, "store_document", key="manual", content=source, format="markdown")
+
+    result = call(server, "make_contents", key="manual")
+
+    expected = f"# Store schema\n0\n\n## Detail\n{source.index('## Detail')}\n"
+    assert result == {
+        "source_key": "manual",
+        "metadata_key": "manual/!contents",
+        "headings": 2,
+        "source_characters": len(source),
+        "characters": len(expected),
+    }
+    assert call(server, "read_document", key="manual/!contents")["content"] == expected
+
+
+def test_make_contents_accepts_a_custom_metadata_name(server):
+    call(server, "store_document", key="manual", content="# Manual\n", format="markdown")
+
+    result = call(server, "make_contents", key="manual", metadata_name="outline")
+
+    assert result["metadata_key"] == "manual/!outline"
+
+
+def test_make_contents_rejects_a_non_markdown_source_with_a_tool_message(server):
+    call(server, "store_document", key="plain", content="# Plain", format="text")
+
+    message = call_expecting_error(server, "make_contents", key="plain")
+
+    assert "not 'markdown'" in message
+    assert "plain" in message
 
 
 def test_ingest_collision_is_a_tool_message_spelling_its_argument(
