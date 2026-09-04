@@ -184,6 +184,29 @@ def test_the_sessionstart_prompt_is_read_at_command_time(tmp_path, monkeypatch):
     )
 
 
+def test_a_crlf_prompt_file_hands_a_session_no_carriage_returns(tmp_path, monkeypatch):
+    """Rule (c) of `plans/line-endings`, at the one place the audit doubted it.
+
+    `plans/line-endings/coping` read ``removesuffix("\\n")`` here and expected a
+    trailing carriage return to survive it. It does not: this read *is* a
+    format conversion in the sense of rule (b) -- a shipped file becoming a
+    prompt string -- and universal newlines is what performs it. Written down
+    as a test rather than left as a conclusion, because what a session is
+    handed is not a thing to be wrong about, and `.gitattributes` means the
+    shipped file is LF in this repository and cannot fail this by accident.
+    """
+    prompt = tmp_path / "sessionstart.md"
+    monkeypatch.setattr(install_module, "_SESSIONSTART_PROMPT", prompt)
+    prompt.write_bytes(b"instructions\r\nsecond line\r\n")
+
+    assert sessionstart_payload() == {
+        "hookSpecificOutput": {
+            "hookEventName": install_module.CLAUDE_HOOK.event,
+            "additionalContext": "instructions\nsecond line",
+        }
+    }
+
+
 # -- recognising our own entry -------------------------------------------
 
 
