@@ -183,6 +183,29 @@ def test_a_directory_and_a_missing_path_are_bad_sources(store, tmp_path):
         assert raised.value.code == "ingest-source-not-file"
 
 
+def test_available_is_false_without_markitdown(monkeypatch):
+    monkeypatch.setitem(sys.modules, "markitdown", None)
+
+    assert ingest.available() is False
+
+
+def test_available_agrees_with_whether_the_import_works():
+    """The cheap check and the real one answer alike, whatever is installed.
+
+    `available` looks up a spec instead of importing, so it could drift from
+    the import `_convert` actually does. This pins them together in whichever
+    environment the suite runs, rather than asserting one of the two answers.
+    """
+    try:
+        import markitdown  # noqa: F401
+    except ImportError:
+        importable = False
+    else:
+        importable = True
+
+    assert ingest.available() is importable
+
+
 def test_absent_optional_extra_is_an_outrage_error(store, source, monkeypatch):
     monkeypatch.setitem(sys.modules, "markitdown", None)
 

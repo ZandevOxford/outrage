@@ -7,6 +7,7 @@ command independent of the document-conversion stack.
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,6 +67,23 @@ def _local_file(source: str | os.PathLike[str]) -> Path:
         reason = "does not exist" if not path.exists() else "is not a regular file"
         raise IngestError("ingest-source-not-file", source=str(path), reason=reason)
     return path
+
+
+def available() -> bool:
+    """Whether the optional ``documents`` extra is installed.
+
+    A spec lookup rather than an import, because a server asks this while it is
+    deciding which tools to register and MarkItDown brings its readers and a
+    model runtime with it - a second or more of import for a question about
+    whether the answer exists. Consulting :data:`sys.modules` first is part of
+    that lookup, so a test that puts ``None`` there is answered the same way an
+    absent install is.
+
+    Only whether MarkItDown itself is importable. A reader missing for one
+    format is a property of the file being converted, not of the extra, and is
+    reported per conversion by :func:`_convert`.
+    """
+    return importlib.util.find_spec("markitdown") is not None
 
 
 def _missing_dependency(error: BaseException, missing_type: type[BaseException]) -> bool:
@@ -179,4 +197,4 @@ def ingest_document(
     )
 
 
-__all__ = ["IngestError", "IngestResult", "ingest_document"]
+__all__ = ["IngestError", "IngestResult", "available", "ingest_document"]

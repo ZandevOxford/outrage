@@ -145,10 +145,16 @@ def render(tools: Sequence[Tool]) -> str:
 
 
 def registered_tools() -> list[Tool]:
-    """Build a complete temporary server and return its registered tools."""
+    """Build a complete temporary server and return its registered tools.
+
+    ``all_tools`` because this documents the server, not the machine it was
+    generated on: ``ingest_document`` is registered only where the optional
+    ``documents`` extra is installed, and the shipped page must describe it
+    either way rather than disappearing on a build host without the extra.
+    """
     with tempfile.TemporaryDirectory() as directory:
         with SqliteStore(Path(directory)) as store:
-            server = build_server(store, directory=directory)
+            server = build_server(store, directory=directory, all_tools=True)
             return anyio.run(server.list_tools)
 
 

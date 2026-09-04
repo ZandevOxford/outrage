@@ -794,7 +794,11 @@ class RequestLog:
 
 
 def build_server(
-    store: Store, log: EventLog | None = None, directory: str | os.PathLike[str] | None = None
+    store: Store,
+    log: EventLog | None = None,
+    directory: str | os.PathLike[str] | None = None,
+    *,
+    all_tools: bool = False,
 ) -> MCPServer:
     """Build a server exposing ``store``, which may be one store or a mount table.
 
@@ -814,6 +818,17 @@ def build_server(
     file; since ``plans/robust-editing`` it writes to
     :func:`~outrage.bulk.export_root`, a per-user directory below the system
     temporary directory, which always exists. So the tool is always there.
+
+    ``ingest_document`` is the one tool that is not. It needs the optional
+    ``documents`` extra, and a client offered a tool whose every call refuses
+    has been told the store can do something it cannot; the tools a session
+    lists should be the tools it can use.
+
+    ``all_tools`` registers it anyway, for ``tools/render_tools.py``. The
+    shipped tool documentation describes the server rather than one
+    installation of it, so it must not gain or lose a tool according to what
+    happened to be installed where it was generated. It is the only caller that
+    wants this: a real server passes nothing and offers what it can do.
     """
     log = log if log is not None else eventlog.NULL
     table = store if isinstance(store, MountedStore) else MountedStore.single(store)
@@ -971,49 +986,51 @@ def build_server(
             ).key
         return _StoreDocumentResult.model_validate(result)
 
-    @server.tool(
-        annotations=ToolAnnotations(idempotent_hint=True),
-        description=tool_description("ingest_document"),
-    )
-    @_reported
-    def ingest_document(
-        source: Annotated[str, Field(description="Path to a local regular file")],
-        key: Annotated[str, Field(description="Destination key")],
-        title: Annotated[
-            str | None,
-            Field(
-                description=(
-                    "Title to store; MarkItDown's title and then the source filename "
-                    "stem are used when omitted"
-                )
-            ),
-        ] = None,
-        overwrite: Annotated[
-            bool, Field(description="Replace a document already stored at the destination")
-        ] = False,
-        dry_run: Annotated[
-            bool, Field(description="Convert and report without writing the document or title")
-        ] = False,
-    ) -> _IngestDocumentResult:
-        converted = ingest.ingest_document(
-            table,
-            source,
-            _named_key(table, key),
-            title=title,
-            overwrite=overwrite,
-            dry_run=dry_run,
+    if all_tools or ingest.available():
+
+        @server.tool(
+            annotations=ToolAnnotations(idempotent_hint=True),
+            description=tool_description("ingest_document"),
         )
-        result: dict[str, Any] = {
-            "source": str(converted.source),
-            "key": converted.key,
-            "title": converted.title,
-            "characters": converted.characters,
-            "format": converted.format,
-            "dry_run": converted.dry_run,
-        }
-        if converted.title_key is not None:
-            result["title_key"] = converted.title_key
-        return _IngestDocumentResult.model_validate(result)
+        @_reported
+        def ingest_document(
+            source: Annotated[str, Field(description="Path to a local regular file")],
+            key: Annotated[str, Field(description="Destination key")],
+            title: Annotated[
+                str | None,
+                Field(
+                    description=(
+                        "Title to store; MarkItDown's title and then the source filename "
+                        "stem are used when omitted"
+                    )
+                ),
+            ] = None,
+            overwrite: Annotated[
+                bool, Field(description="Replace a document already stored at the destination")
+            ] = False,
+            dry_run: Annotated[
+                bool, Field(description="Convert and report without writing the document or title")
+            ] = False,
+        ) -> _IngestDocumentResult:
+            converted = ingest.ingest_document(
+                table,
+                source,
+                _named_key(table, key),
+                title=title,
+                overwrite=overwrite,
+                dry_run=dry_run,
+            )
+            result: dict[str, Any] = {
+                "source": str(converted.source),
+                "key": converted.key,
+                "title": converted.title,
+                "characters": converted.characters,
+                "format": converted.format,
+                "dry_run": converted.dry_run,
+            }
+            if converted.title_key is not None:
+                result["title_key"] = converted.title_key
+            return _IngestDocumentResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(idempotent_hint=True),

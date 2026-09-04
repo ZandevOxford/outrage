@@ -46,6 +46,21 @@ The metadata key written for the title, or `None` for a dry run.
 
 Whether conversion was performed without writing the document.
 
+### outrage.ingest.available() → [bool](https://docs.python.org/3/library/functions.html#bool)
+
+Whether the optional `documents` extra is installed.
+
+A spec lookup rather than an import, because a server asks this while it is
+deciding which tools to register and MarkItDown brings its readers and a
+model runtime with it - a second or more of import for a question about
+whether the answer exists. Consulting [`sys.modules`](https://docs.python.org/3/library/sys.html#sys.modules) first is part of
+that lookup, so a test that puts `None` there is answered the same way an
+absent install is.
+
+Only whether MarkItDown itself is importable. A reader missing for one
+format is a property of the file being converted, not of the extra, and is
+reported per conversion by `_convert()`.
+
 ### outrage.ingest.ingest_document(store: [Store](store.md#outrage.store.Store), source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [IngestResult](#outrage.ingest.IngestResult)
 
 Convert a local file to Markdown and store it at `key`.

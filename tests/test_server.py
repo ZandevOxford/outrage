@@ -1,6 +1,7 @@
 """Tests driving the tools through the MCP server's own dispatch."""
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -160,6 +161,26 @@ def test_ingest_document_returns_a_typed_preview(server, tmp_path, monkeypatch):
         "dry_run": True,
     }
     assert "nothing is stored" in call_expecting_error(server, "read_document", key="reports/q1")
+
+
+def test_ingest_document_is_absent_without_the_documents_extra(store, monkeypatch):
+    """A tool whose every call would refuse is not offered at all."""
+    monkeypatch.setitem(sys.modules, "markitdown", None)
+
+    tools = list_tools(build_server(store))
+
+    assert "ingest_document" not in tools
+    assert "store_document" in tools
+
+
+def test_the_documentation_generator_gets_every_tool_regardless(store, monkeypatch):
+    """`all_tools` documents the server rather than the host it was built on."""
+    monkeypatch.setitem(sys.modules, "markitdown", None)
+
+    tools = list_tools(build_server(store, all_tools=True))
+
+    assert "ingest_document" in tools
+    assert tools["ingest_document"].description == server_module.tool_description("ingest_document")
 
 
 def test_ingest_document_writes_markdown_and_title(server, tmp_path, monkeypatch):

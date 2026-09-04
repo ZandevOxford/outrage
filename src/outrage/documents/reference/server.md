@@ -155,7 +155,7 @@ risk is accepted on the same terms as `extra="forbid"`: what a change
 would cost is logging silently ceasing to happen, and
 `test_the_middleware_is_reached` fails loudly rather than letting it.
 
-### outrage.server.build_server(store: [Store](store.md#outrage.store.Store), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → MCPServer
+### outrage.server.build_server(store: [Store](store.md#outrage.store.Store), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → MCPServer
 
 Build a server exposing `store`, which may be one store or a mount table.
 
@@ -175,6 +175,17 @@ store directory to write under, because there was nowhere else to put a
 file; since `plans/robust-editing` it writes to
 [`export_root()`](bulk.md#outrage.bulk.export_root), a per-user directory below the system
 temporary directory, which always exists. So the tool is always there.
+
+`ingest_document` is the one tool that is not. It needs the optional
+`documents` extra, and a client offered a tool whose every call refuses
+has been told the store can do something it cannot; the tools a session
+lists should be the tools it can use.
+
+`all_tools` registers it anyway, for `tools/render_tools.py`. The
+shipped tool documentation describes the server rather than one
+installation of it, so it must not gain or lose a tool according to what
+happened to be installed where it was generated. It is the only caller that
+wants this: a real server passes nothing and offers what it can do.
 
 ### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
