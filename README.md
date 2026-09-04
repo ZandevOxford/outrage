@@ -35,13 +35,7 @@ as a memory.
 
 ## Documentation
 
-* **[design.md](design.md)** - the design. Components, the key namespace and its
-  grammar, tool semantics, and the SQLite schema. Decisions that are deferred or
-  still open are recorded at the end.
-* **[implementation.md](implementation.md)** - what is implemented so far, and
-  the planned build order.
-
-The rest is in `src/outrage/documents`, a documentation tree written to be read
+All of it is in `src/outrage/documents`, a documentation tree written to be read
 *through the store*: it ships in the wheel, and the server mounts it read-only
 at the `outrage` key **by default**, so a session reads the manual with the same
 tools it reads everything else with. (`--mount-docs` is the flag; it exists for
@@ -51,6 +45,12 @@ well, so the links below work here too.
 * **[the documents](src/outrage/documents/readme.md)** - the top of that tree,
   and where to start. Keys, the command line, the tools and the conventions all
   hang off it.
+* **[the design](src/outrage/documents/design.md)** - components, the key
+  namespace and its grammar, what text is and how it is encoded, tool semantics
+  and the SQLite schema. Decisions that are deferred or still open are recorded
+  at the end. Read as `outrage/design` through the store.
+* **[the implementation](src/outrage/documents/implementation.md)** - what is
+  built so far and the planned build order, stage by stage. `outrage/implementation`.
 * **[the API reference](src/outrage/documents/reference.md)** - a page per
   module, **generated from the docstrings** and committed. Do not edit a page
   there by hand: it is build output, and `tests/test_reference.py` fails when it
@@ -115,7 +115,7 @@ defaulting to `./.outrage/` in the working directory, each as a file inside it:
 `--root-mount FILE` names the one answering for everything (default
 `store.sqlite`) and `--mount KEY=FILE` mounts another under a key. A store file
 is always relative to the directory, so only `--dir` is a path. See
-[design.md](design.md#store-location).
+[the design](src/outrage/documents/design.md#store-location).
 
 A table is usually written down rather than typed, in `mounts.toml` inside that
 directory, and read by the server and by the command line alike:

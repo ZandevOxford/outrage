@@ -2,7 +2,8 @@
 
 Why this exists and what has to hold true of it.
 
-`design.md` describes how it is built. The outrage store itself, under
+`src/outrage/documents/design.md` describes how it is built, and ships with
+the package as `outrage/design`. The outrage store itself, under
 `project/reference/`, holds the build discussion decision by decision. This
 file is the short human-readable version that should outlive both.
 
@@ -156,7 +157,7 @@ first move.
 
 Deferred items - versioning, semantic search, Unicode keys, bootstrapping the
 skill configuration from the server - are listed with their reasoning in the
-Deferred section of `design.md`.
+Deferred section of the design.
 
 Bulk import, on-disk size, whether metadata values want their own index, and
 whether a reference corpus belongs in the same store as session context all
