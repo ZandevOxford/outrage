@@ -46,6 +46,7 @@ terms of; the key namespace and the tool semantics are argued in ``design.md``
 
 from __future__ import annotations
 
+import codecs
 import functools
 import importlib
 import inspect
@@ -217,24 +218,49 @@ class Excerpt:
     content: str
     format: str | None
     updated_at: str
-    offset: int
-    """Character offset within the document at which content starts."""
+    offset: int | None
+    """Character offset within the document at which content starts, or None
+    when the read was addressed in bytes. A caller gets the unit they asked
+    in: converting back means decoding the prefix, which is the cost a byte
+    offset exists to avoid, so it is reported unknown rather than paid for
+    unasked. Both numbers for one position come from ``!contents``, where they
+    are already a pair."""
     returned: int
     """Number of characters returned."""
-    total: int
-    """Total length of the document."""
+    total: int | None
+    """Total length of the document in characters, or None when the read was
+    addressed in bytes and the backend would have to scan the whole document
+    to count them. ``total_bytes`` is the size such a read reports."""
     next_offset: int | None
-    """Where to resume, or None if this excerpt reached the end."""
+    """Where to resume in characters, or None if this excerpt reached the end
+    -- and None throughout a byte-addressed read, which resumes at
+    ``next_byte_offset``."""
+    byte_offset: int
+    """Byte offset within the document's UTF-8 at which content starts, always
+    known. Where the read *actually* began: a byte offset landing inside a
+    character is snapped back to that character's first byte, so this differing
+    from what was asked for is normal and is not an error."""
+    total_bytes: int
+    """Total length of the document in UTF-8 bytes."""
+    next_byte_offset: int | None
+    """Where to resume in bytes, or None if this excerpt reached the end.
+    Always on a character boundary, so paging by it reassembles the document
+    exactly."""
 
     @property
     def truncated(self) -> bool:
         """Whether part of the document was left unread.
 
-        The same fact as ``next_offset is not None``, named so that a caller
+        The same fact as *either continuation is set*, named so that a caller
         deciding whether to read on does not have to know that. Reading on
-        means passing ``next_offset`` back as ``offset``.
+        means passing back whichever continuation the read's own unit uses.
+
+        Deliberately not ``next_offset is not None``, which it was while
+        characters were the only unit: a byte-addressed read leaves that None
+        while the document plainly continues, so the old definition reported
+        every one of them as complete.
         """
-        return self.next_offset is not None
+        return self.next_offset is not None or self.next_byte_offset is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1164,6 +1190,7 @@ class Store(ABC):
         key: str,
         *,
         offset: int = 0,
+        byte_offset: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -1173,8 +1200,19 @@ class Store(ABC):
 
         ``pattern`` is a literal substring, not a regular expression; when
         given, the read starts at its ``occurrence``-th appearance at or after
-        ``offset``. The result is capped at ``length`` or ``max_chars``,
+        the offset. The result is capped at ``length`` or ``max_chars``,
         whichever is smaller, and carries a continuation offset.
+
+        ``offset`` counts characters and ``byte_offset`` counts UTF-8 bytes of
+        the same document. Both are positions, so giving both is refused; a
+        byte offset landing inside a character reads from that character's
+        first byte, and the excerpt says where it actually began.
+
+        **Every backend accepts a byte offset and returns identical content
+        for it.** Only the cost differs -- one that can seek does, one that
+        cannot converts and slices -- and that contract is what makes a byte
+        offset something a caller can carry between stores, and out of the
+        store altogether to a file :func:`~outrage.bulk` exported.
         """
 
     @abstractmethod
@@ -1893,28 +1931,45 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
     carries a continuation offset, exactly as a single capped read does.
     """
     first = store.retrieve_document(key, **kwargs)
-    if first.next_offset is None:
+    if not first.truncated:
         return first
 
     max_chars = kwargs.get("max_chars", DEFAULT_MAX_CHARS)
     wanted = kwargs.get("length")
+    # Resumed in the unit the caller addressed it in, which is the unit that
+    # has a continuation: a byte-addressed read carries no character offset to
+    # page by, and paging it by one would start the second slice somewhere
+    # else entirely.
+    in_bytes = first.offset is None
+    resume: Callable[[Excerpt], int | None] = (
+        (lambda part: part.next_byte_offset) if in_bytes else (lambda part: part.next_offset)
+    )
+
     parts = [first.content]
     taken = first.returned
-    offset = first.next_offset
-    while offset is not None and (wanted is None or taken < wanted):
+    last = first
+    position = resume(first)
+    while position is not None and (wanted is None or taken < wanted):
         # A pattern is spent by the first read: it seeks, and seeking again
         # from the new start would find the next occurrence instead of
         # continuing. A length is not spent, because it bounds the whole read
         # rather than each slice -- re-applying it per slice returns more than
         # was asked for, and dropping it returns the entire document.
         cap = max_chars if wanted is None else min(max_chars, wanted - taken)
-        following = store.retrieve_document(key, offset=offset, max_chars=cap)
-        parts.append(following.content)
-        taken += following.returned
-        offset = following.next_offset
+        where = {"byte_offset": position} if in_bytes else {"offset": position}
+        last = store.retrieve_document(key, max_chars=cap, **where)
+        parts.append(last.content)
+        taken += last.returned
+        position = resume(last)
 
     content = "".join(parts)
-    return replace(first, content=content, returned=len(content), next_offset=offset)
+    return replace(
+        first,
+        content=content,
+        returned=len(content),
+        next_offset=last.next_offset,
+        next_byte_offset=last.next_byte_offset,
+    )
 
 
 def check_unchanged(
@@ -2587,6 +2642,17 @@ def _excerpt(
     excerpt = content[start : start + take]
     end = start + len(excerpt)
 
+    # The byte numbers cost one encode of the document, split at the same two
+    # points the slice is -- and nothing at all where every character is one
+    # byte, which is most Markdown. `isascii` is a flag CPython already keeps
+    # on the string, not a scan.
+    if content.isascii():
+        byte_start, byte_end, total_bytes = start, end, total
+    else:
+        byte_start = len(content[:start].encode())
+        byte_end = byte_start + len(excerpt.encode())
+        total_bytes = byte_end + len(content[end:].encode())
+
     return Excerpt(
         key=key,
         content=excerpt,
@@ -2596,7 +2662,173 @@ def _excerpt(
         returned=len(excerpt),
         total=total,
         next_offset=end if end < total else None,
+        byte_offset=byte_start,
+        total_bytes=total_bytes,
+        next_byte_offset=byte_end if end < total else None,
     )
+
+
+#: The most bytes UTF-8 spends on one character, and so how far a read must
+#: over-read to be sure of filling a cap counted in characters.
+_UTF8_MAX_BYTES = 4
+
+#: How many bytes back a snap can have to walk: a character is at most four
+#: bytes, so at most three of them are continuations.
+_UTF8_MAX_CONTINUATIONS = 3
+
+
+def _character_start(data: bytes, position: int) -> int:
+    """``position`` snapped back to the first byte of the character it is in.
+
+    John's boundary rule, in one function because it is shared: two backends
+    that snapped differently would return different documents for the same
+    call, which is the reason :func:`_excerpt` is shared in the first place.
+
+    A continuation byte is ``0b10xxxxxx`` and there are never more than three
+    of them in a row, so this walks back at most three. Already on a boundary,
+    or at the end of the data, it moves nothing -- and every byte offset the
+    store itself hands out is on a boundary already, so the snap only ever
+    fires on arithmetic a caller invented.
+    """
+    while 0 < position < len(data) and 0x80 <= data[position] < 0xC0:
+        position -= 1
+    return position
+
+
+def _whole_characters(data: bytes) -> str:
+    """``data`` decoded, less any character its final bytes only begin.
+
+    The far end of the boundary rule. A slice taken to a byte cap can stop
+    inside a character; the incremental decoder holds those bytes back rather
+    than raising, so what comes out is exactly the characters the slice
+    completed. Data ending at the document's end has nothing to hold back.
+    """
+    return codecs.getincrementaldecoder("utf-8")().decode(data, final=False)
+
+
+def _byte_excerpt(
+    key: str,
+    format: str | None,
+    updated_at: str,
+    start: int,
+    length: int | None,
+    max_chars: int,
+    *,
+    read: Callable[[int, int], bytes],
+    total_bytes: int,
+) -> Excerpt:
+    """One document's stored text as the slice a *byte* offset asked for.
+
+    The same policy as :func:`_excerpt` in the other unit, and the only thing
+    the two do not share is which numbers they can report. ``read(offset,
+    size)`` hands back that many bytes of the document's UTF-8 from that byte,
+    which a backend that can seek answers without materialising the rest --
+    which is the whole point -- and one that cannot answers by slicing bytes
+    it already has. Either way the content is identical, and that contract is
+    what keeps a byte offset portable between backends.
+
+    ``max_chars`` stays a cap in *characters*, whichever unit addressed the
+    read: the budget a caller spends is context, and context is counted in
+    characters. So this over-reads by the worst ratio UTF-8 can spend -- 32 KB
+    of bytes for 8 000 characters -- decodes, and cuts back.
+    """
+    if max_chars <= 0:
+        raise ValueError("max_chars must be positive")
+    if length is not None and length < 0:
+        raise ValueError("length must not be negative")
+
+    take = max_chars if length is None else min(length, max_chars)
+    start = min(start, total_bytes)
+
+    # Three bytes of run-up, so the snap has the character's own first byte to
+    # find without a second read.
+    window_start = max(0, start - _UTF8_MAX_CONTINUATIONS)
+    window = read(window_start, (start - window_start) + take * _UTF8_MAX_BYTES)
+    start = window_start + _character_start(window, start - window_start)
+
+    excerpt = _whole_characters(window[start - window_start :])[:take]
+    end = start + len(excerpt.encode())
+
+    return Excerpt(
+        key=key,
+        content=excerpt,
+        format=format,
+        updated_at=updated_at,
+        offset=None,
+        returned=len(excerpt),
+        total=None,
+        next_offset=None,
+        byte_offset=start,
+        total_bytes=total_bytes,
+        next_byte_offset=end if end < total_bytes else None,
+    )
+
+
+def _sliced(data: bytes) -> Callable[[int, int], bytes]:
+    """The reader :func:`_byte_excerpt` takes, over bytes already in hand.
+
+    What a backend with no fast path passes, so that converting and slicing is
+    the *same* code as seeking rather than a second implementation of the
+    boundary rule beside it.
+    """
+    return lambda offset, size: data[offset : offset + size]
+
+
+def _find_byte_occurrence(
+    read: Callable[[int, int], bytes],
+    total_bytes: int,
+    pattern: str,
+    occurrence: int,
+    byte_offset: int,
+) -> int | None:
+    """Where a literal pattern occurs at or after ``byte_offset``, in bytes.
+
+    Searching is a scan whatever the unit, so this reads the document rather
+    than seeking within it; no backend has a fast path for it and pretending
+    otherwise would only hide that. It searches the *encoded* pattern in the
+    encoded document, which needs no boundary rule of its own: UTF-8 is
+    self-synchronising, so an encoded needle cannot match anywhere but at a
+    character boundary.
+    """
+    data = read(0, total_bytes)
+    needle = pattern.encode()
+    position = _character_start(data, min(byte_offset, len(data))) - 1
+    for _ in range(occurrence + 1):
+        position = data.find(needle, position + 1)
+        if position == -1:
+            return None
+    return position
+
+
+def check_read_position(
+    key: str,
+    *,
+    offset: int,
+    byte_offset: int | None,
+    pattern: str | None,
+    occurrence: int,
+) -> None:
+    """Refuse a read that names its position twice, or names it impossibly.
+
+    One place, for the same reason the slicing is one place: a backend that
+    accepted a pair of offsets its neighbours refused would be answering a
+    question the store has no answer to. ``offset=0`` beside a byte offset is
+    not that pair -- it cannot be told from silence, and does not need to be,
+    since both spell the start of the document.
+    """
+    if byte_offset is not None and offset:
+        raise InvalidArgumentError(
+            "offsets-both-given", key=key, offset=offset, byte_offset=byte_offset
+        )
+    if offset < 0:
+        raise ValueError("offset must not be negative")
+    if byte_offset is not None and byte_offset < 0:
+        raise ValueError("byte_offset must not be negative")
+    if pattern is not None:
+        if not pattern:
+            raise InvalidArgumentError("pattern-empty")
+        if occurrence < 0:
+            raise ValueError("occurrence must not be negative")
 
 
 __all__ = [
@@ -2606,6 +2838,7 @@ __all__ = [
     "CONFLICTS",
     "DEFAULT_BACKEND",
     "backend_names",
+    "check_read_position",
     "check_unchanged",
     "DEFAULT_BULK_MAX_CHARS",
     "DEFAULT_DIR_NAME",

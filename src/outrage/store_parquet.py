@@ -92,20 +92,23 @@ from .store import (
     Entry,
     Excerpt,
     FileStore,
-    InvalidArgumentError,
     KeyNotFoundError,
     KeyRange,
     MissingMeta,
     Page,
     PatternNotFoundError,
     ReadOnlyStoreError,
+    _byte_excerpt,
     _cursor_bound,
     _excerpt,
+    _find_byte_occurrence,
     _find_occurrence,
     _logged,
     _now,
     _position,
     _scope,
+    _sliced,
+    check_read_position,
     entry_kind,
     meta_reader,
 )
@@ -1054,6 +1057,7 @@ class ParquetStore(FileStore):
         key: str,
         *,
         offset: int = 0,
+        byte_offset: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -1065,6 +1069,12 @@ class ParquetStore(FileStore):
         how ``length`` and ``max_chars`` combine is the store's policy and not
         this backend's, and two backends that sliced differently would return
         different documents for the same call.
+
+        **A byte offset is honoured and not accelerated**, which the plan says
+        rather than implying parity: a row's value is decompressed whole out of
+        its row group and there is no sub-value addressing to reach for. So the
+        content is encoded and sliced, which costs what it costs and answers
+        the same bytes as a backend that seeks.
         """
         parsed = keys.parse(key)
         index = self._index
@@ -1075,28 +1085,52 @@ class ParquetStore(FileStore):
                 raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
             raise KeyNotFoundError("key-not-found", key=key)
 
+        check_read_position(
+            key, offset=offset, byte_offset=byte_offset, pattern=pattern, occurrence=occurrence
+        )
         row = index.row(position)
         content = self._content(row)
-        if offset < 0:
-            raise ValueError("offset must not be negative")
 
-        start = offset
+        if byte_offset is None:
+            start = offset
+            if pattern is not None:
+                start = _find_occurrence(content, pattern, occurrence, offset)
+                if start is None:
+                    raise PatternNotFoundError(
+                        "pattern-not-found",
+                        key=key,
+                        pattern=pattern,
+                        occurrence=occurrence,
+                        offset=offset,
+                    )
+            return _excerpt(row.key, content, row.format, row.updated_at, start, length, max_chars)
+
+        data = content.encode()
+        read = _sliced(data)
+        start = byte_offset
         if pattern is not None:
-            if not pattern:
-                raise InvalidArgumentError("pattern-empty")
-            if occurrence < 0:
-                raise ValueError("occurrence must not be negative")
-            start = _find_occurrence(content, pattern, occurrence, offset)
-            if start is None:
+            found = _find_byte_occurrence(read, len(data), pattern, occurrence, byte_offset)
+            if found is None:
                 raise PatternNotFoundError(
                     "pattern-not-found",
                     key=key,
                     pattern=pattern,
                     occurrence=occurrence,
                     offset=offset,
+                    byte_offset=byte_offset,
                 )
+            start = found
 
-        return _excerpt(row.key, content, row.format, row.updated_at, start, length, max_chars)
+        return _byte_excerpt(
+            row.key,
+            row.format,
+            row.updated_at,
+            start,
+            length,
+            max_chars,
+            read=read,
+            total_bytes=len(data),
+        )
 
     @_logged("list_keys")
     def list_keys(

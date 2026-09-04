@@ -370,6 +370,36 @@ def test_a_file_that_is_not_text_is_reported_rather_than_mangled(files):
     assert any("not UTF-8 text" in problem.summary for problem in report.problems)
 
 
+def test_a_byte_read_that_is_not_text_is_reported_the_same_way(files):
+    (files.root / "binary.md").write_bytes(b"\xff\xfe\x00 not text")
+
+    # The seeking path decodes its own window rather than going through
+    # `_text`, so it has to give the same refusal rather than a UnicodeError
+    # escaping from inside a read.
+    with raises_rendered(NotTextError, "does not hold UTF-8 text"):
+        files.retrieve_document("binary", byte_offset=0)
+
+
+def test_a_byte_offset_addresses_the_file_as_it_is_on_disk(files):
+    (files.root / "crlf.md").write_bytes(b"# One\r\n\r\nbody\r\n")
+
+    byte_read = files.retrieve_document("crlf", byte_offset=7)
+
+    # What a byte offset means outside the store: the file. Seven bytes in is
+    # past `# One\r\n`, which is where anything byte-addressed -- an editor's
+    # goto-byte, `dd`, a range handed to a fast edit tool -- would also land.
+    assert byte_read.content == "\r\nbody\r\n"
+    assert byte_read.total_bytes == 15
+
+    # And the character path disagrees, because it decodes with universal
+    # newlines and hands back text this file does not hold. That is `issues/3`
+    # and not this read: until it is settled, a contents index built over a
+    # CRLF document in this backend carries two numbers that do not name the
+    # same place.
+    assert files.retrieve_document("crlf").content == "# One\n\nbody\n"
+    assert files.retrieve_document("crlf").total_bytes == 12
+
+
 def test_two_files_claiming_one_key_read_once_and_are_reported(files):
     files.store_document("one", "markdown body", "markdown")
     (files.root / "one.json").write_text('{"json": true}')

@@ -137,17 +137,41 @@ def _key_is_a_container(name: Namer, /, *, key: str, beneath: int, **_: Any) -> 
 
 @template("pattern-not-found")
 def _pattern_not_found(
-    name: Namer, /, *, key: str, pattern: str, occurrence: int, offset: int, **_: Any
+    name: Namer,
+    /,
+    *,
+    key: str,
+    pattern: str,
+    occurrence: int,
+    offset: int,
+    byte_offset: int | None = None,
+    **_: Any,
 ) -> str:
+    # Named in the unit the caller searched in. A byte-addressed read that was
+    # told "at or after offset 400" would go looking for character 400, which
+    # is a different place in the document and the sentence's own fault.
+    where = "offset" if byte_offset is None else "byte offset"
+    position = offset if byte_offset is None else byte_offset
     return (
         f"{pattern!r} does not occur {occurrence + 1} time(s) in {name(key)!r} "
-        f"at or after offset {offset}"
+        f"at or after {where} {position}"
     )
 
 
 @template("pattern-empty")
 def _pattern_empty(name: Namer, /, **_: Any) -> str:
     return "a pattern must not be empty; omit it to read from the offset instead"
+
+
+@template("offsets-both-given")
+def _offsets_both_given(
+    name: Namer, /, *, key: str, offset: int, byte_offset: int, spell: Speller, **_: Any
+) -> str:
+    return (
+        f"cannot read {name(key)!r} from two places at once: "
+        f"{spell('offset', offset)} counts characters and "
+        f"{spell('byte_offset', byte_offset)} counts bytes; give one or the other"
+    )
 
 
 @template("search-criteria-count")

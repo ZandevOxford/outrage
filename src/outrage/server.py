@@ -277,10 +277,41 @@ class _ExcerptResult(_ToolResult):
     content: Annotated[str, Field(description="The returned document content")]
     format: Annotated[str | None, Field(description="The stored content format")]
     updated_at: Annotated[str, Field(description="When the document was last written")]
-    offset: Annotated[int, Field(description="Character offset where this excerpt starts")]
+    offset: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Character offset where this excerpt starts, absent when the "
+                "read was addressed in bytes"
+            )
+        ),
+    ] = None
     returned: Annotated[int, Field(description="Characters returned in this excerpt")]
-    total: Annotated[int, Field(description="Total characters in the document")]
-    next_offset: Annotated[int | None, Field(description="Where to resume, or null at the end")]
+    total: Annotated[
+        int | None,
+        Field(
+            description=(
+                "Total characters in the document, absent when the read was addressed in bytes"
+            )
+        ),
+    ] = None
+    next_offset: Annotated[int | None, Field(description="Where to resume, or null at the end")] = (
+        None
+    )
+    byte_offset: Annotated[
+        int,
+        Field(
+            description=(
+                "Byte offset where this excerpt starts, and where a byte offset "
+                "given was snapped back to if it fell inside a character"
+            )
+        ),
+    ]
+    total_bytes: Annotated[int, Field(description="Total UTF-8 bytes in the document")]
+    next_byte_offset: Annotated[
+        int | None,
+        Field(description="Where to resume in bytes, or null at the end"),
+    ] = None
     truncated: Annotated[bool, Field(description="Whether part of the document remains unread")]
 
 
@@ -334,6 +365,15 @@ class _MakeContentsResult(_ToolResult):
     metadata_key: Annotated[str, Field(description="The metadata key written")]
     headings: Annotated[int, Field(description="Markdown headings found")]
     source_characters: Annotated[int, Field(description="Source characters scanned")]
+    source_bytes: Annotated[
+        int,
+        Field(
+            description=(
+                "UTF-8 bytes those characters occupy, which the second number "
+                "on each heading line is an offset into"
+            )
+        ),
+    ]
     characters: Annotated[int, Field(description="Contents characters stored")]
 
 
@@ -852,6 +892,18 @@ def build_server(
             Field(description="Key to read"),
         ],
         offset: Annotated[int, Field(description="Character offset to start at", ge=0)] = 0,
+        byte_offset: Annotated[
+            int | None,
+            Field(
+                description=(
+                    "UTF-8 byte offset to start at, instead of offset. One "
+                    "landing inside a character reads from that character's "
+                    "first byte, and byte_offset in the result says where the "
+                    "read began"
+                ),
+                ge=0,
+            ),
+        ] = None,
         pattern: Annotated[
             str | None,
             Field(description="Literal substring to start the read from, not a regex"),
@@ -867,6 +919,7 @@ def build_server(
             table.retrieve_document(
                 _named_key(table, key),
                 offset=offset,
+                byte_offset=byte_offset,
                 pattern=pattern,
                 occurrence=occurrence,
                 max_chars=max_chars,
@@ -1749,9 +1802,16 @@ def _copied_result(
 
 
 def _excerpt_result(excerpt: Excerpt) -> _ExcerptResult:
-    return _ExcerptResult.model_validate(
-        dataclasses.asdict(excerpt) | {"truncated": excerpt.truncated}
-    )
+    fields = dataclasses.asdict(excerpt) | {"truncated": excerpt.truncated}
+    if excerpt.offset is None:
+        # A byte-addressed read has no character numbers to report, and a null
+        # `next_offset` already means something else here -- that the document
+        # ended. So they are left out rather than sent as nulls that read as
+        # "you have the whole thing", which is what `_ToolResult` omits absent
+        # fields for.
+        for absent in ("offset", "total", "next_offset"):
+            del fields[absent]
+    return _ExcerptResult.model_validate(fields)
 
 
 def _ms(started: int) -> float:

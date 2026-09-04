@@ -377,14 +377,25 @@ legitimately restamp are copying something that was already stamped.
 Every refusal above is `_validated()`'s, which an implementation
 calls before it writes anything.
 
-#### retrieve_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int) = 0, length: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/library/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
+#### retrieve_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, length: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/library/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
 
 Read the content stored at `key`.
 
 `pattern` is a literal substring, not a regular expression; when
 given, the read starts at its `occurrence`-th appearance at or after
-`offset`. The result is capped at `length` or `max_chars`,
+the offset. The result is capped at `length` or `max_chars`,
 whichever is smaller, and carries a continuation offset.
+
+`offset` counts characters and `byte_offset` counts UTF-8 bytes of
+the same document. Both are positions, so giving both is refused; a
+byte offset landing inside a character reads from that character's
+first byte, and the excerpt says where it actually began.
+
+**Every backend accepts a byte offset and returns identical content
+for it.** Only the cost differs -- one that can seek does, one that
+cannot converts and slices -- and that contract is what makes a byte
+offset something a caller can carry between stores, and out of the
+store altogether to a file [`bulk()`](bulk.md#module-outrage.bulk) exported.
 
 #### exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
 

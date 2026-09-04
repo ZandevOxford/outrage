@@ -635,10 +635,26 @@ def _write_file(path: Path, content: str) -> None:
     So that an export interrupted halfway leaves whole files and no half of
     one - the same reason the configuration writer does it, for the same kind
     of file: one somebody else owns.
+
+    ``newline=""`` turns off Python's line-ending translation, so the file
+    holds the document's UTF-8 and nothing else. That is what makes a byte
+    offset the store handed out - from ``!contents``, or from a read -
+    **valid against the exported file**, which is the point of the offsets
+    being in bytes at all. Without it a write translates ``\n`` to
+    ``os.linesep``: a no-op on POSIX, and on Windows every offset past the
+    first newline names a place one byte earlier than it should. No test here
+    could have caught that, which `plans/export-traversal` already records as
+    the untested platform.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", dir=path.parent, prefix=TEMP_PREFIX, suffix=".tmp", delete=False
+        "w",
+        encoding="utf-8",
+        newline="",
+        dir=path.parent,
+        prefix=TEMP_PREFIX,
+        suffix=".tmp",
+        delete=False,
     )
     temporary = Path(handle.name)
     try:

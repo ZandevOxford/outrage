@@ -87,20 +87,22 @@ from .store import (
     Entry,
     Excerpt,
     FileStore,
-    InvalidArgumentError,
     KeyNotFoundError,
     KeyRange,
     MissingMeta,
     Page,
     PatternNotFoundError,
     Store,
+    _byte_excerpt,
     _cursor_bound,
     _detect_format,
     _excerpt,
+    _find_byte_occurrence,
     _find_occurrence,
     _logged,
     _scope,
     _within,
+    check_read_position,
     check_unchanged,
     entry_kind,
     meta_reader,
@@ -541,6 +543,7 @@ class FilesystemStore(FileStore):
         key: str,
         *,
         offset: int = 0,
+        byte_offset: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -552,6 +555,10 @@ class FilesystemStore(FileStore):
         and ``max_chars`` combine is the store's policy rather than this
         backend's, and two backends that sliced differently would return
         different documents for the same call.
+
+        A **byte** offset seeks: a document here is a file, and a file is the
+        one thing in this project that already knows how to start reading in
+        the middle. :meth:`_byte_read` is that half.
         """
         parsed = keys.parse(key)
         path = self._file_for(parsed.key)
@@ -561,17 +568,27 @@ class FilesystemStore(FileStore):
                 raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
             raise KeyNotFoundError("key-not-found", key=key)
 
+        check_read_position(
+            key, offset=offset, byte_offset=byte_offset, pattern=pattern, occurrence=occurrence
+        )
         row = self._row(parsed.key, path, measure=False)
-        content = _text(path, parsed.key)
-        if offset < 0:
-            raise ValueError("offset must not be negative")
 
+        if byte_offset is not None:
+            # The extension names the format where it names one at all. Where
+            # it does not, the content is read for it -- the whole content,
+            # since `_detect_format` asks whether the document parses as JSON
+            # and a slice of one does not. So an undeclared format costs this
+            # read what the character path costs, and a declared one seeks.
+            declared = row.format
+            if declared is None:
+                declared = _detect_format(_text(path, parsed.key))
+            return self._byte_read(
+                row, path, key, declared, byte_offset, pattern, occurrence, length, max_chars
+            )
+
+        content = _text(path, parsed.key)
         start = offset
         if pattern is not None:
-            if not pattern:
-                raise InvalidArgumentError("pattern-empty")
-            if occurrence < 0:
-                raise ValueError("occurrence must not be negative")
             start = _find_occurrence(content, pattern, occurrence, offset)
             if start is None:
                 raise PatternNotFoundError(
@@ -588,6 +605,72 @@ class FilesystemStore(FileStore):
         # format given would have reached.
         format = row.format if row.format is not None else _detect_format(content)
         return _excerpt(row.key, content, format, row.updated_at, start, length, max_chars)
+
+    def _byte_read(
+        self,
+        row: _Row,
+        path: Path,
+        key: str,
+        format: str | None,
+        byte_offset: int,
+        pattern: str | None,
+        occurrence: int,
+        length: int | None,
+        max_chars: int,
+    ) -> Excerpt:
+        """The byte-addressed half of :meth:`retrieve_document`, which seeks.
+
+        The largest win of the three backends and the least machinery: a
+        document here *is* a file, so this opens it, seeks to the byte and
+        reads the window. Flat in the size of the document and in the offset,
+        where the SQLite path still walks a page chain.
+
+        **A file holding CRLF is the one place this and the character path
+        disagree**, and it is `issues/3` rather than this read: the character
+        path decodes with universal newlines, so it returns text the file does
+        not hold and counts a length the file does not have. What is addressed
+        here is the file itself, which is the only thing a byte offset can
+        usefully mean to anything outside the store.
+        """
+        try:
+            with path.open("rb") as handle:
+                total_bytes = handle.seek(0, os.SEEK_END)
+
+                def read(offset: int, size: int) -> bytes:
+                    handle.seek(min(offset, total_bytes))
+                    return handle.read(size)
+
+                start = byte_offset
+                if pattern is not None:
+                    found = _find_byte_occurrence(
+                        read, total_bytes, pattern, occurrence, byte_offset
+                    )
+                    if found is None:
+                        raise PatternNotFoundError(
+                            "pattern-not-found",
+                            key=key,
+                            pattern=pattern,
+                            occurrence=occurrence,
+                            offset=0,
+                            byte_offset=byte_offset,
+                        )
+                    start = found
+
+                return _byte_excerpt(
+                    row.key,
+                    format,
+                    row.updated_at,
+                    start,
+                    length,
+                    max_chars,
+                    read=read,
+                    total_bytes=total_bytes,
+                )
+        except UnicodeDecodeError as exc:
+            # The same refusal `_text` gives, for the same reason: a file that
+            # is not text is not a document, and saying which key was asked for
+            # is what turns that into something a caller can act on.
+            raise NotTextError("files-not-text", key=row.key, path=str(path)) from exc
 
     @_logged("list_keys")
     def list_keys(

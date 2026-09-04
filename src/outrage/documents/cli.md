@@ -188,7 +188,7 @@ person redirecting a document to a file. Ask for a slice and you get exactly the
 outrage get [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
             [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
             [--mount-config FILE] [--no-mount-config] [--offset OFFSET]
-            [--length LENGTH] [--pattern PATTERN]
+            [--byte-offset N] [--length LENGTH] [--pattern PATTERN]
             [--occurrence OCCURRENCE] [--max-chars MAX_CHARS]
             key
 ```
@@ -206,6 +206,7 @@ outrage get [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `key` - Key to read, e.g. context/1/task, context/1/task/!title, or context/?last/task for the newest.
 - `--offset OFFSET` - Character offset to start at.
+- `--byte-offset N` - Byte offset to start at, instead of --offset. Counts UTF-8 bytes, which is the unit a file on disk is addressed in, so an offset from a contents index still names the same place after the document has been written out. A byte landing inside a character reads from that character's first byte.
 - `--length LENGTH` - Characters to return.
 - `--pattern PATTERN` - Literal substring to start the read from.
 - `--occurrence OCCURRENCE` - Which appearance of --pattern to use, 0 being the first.

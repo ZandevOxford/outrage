@@ -1,4 +1,12 @@
-"""Build a small offset index from the headings in a Markdown document."""
+"""Build a small offset index from the headings in a Markdown document.
+
+Each heading carries **two** numbers, character offset then byte offset. The
+character offset is a fact about the document as a Python string; the byte
+offset is the same position in its UTF-8, which is what survives the document
+being written out to a file. So an index generated here can drive a seeking
+read of a 20 MB document, and can also drive anything byte-addressed that was
+handed the exported file -- which is what the pair is for.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +36,10 @@ class ContentsResult:
     source_characters: int
     """The number of characters scanned in the source document."""
 
+    source_bytes: int
+    """The number of UTF-8 bytes those characters occupy, which is the other
+    number a caller needs to make sense of the second column."""
+
     characters: int
     """The number of characters stored in the generated contents document."""
 
@@ -36,6 +48,7 @@ class ContentsResult:
 class _Heading:
     markdown: str
     offset: int
+    byte_offset: int
 
 
 def _without_ending(line: str) -> str:
@@ -48,15 +61,25 @@ def _without_ending(line: str) -> str:
 
 
 def _headings(markdown: str) -> list[_Heading]:
-    """Return literal ATX and setext headings with character offsets."""
+    """Return literal ATX and setext headings with character and byte offsets.
+
+    The byte offset is accumulated line by line beside the character one
+    rather than computed per heading: encoding each line once totals one
+    encode of the document, where encoding the prefix of every heading would
+    be one per heading and quadratic in a document with many. A line of pure
+    ASCII spends no encode at all -- `isascii` is a flag the string already
+    carries.
+    """
     found: list[_Heading] = []
     fence_character: str | None = None
     fence_length = 0
-    paragraph: list[tuple[str, int]] = []
+    paragraph: list[tuple[str, int, int]] = []
     offset = 0
+    byte_offset = 0
 
     for line in markdown.splitlines(keepends=True):
         text = _without_ending(line)
+        line_bytes = len(line) if line.isascii() else len(line.encode())
 
         if fence_character is not None:
             closing = re.fullmatch(
@@ -67,6 +90,7 @@ def _headings(markdown: str) -> list[_Heading]:
                 fence_length = 0
             paragraph = []
             offset += len(line)
+            byte_offset += line_bytes
             continue
 
         possible_fence = _FENCE.fullmatch(text)
@@ -79,33 +103,41 @@ def _headings(markdown: str) -> list[_Heading]:
                 fence_length = len(marker)
                 paragraph = []
                 offset += len(line)
+                byte_offset += line_bytes
                 continue
 
         if _ATX.match(text) is not None:
-            found.append(_Heading(text, offset))
+            found.append(_Heading(text, offset, byte_offset))
             paragraph = []
         elif _SETEXT.fullmatch(text) is not None and paragraph:
-            heading_offset = paragraph[0][1]
-            heading = "\n".join(line for line, _ in paragraph)
-            found.append(_Heading(f"{heading}\n{text}", heading_offset))
+            _, heading_offset, heading_byte_offset = paragraph[0]
+            heading = "\n".join(line for line, _, _ in paragraph)
+            found.append(_Heading(f"{heading}\n{text}", heading_offset, heading_byte_offset))
             paragraph = []
         elif text and not text.startswith(("    ", "\t")):
-            paragraph.append((text, offset))
+            paragraph.append((text, offset, byte_offset))
         else:
             paragraph = []
 
         offset += len(line)
+        byte_offset += line_bytes
 
     return found
 
 
 def render_contents(markdown: str) -> str:
-    """Render each Markdown heading followed by its source character offset.
+    """Render each Markdown heading followed by its two source offsets.
 
     Heading spelling is kept literal. Everything between headings is omitted,
-    and the number beneath each heading is the zero-based character offset at
-    which that heading begins in ``markdown``. Headings inside fenced code
+    and the numbers beneath each heading are the zero-based offsets at which
+    that heading begins in ``markdown``: the character offset first, then the
+    UTF-8 byte offset, separated by a space. Headings inside fenced code
     blocks are ignored.
+
+    Bare numbers, John's call, so **the token count on the line is the only
+    thing that tells the two formats apart** -- an index written before this
+    carries one number per heading. That is why regenerating an index is part
+    of adopting this rather than housekeeping to get to later.
     """
     if not isinstance(markdown, str):
         raise TypeError(f"markdown must be a string, got {type(markdown).__name__}")
@@ -116,7 +148,12 @@ def _render(headings: list[_Heading]) -> str:
     """Render headings already parsed from one source document."""
     if not headings:
         return ""
-    return "\n\n".join(f"{heading.markdown}\n{heading.offset}" for heading in headings) + "\n"
+    return (
+        "\n\n".join(
+            f"{heading.markdown}\n{heading.offset} {heading.byte_offset}" for heading in headings
+        )
+        + "\n"
+    )
 
 
 def _metadata_key(source_key: str, metadata_name: str) -> str:
@@ -140,12 +177,17 @@ def _metadata_key(source_key: str, metadata_name: str) -> str:
 def make_contents(
     opened: store.Store, key: str, *, metadata_name: str = "contents"
 ) -> ContentsResult:
-    """Store a character-offset outline of one Markdown document as metadata.
+    """Store an offset outline of one Markdown document as metadata.
 
     The source document is not changed. Its ATX and setext headings are copied
     to direct metadata named by ``metadata_name``; all section bodies are
-    replaced by the heading's zero-based character offset. Regenerating the
-    contents overwrites that metadata value.
+    replaced by the heading's two zero-based offsets, character then byte.
+    Regenerating the contents overwrites that metadata value.
+
+    The byte number is what makes this more than a table of contents: paired
+    with a byte-addressed :meth:`~outrage.store.Store.retrieve_document` it is
+    random access into a document far too large to read, without splitting it
+    into children first.
     """
     source_key = keys.parse(key, max_segments=keys.MAX_JOINED_SEGMENTS).key
     destination = _metadata_key(source_key, metadata_name)
@@ -163,6 +205,7 @@ def make_contents(
         metadata_key=metadata_key,
         headings=len(headings),
         source_characters=source.total,
+        source_bytes=source.total_bytes,
         characters=len(generated),
     )
 

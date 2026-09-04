@@ -202,12 +202,14 @@ def test_make_contents_writes_a_typed_heading_index(server):
 
     result = call(server, "make_contents", key="manual")
 
-    expected = f"# Store schema\n0\n\n## Detail\n{source.index('## Detail')}\n"
+    detail = source.index("## Detail")
+    expected = f"# Store schema\n0 0\n\n## Detail\n{detail} {detail}\n"
     assert result == {
         "source_key": "manual",
         "metadata_key": "manual/!contents",
         "headings": 2,
         "source_characters": len(source),
+        "source_bytes": len(source.encode()),
         "characters": len(expected),
     }
     assert call(server, "read_document", key="manual/!contents")["content"] == expected
@@ -272,19 +274,28 @@ def test_tool_schemas_describe_their_results(exporting):
         assert tool.output_schema["additionalProperties"] is False, tool.name
         assert tool.output_schema["properties"], tool.name
 
+    # What every read reports, in either unit. The character numbers are not
+    # here: a byte-addressed read cannot say what they are and leaves them out,
+    # which is the one place this result is allowed to be short of a field.
     read = tools["read_document"].output_schema
     assert read["required"] == [
         "key",
         "content",
         "format",
         "updated_at",
-        "offset",
         "returned",
-        "total",
-        "next_offset",
+        "byte_offset",
+        "total_bytes",
         "truncated",
     ]
+    assert set(read["properties"]) == set(read["required"]) | {
+        "offset",
+        "total",
+        "next_offset",
+        "next_byte_offset",
+    }
     assert read["properties"]["next_offset"]["description"]
+    assert read["properties"]["next_byte_offset"]["description"]
 
     survey = tools["get_documents"].output_schema
     assert survey["properties"]["documents"]["items"] == {"$ref": "#/$defs/_ExcerptResult"}

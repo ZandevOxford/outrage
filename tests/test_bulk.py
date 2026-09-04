@@ -19,7 +19,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
-from outrage import bulk, messages
+from outrage import bulk, contents, messages
 from outrage import store as store_module
 from outrage.keys import InvalidKeyError
 from outrage.store import FORMATS
@@ -171,6 +171,32 @@ def test_export_writes_documents_and_their_metadata(populated, tmp_path):
     # title behind.
     assert (target / "project/!title.md").read_text() == "The project"
     assert (target / "project/reference/env.json").read_text() == '{"python": "3.14"}'
+
+
+def test_an_exported_file_holds_the_documents_bytes_and_nothing_else(store, tmp_path):
+    """What makes a byte offset the store handed out valid against the file.
+
+    A CRLF document is the shape that says so: a text-mode write with no
+    ``newline=""`` translates ``\n`` to ``os.linesep``, which is a no-op here
+    and moves every offset past the first newline on Windows. Nothing in this
+    suite runs there -- `plans/export-traversal` records that -- so this
+    asserts the property directly rather than the platform.
+    """
+    document = "# One\r\n\r\nbody\r\n\r\n## Two\r\n"
+    store.store_document("crlf", document, format="markdown")
+
+    list(bulk.export_tree(store, "crlf", tmp_path / "out"))
+    written = (tmp_path / "out" / "crlf.md").read_bytes()
+
+    assert written == document.encode()
+    # And so the second number in an index of it names the heading in the file
+    # as well as in the store.
+    contents.make_contents(store, "crlf")
+    _, byte_offset = (
+        int(number)
+        for number in store.retrieve_document("crlf/!contents").content.splitlines()[-1].split()
+    )
+    assert written[byte_offset:].startswith(b"## Two")
 
 
 def test_export_of_a_subtree_writes_the_path_it_came_from(populated, tmp_path):
