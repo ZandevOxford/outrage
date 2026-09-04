@@ -625,12 +625,13 @@ class FilesystemStore(FileStore):
         reads the window. Flat in the size of the document and in the offset,
         where the SQLite path still walks a page chain.
 
-        **A file holding CRLF is the one place this and the character path
-        disagree**, and it is `issues/3` rather than this read: the character
-        path decodes with universal newlines, so it returns text the file does
-        not hold and counts a length the file does not have. What is addressed
-        here is the file itself, which is the only thing a byte offset can
-        usefully mean to anything outside the store.
+        **A file holding CRLF reads the same both ways**, since
+        `plans/line-endings` brought the character path into agreement with
+        this one: what is addressed here is the file itself, which is the only
+        thing a byte offset can usefully mean to anything outside the store,
+        and `_read` is why the characters now come from the same bytes. Until
+        that, `issues/3`, the two numbers on a `!contents` line did not name
+        the same place in this backend.
         """
         try:
             with path.open("rb") as handle:
@@ -969,7 +970,7 @@ class FilesystemStore(FileStore):
         chars = None
         if measure:
             try:
-                chars = len(path.read_text(encoding="utf-8"))
+                chars = len(_read(path))
             except (OSError, UnicodeDecodeError):
                 return None
         return _Row(
@@ -1099,7 +1100,7 @@ class FilesystemStore(FileStore):
                 doubled.append(str(relative))
             seen.add(key)
             try:
-                path.read_text(encoding="utf-8")
+                _read(path)
             except (OSError, UnicodeDecodeError):
                 binary.append(str(relative))
 
@@ -1182,10 +1183,29 @@ def _children(
     return sorted(found, key=lambda child: keys.sort_form(child[0]))
 
 
+def _read(path: Path) -> str:
+    """The characters in ``path``, with the line endings the file holds.
+
+    ``newline=""`` turns off the translation :meth:`~pathlib.Path.read_text`
+    does by default, under which CRLF and a lone CR both arrive as LF. **A
+    directory of files returns what is on disk** - rule (a) of
+    `plans/line-endings` - so a CRLF file is a CRLF document, its length is the
+    length the file has, and its character offsets and its byte offsets name
+    the same places. Before this, `issues/3`, a store reported text its own
+    files did not hold.
+
+    Every read of a document here comes through this, measuring and checking
+    included, because a store that read a file two ways would report a size its
+    own document does not have.
+    """
+    with path.open(encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
 def _text(path: Path, key: str) -> str:
     """The document in ``path``, or a refusal naming the key it was read for."""
     try:
-        return path.read_text(encoding="utf-8")
+        return _read(path)
     except UnicodeDecodeError as exc:
         raise NotTextError("files-not-text", key=key, path=str(path)) from exc
 

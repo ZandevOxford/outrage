@@ -82,6 +82,38 @@ def test_a_byte_offset_from_an_index_lands_on_its_heading_in_every_backend(store
             )
 
 
+def test_an_index_of_a_crlf_source_is_lf_and_still_addresses_it(store, tmp_path):
+    """Both rules of `plans/line-endings` meeting on one operation.
+
+    The source keeps the endings it arrived with -- rule (a), and in a
+    directory of files that means the bytes on disk. The index the store
+    *authors* over it is LF -- rule (b), because a generated document has no
+    ending to preserve. And the offsets in that LF index still name the
+    headings in the CRLF source, in both units and in both backends, which is
+    the only thing that makes the pair worth writing down.
+    """
+    markdown = "# Café\r\n\r\nnaïve — 😀 body\r\n\r\n## Über\r\n\r\nend\r\n"
+    store.store_document("manual", markdown, format="markdown")
+    tree = FilesystemStore(tmp_path / "tree")
+    tree.store_document("manual", markdown, format="markdown")
+
+    with tree:
+        for opened in (store, tree):
+            index = contents.make_contents(opened, "manual")
+            written = opened.retrieve_document("manual/!contents").content
+
+            assert opened.retrieve_document("manual").content == markdown
+            assert index.source_bytes == len(markdown.encode())
+            assert "\r" not in written
+
+            characters, byte_offset = (int(number) for number in written.splitlines()[-1].split())
+            assert markdown[characters:].startswith("## Über")
+            assert markdown.encode()[byte_offset:].startswith("## Über".encode())
+            assert opened.retrieve_document("manual", byte_offset=byte_offset).content.startswith(
+                "## Über"
+            )
+
+
 def test_a_multiline_setext_heading_is_kept_as_one_heading():
     markdown = "A long\nheading\n-------\nBody.\n"
 
