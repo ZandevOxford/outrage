@@ -81,6 +81,16 @@ What a `type=` option may say, for the front ends that document it and
 the refusal that lists it -- one answer from the registry rather than a
 list retyped in each place that needs to name them.
 
+### outrage.store.check_read_position(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int), byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), occurrence: [int](https://docs.python.org/3/library/functions.html#int)) → [None](https://docs.python.org/3/library/constants.html#None)
+
+Refuse a read that names its position twice, or names it impossibly.
+
+One place, for the same reason the slicing is one place: a backend that
+accepted a pair of offsets its neighbours refused would be answering a
+question the store has no answer to. `offset=0` beside a byte offset is
+not that pair -- it cannot be told from silence, and does not need to be,
+since both spell the start of the document.
+
 ### outrage.store.check_unchanged(opened: [Store](#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), \*, action: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'write over', subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = True, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED) → [None](https://docs.python.org/3/library/constants.html#None)
 
 Refuse, before anything is written, if `key` moved since the watermark.
@@ -337,7 +347,7 @@ something beneath it does.
 
 #### updated_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
 
-### *class* outrage.store.Excerpt(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str), offset: [int](https://docs.python.org/3/library/functions.html#int), returned: [int](https://docs.python.org/3/library/functions.html#int), total: [int](https://docs.python.org/3/library/functions.html#int), next_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None))
+### *class* outrage.store.Excerpt(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str), offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), returned: [int](https://docs.python.org/3/library/functions.html#int), total: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), next_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), byte_offset: [int](https://docs.python.org/3/library/functions.html#int), total_bytes: [int](https://docs.python.org/3/library/functions.html#int), next_byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None))
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -351,29 +361,60 @@ Some or all of one document's content.
 
 #### updated_at *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
-#### offset *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### offset *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
 
-Character offset within the document at which content starts.
+Character offset within the document at which content starts, or None
+when the read was addressed in bytes. A caller gets the unit they asked
+in: converting back means decoding the prefix, which is the cost a byte
+offset exists to avoid, so it is reported unknown rather than paid for
+unasked. Both numbers for one position come from `!contents`, where they
+are already a pair.
 
 #### returned *: [int](https://docs.python.org/3/library/functions.html#int)*
 
 Number of characters returned.
 
-#### total *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### total *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
 
-Total length of the document.
+Total length of the document in characters, or None when the read was
+addressed in bytes and the backend would have to scan the whole document
+to count them. `total_bytes` is the size such a read reports.
 
 #### next_offset *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
 
-Where to resume, or None if this excerpt reached the end.
+Where to resume in characters, or None if this excerpt reached the end
+-- and None throughout a byte-addressed read, which resumes at
+`next_byte_offset`.
+
+#### byte_offset *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+Byte offset within the document's UTF-8 at which content starts, always
+known. Where the read *actually* began: a byte offset landing inside a
+character is snapped back to that character's first byte, so this differing
+from what was asked for is normal and is not an error.
+
+#### total_bytes *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+Total length of the document in UTF-8 bytes.
+
+#### next_byte_offset *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Where to resume in bytes, or None if this excerpt reached the end.
+Always on a character boundary, so paging by it reassembles the document
+exactly.
 
 #### *property* truncated *: [bool](https://docs.python.org/3/library/functions.html#bool)*
 
 Whether part of the document was left unread.
 
-The same fact as `next_offset is not None`, named so that a caller
+The same fact as *either continuation is set*, named so that a caller
 deciding whether to read on does not have to know that. Reading on
-means passing `next_offset` back as `offset`.
+means passing back whichever continuation the read's own unit uses.
+
+Deliberately not `next_offset is not None`, which it was while
+characters were the only unit: a byte-addressed read leaves that None
+while the document plainly continues, so the old definition reported
+every one of them as complete.
 
 ### *class* outrage.store.FileStore(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
@@ -1133,14 +1174,25 @@ descendants -- gets one corner wrong: metadata sits *at* a key rather
 than below it, so a key holding only metadata has no document and no
 descendants and still appears in the listing.
 
-#### *abstractmethod* retrieve_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int) = 0, length: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/library/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](#outrage.store.Excerpt)
+#### *abstractmethod* retrieve_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, length: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/library/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](#outrage.store.Excerpt)
 
 Read the content stored at `key`.
 
 `pattern` is a literal substring, not a regular expression; when
 given, the read starts at its `occurrence`-th appearance at or after
-`offset`. The result is capped at `length` or `max_chars`,
+the offset. The result is capped at `length` or `max_chars`,
 whichever is smaller, and carries a continuation offset.
+
+`offset` counts characters and `byte_offset` counts UTF-8 bytes of
+the same document. Both are positions, so giving both is refused; a
+byte offset landing inside a character reads from that character's
+first byte, and the excerpt says where it actually began.
+
+**Every backend accepts a byte offset and returns identical content
+for it.** Only the cost differs -- one that can seek does, one that
+cannot converts and slices -- and that contract is what makes a byte
+offset something a caller can carry between stores, and out of the
+store altogether to a file [`bulk()`](bulk.md#module-outrage.bulk) exported.
 
 #### *abstractmethod* list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](#outrage.store.Page)[[Entry](#outrage.store.Entry)]
 

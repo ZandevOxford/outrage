@@ -49,19 +49,22 @@ from .store import (
     Entry,
     Excerpt,
     FileStore,
-    InvalidArgumentError,
     KeyNotFoundError,
     KeyRange,
     MissingMeta,
     Page,
     PatternNotFoundError,
+    _byte_excerpt,
     _cursor_bound,
     _excerpt,
+    _find_byte_occurrence,
     _find_occurrence,
     _logged,
     _now,
     _position,
     _scope,
+    _sliced,
+    check_read_position,
     check_unchanged,
     entry_kind,
 )
@@ -154,6 +157,9 @@ class SqliteStore(FileStore):
         # time, as an empty result set that raised nothing at all. See
         # `project/reference/planned/concurrency`.
         self._local = threading.local()
+        # What `PRAGMA encoding` said, once it has been asked. A property of
+        # the file rather than of a connection, so it is not thread-local.
+        self._encoding: str | None = None
         # Migrating here, on the constructing thread, is what lets every later
         # connection assume the schema is already current: two threads can
         # never race to apply the same migration, because only this one ever
@@ -691,6 +697,7 @@ class SqliteStore(FileStore):
         key: str,
         *,
         offset: int = 0,
+        byte_offset: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -701,9 +708,18 @@ class SqliteStore(FileStore):
         The whole document is read and then cut, because a row is stored as one
         value and SQLite would have to read it either way; the cost the caps
         exist to avoid is the one on the way out, not the one off the disk.
+
+        A **byte** offset is the exception, and the reason it can be: SQLite
+        can seek within a stored value, so :meth:`_seek_read` opens the row's
+        blob and reads the window rather than the document. See it for what
+        that costs and what it cannot do.
         """
+        # `content` is deliberately not selected for a byte read: fetching it
+        # would materialise the document this path exists to avoid reading.
+        # `rowid` is what the blob handle addresses instead.
+        columns = "*" if byte_offset is None else "rowid, key, format, updated_at"
         row = self._conn.execute(
-            "SELECT * FROM documents WHERE key = ?", (keys.parse(key).key,)
+            f"SELECT {columns} FROM documents WHERE key = ?", (keys.parse(key).key,)
         ).fetchone()
         if row is None:
             # A key with descendants but no content of its own is a container,
@@ -713,16 +729,16 @@ class SqliteStore(FileStore):
                 raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
             raise KeyNotFoundError("key-not-found", key=key)
 
-        content = row["content"]
-        if offset < 0:
-            raise ValueError("offset must not be negative")
+        check_read_position(
+            key, offset=offset, byte_offset=byte_offset, pattern=pattern, occurrence=occurrence
+        )
 
+        if byte_offset is not None:
+            return self._byte_read(row, key, byte_offset, pattern, occurrence, length, max_chars)
+
+        content = row["content"]
         start = offset
         if pattern is not None:
-            if not pattern:
-                raise InvalidArgumentError("pattern-empty")
-            if occurrence < 0:
-                raise ValueError("occurrence must not be negative")
             start = _find_occurrence(content, pattern, occurrence, offset)
             if start is None:
                 raise PatternNotFoundError(
@@ -734,6 +750,126 @@ class SqliteStore(FileStore):
                 )
 
         return _excerpt(*_stored(row), start, length, max_chars)
+
+    def _byte_read(
+        self,
+        row: sqlite3.Row,
+        key: str,
+        byte_offset: int,
+        pattern: str | None,
+        occurrence: int,
+        length: int | None,
+        max_chars: int,
+    ) -> Excerpt:
+        """The byte-addressed half of :meth:`retrieve_document`, which seeks.
+
+        Incremental blob I/O -- ``blobopen`` on the row, seek, read -- so the
+        window comes back without the document around it. ``content`` being
+        TEXT is no obstacle: the handle gives back the bytes SQLite stored,
+        which are UTF-8, and :meth:`_utf8` is what says so rather than assuming
+        it.
+
+        The residual cost is walking the row's overflow-page chain, so this is
+        linear in the offset and not constant -- about 0.17 ms per megabyte of
+        offset, measured in `plans/byte-offsets/measurements`. A pattern is the
+        exception it cannot help: searching is a scan, so that reads the blob
+        through whatever the offset.
+        """
+        if not self._utf8():
+            # A database in some other encoding would hand back bytes that are
+            # not the document's UTF-8, and every offset in them would be a
+            # different position. Nothing this project writes is such a store,
+            # so this is a guard rather than a path: it converts, exactly as a
+            # backend with no fast path does.
+            return self._byte_read_converted(
+                key, byte_offset, pattern, occurrence, length, max_chars
+            )
+
+        with self._conn.blobopen("documents", "content", row["rowid"], readonly=True) as blob:
+            total_bytes = len(blob)
+
+            def read(offset: int, size: int) -> bytes:
+                blob.seek(min(offset, total_bytes))
+                return blob.read(size)
+
+            start = byte_offset
+            if pattern is not None:
+                found = _find_byte_occurrence(read, total_bytes, pattern, occurrence, byte_offset)
+                if found is None:
+                    raise PatternNotFoundError(
+                        "pattern-not-found",
+                        key=key,
+                        pattern=pattern,
+                        occurrence=occurrence,
+                        offset=0,
+                        byte_offset=byte_offset,
+                    )
+                start = found
+
+            return _byte_excerpt(
+                row["key"],
+                row["format"],
+                row["updated_at"],
+                start,
+                length,
+                max_chars,
+                read=read,
+                total_bytes=total_bytes,
+            )
+
+    def _byte_read_converted(
+        self,
+        key: str,
+        byte_offset: int,
+        pattern: str | None,
+        occurrence: int,
+        length: int | None,
+        max_chars: int,
+    ) -> Excerpt:
+        """The same answer without seeking, for a store this cannot seek in."""
+        row = self._conn.execute(
+            "SELECT * FROM documents WHERE key = ?", (keys.parse(key).key,)
+        ).fetchone()
+        data = row["content"].encode()
+        read = _sliced(data)
+        start = byte_offset
+        if pattern is not None:
+            found = _find_byte_occurrence(read, len(data), pattern, occurrence, byte_offset)
+            if found is None:
+                raise PatternNotFoundError(
+                    "pattern-not-found",
+                    key=key,
+                    pattern=pattern,
+                    occurrence=occurrence,
+                    offset=0,
+                    byte_offset=byte_offset,
+                )
+            start = found
+
+        return _byte_excerpt(
+            row["key"],
+            row["format"],
+            row["updated_at"],
+            start,
+            length,
+            max_chars,
+            read=read,
+            total_bytes=len(data),
+        )
+
+    def _utf8(self) -> bool:
+        """Whether this database stores text as UTF-8, asked once per store.
+
+        Every store this project creates does -- it is SQLite's default and
+        nothing here changes it -- but a blob handle hands back stored bytes
+        whatever the encoding is, so the one thing that would make a byte
+        offset mean something else is worth a question rather than an
+        assumption. Cached: it is a property of the file and cannot change
+        under an open connection.
+        """
+        if self._encoding is None:
+            self._encoding = str(self._conn.execute("PRAGMA encoding").fetchone()[0])
+        return self._encoding.upper().startswith("UTF-8")
 
     @_logged("list_keys")
     def list_keys(

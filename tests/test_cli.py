@@ -312,9 +312,12 @@ def test_make_contents_stores_and_reports_the_heading_index(tmp_path):
 
     assert status == 0
     assert "stored 2 headings from manual" in output
+    # Both sizes, because the index now carries an offset into each of them.
+    assert f"({len(source)} characters, {len(source.encode())} bytes)" in output
     assert "at manual/!contents" in output
     assert run("get", "--dir", str(directory), "manual") == (0, source)
-    expected = f"# First\n0\n\n## Second\n{source.index('## Second')}\n"
+    second = source.index("## Second")
+    expected = f"# First\n0 0\n\n## Second\n{second} {second}\n"
     assert run("get", "--dir", str(directory), "manual/!contents") == (0, expected)
 
 
@@ -333,7 +336,7 @@ def test_make_contents_uses_the_requested_metadata_name(tmp_path):
 
     assert status == 0
     assert "manual/!outline" in output
-    assert run("get", "--dir", str(directory), "manual/!outline") == (0, "# First\n0\n")
+    assert run("get", "--dir", str(directory), "manual/!outline") == (0, "# First\n0 0\n")
 
 
 # -- backup --------------------------------------------------------------
@@ -689,6 +692,48 @@ def test_get_caps_when_asked_and_says_where_to_resume(tmp_path, capsys):
     # On stderr, so that a redirect to a file gets the content and the person
     # watching still learns the file is a fragment.
     assert "more from --offset 100" in capsys.readouterr().err
+
+
+def test_get_by_byte_offset_reports_bytes_rather_than_characters(tmp_path, capsys):
+    directory = tmp_path / ".outrage"
+    run("set", "--dir", str(directory), "wide", "--content", "café — 😀 tail")
+
+    status, output = run(
+        "get", "--dir", str(directory), "wide", "--byte-offset", "0", "--max-chars", "4"
+    )
+
+    assert status == 0
+    assert output == "café"
+    # In the unit it was asked in, all the way through: telling a byte read to
+    # resume at a character offset it never computed would send the next read
+    # somewhere else in the document.
+    assert "4 characters, bytes 0 to 5 of 19; more from --byte-offset 5" in capsys.readouterr().err
+
+
+def test_get_says_when_a_byte_offset_landed_inside_a_character(tmp_path, capsys):
+    directory = tmp_path / ".outrage"
+    run("set", "--dir", str(directory), "wide", "--content", "café tail")
+
+    _, output = run("get", "--dir", str(directory), "wide", "--byte-offset", "4")
+
+    # The content alone does not show that the read moved, so it is said.
+    assert output == "é tail"
+    assert "--byte-offset 4 is inside a character; read from 3" in capsys.readouterr().err
+
+
+def test_a_pattern_moving_a_byte_read_is_not_reported_as_a_snap(tmp_path, capsys):
+    directory = tmp_path / ".outrage"
+    run("set", "--dir", str(directory), "wide", "--content", "café — tail")
+
+    _, output = run(
+        "get", "--dir", str(directory), "wide", "--byte-offset", "0", "--pattern", "tail"
+    )
+
+    # A pattern is *asked* to move the read. A live run reported its search as
+    # having landed inside a character, which is the sentence being wrong
+    # beside a write that was right -- `issues/2`.
+    assert output == "tail"
+    assert "inside a character" not in capsys.readouterr().err
 
 
 def test_get_starts_at_a_pattern_and_still_reads_to_the_end(tmp_path):

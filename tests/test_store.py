@@ -984,6 +984,185 @@ def test_retrieve_rejects_bad_arguments(store, kwargs, match):
         store.retrieve_document("a", **kwargs)
 
 
+# -- reading by byte offset ----------------------------------------------
+#
+# The unit that survives leaving the store: a character offset is a fact about
+# a Python string, and a byte offset still names the same place in a file the
+# document was written out to. Every backend accepts one and returns identical
+# content for it -- only the cost differs -- so these run against each of them
+# from the same fixtures, and the parquet half of the same contract is the
+# comparison battery in `test_store_parquet.py`.
+
+#: A document whose characters are one, two, three and four bytes, so that
+#: every arithmetic below is asking something a one-byte alphabet could not.
+WIDE = "# Caf\u00e9\n\nna\u00efve \u2014 \U0001f600 tail\n\n## \u00dcber\n\nend\n"
+
+
+@pytest.fixture
+def wide(store):
+    """The wide document, and its UTF-8, in a store."""
+    store.store_document("wide", WIDE)
+    return WIDE.encode()
+
+
+def test_a_byte_offset_reads_from_that_byte(store, wide):
+    heading = wide.index("## \u00dcber".encode())
+
+    excerpt = store.retrieve_document("wide", byte_offset=heading)
+
+    assert excerpt.content == WIDE[WIDE.index("## \u00dcber") :]
+    assert excerpt.byte_offset == heading
+    assert excerpt.total_bytes == len(wide)
+
+
+def test_a_byte_read_reports_no_character_numbers(store, wide):
+    excerpt = store.retrieve_document("wide", byte_offset=0)
+
+    # Not computed and quietly returned: converting means decoding the prefix,
+    # which is the cost the byte offset exists to avoid. A caller wanting both
+    # takes the pair `!contents` already holds for the same position.
+    assert excerpt.offset is None
+    assert excerpt.total is None
+    assert excerpt.next_offset is None
+    assert excerpt.byte_offset == 0
+
+
+def test_a_character_read_is_unchanged_and_says_where_it_is_in_bytes(store, wide):
+    excerpt = store.retrieve_document("wide", offset=2)
+
+    assert excerpt.offset == 2
+    assert excerpt.total == len(WIDE)
+    assert excerpt.content == WIDE[2:]
+    assert excerpt.next_offset is None
+    # The one number a caller could not have worked out for themselves.
+    assert excerpt.byte_offset == len(WIDE[:2].encode())
+    assert excerpt.total_bytes == len(wide)
+    assert excerpt.next_byte_offset is None
+
+
+def test_a_byte_offset_inside_a_character_snaps_backward(store, wide):
+    emoji = wide.index("\U0001f600".encode())
+
+    for inside in range(1, 4):
+        excerpt = store.retrieve_document("wide", byte_offset=emoji + inside)
+
+        # Backward, John's call, and the excerpt says where it actually began:
+        # asked for and returned differing is normal and is not an error.
+        assert excerpt.byte_offset == emoji
+        assert excerpt.content.startswith("\U0001f600")
+
+
+def test_a_cap_that_would_cut_a_character_trims_back(store, wide):
+    excerpt = store.retrieve_document("wide", byte_offset=0, max_chars=6)
+
+    assert excerpt.content == WIDE[:6]
+    # Six characters, seven bytes: the cap counts characters whichever unit
+    # addressed the read, because the budget a caller spends is context.
+    assert excerpt.returned == 6
+    assert excerpt.next_byte_offset == len(WIDE[:6].encode())
+    assert wide[: excerpt.next_byte_offset].decode() == WIDE[:6]
+
+
+def test_paging_by_byte_offset_reassembles_the_document(store, wide):
+    parts, position, seen = [], 0, []
+    while position is not None:
+        part = store.retrieve_document("wide", byte_offset=position, max_chars=3)
+        assert part.byte_offset == position
+        seen.append(position)
+        parts.append(part.content)
+        position = part.next_byte_offset
+
+    assert "".join(parts) == WIDE
+    # Every continuation the store handed out was a character boundary, so no
+    # snap ever fired: the walk is over positions it produced itself.
+    assert all(wide[:at].decode().encode() == wide[:at] for at in seen)
+
+
+def test_a_byte_read_that_ends_exactly_on_the_document_is_not_truncated(store):
+    store.store_document("a", "abcdef")
+
+    excerpt = store.retrieve_document("a", byte_offset=0, max_chars=6)
+
+    assert excerpt.content == "abcdef"
+    assert excerpt.next_byte_offset is None
+    assert not excerpt.truncated
+
+
+def test_a_byte_read_that_left_some_is_truncated(store, wide):
+    excerpt = store.retrieve_document("wide", byte_offset=0, max_chars=4)
+
+    # The definition `next_offset is not None` passes every other test here
+    # and reports this one as a complete document.
+    assert excerpt.next_offset is None
+    assert excerpt.truncated
+
+
+def test_a_byte_offset_past_the_end_returns_nothing(store, wide):
+    excerpt = store.retrieve_document("wide", byte_offset=len(wide) + 99)
+
+    assert excerpt.content == ""
+    assert excerpt.byte_offset == len(wide)
+    assert excerpt.next_byte_offset is None
+    assert not excerpt.truncated
+
+
+def test_a_document_ending_in_a_multibyte_character_pages_to_the_end(store):
+    store.store_document("a", "ab\U0001f600")
+
+    excerpt = store.retrieve_document("a", byte_offset=0, max_chars=2)
+    rest = store.retrieve_document("a", byte_offset=excerpt.next_byte_offset)
+
+    assert excerpt.content + rest.content == "ab\U0001f600"
+    assert rest.next_byte_offset is None
+
+
+def test_a_pattern_with_a_byte_offset_searches_from_that_byte(store, wide):
+    excerpt = store.retrieve_document("wide", pattern="\u00dcber", byte_offset=0)
+
+    assert excerpt.byte_offset == wide.index("\u00dcber".encode())
+    assert excerpt.content.startswith("\u00dcber")
+
+    # And from *at or after* it, as the character search does from an offset.
+    store.store_document("twice", "\u00e9 XX middle \u00e9 XX")
+    first = store.retrieve_document("twice", pattern="XX", byte_offset=0)
+    after = store.retrieve_document("twice", pattern="XX", byte_offset=first.byte_offset + 1)
+    assert after.content == "XX"
+
+
+def test_a_pattern_a_byte_read_cannot_find_says_which_byte_it_looked_from(store, wide):
+    with raises_rendered(PatternNotFoundError, "'wide' at or after byte offset 4"):
+        store.retrieve_document("wide", pattern="absent", byte_offset=4)
+
+
+def test_both_offsets_at_once_are_refused(store, wide):
+    with raises_rendered(
+        InvalidArgumentError,
+        "cannot read 'wide' from two places at once: offset=1 counts characters "
+        "and byte_offset=2 counts bytes; give one or the other",
+    ):
+        store.retrieve_document("wide", offset=1, byte_offset=2)
+
+
+def test_a_zero_character_offset_beside_a_byte_offset_is_silence(store, wide):
+    # Not the pair above: `offset=0` cannot be told from not passing one, and
+    # does not need to be, since both spell the start of the document.
+    assert store.retrieve_document("wide", offset=0, byte_offset=3).byte_offset == 3
+
+
+def test_a_negative_byte_offset_is_refused(store, wide):
+    with pytest.raises(ValueError, match="byte_offset"):
+        store.retrieve_document("wide", byte_offset=-1)
+
+
+def test_read_all_follows_the_unit_it_was_asked_in(store, wide):
+    whole = store_module.read_all(store, "wide", byte_offset=0, max_chars=3)
+
+    assert whole.content == WIDE
+    assert whole.byte_offset == 0
+    assert whole.offset is None
+    assert not whole.truncated
+
+
 # -- listing -------------------------------------------------------------
 
 

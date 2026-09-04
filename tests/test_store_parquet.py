@@ -90,8 +90,16 @@ CORPUS = [
     ("context/10/design", "design ten"),
     ("context/10/design/!title", "Ten"),
     ("notes/src/file.py", "note"),
+    # Characters of one, two, three and four bytes, so a byte offset into it
+    # is a different number from the character offset and the comparison below
+    # can tell a backend that confused them.
+    ("wide", "# Caf\u00e9\n\nna\u00efve \u2014 \U0001f600 tail\n"),
     ("z", "last"),
 ]
+
+#: Byte positions the battery reads ``wide`` from: its start, one inside each
+#: width of character, its last byte, and past its end.
+_BYTE_OFFSETS = [0, 1, 5, 6, 13, 14, 15, 20, 21, 22, 31, 32, 99]
 
 
 @pytest.fixture
@@ -148,6 +156,8 @@ _KEYS = [
     "a/b/c",
     "a/!changelog",
     "a/!changelog/22",
+    # The one document whose characters are not its bytes.
+    "wide",
 ]
 
 #: One of each bound :class:`~outrage.store.KeyRange` can carry, then the pairs
@@ -199,6 +209,23 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
         answers_alike(sqlite, parquet, lambda s, k=key: s.latest_change(k))
         answers_alike(sqlite, parquet, lambda s, k=key: s.latest_change(k, whole_subtree=True))
         answers_alike(sqlite, parquet, lambda s, k=key: s.retrieve_document(k))
+        # The portability contract: a byte offset is the unit that survives
+        # leaving a store, so the two backends have to return the same content
+        # for one even though only one of them can seek to it. This is the
+        # test that fails when a fast path drifts from the conversion it
+        # replaced -- including where it snaps, and where it stops.
+        for at in _BYTE_OFFSETS:
+            answers_alike(
+                sqlite, parquet, lambda s, k=key, b=at: s.retrieve_document(k, byte_offset=b)
+            )
+            answers_alike(
+                sqlite,
+                parquet,
+                lambda s, k=key, b=at: s.retrieve_document(k, byte_offset=b, max_chars=4),
+            )
+        answers_alike(
+            sqlite, parquet, lambda s, k=key: s.retrieve_document(k, pattern="a", byte_offset=1)
+        )
         if key != keys.ROOT:
             answers_alike(sqlite, parquet, lambda s, k=key: s.level_entry(k))
         for limit in (None, 1, 2, 100):

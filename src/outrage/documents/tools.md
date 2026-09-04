@@ -20,6 +20,7 @@ from.
 
 - `key` (string; required) — Key to read
 - `offset` (integer; default 0; minimum 0) — Character offset to start at
+- `byte_offset` (integer or null; default null; minimum 0) — UTF-8 byte offset to start at, instead of offset. One landing inside a character reads from that character's first byte, and byte_offset in the result says where the read began
 - `pattern` (string or null; default null) — Literal substring to start the read from, not a regex
 - `occurrence` (integer; default 0; minimum 0) — Which appearance of pattern to use, 0 being the first
 - `max_chars` (integer; default 8000; greater than 0) — Maximum characters to return
@@ -30,10 +31,13 @@ from.
 - `content` (string; required) — The returned document content
 - `format` (string or null; required) — The stored content format
 - `updated_at` (string; required) — When the document was last written
-- `offset` (integer; required) — Character offset where this excerpt starts
+- `offset` (integer or null; optional) — Character offset where this excerpt starts, absent when the read was addressed in bytes
 - `returned` (integer; required) — Characters returned in this excerpt
-- `total` (integer; required) — Total characters in the document
-- `next_offset` (integer or null; required) — Where to resume, or null at the end
+- `total` (integer or null; optional) — Total characters in the document, absent when the read was addressed in bytes
+- `next_offset` (integer or null; optional) — Where to resume, or null at the end
+- `byte_offset` (integer; required) — Byte offset where this excerpt starts, and where a byte offset given was snapped back to if it fell inside a character
+- `total_bytes` (integer; required) — Total UTF-8 bytes in the document
+- `next_byte_offset` (integer or null; optional) — Where to resume in bytes, or null at the end
 - `truncated` (boolean; required) — Whether part of the document remains unread
 
 ## `store_document`
@@ -128,6 +132,7 @@ which defaults to `contents`. Pass the name without its leading `!`.
 - `metadata_key` (string; required) — The metadata key written
 - `headings` (integer; required) — Markdown headings found
 - `source_characters` (integer; required) — Source characters scanned
+- `source_bytes` (integer; required) — UTF-8 bytes those characters occupy, which the second number on each heading line is an offset into
 - `characters` (integer; required) — Contents characters stored
 
 ## `list_keys`
@@ -206,10 +211,13 @@ whole document, use `read_document` on that document.
 - `content` (string; required) — The returned document content
 - `format` (string or null; required) — The stored content format
 - `updated_at` (string; required) — When the document was last written
-- `offset` (integer; required) — Character offset where this excerpt starts
+- `offset` (integer or null; optional) — Character offset where this excerpt starts, absent when the read was addressed in bytes
 - `returned` (integer; required) — Characters returned in this excerpt
-- `total` (integer; required) — Total characters in the document
-- `next_offset` (integer or null; required) — Where to resume, or null at the end
+- `total` (integer or null; optional) — Total characters in the document, absent when the read was addressed in bytes
+- `next_offset` (integer or null; optional) — Where to resume, or null at the end
+- `byte_offset` (integer; required) — Byte offset where this excerpt starts, and where a byte offset given was snapped back to if it fell inside a character
+- `total_bytes` (integer; required) — Total UTF-8 bytes in the document
+- `next_byte_offset` (integer or null; optional) — Where to resume in bytes, or null at the end
 - `truncated` (boolean; required) — Whether part of the document remains unread
 
 #### `MissingMeta` fields

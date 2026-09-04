@@ -1161,6 +1161,7 @@ class MountedStore(Store):
         key: str,
         *,
         offset: int = 0,
+        byte_offset: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -1172,6 +1173,7 @@ class MountedStore(Store):
                 excerpt = found.store.retrieve_document(
                     found.key,
                     offset=offset,
+                    byte_offset=byte_offset,
                     length=length,
                     pattern=pattern,
                     occurrence=occurrence,

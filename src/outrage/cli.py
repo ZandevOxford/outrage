@@ -367,6 +367,20 @@ def argument_parser() -> argparse.ArgumentParser:
         ),
     )
     get.add_argument("--offset", type=int, default=0, help="Character offset to start at.")
+    get.add_argument(
+        "--byte-offset",
+        dest="byte_offset",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Byte offset to start at, instead of --offset. Counts UTF-8 bytes, "
+            "which is the unit a file on disk is addressed in, so an offset "
+            "from a contents index still names the same place after the "
+            "document has been written out. A byte landing inside a character "
+            "reads from that character's first byte."
+        ),
+    )
     get.add_argument("--length", type=int, default=None, help="Characters to return.")
     get.add_argument("--pattern", default=None, help="Literal substring to start the read from.")
     get.add_argument(
@@ -1422,6 +1436,7 @@ def _get_command(args: argparse.Namespace, out: TextIO) -> int:
         _resolved(opened, args)
         slicing = {
             "offset": args.offset,
+            "byte_offset": args.byte_offset,
             "length": args.length,
             "pattern": args.pattern,
             "occurrence": args.occurrence,
@@ -1431,16 +1446,45 @@ def _get_command(args: argparse.Namespace, out: TextIO) -> int:
         else:
             excerpt = opened.retrieve_document(args.key, max_chars=args.max_chars, **slicing)
 
+    # Said out loud, because the content alone does not show it: a byte offset
+    # inside a character reads from that character's first byte, and a person
+    # who worked the number out by arithmetic is owed the news that it moved.
+    # Not where a --pattern was given: that is *asked* to move the read, and
+    # reporting it as a snap told a live run its search had landed inside a
+    # character when what had happened was that it had found the pattern.
+    if (
+        args.byte_offset is not None
+        and args.pattern is None
+        and excerpt.byte_offset != args.byte_offset
+    ):
+        print(
+            f"outrage: --byte-offset {args.byte_offset} is inside a character; "
+            f"read from {excerpt.byte_offset}",
+            file=sys.stderr,
+        )
+
     # No trailing newline of our own: the content is the output, and a document
     # round-tripped through `outrage get > f` and `outrage set < f` has to come back
     # the same length it went in.
     out.write(excerpt.content)
     if excerpt.truncated:
-        print(
-            f"\noutrage: {excerpt.returned} of {excerpt.total} characters; "
-            f"more from --offset {excerpt.next_offset}",
-            file=sys.stderr,
-        )
+        # Told in the unit it was asked in. A byte-addressed read knows how
+        # many bytes the document holds and not how many characters, so the
+        # size it reports and the flag it recommends are both that unit's --
+        # telling a caller to resume at a character offset the read never
+        # computed would send them somewhere else in the document.
+        if excerpt.next_byte_offset is not None and excerpt.next_offset is None:
+            note = (
+                f"{excerpt.returned} characters, bytes {excerpt.byte_offset} to "
+                f"{excerpt.next_byte_offset} of {excerpt.total_bytes}; "
+                f"more from --byte-offset {excerpt.next_byte_offset}"
+            )
+        else:
+            note = (
+                f"{excerpt.returned} of {excerpt.total} characters; "
+                f"more from --offset {excerpt.next_offset}"
+            )
+        print(f"\noutrage: {note}", file=sys.stderr)
     return 0
 
 
@@ -1498,7 +1542,7 @@ def _make_contents_command(args: argparse.Namespace, out: TextIO) -> int:
 
     print(
         f"stored {made.headings} headings from {keys.displayed(made.source_key)} "
-        f"({made.source_characters} characters) at "
+        f"({made.source_characters} characters, {made.source_bytes} bytes) at "
         f"{keys.displayed(made.metadata_key)}: {made.characters} characters in {where}",
         file=out,
     )
