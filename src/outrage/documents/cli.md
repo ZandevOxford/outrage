@@ -283,7 +283,7 @@ outrage ingest [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 ## `make_contents`
 
 Read one stored Markdown document and write an index containing its literal headings and their
-zero-based Python character offsets. The source is unchanged. The generated index overwrites direct
+zero-based character offsets. The source is unchanged. The generated index overwrites direct
 metadata named by --metadata-name, which defaults to contents.
 
 ### Usage

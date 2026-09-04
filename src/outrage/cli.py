@@ -459,7 +459,7 @@ def argument_parser() -> argparse.ArgumentParser:
         help="store a character-offset index of a Markdown document's headings",
         description=(
             "Read one stored Markdown document and write an index containing its "
-            "literal headings and their zero-based Python character offsets. The "
+            "literal headings and their zero-based character offsets. The "
             "source is unchanged. The generated index overwrites direct metadata "
             "named by --metadata-name, which defaults to contents."
         ),

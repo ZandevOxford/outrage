@@ -255,17 +255,13 @@ def test_a_command_is_required():
         parse_args([])
 
 
-def test_ingest_stores_markdown_and_reports_every_resolved_destination(
-    tmp_path, monkeypatch
-):
+def test_ingest_stores_markdown_and_reports_every_resolved_destination(tmp_path, monkeypatch):
     source = tmp_path / "Report.docx"
     source.write_bytes(b"input")
     directory = tmp_path / "store"
     monkeypatch.setattr(ingest_module, "_convert", lambda path: ("# Converted\n", "Q1"))
 
-    status, output = run(
-        "ingest", "--dir", str(directory), str(source), "/reports//q1/"
-    )
+    status, output = run("ingest", "--dir", str(directory), str(source), "/reports//q1/")
 
     assert status == 0
     assert str(source.resolve()) in output
@@ -284,9 +280,7 @@ def test_ingest_dry_run_reports_without_storing_a_document(tmp_path, monkeypatch
     directory = tmp_path / "store"
     monkeypatch.setattr(ingest_module, "_convert", lambda path: ("preview", None))
 
-    status, output = run(
-        "ingest", "--dir", str(directory), str(source), "reports/q1", "--dry-run"
-    )
+    status, output = run("ingest", "--dir", str(directory), str(source), "reports/q1", "--dry-run")
 
     assert status == 0
     assert "would store" in output

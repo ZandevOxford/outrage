@@ -91,9 +91,7 @@ def keyword(argument: str, value: Any = None) -> str:
     return argument if value is None else f"{argument}={value!r}"
 
 
-def render(
-    error: OutrageError, name: Namer | None = None, *, spell: Speller | None = None
-) -> str:
+def render(error: OutrageError, name: Namer | None = None, *, spell: Speller | None = None) -> str:
     """``error`` as one line, named the way ``name`` and ``spell`` say.
 
     Front ends call this; nothing else should. A code with no template is a
@@ -1062,9 +1060,7 @@ def _unchanged_since_unreadable(
 
 
 @template("unchanged-since-needed")
-def _unchanged_since_needed(
-    name: Namer, /, *, spell: Speller, on_conflict: str, **_: Any
-) -> str:
+def _unchanged_since_needed(name: Namer, /, *, spell: Speller, on_conflict: str, **_: Any) -> str:
     return (
         f"{spell('on_conflict', on_conflict)} overwrites only what has not "
         f"changed since you looked, so it needs {spell('unchanged_since')} to "
@@ -1099,16 +1095,12 @@ def _ingest_source_url(name: Namer, /, *, source: str, **_: Any) -> str:
 
 
 @template("ingest-source-not-file")
-def _ingest_source_not_file(
-    name: Namer, /, *, source: str, reason: str, **_: Any
-) -> str:
+def _ingest_source_not_file(name: Namer, /, *, source: str, reason: str, **_: Any) -> str:
     return f"cannot ingest {source}: it {reason}"
 
 
 @template("ingest-source-unreadable")
-def _ingest_source_unreadable(
-    name: Namer, /, *, source: str, reason: str, **_: Any
-) -> str:
+def _ingest_source_unreadable(name: Namer, /, *, source: str, reason: str, **_: Any) -> str:
     return f"cannot read local document {source}: {reason}"
 
 
@@ -1130,9 +1122,7 @@ def _ingest_converter_dependency_missing(
 
 
 @template("ingest-conversion-failed")
-def _ingest_conversion_failed(
-    name: Namer, /, *, source: str, reason: str, **_: Any
-) -> str:
+def _ingest_conversion_failed(name: Namer, /, *, source: str, reason: str, **_: Any) -> str:
     return f"MarkItDown could not convert {source}: {reason}"
 
 

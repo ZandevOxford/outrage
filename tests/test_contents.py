@@ -42,7 +42,7 @@ def test_render_contents_keeps_literal_headings_and_replaces_bodies_with_offsets
     )
 
 
-def test_offsets_are_python_characters_and_keep_crlf_out_of_the_heading():
+def test_offsets_are_characters_not_bytes_and_keep_crlf_out_of_the_heading():
     markdown = "π\r\n# Héading\r\ntext\r\n"
 
     assert contents.render_contents(markdown) == "# Héading\n3\n"

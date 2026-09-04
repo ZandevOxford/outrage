@@ -326,9 +326,7 @@ class _IngestDocumentResult(_ToolResult):
         str | None,
         Field(description="The metadata key written for the title, absent on a dry run"),
     ] = None
-    dry_run: Annotated[
-        bool, Field(description="Whether conversion was performed without writing")
-    ]
+    dry_run: Annotated[bool, Field(description="Whether conversion was performed without writing")]
 
 
 class _MakeContentsResult(_ToolResult):

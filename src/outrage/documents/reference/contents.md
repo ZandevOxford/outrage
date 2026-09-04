@@ -22,7 +22,7 @@ The number of headings found.
 
 #### source_characters *: [int](https://docs.python.org/3/library/functions.html#int)*
 
-The number of Python characters scanned in the source document.
+The number of characters scanned in the source document.
 
 #### characters *: [int](https://docs.python.org/3/library/functions.html#int)*
 
@@ -34,14 +34,14 @@ Store a character-offset outline of one Markdown document as metadata.
 
 The source document is not changed. Its ATX and setext headings are copied
 to direct metadata named by `metadata_name`; all section bodies are
-replaced by the heading's zero-based Python character offset. Regenerating
-the contents overwrites that metadata value.
+replaced by the heading's zero-based character offset. Regenerating the
+contents overwrites that metadata value.
 
 ### outrage.contents.render_contents(markdown: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 Render each Markdown heading followed by its source character offset.
 
 Heading spelling is kept literal. Everything between headings is omitted,
-and the number beneath each heading is the zero-based Python character
-offset at which that heading begins in `markdown`. Headings inside fenced
-code blocks are ignored.
+and the number beneath each heading is the zero-based character offset at
+which that heading begins in `markdown`. Headings inside fenced code
+blocks are ignored.

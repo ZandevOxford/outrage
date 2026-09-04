@@ -26,7 +26,7 @@ class ContentsResult:
     """The number of headings found."""
 
     source_characters: int
-    """The number of Python characters scanned in the source document."""
+    """The number of characters scanned in the source document."""
 
     characters: int
     """The number of characters stored in the generated contents document."""
@@ -48,7 +48,7 @@ def _without_ending(line: str) -> str:
 
 
 def _headings(markdown: str) -> list[_Heading]:
-    """Return literal ATX and setext headings with Python character offsets."""
+    """Return literal ATX and setext headings with character offsets."""
     found: list[_Heading] = []
     fence_character: str | None = None
     fence_length = 0
@@ -103,9 +103,9 @@ def render_contents(markdown: str) -> str:
     """Render each Markdown heading followed by its source character offset.
 
     Heading spelling is kept literal. Everything between headings is omitted,
-    and the number beneath each heading is the zero-based Python character
-    offset at which that heading begins in ``markdown``. Headings inside fenced
-    code blocks are ignored.
+    and the number beneath each heading is the zero-based character offset at
+    which that heading begins in ``markdown``. Headings inside fenced code
+    blocks are ignored.
     """
     if not isinstance(markdown, str):
         raise TypeError(f"markdown must be a string, got {type(markdown).__name__}")
@@ -144,8 +144,8 @@ def make_contents(
 
     The source document is not changed. Its ATX and setext headings are copied
     to direct metadata named by ``metadata_name``; all section bodies are
-    replaced by the heading's zero-based Python character offset. Regenerating
-    the contents overwrites that metadata value.
+    replaced by the heading's zero-based character offset. Regenerating the
+    contents overwrites that metadata value.
     """
     source_key = keys.parse(key, max_segments=keys.MAX_JOINED_SEGMENTS).key
     destination = _metadata_key(source_key, metadata_name)

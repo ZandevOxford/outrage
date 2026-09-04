@@ -209,17 +209,13 @@ def test_make_contents_rejects_a_non_markdown_source_with_a_tool_message(server)
     assert "plain" in message
 
 
-def test_ingest_collision_is_a_tool_message_spelling_its_argument(
-    server, tmp_path, monkeypatch
-):
+def test_ingest_collision_is_a_tool_message_spelling_its_argument(server, tmp_path, monkeypatch):
     source = tmp_path / "report.docx"
     source.write_bytes(b"input")
     monkeypatch.setattr(server_module.ingest, "_convert", lambda path: ("new", None))
     call(server, "store_document", key="reports/q1", content="mine")
 
-    message = call_expecting_error(
-        server, "ingest_document", source=str(source), key="reports/q1"
-    )
+    message = call_expecting_error(server, "ingest_document", source=str(source), key="reports/q1")
 
     assert "overwrite" in message
     assert "--overwrite" not in message
@@ -745,7 +741,7 @@ def test_copy_tree_dry_run_reports_the_moment_to_pass_back(server):
 
 
 def test_a_paged_copy_names_the_one_argument_a_resume_cannot_keep(server):
-    """"Every other argument unchanged" and a watermark cannot both hold.
+    """ "Every other argument unchanged" and a watermark cannot both hold.
 
     A copy carries the source's timestamps, so the page just written is itself
     a change to the target whenever the source is newer than the moment being
