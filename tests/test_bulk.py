@@ -199,6 +199,48 @@ def test_an_exported_file_holds_the_documents_bytes_and_nothing_else(store, tmp_
     assert written[byte_offset:].startswith(b"## Two")
 
 
+def test_an_untouched_export_imports_back_byte_for_byte(store, tmp_path):
+    """`issues/3`'s first reproduction, turned into a guard.
+
+    ``document_edit`` is the recommended way to edit a document, and an edit
+    that changed nothing used to come back with every line rewritten: the
+    export was byte-exact and the import read it with universal newlines.
+    Nothing caught it -- the export record's hash is of the content that went
+    *out*, and the check asks only whether the store moved since.
+    """
+    document = "# One\r\n\r\nbody\r\n"
+    store.store_document("crlf", document, format="markdown")
+
+    exported = bulk.export_document(store, "crlf", tmp_path / "export")
+    assert exported.path.read_bytes() == document.encode()
+
+    imported = bulk.import_document(store, "crlf", exported.path, tmp_path / "export")
+
+    assert store.retrieve_document("crlf").content == document
+    # ``unedited`` is the report saying so: the bytes that went out are the
+    # bytes that came back, which before this was true of the file and not of
+    # the document it landed as.
+    assert imported == bulk.Imported(
+        key="crlf", stored=len(document), previous=len(document), unedited=True
+    )
+
+
+def test_packing_a_tree_of_crlf_files_keeps_their_endings(tmp_path):
+    """The same rule on the road a pack takes, which is not ``import_tree``.
+
+    ``pack`` reads a directory through ``documents_from_tree`` rather than
+    through a ``FilesystemStore``, by John's call, so the fix to the backend
+    does not reach it and it needs its own.
+    """
+    source = tmp_path / "in"
+    source.mkdir()
+    (source / "one.md").write_bytes(b"# One\r\n\r\nbody\r\n")
+
+    packed = [row for _, row in bulk.documents_from_tree(source) if row is not None]
+
+    assert [(key, content) for key, content, _, _ in packed] == [("one", "# One\r\n\r\nbody\r\n")]
+
+
 def test_export_of_a_subtree_writes_the_path_it_came_from(populated, tmp_path):
     target = tmp_path / "out"
 

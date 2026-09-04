@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import json
 import sys
 from collections.abc import Iterator
@@ -1550,7 +1551,14 @@ def _make_contents_command(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def _content(args: argparse.Namespace) -> str:
-    """Content from --content, --file, or standard input, in that order."""
+    """Content from --content, --file, or standard input, in that order.
+
+    A file and a pipe are both read with ``newline=""``, so ``outrage set
+    --file`` and ``outrage set < file`` store the line endings they were
+    handed rather than LF. Rule (a) of `plans/line-endings`, and the same
+    reason as :func:`outrage.bulk._read_file`. ``--content`` is already a
+    string and has nothing to convert.
+    """
     if args.content is not None and args.file is not None:
         raise ConflictingSourceError("content-two-sources")
     if args.content is not None:
@@ -1558,7 +1566,8 @@ def _content(args: argparse.Namespace) -> str:
     if args.file is not None:
         path = Path(args.file).expanduser()
         try:
-            return path.read_text(encoding="utf-8")
+            with path.open(encoding="utf-8", newline="") as handle:
+                return handle.read()
         except OSError as exc:
             raise ConflictingSourceError(
                 "content-unreadable", path=str(path), reason=str(exc)
@@ -1567,7 +1576,20 @@ def _content(args: argparse.Namespace) -> str:
         # Otherwise the command hangs on an empty terminal looking like it
         # worked, and the store ends up with an empty document at a good key.
         raise ConflictingSourceError("content-missing")
-    return sys.stdin.read()
+    return _untranslated(sys.stdin).read()
+
+
+def _untranslated(stream: TextIO) -> TextIO:
+    """``stream`` with line-ending translation turned off, where it can be.
+
+    A real stdin or stdout is a :class:`io.TextIOWrapper` and can be told to
+    stop translating. Anything else -- a :class:`io.StringIO` a test passes as
+    its output, the stand-in pytest puts in place of stdin -- is handed back
+    untouched, because it is not translating in the first place.
+    """
+    if isinstance(stream, io.TextIOWrapper):
+        stream.reconfigure(newline="")
+    return stream
 
 
 class ConflictingSourceError(OutrageError):
@@ -2357,7 +2379,14 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
         # and a file that will not parse is an answer about the configuration,
         # rendered like any other rather than tracebacked.
         args = parse_args(argv)
-        return args.handler(args, out or sys.stdout)
+        # `outrage get > file` writes the document and nothing else, so the
+        # stream it goes to must not translate LF on the way out: rule (a) of
+        # `plans/line-endings`, the read side of which is `_content`. The cost,
+        # and it is a judgement rather than a mechanical fix: the command
+        # line's own messages end in LF on Windows too, which is what every
+        # other tool there does. Writing content to `sys.stdout.buffer`
+        # instead would break every test that passes its own stream.
+        return args.handler(args, _untranslated(out or sys.stdout))
     except OutrageError as exc:
         # One base rather than a tuple that grows with each command. A failure
         # that is not a OutrageError is a bug in outrage, and a traceback is the right
