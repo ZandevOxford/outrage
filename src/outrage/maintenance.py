@@ -47,9 +47,92 @@ class CheckError(OutrageError, RuntimeError):
     """Raised when a store cannot be checked at all."""
 
 
+# -- what a check can report, as codes ---------------------------------------
+#
+# A problem is selected by code and read as prose. The two were one thing until
+# 2026-09-05: a caller with something to do about a particular fault had to
+# match the sentence describing it, which is why `store_sqlite` exported the
+# WAL summary as a constant -- a code wearing a sentence's clothes -- and why
+# the suite picked problems out with `"cached document lengths" in p.summary`.
+#
+# The wording stays where the fault is found. There is one reader of these,
+# `outrage check`, so a wording table per audience would be a table of one;
+# see `plans/problem-codes` for the half of that argument that is deferred
+# rather than rejected.
+
+#: A store written by a build newer than this one, which cannot read it safely.
+FORMAT_TOO_NEW = "format-too-new"
+
+#: A store older than this build's format, which a writable backend migrates
+#: when it opens it. Not a fault.
+FORMAT_OLDER = "format-older"
+
+#: Keys with more segments than :data:`outrage.keys.MAX_SEGMENTS` allows.
+KEYS_TOO_DEEP = "keys-too-deep"
+
+#: Rows whose stored ``parent`` disagrees with the key they are stored under.
+ROWS_UNDER_WRONG_KEY = "rows-under-wrong-key"
+
+#: Metadata whose document does not exist. Legal, and worth naming.
+METADATA_WITHOUT_DOCUMENT = "metadata-without-document"
+
+#: The storage itself reports the file as damaged.
+DATABASE_DAMAGED = "database-damaged"
+
+#: Cached document lengths describing documents that have since changed.
+LENGTH_CACHE_STALE = "length-cache-stale"
+
+#: More of the store is in the write-ahead log than in the database file, so
+#: anything copying that file alone gets a store missing recent writes. The one
+#: problem ``repair`` acts on.
+WAL_UNCHECKPOINTED = "wal-uncheckpointed"
+
+#: Files in a directory store whose names do not map to a key.
+FILES_NOT_KEYS = "files-not-keys"
+
+#: One key held by more than one file, where only the first can be read.
+KEYS_DOUBLED = "keys-doubled"
+
+#: Files in a directory store that are not UTF-8 text.
+FILES_NOT_TEXT = "files-not-text"
+
+#: Rows not in sort order, which every read bisects and so answers wrongly.
+ROWS_OUT_OF_ORDER = "rows-out-of-order"
+
+#: Every code above. For a caller deciding what it can act on, and for the
+#: guard in ``tests/test_maintenance.py`` that keeps the list complete: a code
+#: constant this does not name is one nothing has agreed to.
+PROBLEM_CODES = (
+    FORMAT_TOO_NEW,
+    FORMAT_OLDER,
+    KEYS_TOO_DEEP,
+    ROWS_UNDER_WRONG_KEY,
+    METADATA_WITHOUT_DOCUMENT,
+    DATABASE_DAMAGED,
+    LENGTH_CACHE_STALE,
+    WAL_UNCHECKPOINTED,
+    FILES_NOT_KEYS,
+    KEYS_DOUBLED,
+    FILES_NOT_TEXT,
+    ROWS_OUT_OF_ORDER,
+)
+
+
 @dataclass(frozen=True)
 class Problem:
     """Something wrong, or worth knowing, about the store rather than a document.
+
+    ``code`` names *which* problem this is, one of :data:`PROBLEM_CODES`, and
+    is what a caller with something to do about a particular fault selects on.
+    First, as it is on :class:`~outrage.errors.OutrageError` and
+    :class:`~outrage.notes.Note`, and for the same reason: what a thing is
+    comes before how it reads.
+
+    ``summary`` and ``detail`` are that same problem as prose, and they are the
+    report -- ``outrage check`` prints them and nothing else consumes them.
+    They stay where the fault is found rather than moving to a wording table,
+    because there is one reader of them; a second one would change that answer.
+    Nothing should match on them.
 
     ``severity`` is 'error' for a store that is damaged or unreadable by this
     build, 'warning' for something that will cause a wrong answer later, and
@@ -63,6 +146,7 @@ class Problem:
     be fixable.
     """
 
+    code: str
     severity: str
     summary: str
     detail: str = ""
@@ -175,6 +259,7 @@ def _check_format_version(store: FileStore, report: Report) -> None:
     if report.format_version > writes:
         report.problems.append(
             Problem(
+                FORMAT_TOO_NEW,
                 "error",
                 "the store was written by a newer version of outrage",
                 f"format {report.format_version}, this build understands {writes}",
@@ -186,6 +271,7 @@ def _check_format_version(store: FileStore, report: Report) -> None:
         # until then.
         report.problems.append(
             Problem(
+                FORMAT_OLDER,
                 "note",
                 "the store predates this build's format",
                 f"format {report.format_version}, this build writes {writes}",
@@ -257,6 +343,7 @@ def _report_depth(over_deep: list[str], report: Report) -> None:
         return
     report.problems.append(
         Problem(
+            KEYS_TOO_DEEP,
             "warning",
             f"some keys have more than {keys.MAX_SEGMENTS} segments",
             f"{_listed(over_deep)}; they predate that bound, and this store cannot be "
@@ -282,6 +369,7 @@ def _report_parents(wrong: list[str], report: Report) -> None:
         return
     report.problems.append(
         Problem(
+            ROWS_UNDER_WRONG_KEY,
             "warning",
             "some rows disagree with the key they are stored under",
             _listed(wrong, separator="; "),
@@ -301,6 +389,7 @@ def _report_orphans(orphans: list[str], report: Report) -> None:
         return
     report.problems.append(
         Problem(
+            METADATA_WITHOUT_DOCUMENT,
             "note",
             "some metadata has no document",
             # Spelled rather than printed raw: the root can carry a title
@@ -340,6 +429,19 @@ def require_store(directory: Path, filename: str | None = None) -> Path:
 
 
 __all__ = [
+    "DATABASE_DAMAGED",
+    "FILES_NOT_KEYS",
+    "FILES_NOT_TEXT",
+    "FORMAT_OLDER",
+    "FORMAT_TOO_NEW",
+    "KEYS_DOUBLED",
+    "KEYS_TOO_DEEP",
+    "LENGTH_CACHE_STALE",
+    "METADATA_WITHOUT_DOCUMENT",
+    "PROBLEM_CODES",
+    "ROWS_OUT_OF_ORDER",
+    "ROWS_UNDER_WRONG_KEY",
+    "WAL_UNCHECKPOINTED",
     "CheckError",
     "Problem",
     "Repaired",

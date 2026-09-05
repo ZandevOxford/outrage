@@ -77,7 +77,15 @@ from typing import Self
 from . import bulk, keys
 from .errors import OutrageError
 from .eventlog import EventLog
-from .maintenance import Problem, Repaired, Report, _listed
+from .maintenance import (
+    FILES_NOT_KEYS,
+    FILES_NOT_TEXT,
+    KEYS_DOUBLED,
+    Problem,
+    Repaired,
+    Report,
+    _listed,
+)
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
@@ -1107,13 +1115,20 @@ class FilesystemStore(FileStore):
 
         report.details["files"] = str(files)
         report.details["bytes"] = str(size)
-        for names, summary, detail in (
-            (unnamed, "files whose names are not keys", "read as nothing at all"),
-            (doubled, "keys held by more than one file", "the first in name order is what reads"),
-            (binary, "files that are not UTF-8 text", "passed over by every read"),
+        for names, code, summary, detail in (
+            (unnamed, FILES_NOT_KEYS, "files whose names are not keys", "read as nothing at all"),
+            (
+                doubled,
+                KEYS_DOUBLED,
+                "keys held by more than one file",
+                "the first in name order is what reads",
+            ),
+            (binary, FILES_NOT_TEXT, "files that are not UTF-8 text", "passed over by every read"),
         ):
             if names:
-                report.problems.append(Problem("warning", summary, f"{_listed(names)}: {detail}"))
+                report.problems.append(
+                    Problem(code, "warning", summary, f"{_listed(names)}: {detail}")
+                )
 
     def repair(self) -> list[Repaired]:
         """Nothing, and that is the honest answer rather than a silence.

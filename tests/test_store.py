@@ -2774,7 +2774,7 @@ def test_a_title_on_the_root_with_no_document_is_named_in_a_check(file_store, tm
     # detail line carries a blank where a key should be.
     file_store.store_document("!title", "This file_store")
     report = maintenance.check(file_store)
-    notes = [p for p in report.problems if p.summary == "some metadata has no document"]
+    notes = [p for p in report.problems if p.code == maintenance.METADATA_WITHOUT_DOCUMENT]
     assert notes and notes[0].detail == "/"
 
 

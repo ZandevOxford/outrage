@@ -28,6 +28,18 @@ deciding whether that reader hears it.
   one. `bulk.Check` and `bulk.Imported` carry the code and, where the record
   named another key, that key.
 
+* **`outrage check`'s problems carry a code.** `maintenance.Problem` gains
+  `code` as its first field, one of the twelve in `maintenance.PROBLEM_CODES`,
+  so anything with something to do about a particular fault selects on that
+  rather than matching the sentence describing it. The report itself is
+  unchanged: `summary` and `detail` are still what a person reads.
+
+  **Removed:** `outrage.store_sqlite.WAL_UNCHECKPOINTED`, which was the WAL
+  problem's summary exported so that callers could match on it. The name is
+  now `maintenance.WAL_UNCHECKPOINTED` and its value is the code. An importer
+  of the old name gets an `ImportError` rather than a string whose meaning has
+  quietly changed.
+
 What the MCP tools say is unchanged, word for word, with one exception: a
 read-only mount below the root is named `/` rather than `''`.
 

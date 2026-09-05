@@ -777,7 +777,7 @@ def test_check_reports_a_cached_length_that_no_longer_describes_its_document(sto
     store._conn.commit()
 
     report = maintenance.check(store)
-    assert [p.summary for p in report.problems if "cached document lengths" in p.summary]
+    assert [p for p in report.problems if p.code == maintenance.LENGTH_CACHE_STALE]
 
     done = maintenance.repair(store)
     dropped = [step for step in done if "cached lengths" in step.action]
@@ -789,5 +789,5 @@ def test_check_reports_a_cached_length_that_no_longer_describes_its_document(sto
     assert [(step.before, step.after, step.unit) for step in dropped] == [(1, 0, "entries")]
     assert _cached(store) == {}
     assert not [
-        p for p in maintenance.check(store).problems if "cached document lengths" in p.summary
+        p for p in maintenance.check(store).problems if p.code == maintenance.LENGTH_CACHE_STALE
     ]

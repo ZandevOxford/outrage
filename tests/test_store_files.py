@@ -371,7 +371,7 @@ def test_a_file_that_is_not_text_is_reported_rather_than_mangled(files):
         files.retrieve_document("binary")
 
     report = maintenance.check(files)
-    assert any("not UTF-8 text" in problem.summary for problem in report.problems)
+    assert any(problem.code == maintenance.FILES_NOT_TEXT for problem in report.problems)
 
 
 def test_a_byte_read_that_is_not_text_is_reported_the_same_way(files):
@@ -432,7 +432,7 @@ def test_two_files_claiming_one_key_read_once_and_are_reported(files):
     assert [entry.key for entry in files.list_keys().items].count("one") == 1
 
     report = maintenance.check(files)
-    assert any("more than one file" in problem.summary for problem in report.problems)
+    assert any(problem.code == maintenance.KEYS_DOUBLED for problem in report.problems)
 
 
 def test_a_foreign_tree_can_be_opened_with_its_dotfiles_left_alone(tmp_path):

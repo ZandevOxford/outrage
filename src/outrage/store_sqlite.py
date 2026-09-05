@@ -36,7 +36,15 @@ from pathlib import Path
 
 from . import keys
 from .eventlog import EventLog
-from .maintenance import CheckError, Problem, Repaired, Report
+from .maintenance import (
+    DATABASE_DAMAGED,
+    LENGTH_CACHE_STALE,
+    WAL_UNCHECKPOINTED,
+    CheckError,
+    Problem,
+    Repaired,
+    Report,
+)
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
@@ -178,10 +186,6 @@ BUSY_TIMEOUT_MS = 5000
 #: checkpoints; it is only interesting once it holds more than the database it
 #: belongs to, which is the state that makes a file copy lose real content.
 WAL_RATIO = 1.0
-
-#: The one problem ``repair`` acts on, named so that the test asserting a
-#: repaired store stops reporting it does not have to spell it again.
-WAL_UNCHECKPOINTED = "most of the store is in the write-ahead log"
 
 
 class SqliteStore(FileStore):
@@ -1518,7 +1522,12 @@ class SqliteStore(FileStore):
         report.details["integrity"] = integrity
         if integrity != "ok":
             report.problems.append(
-                Problem("error", "SQLite reports the database as damaged", integrity)
+                Problem(
+                    DATABASE_DAMAGED,
+                    "error",
+                    "SQLite reports the database as damaged",
+                    integrity,
+                )
             )
 
         self._check_wal(report)
@@ -1549,6 +1558,7 @@ class SqliteStore(FileStore):
         if wrong:
             report.problems.append(
                 Problem(
+                    LENGTH_CACHE_STALE,
                     "warning",
                     "cached document lengths disagree with the documents",
                     f"{wrong} of {held} entries in {LENGTH_CACHE_TABLE} describe a document "
@@ -1569,8 +1579,9 @@ class SqliteStore(FileStore):
             wal = self._wal_path()
             report.problems.append(
                 Problem(
-                    "warning",
                     WAL_UNCHECKPOINTED,
+                    "warning",
+                    "most of the store is in the write-ahead log",
                     f"{wal_bytes} bytes in {wal.name} against {main_bytes} in "
                     f"{self.path.name}. The store reads correctly, but anything copying the "
                     f"database file alone gets one missing those writes.",
@@ -1867,6 +1878,5 @@ __all__ = [
     "LENGTH_THRESHOLD",
     "SCHEMA_VERSION",
     "WAL_RATIO",
-    "WAL_UNCHECKPOINTED",
     "SqliteStore",
 ]

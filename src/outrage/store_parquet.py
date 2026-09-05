@@ -76,7 +76,7 @@ from typing import Any
 
 from . import keys
 from .eventlog import EventLog
-from .maintenance import Problem, Repaired, Report, _listed
+from .maintenance import ROWS_OUT_OF_ORDER, Problem, Repaired, Report, _listed
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
@@ -1640,6 +1640,7 @@ class ParquetStore(FileStore):
         if out_of_order:
             report.problems.append(
                 Problem(
+                    ROWS_OUT_OF_ORDER,
                     "error",
                     "the file is not in sort order",
                     f"{_listed(out_of_order)}; every read bisects this column, so a file "
