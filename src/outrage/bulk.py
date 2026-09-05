@@ -838,6 +838,7 @@ def pack(
     *,
     overwrite: bool = False,
     dry_run: bool = False,
+    byte_lengths: bool = True,
 ) -> Iterator[Transfer]:
     """Report each document as it is read, then write them all as one file.
 
@@ -868,7 +869,7 @@ def pack(
         yield transfer
 
     if not dry_run:
-        ParquetStore.build(target, rows, overwrite=overwrite)
+        ParquetStore.build(target, rows, overwrite=overwrite, byte_lengths=byte_lengths)
 
 
 # -- one document, to a file and back ------------------------------------

@@ -23,7 +23,7 @@ from pathlib import Path
 import pytest
 
 from conftest import in_threads
-from outrage import keys
+from outrage import keys, maintenance
 from outrage import store as store_module
 from outrage import store_sqlite as sqlite_module
 from outrage.store import BoundedSubtree
@@ -462,3 +462,228 @@ def test_the_connection_is_the_backend_s_own(store):
     """
     assert isinstance(store.connection, sqlite3.Connection)
     assert not hasattr(store_module.Store, "connection")
+
+
+# -- the length cache ----------------------------------------------------
+#
+# A cache and not a column, so what these have to establish is not that a
+# number is right -- counting is always available and always correct -- but
+# that a *stale* number can never be read. That is the one failure mode a
+# separate table has and a column does not, and the triggers are the answer.
+
+
+#: Comfortably past `LENGTH_THRESHOLD`, so the cache takes an interest in it.
+LONG = "x" * (sqlite_module.LENGTH_THRESHOLD + 100)
+
+#: Comfortably below it, so the cache does not.
+SHORT = "y" * 10
+
+
+def _cached(store):
+    """What the cache holds, as a plain dict, read behind the store's back."""
+    return dict(store._conn.execute(f"SELECT key, chars FROM {sqlite_module.LENGTH_CACHE_TABLE}"))
+
+
+def test_only_documents_worth_caching_are_cached(store):
+    store.store_document("long", LONG)
+    store.store_document("short", SHORT)
+
+    # The threshold's whole purpose: an entry for the document whose length
+    # costs something to find, and none for the one whose does not.
+    assert _cached(store) == {"long": len(LONG)}
+
+
+def test_the_cache_does_not_move_the_schema_version(store):
+    """The reason it is a cache rather than a column, asserted.
+
+    A schema bump makes an older build refuse the store outright. Nothing here
+    needs that: a build that has never heard of this table reads the store
+    correctly and merely counts, and one that writes to it still fires the
+    triggers, because they live in the file rather than in any build.
+    """
+    store.store_document("long", LONG)
+    assert store.format_version == sqlite_module.SCHEMA_VERSION == 6
+
+
+def test_a_shortened_document_loses_its_cached_length(store):
+    store.store_document("k", LONG)
+    assert _cached(store) == {"k": len(LONG)}
+
+    store.store_document("k", SHORT)
+
+    # Not merely updated to the new length: it drops below the threshold, so
+    # the right answer is no entry at all. An entry that stayed would be a
+    # cached length for a document that no longer has it.
+    assert _cached(store) == {}
+    assert store.list_keys().items[0].size == len(SHORT)
+
+
+def test_a_deleted_document_takes_its_cached_length_with_it(store):
+    store.store_document("k", LONG)
+    store.delete("k")
+
+    # Or the next document to be given this key would inherit a length that
+    # was never its own.
+    assert _cached(store) == {}
+
+
+def test_a_writer_that_knows_nothing_of_the_cache_invalidates_it(store):
+    """The property a column could not have, and the reason for the triggers.
+
+    A build of outrage older than this table -- or any other writer at all --
+    updates ``documents`` and knows nothing to update beside it. The triggers
+    are in the file, so they fire anyway, and the stale entry is gone rather
+    than being read as the truth.
+    """
+    store.store_document("k", LONG)
+    replacement = "z" * (sqlite_module.LENGTH_THRESHOLD * 2)
+
+    store._conn.execute("UPDATE documents SET content = ? WHERE key = ?", (replacement, "k"))
+    store._conn.commit()
+
+    assert _cached(store) == {}
+    assert store.list_keys().items[0].size == len(replacement)
+    assert store.list_keys().total_chars == len(replacement)
+
+
+def test_a_migration_that_rewrites_keys_does_not_strand_an_entry(store):
+    """The update trigger names both keys, and this is why.
+
+    A key is never rewritten by a write, but migrations have rewritten every
+    key in the store twice. A cache entry left under the old name would then
+    describe a document that is no longer there.
+    """
+    store.store_document("before", LONG)
+    store._conn.execute(
+        "UPDATE documents SET key = ?, sort_key = ? WHERE key = ?",
+        ("after", keys.sort_form("after"), "before"),
+    )
+    store._conn.commit()
+
+    assert _cached(store) == {}
+
+
+def test_totals_are_the_same_whether_or_not_the_cache_has_the_answer(store):
+    """The cache is an optimisation, so emptying it must change no answer."""
+    for name, content in (("a/one", LONG), ("a/two", SHORT), ("a/three", LONG * 2)):
+        store.store_document(name, content)
+
+    def totals():
+        return (
+            store.list_keys("a").total_chars,
+            store.get_documents(BoundedSubtree("a")).total_chars,
+        )
+
+    with_cache = totals()
+    store._conn.execute(f"DELETE FROM {sqlite_module.LENGTH_CACHE_TABLE}")
+    store._conn.commit()
+    without_cache = totals()
+
+    assert with_cache == without_cache == (len(LONG) + len(SHORT) + len(LONG) * 2,) * 2
+
+
+def test_an_existing_store_is_backfilled_when_the_cache_first_appears(tmp_path):
+    """A document written before the table existed still gets an entry.
+
+    Without this the cache would only ever cover documents written after the
+    build that introduced it, and a long document already in the store would
+    pay for a count on every read of it, forever, with nothing to change that
+    but rewriting it.
+    """
+    with SqliteStore(tmp_path / "store") as s:
+        s.store_document("old", LONG)
+        s._conn.executescript(
+            f"DROP TRIGGER {sqlite_module.LENGTH_CACHE_TABLE}_insert;"
+            f"DROP TRIGGER {sqlite_module.LENGTH_CACHE_TABLE}_update;"
+            f"DROP TRIGGER {sqlite_module.LENGTH_CACHE_TABLE}_delete;"
+            f"DROP TABLE {sqlite_module.LENGTH_CACHE_TABLE};"
+        )
+
+    with SqliteStore(tmp_path / "store") as reopened:
+        assert _cached(reopened) == {"old": len(LONG)}
+
+
+def test_the_backfill_runs_once_and_not_on_every_open(tmp_path):
+    """Or every open of a large store would scan all of it to say nothing.
+
+    Asserted by leaving the table deliberately incomplete: a second open that
+    backfilled again would fill the gap in, and the point is that it does not
+    look.
+    """
+    with SqliteStore(tmp_path / "store") as s:
+        s.store_document("k", LONG)
+        s._conn.execute(f"DELETE FROM {sqlite_module.LENGTH_CACHE_TABLE}")
+        s._conn.commit()
+
+    with SqliteStore(tmp_path / "store") as reopened:
+        assert _cached(reopened) == {}
+        # And the answer is still right, which is what makes that safe.
+        assert reopened.list_keys().items[0].size == len(LONG)
+
+
+def test_a_byte_read_reports_the_character_total_from_the_cache(store):
+    """The one thing the stored length is on the critical path for.
+
+    Before it, a byte-addressed read reported ``total`` as None and the front
+    ends printed the byte total instead, because counting characters means
+    reading the whole document -- which is the cost the byte offset exists to
+    avoid.
+    """
+    store.store_document("long", LONG)
+    store.store_document("short", SHORT)
+
+    assert store.retrieve_document("long", byte_offset=0).total == len(LONG)
+    # And a document with no entry is counted, which is affordable precisely
+    # because not having an entry is what being short means.
+    assert store.retrieve_document("short", byte_offset=0).total == len(SHORT)
+
+
+def test_a_byte_read_of_a_long_document_is_right_without_an_entry(store):
+    """Correct first, fast second: an empty cache costs time and not accuracy."""
+    store.store_document("long", LONG)
+    store._conn.execute(f"DELETE FROM {sqlite_module.LENGTH_CACHE_TABLE}")
+    store._conn.commit()
+
+    assert store.retrieve_document("long", byte_offset=0).total == len(LONG)
+
+
+def test_listing_a_level_does_not_select_the_documents_it_lists(store):
+    """A listing reports a size, and used to read every document to get one.
+
+    ``SELECT *`` pulled each listed document's whole text into Python so that
+    ``len()`` could be taken of it. The size now comes from the cache, or from
+    ``length()`` evaluated inside SQLite, and neither moves the text.
+    """
+    store.store_document("a/one", LONG)
+    statements = []
+    store._conn.set_trace_callback(statements.append)
+    try:
+        listing = store.list_keys("a")
+    finally:
+        store._conn.set_trace_callback(None)
+
+    assert [entry.size for entry in listing.items] == [len(LONG)]
+    assert not [sql for sql in statements if "SELECT *" in sql]
+
+
+def test_check_reports_a_cached_length_that_no_longer_describes_its_document(store):
+    """It should not be reachable, which is exactly what a check is for."""
+    store.store_document("k", LONG)
+    store._conn.execute(f"UPDATE {sqlite_module.LENGTH_CACHE_TABLE} SET chars = 1")
+    store._conn.commit()
+
+    report = maintenance.check(store)
+    assert [p.summary for p in report.problems if "cached document lengths" in p.summary]
+
+    done = maintenance.repair(store)
+    dropped = [step for step in done if "cached lengths" in step.action]
+
+    # Counted in what it actually moved. Every repair before this one moved
+    # bytes about inside the file, so the report said "bytes" and meant it;
+    # this one drops rows, and "1 -> 0 bytes" is a sentence that reads
+    # correctly and is false. Found by running a repair and reading it.
+    assert [(step.before, step.after, step.unit) for step in dropped] == [(1, 0, "entries")]
+    assert _cached(store) == {}
+    assert not [
+        p for p in maintenance.check(store).problems if "cached document lengths" in p.summary
+    ]

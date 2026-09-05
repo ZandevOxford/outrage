@@ -1015,16 +1015,26 @@ def test_a_byte_offset_reads_from_that_byte(store, wide):
     assert excerpt.total_bytes == len(wide)
 
 
-def test_a_byte_read_reports_no_character_numbers(store, wide):
+def test_a_byte_read_reports_no_character_positions(store, request, wide):
     excerpt = store.retrieve_document("wide", byte_offset=0)
 
     # Not computed and quietly returned: converting means decoding the prefix,
     # which is the cost the byte offset exists to avoid. A caller wanting both
-    # takes the pair `!contents` already holds for the same position.
+    # takes the pair an offset index already holds for the same position.
     assert excerpt.offset is None
-    assert excerpt.total is None
     assert excerpt.next_offset is None
     assert excerpt.byte_offset == 0
+
+    # The *total* is the one character number a byte read can carry, and
+    # whether it does is a property of the backend rather than of the read.
+    # A store that has the length written down answers from it; a directory of
+    # files recomputes every derived fact and would have to read the document
+    # to know, so it says it does not know rather than paying the scan the
+    # byte offset was chosen to avoid.
+    if request.node.callspec.params["store"] == "files":
+        assert excerpt.total is None
+    else:
+        assert excerpt.total == len(WIDE)
 
 
 def test_a_character_read_is_unchanged_and_says_where_it_is_in_bytes(store, wide):

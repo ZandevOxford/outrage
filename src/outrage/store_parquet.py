@@ -146,6 +146,7 @@ INDEX_COLUMNS = (
     "updated_at",
     "sort_key",
     "chars",
+    "bytes",
 )
 
 #: Of those, the ones actually read into memory. ``doc_key`` and ``parent``
@@ -160,7 +161,23 @@ INDEX_COLUMNS = (
 #: a column a reader can recompute is still a column a query engine should not
 #: have to, and :meth:`ParquetStore.audit_rows` checks the written ones against
 #: the keys they claim to describe.
-HELD_COLUMNS = tuple(name for name in INDEX_COLUMNS if name not in ("doc_key", "parent"))
+HELD_COLUMNS = tuple(name for name in INDEX_COLUMNS if name not in ("doc_key", "parent", "bytes"))
+
+#: Whether a pack writes ``bytes``. On by default and omitted by ``outrage pack
+#: --no-byte-lengths``, and the only column here that is optional: ``chars`` is
+#: what answers a total without opening ``content``, so a file without it would
+#: read every document to list a level.
+#:
+#: **Written before anything reads it, which needs its reason.** Which of the
+#: two lengths is expensive is a property of the storage: SQLite gets bytes
+#: from a blob handle and a directory of files from ``st_size``, while here
+#: only the content column holds them. And a parquet file is never updated, so
+#: a file packed without this can only gain it by being packed again -- unlike
+#: the other two backends, where the same fact can be written down at any later
+#: date for nothing. So it is written at the one moment it is cheap, for the
+#: same reason ``doc_key`` and ``parent`` are written and not held: a column a
+#: reader can recompute is still a column a query engine should not have to.
+BYTE_LENGTHS = True
 
 #: Columns worth dictionary encoding **if it helps**, tested rather than
 #: assumed. In a store packed in one pass every row tends to carry the same
@@ -1127,6 +1144,11 @@ class ParquetStore(FileStore):
             max_chars,
             read=read,
             total_bytes=len(data),
+            # Free here, and so reported. This backend has no seek, so a byte
+            # read holds the whole document either way and the character total
+            # costs nothing on top of it. A backend that does seek reports one
+            # only where it was written down.
+            total=len(content),
         )
 
     @_logged("list_keys")
@@ -1666,6 +1688,7 @@ class ParquetStore(FileStore):
         documents: Iterable[tuple[str, str, str | None, str | None]],
         *,
         overwrite: bool = False,
+        byte_lengths: bool = BYTE_LENGTHS,
     ) -> int:
         """Write a whole parquet store in one pass, and return the row count.
 
@@ -1719,8 +1742,13 @@ class ParquetStore(FileStore):
                 "updated_at": [stamp for _, _, _, stamp in ordered],
                 "sort_key": [keys.sort_form(parsed.key) for parsed, _, _, _ in ordered],
                 "chars": [len(content) for _, content, _, _ in ordered],
+                **(
+                    {"bytes": [_utf8_length(content) for _, content, _, _ in ordered]}
+                    if byte_lengths
+                    else {}
+                ),
             },
-            schema=_schema(pa),
+            schema=_schema(pa, byte_lengths=byte_lengths),
         )
 
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1732,12 +1760,25 @@ class ParquetStore(FileStore):
             # Recorded in the footer, so a reader other than this one -- a
             # notebook, a query engine -- is told the file is ordered rather
             # than having to discover it or assume it is not.
-            sorting_columns=[pq.SortingColumn(_schema(pa).get_field_index("sort_key"))],
+            sorting_columns=[
+                pq.SortingColumn(_schema(pa, byte_lengths=byte_lengths).get_field_index("sort_key"))
+            ],
         )
         return table.num_rows
 
 
-def _schema(pa: Any) -> Any:
+def _utf8_length(content: str) -> int:
+    """How many bytes ``content`` is in UTF-8, encoding only when it must.
+
+    ``str.isascii`` is a flag CPython already keeps on the string, and an ASCII
+    document is exactly as many bytes as it is characters -- which most
+    Markdown is. So the column costs a pass over a flag for most of a corpus
+    and an encode for the rest, rather than an encode for all of it.
+    """
+    return len(content) if content.isascii() else len(content.encode())
+
+
+def _schema(pa: Any, *, byte_lengths: bool = BYTE_LENGTHS) -> Any:
     """The columns a parquet store holds, and the version stamp on them.
 
     Every column is a string but ``chars``, including ``format``, ``meta_name``
@@ -1747,21 +1788,29 @@ def _schema(pa: Any) -> Any:
     metadata rather than a column: it is one fact about the file, and a column
     would repeat it per row and let two rows disagree.
     """
-    return pa.schema(
-        [
-            ("key", pa.string()),
-            ("doc_key", pa.string()),
-            ("meta_name", pa.string()),
-            ("meta_path", pa.string()),
-            ("parent", pa.string()),
-            ("content", pa.string()),
-            ("format", pa.string()),
-            ("updated_at", pa.string()),
-            ("sort_key", pa.string()),
-            ("chars", pa.int64()),
-        ],
-        metadata={VERSION_KEY: str(FORMAT_VERSION).encode()},
-    )
+    fields = [
+        ("key", pa.string()),
+        ("doc_key", pa.string()),
+        ("meta_name", pa.string()),
+        ("meta_path", pa.string()),
+        ("parent", pa.string()),
+        ("content", pa.string()),
+        ("format", pa.string()),
+        ("updated_at", pa.string()),
+        ("sort_key", pa.string()),
+        ("chars", pa.int64()),
+    ]
+    if byte_lengths:
+        fields.append(("bytes", pa.int64()))
+    # The stamp does not move for `bytes`. A reader keys on the column being
+    # there rather than on the version, which it has to anyway -- the pack
+    # option means two files can carry the same version and differ in columns --
+    # and which is what keeps every file already written readable. Moving the
+    # stamp instead is what once made every file written before the change
+    # report itself as not being a store at all -- a misleading answer for a
+    # file that was one, and one no migration could take back, because nothing
+    # here is ever updated in place.
+    return pa.schema(fields, metadata={VERSION_KEY: str(FORMAT_VERSION).encode()})
 
 
 #: Stands in for "this document carries no metadata at all", so the lookup in
@@ -1938,6 +1987,7 @@ __all__ = [
     "DEFAULT_STORE_FILE",
     "ENCODABLE",
     "FORMAT_VERSION",
+    "BYTE_LENGTHS",
     "HELD_COLUMNS",
     "INDEX_COLUMNS",
     "PROBE",

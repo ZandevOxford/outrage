@@ -33,7 +33,7 @@ from.
 - `updated_at` (string; required) — When the document was last written
 - `offset` (integer or null; optional) — Character offset where this excerpt starts, absent when the read was addressed in bytes
 - `returned` (integer; required) — Characters returned in this excerpt
-- `total` (integer or null; optional) — Total characters in the document, absent when the read was addressed in bytes
+- `total` (integer or null; optional) — Total characters in the document. Absent only where the read was addressed in bytes and the store would have to read the whole document to count them; total_bytes is always given
 - `next_offset` (integer or null; optional) — Where to resume, or null at the end
 - `byte_offset` (integer; required) — Byte offset where this excerpt starts, and where a byte offset given was snapped back to if it fell inside a character
 - `total_bytes` (integer; required) — Total UTF-8 bytes in the document
@@ -213,7 +213,7 @@ whole document, use `read_document` on that document.
 - `updated_at` (string; required) — When the document was last written
 - `offset` (integer or null; optional) — Character offset where this excerpt starts, absent when the read was addressed in bytes
 - `returned` (integer; required) — Characters returned in this excerpt
-- `total` (integer or null; optional) — Total characters in the document, absent when the read was addressed in bytes
+- `total` (integer or null; optional) — Total characters in the document. Absent only where the read was addressed in bytes and the store would have to read the whole document to count them; total_bytes is always given
 - `next_offset` (integer or null; optional) — Where to resume, or null at the end
 - `byte_offset` (integer; required) — Byte offset where this excerpt starts, and where a byte offset given was snapped back to if it fell inside a character
 - `total_bytes` (integer; required) — Total UTF-8 bytes in the document
