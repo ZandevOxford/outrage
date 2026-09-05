@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.8.1 - 2026-09-05
 
 Document lengths are written down instead of being counted, and which length
 gets written down is decided per backend, because which of the two is expensive
