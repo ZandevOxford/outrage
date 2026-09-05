@@ -768,6 +768,39 @@ def test_set_reports_where_it_wrote(tmp_path):
     assert str(tmp_path / ".outrage" / "store.sqlite") in output
 
 
+def test_set_says_when_the_document_shrank(tmp_path, capsys):
+    """The defect the shell round trip produced the first time anyone used it.
+
+    `outrage get > file`, edit, `outrage set --file` wrote an empty document
+    over a good one: the write was correct, the report said how many characters
+    went in, and nothing anywhere said how many had been there. The subtraction
+    is the whole of the note.
+    """
+    directory = str(tmp_path / ".outrage")
+    content = "a document with some length"
+    run("set", "--dir", directory, "notes/one", "--content", content)
+    capsys.readouterr()
+
+    status, output = run("set", "--dir", directory, "notes/one", "--content", "")
+
+    assert status == 0
+    assert "0 characters" in output, "the report itself is unchanged"
+    # Counted here rather than written down, which is the pairing the whole
+    # note layer is about: the sentence carries the document's own numbers.
+    assert f"shrank from {len(content)} to 0 characters" in capsys.readouterr().err
+
+
+def test_set_says_nothing_about_a_write_that_did_not_shrink(tmp_path, capsys):
+    """Silence is the common case here, and it comes from there being no situation."""
+    directory = str(tmp_path / ".outrage")
+    run("set", "--dir", directory, "notes/one", "--content", "short")
+    capsys.readouterr()
+
+    run("set", "--dir", directory, "notes/one", "--content", "longer than before")
+
+    assert capsys.readouterr().err == ""
+
+
 def test_set_allocates_a_number_and_names_the_key_it_wrote(tmp_path):
     run("set", "--dir", str(tmp_path / ".outrage"), "notes/?", "--content", "first")
 
@@ -887,6 +920,31 @@ def test_rm_leaves_the_subtree_and_says_it_did(tmp_path):
     assert "1 keys below notes/1 remain" in output
     _, listing = run("ls", "--dir", str(tmp_path / ".outrage"), "notes/1")
     assert "notes/1/detail" in listing
+
+
+def test_rm_says_what_a_read_only_mount_kept_back(tmp_path, capsys):
+    """The one note this front end says that its own report cannot.
+
+    Everything else a delete leaves behind is a key, and a key is printed or
+    counted. A read-only mount is not a key, so a delete that stopped at one
+    printed exactly what a delete that took everything printed.
+    """
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, _ = run("rm", "--dir", str(tmp_path / ".outrage"), "", "--recursive")
+
+    assert status == 0
+    said = capsys.readouterr().err
+    assert "1 read-only mounted store(s) below / refuse a delete: ref" in said
+    assert "--mount-ro" in said
+
+
+def test_rm_says_nothing_about_mounts_when_none_refuse(tmp_path, capsys):
+    a_tree(tmp_path / ".outrage")
+
+    run("rm", "--dir", str(tmp_path / ".outrage"), "notes", "--recursive")
+
+    assert "refuse a delete" not in capsys.readouterr().err
 
 
 def test_rm_dry_run_deletes_nothing(tmp_path):

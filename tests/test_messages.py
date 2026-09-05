@@ -11,12 +11,12 @@ See ``project/reference/planned/error-naming`` for the defect that prompted it.
 
 from __future__ import annotations
 
-import argparse
 import ast
 import pathlib
 
 import pytest
 
+from conftest import long_options
 from outrage import cli, keys, messages
 from outrage.errors import OutrageError
 from outrage.mounts import Mount, MountedStore, ReadOnlyMountError
@@ -183,26 +183,6 @@ def test_the_container_advice_names_the_key_the_caller_would_use(tmp_path):
     assert "'python'," not in rendered
 
 
-def _long_options(parser: argparse.ArgumentParser) -> set[str]:
-    """Every long option the command line takes, subcommands included.
-
-    Read from the parser the way ``tools/render_cli.py`` reads it, because the
-    parser is the only honest answer to "is that a flag": a list here would be
-    a second place to remember one.
-    """
-    found = set()
-    for action in parser._actions:
-        found.update(option for option in action.option_strings if option.startswith("--"))
-        # A subparsers action holds its commands in a mapping; `choices` on an
-        # ordinary option is the tuple of values it accepts, and holds no parser.
-        choices = getattr(action, "choices", None)
-        if isinstance(choices, dict):
-            for inner in choices.values():
-                if isinstance(inner, argparse.ArgumentParser):
-                    found |= _long_options(inner)
-    return found
-
-
 def test_the_command_line_only_names_arguments_it_actually_has():
     """A flag in a sentence has to be a flag somebody can type.
 
@@ -212,7 +192,7 @@ def test_the_command_line_only_names_arguments_it_actually_has():
     would produce `--against`, and the failure would look exactly like the
     defect the speller exists to fix, one level down.
     """
-    options = _long_options(cli.argument_parser())
+    options = long_options(cli.argument_parser())
 
     for filename, lineno, call in _raises():
         named: list[str] = []

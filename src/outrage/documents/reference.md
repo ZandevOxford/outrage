@@ -67,10 +67,13 @@ read-only at `outrage`. A store file is relative to `--dir` and a tree in
 ## Front ends
 
 The two callers of the library. They differ in how they name a key to a
-reader, which is what [`outrage.messages`](reference/messages.md#module-outrage.messages) is for.
+reader, which is what [`outrage.messages`](reference/messages.md#module-outrage.messages) is for -- and in what they think
+worth remarking on, which is why [`outrage.cli_messages`](reference/cli_messages.md#module-outrage.cli_messages) is a table of its
+own: the command line is silent about most notes, and says there why.
 
 * [outrage.server](reference/server.md)
 * [outrage.cli](reference/cli.md)
+* [outrage.cli_messages](reference/cli_messages.md)
 * [outrage.bulk](reference/bulk.md)
 
 ## Around the edges

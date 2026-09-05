@@ -18,6 +18,7 @@ details can have them.
 
 from __future__ import annotations
 
+import argparse
 import contextlib
 import re
 import threading
@@ -147,3 +148,25 @@ def walk_documents(store, subtree, key_range, meta, **caps):
             return seen, totals
         cursor = page.next_cursor
     raise AssertionError("the cursor did not reach the end of the selection")
+
+
+def long_options(parser: argparse.ArgumentParser) -> set[str]:
+    """Every long option the command line takes, subcommands included.
+
+    Read from the parser the way ``tools/render_cli.py`` reads it, because the
+    parser is the only honest answer to "is that a flag": a list here would be
+    a second place to remember one. Shared, because two suites ask it of two
+    different kinds of sentence -- an error spelled by ``cli._flag`` and a note
+    a command line's own table writes out -- and the question is the same.
+    """
+    found = set()
+    for action in parser._actions:
+        found.update(option for option in action.option_strings if option.startswith("--"))
+        # A subparsers action holds its commands in a mapping; `choices` on an
+        # ordinary option is the tuple of values it accepts, and holds no parser.
+        choices = getattr(action, "choices", None)
+        if isinstance(choices, dict):
+            for inner in choices.values():
+                if isinstance(inner, argparse.ArgumentParser):
+                    found |= long_options(inner)
+    return found

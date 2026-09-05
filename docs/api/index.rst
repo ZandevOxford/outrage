@@ -77,13 +77,16 @@ Front ends
 ----------
 
 The two callers of the library. They differ in how they name a key to a
-reader, which is what :mod:`outrage.messages` is for.
+reader, which is what :mod:`outrage.messages` is for -- and in what they think
+worth remarking on, which is why :mod:`outrage.cli_messages` is a table of its
+own: the command line is silent about most notes, and says there why.
 
 .. toctree::
    :maxdepth: 1
 
    server
    cli
+   cli_messages
    bulk
 
 Around the edges

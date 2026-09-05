@@ -1400,7 +1400,7 @@ def check_write(
         # `record` dropped rather than carried: it is a claim about the key it
         # names, and renewing it against a different one would silently turn
         # the file into an edit claim on a key it did not come from.
-        return Check(file=file, record=None, previous=_size_of(opened, key), unchecked=why)
+        return Check(file=file, record=None, previous=size_of(opened, key), unchecked=why)
     try:
         held: store.Excerpt | None = store.read_all(opened, key)
     except store.KeyNotFoundError:
@@ -1660,6 +1660,22 @@ def _note_if_it_shrank(previous: int | None, stored: int) -> list[Note]:
     return [Note("document-shrank", previous=previous, stored=stored)]
 
 
+def notes_for_write(previous: int | None, stored: int) -> list[Note]:
+    """What a write with nothing to check it against has to remark on.
+
+    The write a command line makes: no export record, so nothing here can be a
+    copy, a silent no-op, or a write that went past a check somebody lifted.
+    What is left is the arithmetic, and on that front end it is the one that
+    matters most -- ``outrage get > file``, edit, ``outrage set --file`` is the
+    documented way to change a long document from a shell, and the first use of
+    it wrote an empty document over a good one.
+
+    ``previous`` is :func:`size_of`'s answer, so ``None`` means the store could
+    not say rather than that there was nothing there.
+    """
+    return _note_if_it_shrank(previous, stored)
+
+
 def notes_for_export(exported: Exported) -> list[Note]:
     """What handing a document out as a file has to remark on.
 
@@ -1770,12 +1786,14 @@ def _updated_at(opened: store.Store, key: str) -> str | None:
         return None
 
 
-def _size_of(opened: store.Store, key: str) -> int | None:
+def size_of(opened: store.Store, key: str) -> int | None:
     """What ``key`` holds, in characters, or None when it holds nothing.
 
     The cheap read, for the paths that do not need the content: an empty
     document and no document are different things to have overwritten, and the
-    report distinguishes them.
+    report distinguishes them. ``None`` also comes back from a store that
+    cannot answer without reading the document, so a caller measuring a write
+    against what was there has to treat it as "not known" rather than as zero.
     """
     try:
         return opened.retrieve_document(key, max_chars=1).total
@@ -1871,9 +1889,11 @@ __all__ = [
     "notes_for_copy",
     "notes_for_delete",
     "notes_for_export",
+    "notes_for_write",
     "overlapping",
     "path_for_key",
     "renew",
+    "size_of",
     "sweep_exports",
     "walk",
 ]

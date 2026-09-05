@@ -2,6 +2,27 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+The command line remarks on two things it used to leave to the reader, and both
+come out of the same change underneath: what an operation has to say about
+itself is now worked out once, in the library, and each front end has a table
+deciding whether that reader hears it.
+
+* **`outrage set` says when a document shrank**, and by how much. The shell
+  round trip -- `outrage get > file`, edit, `outrage set --file` -- is the
+  documented way to change a long document, and the first use of it wrote an
+  empty document over a good one: the write was right, the report said how many
+  characters went in, and nothing said how many had been there. The measurement
+  reads one character, so a store that keeps its lengths pays almost nothing.
+* **`outrage rm` says which read-only mounts refused a delete.** Everything
+  else a delete leaves behind is a key, and a key is printed or counted; a
+  read-only mounted store is not a key, so a delete that stopped at one printed
+  exactly what a delete that took everything printed.
+
+What the MCP tools say is unchanged, word for word, with one exception: a
+read-only mount below the root is named `/` rather than `''`.
+
 ## 0.8.1 - 2026-09-05
 
 Document lengths are written down instead of being counted, and which length

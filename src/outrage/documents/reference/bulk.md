@@ -804,6 +804,20 @@ it may write for itself. The exported document is taken and not read for
 the same reason: this is a note about a result, and a caller should not
 have to know which of these need the result to decide.
 
+### outrage.bulk.notes_for_write(previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), stored: [int](https://docs.python.org/3/library/functions.html#int)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+
+What a write with nothing to check it against has to remark on.
+
+The write a command line makes: no export record, so nothing here can be a
+copy, a silent no-op, or a write that went past a check somebody lifted.
+What is left is the arithmetic, and on that front end it is the one that
+matters most -- `outrage get > file`, edit, `outrage set --file` is the
+documented way to change a long document from a shell, and the first use of
+it wrote an empty document over a good one.
+
+`previous` is [`size_of()`](#outrage.bulk.size_of)'s answer, so `None` means the store could
+not say rather than that there was nothing there.
+
 ### outrage.bulk.overlapping(source: [str](https://docs.python.org/3/library/stdtypes.html#str), target: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [None](https://docs.python.org/3/library/constants.html#None)
 
 Refuse a source and target pair a copy cannot safely stream between.
@@ -858,6 +872,16 @@ not start claiming it did.
 `content` is what was written, when the caller already has it. Otherwise
 the document is read back -- which is what a write that transformed what it
 was given needs, since the record hashes what the store holds.
+
+### outrage.bulk.size_of(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)
+
+What `key` holds, in characters, or None when it holds nothing.
+
+The cheap read, for the paths that do not need the content: an empty
+document and no document are different things to have overwritten, and the
+report distinguishes them. `None` also comes back from a store that
+cannot answer without reading the document, so a caller measuring a write
+against what was there has to treat it as "not known" rather than as zero.
 
 ### outrage.bulk.sweep_exports(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], max_age: [timedelta](https://docs.python.org/3/library/datetime.html#datetime.timedelta) = EXPORT_MAX_AGE, now: [datetime](https://docs.python.org/3/library/datetime.html#datetime.datetime) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
 
