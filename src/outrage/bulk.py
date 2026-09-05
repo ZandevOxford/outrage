@@ -970,21 +970,18 @@ class Imported:
     """Characters the key held before, or None if it held nothing. The
     distinction is kept because an empty document and no document are different
     things to have overwritten."""
-    unchecked: str | None = None
-    """Why the document was not compared with what was exported, or None when
-    it was. A missing record and a cross-key import both land here: the write
-    happens either way, and the caller is told the check did not.
-
-    **Prose, and dated.** Read ``unchecked_code`` instead: this says the same
-    thing in words a caller has to parse, and it goes in the first release
-    allowed to break a reader."""
     unchecked_code: str | None = None
-    """The same reason as a code -- :data:`~outrage.notes.UNCHECKED_NO_RECORD`
-    or :data:`~outrage.notes.UNCHECKED_OTHER_KEY` -- or None when the
-    comparison happened. What a front end words for whoever is reading."""
+    """Why the document was not compared with what was exported, as a code --
+    :data:`~outrage.notes.UNCHECKED_NO_RECORD` or
+    :data:`~outrage.notes.UNCHECKED_OTHER_KEY` -- or None when it was compared.
+    A missing record and a cross-key import both land here: the write happens
+    either way, and the caller is told the check did not.
+
+    A code rather than a sentence, because the layer that noticed does not know
+    who is reading. A front end words it: see :mod:`outrage.messages`."""
     unchecked_from: str | None = None
     """The key the record named when it named another one, which is the fact
-    :data:`UNCHECKED_OTHER_KEY`'s sentence needs. About the *checking* file, so
+    :data:`~outrage.notes.UNCHECKED_OTHER_KEY`'s sentence needs. About the *checking* file, so
     it is not ``copied_from``: with ``against`` the two are different files and
     may name different keys."""
     unedited: bool = False
@@ -1027,19 +1024,15 @@ class Check:
     An empty document and no document are different things to have replaced."""
     changed_at: str | None = None
     """``updated_at`` of what was there, for the sentence ``overwrite`` owes."""
-    unchecked: str | None = None
-    """Why no comparison was made, when ``overwrite`` allowed one to be
-    skipped. None when the comparison happened.
-
-    **Prose, and dated**, exactly as :attr:`Imported.unchecked` is."""
     unchecked_code: str | None = None
-    """The same reason as a code, for a front end to word."""
+    """Why no comparison was made, as a code, when ``overwrite`` allowed one to
+    be skipped. None when the comparison happened."""
     unchecked_from: str | None = None
     """The key the record named, when it named another one."""
     overwritten: bool = False
     """Whether ``overwrite`` allowed a write the staleness refusal would have
-    stopped. Separate from ``unchecked``: this one knows somebody's write is
-    being lost, and that one does not know anything."""
+    stopped. Separate from ``unchecked_code``: this one knows somebody's write
+    is being lost, and that one does not know anything."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1358,25 +1351,6 @@ def export_document(opened: store.Store, key: str, root: str | os.PathLike[str])
     return Exported(path=path, excerpt=excerpt, record=record)
 
 
-def unchecked_prose(code: str, came_from: str | None) -> str:
-    """The sentence :attr:`Check.unchecked` has carried since before it had a code.
-
-    That field is public and its value is prose, which is a thing a caller ends
-    up parsing; the code beside it is what a caller should read, and the field
-    goes in a release allowed to break one. Until then both exist, and the
-    prose is written here rather than where the reason is discovered, so the
-    two cannot come to disagree while a caller can see both.
-
-    A **second** spelling of these reasons lives in the wording tables, and
-    deliberately: this one is a value in an answer, dated, and that one is a
-    sentence for a reader who may be at either front end. They are the same
-    words today because this field's wording is the wording the tools had.
-    """
-    if code == UNCHECKED_NO_RECORD:
-        return "no export record"
-    return f"exported from {came_from!r}"
-
-
 def check_write(
     opened: store.Store,
     key: str,
@@ -1443,7 +1417,6 @@ def check_write(
             file=file,
             record=None,
             previous=size_of(opened, key),
-            unchecked=unchecked_prose(code, came_from),
             unchecked_code=code,
             unchecked_from=came_from,
         )
@@ -1595,7 +1568,6 @@ def import_document(
         key=written,
         stored=len(content),
         previous=check.previous,
-        unchecked=check.unchecked,
         unchecked_code=check.unchecked_code,
         unchecked_from=check.unchecked_from,
         unedited=unedited,
@@ -1954,6 +1926,5 @@ __all__ = [
     "renew",
     "size_of",
     "sweep_exports",
-    "unchecked_prose",
     "walk",
 ]

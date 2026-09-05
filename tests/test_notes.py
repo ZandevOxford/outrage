@@ -36,6 +36,7 @@ import ast
 import importlib
 import pathlib
 import re
+from dataclasses import fields as dataclass_fields
 
 import pytest
 
@@ -862,11 +863,14 @@ def test_a_write_with_no_record_and_one_from_another_key_read_differently():
     assert "(exported from 'b')" in messages.MCP.render(other)
 
 
-def test_the_prose_field_still_says_what_it_always_said():
-    """``unchecked`` is public prose and dated; until it goes, it does not move.
+def test_the_reason_reaches_a_reader_only_through_a_table():
+    """What the removal of ``unchecked`` leaves: no prose on the result at all.
 
-    Derived from the code now rather than built where the reason is found, so
-    the field and the note cannot come to disagree while both are readable.
+    The field carried the same sentence as a value, so a caller could read the
+    reason without asking anybody how to say it -- and parse it, which is what
+    made it a contract. What is left is a code, and a table for each reader.
     """
-    assert bulk.unchecked_prose(UNCHECKED_NO_RECORD, None) == "no export record"
-    assert bulk.unchecked_prose(UNCHECKED_OTHER_KEY, "project") == "exported from 'project'"
+    fields = {field.name for field in dataclass_fields(bulk.Imported)}
+
+    assert "unchecked" not in fields, "the prose field is gone"
+    assert {"unchecked_code", "unchecked_from"} <= fields

@@ -742,7 +742,8 @@ def test_an_import_may_store_at_a_key_the_file_did_not_come_from(populated, tmp_
     )
 
     assert imported.previous is None
-    assert imported.unchecked == "exported from 'project'"
+    assert imported.unchecked_code == bulk.UNCHECKED_OTHER_KEY
+    assert imported.unchecked_from == "project"
     assert populated.retrieve_document("project/copy").content == "# Project"
 
 
@@ -948,7 +949,11 @@ def test_a_cross_key_import_is_still_not_compared_with_the_target(populated, tmp
         populated, "project/copy", exported.path, tmp_path / "export", overwrite=True
     )
 
-    assert (imported.unchecked, imported.overwritten) == ("exported from 'project'", False)
+    assert (imported.unchecked_code, imported.unchecked_from, imported.overwritten) == (
+        bulk.UNCHECKED_OTHER_KEY,
+        "project",
+        False,
+    )
     assert populated.retrieve_document("project/copy").content == "# Project"
 
 
@@ -992,7 +997,7 @@ def test_a_hand_written_file_is_still_importable_with_overwrite(populated, tmp_p
         populated, "project", exported.path, tmp_path / "export", overwrite=True
     )
 
-    assert imported.unchecked == "no export record"
+    assert imported.unchecked_code == bulk.UNCHECKED_NO_RECORD
     assert populated.retrieve_document("project").content == "# Project, edited"
 
 
@@ -1006,7 +1011,7 @@ def test_an_unreadable_record_is_refused_like_a_missing_one(populated, tmp_path)
     imported = bulk.import_document(
         populated, "project", exported.path, tmp_path / "export", overwrite=True
     )
-    assert imported.unchecked == "no export record"
+    assert imported.unchecked_code == bulk.UNCHECKED_NO_RECORD
 
 
 def test_a_record_carrying_a_later_versions_field_is_still_read(populated, tmp_path):
@@ -1021,7 +1026,7 @@ def test_a_record_carrying_a_later_versions_field_is_still_read(populated, tmp_p
 
     imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
 
-    assert imported.unchecked is None
+    assert imported.unchecked_code is None
 
 
 def test_an_unedited_file_says_the_edit_changed_nothing(populated, tmp_path):
@@ -1157,7 +1162,7 @@ def test_a_second_import_of_the_same_file_is_not_refused_by_the_first(populated,
 
     imported = bulk.import_document(populated, "project", exported.path, tmp_path / "export")
 
-    assert imported.unchecked is None
+    assert imported.unchecked_code is None
     assert imported.overwritten is False
     assert populated.retrieve_document("project").content == "# Project, second edit"
 
@@ -1222,7 +1227,7 @@ def test_a_second_file_checks_a_cross_key_import(populated, tmp_path):
         against=target.path,
     )
 
-    assert imported.unchecked is None
+    assert imported.unchecked_code is None
     assert imported.overwritten is False
     assert populated.retrieve_document("project/copy").content == "# Project, edited for the copy"
 
@@ -1290,7 +1295,7 @@ def test_a_second_checked_cross_key_import_is_not_refused_by_the_first(populated
         populated, "project/copy", source.path, tmp_path / "export", against=target.path
     )
 
-    assert imported.unchecked is None
+    assert imported.unchecked_code is None
     assert populated.retrieve_document("project/copy").content == "# Project, second"
 
 
@@ -1302,7 +1307,7 @@ def test_a_checking_file_may_be_the_content_file_itself(populated, tmp_path):
         populated, "project", exported.path, tmp_path / "export", against=exported.path
     )
 
-    assert imported.unchecked is None
+    assert imported.unchecked_code is None
     assert populated.retrieve_document("project").content == "# Project, edited"
 
 
@@ -1374,7 +1379,7 @@ def test_check_write_passes_when_the_store_still_holds_what_went_out(populated, 
     check = bulk.check_write(populated, "project", exported.path, tmp_path / "export")
 
     assert check.record == exported.record
-    assert (check.previous, check.unchecked, check.overwritten) == (9, None, False)
+    assert (check.previous, check.unchecked_code, check.overwritten) == (9, None, False)
 
 
 def test_check_write_refuses_a_document_written_since(populated, tmp_path):
@@ -1392,7 +1397,7 @@ def test_check_write_does_not_read_the_file_it_is_handed(populated, tmp_path):
 
     check = bulk.check_write(populated, "project", exported.path, tmp_path / "export")
 
-    assert check.unchecked is None
+    assert check.unchecked_code is None
 
 
 def test_check_write_takes_a_path_relative_to_the_export_directory(populated, tmp_path):

@@ -9,6 +9,14 @@ come out of the same change underneath: what an operation has to say about
 itself is now worked out once, in the library, and each front end has a table
 deciding whether that reader hears it.
 
+**Upgrading:** two public names go, and both fail loudly rather than quietly.
+A caller reading `unchecked` off a tool result or off `bulk.Imported` should
+read `unchecked_code` instead -- the same reason in one word -- and one
+importing `outrage.store_sqlite.WAL_UNCHECKPOINTED` should take
+`outrage.maintenance.WAL_UNCHECKPOINTED`, whose value is now a problem code
+rather than the sentence describing it. No store format moves, and nothing
+about a store written by an earlier build changes.
+
 * **`outrage set` says when a document shrank**, and by how much. The shell
   round trip -- `outrage get > file`, edit, `outrage set --file` -- is the
   documented way to change a long document, and the first use of it wrote an
@@ -20,13 +28,14 @@ deciding whether that reader hears it.
   read-only mounted store is not a key, so a delete that stopped at one printed
   exactly what a delete that took everything printed.
 
-* **`unchecked` gains a code beside it.** `store_document` and
-  `document_edit` answer with `unchecked_code` -- `no-record` or `other-key` --
-  saying in one word what `unchecked` says in a sentence. The sentence is
-  unchanged and is now derived from the code, so the two cannot disagree; it is
-  the value a caller had to parse, and it goes in a release allowed to break
-  one. `bulk.Check` and `bulk.Imported` carry the code and, where the record
-  named another key, that key.
+* **`unchecked` is now a code, and the prose field is gone.** `store_document`
+  and `document_edit` answer with `unchecked_code` -- `no-record` or
+  `other-key` -- where they used to answer with a sentence a caller had to
+  parse. `bulk.Check` and `bulk.Imported` carry that code and, where the record
+  named another key, that key; their `unchecked` attribute is removed, as is
+  `bulk.unchecked_prose`. Nothing a *person* reads has changed: the note beside
+  the answer says the same words, written now by whichever front end is
+  speaking.
 
 * **`outrage check`'s problems carry a code.** `maintenance.Problem` gains
   `code` as its first field, one of the twelve in `maintenance.PROBLEM_CODES`,

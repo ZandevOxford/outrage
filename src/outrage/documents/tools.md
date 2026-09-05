@@ -75,8 +75,7 @@ it this call overwrites whatever is there.
 - `generated` (boolean; required) — Whether the store generated part of the key
 - `title_key` (string or null; optional) — Key where the supplied title was stored, when one was supplied
 - `previous` (integer or null; optional) — Previous document size when the write was checked against an exported file, or null when the key held nothing
-- `unchecked` (string or null; optional) — Why the write was not compared with what was exported, when 'against' was given and 'overwrite' allowed it through uncompared. Prose, and going: read unchecked_code
-- `unchecked_code` (string or null; optional) — The same reason as a code: 'no-record' when nothing beside the file said what it held, 'other-key' when the record names the key it was exported from
+- `unchecked_code` (string or null; optional) — Why the write was not compared with what was exported, when 'against' was given and 'overwrite' allowed it through uncompared: 'no-record' when nothing beside the file said what it held, 'other-key' when the record names the key it was exported from
 - `note` (string or null; optional) — Important qualification of the result
 
 ## `ingest_document`
@@ -461,6 +460,5 @@ safe as saving back - or pass `overwrite` to write it unchecked.
 - `format` (string or null; optional) — The document format, when exporting a document
 - `stored` (integer or null; optional) — Characters stored, when importing an edited file
 - `previous` (integer or null; optional) — Previous document size, or null when it did not exist
-- `unchecked` (string or null; optional) — Why an import was not compared with what was exported, when 'overwrite' allowed it through uncompared: there was no export record, or the file came from another key and no 'against' file was given. Prose, and going: read unchecked_code
-- `unchecked_code` (string or null; optional) — The same reason as a code: 'no-record' when nothing beside the file said what it held, 'other-key' when the record names the key it was exported from
+- `unchecked_code` (string or null; optional) — Why an import was not compared with what was exported, when 'overwrite' allowed it through uncompared: 'no-record' when there was no export record, 'other-key' when the file came from another key and no 'against' file was given
 - `note` (string or null; optional) — Important qualification of the result
