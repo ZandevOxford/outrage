@@ -7,14 +7,21 @@ above it, and nothing depends on a group below.
 The namespace
 -------------
 
-What a key is, and how a failure becomes a sentence. Everything else is
-written in these terms.
+What a key is, and how what happened becomes a sentence -- a failure, or a
+remark on an answer that worked. Everything else is written in these terms.
+
+:mod:`outrage.errors` and :mod:`outrage.notes` are the two carriers, and each
+holds a code and its facts rather than words. :mod:`outrage.messages` is where
+the words are: one table for errors, spelled for whichever front end is
+reading, and a table per audience for notes, because two front ends should
+remark on different things and one of them should often say nothing.
 
 .. toctree::
    :maxdepth: 1
 
    keys
    errors
+   notes
    messages
 
 Storage
