@@ -2,6 +2,17 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+* **`outrage.store_sqlite.WAL_UNCHECKPOINTED` is really gone now.** 0.9.0 said
+  it was removed and it was not: the import that replaced the definition
+  brought the name back as a module attribute, holding the problem code where
+  it used to hold that problem's summary -- so a caller matching a summary
+  against it silently stopped matching, which is the one failure the removal
+  was meant to avoid. The import is aliased private, so the old spelling raises
+  where it is used and `outrage.maintenance.WAL_UNCHECKPOINTED` is the only one
+  left. Found by the checks run against the published wheel.
+
 ## 0.9.0 - 2026-09-05
 
 The command line remarks on two things it used to leave to the reader, and both
@@ -16,6 +27,13 @@ importing `outrage.store_sqlite.WAL_UNCHECKPOINTED` should take
 `outrage.maintenance.WAL_UNCHECKPOINTED`, whose value is now a problem code
 rather than the sentence describing it. No store format moves, and nothing
 about a store written by an earlier build changes.
+
+**Correction, added after publication:** the second of those removals did not
+happen in 0.9.0. `store_sqlite` imported the constant from `maintenance` by its
+own name, so `outrage.store_sqlite.WAL_UNCHECKPOINTED` went on resolving --
+with the code as its value where it had been the sentence. A caller comparing
+a problem's summary against it stopped matching and was told nothing. Fixed
+below.
 
 * **`outrage set` says when a document shrank**, and by how much. The shell
   round trip -- `outrage get > file`, edit, `outrage set --file` -- is the

@@ -102,7 +102,17 @@ def test_every_declared_code_can_actually_be_reported():
         if path.name == "maintenance.py":
             continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
-        named |= {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        # Through the local binding, which is not always the code's own name: a
+        # module that once exported one of these has to import it under an
+        # alias, or the old spelling resolves again with a new value.
+        bound = {
+            alias.asname or alias.name: alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            for alias in node.names
+        }
+        used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+        named |= {bound.get(name, name) for name in used}
 
     tree = ast.parse((SOURCE / "maintenance.py").read_text(encoding="utf-8"))
     inside = [
@@ -142,3 +152,25 @@ def test_the_report_prints_the_prose_and_not_the_code():
 
     assert "most of the store is in the write-ahead log" in out.getvalue()
     assert maintenance.WAL_UNCHECKPOINTED not in out.getvalue()
+
+
+def test_a_removed_public_name_does_not_come_back_as_a_re_export():
+    """0.9.0 said `store_sqlite.WAL_UNCHECKPOINTED` was gone. It was not.
+
+    The definition went, and the constant it was replaced by was imported into
+    the same module by its own name -- so the attribute still resolved, with a
+    *different value*: the problem code where it used to be that problem's
+    summary. A caller comparing a summary against it stopped matching and was
+    told nothing, which is the quiet failure the removal was for.
+
+    Found by the post-publication checks, on the published wheel, after the
+    changelog and the tag had both claimed the opposite. `plans/problem-codes`
+    has the account; the import is aliased private now.
+    """
+    from outrage import store_sqlite
+
+    assert not hasattr(store_sqlite, "WAL_UNCHECKPOINTED"), (
+        "the name is public in maintenance and must not resolve here as well: "
+        "same spelling, different value, and nothing to notice"
+    )
+    assert maintenance.WAL_UNCHECKPOINTED == "wal-uncheckpointed"

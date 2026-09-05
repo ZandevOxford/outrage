@@ -39,12 +39,21 @@ from .eventlog import EventLog
 from .maintenance import (
     DATABASE_DAMAGED,
     LENGTH_CACHE_STALE,
-    WAL_UNCHECKPOINTED,
     CheckError,
     Problem,
     Repaired,
     Report,
 )
+
+# Aliased under a private name, which is the whole point of the line. This
+# module exported `WAL_UNCHECKPOINTED` until 0.9.0, and its value was the WAL
+# problem's summary; it is now a problem code in `maintenance`. Imported plainly
+# the name would come back as a module attribute here with a *different value*,
+# so a caller comparing a summary against it would silently stop matching --
+# which is the quiet failure the removal existed to avoid, reintroduced by the
+# import that replaced it. Private here, public there, and the old spelling
+# raises where it is used.
+from .maintenance import WAL_UNCHECKPOINTED as _WAL_UNCHECKPOINTED
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
@@ -1579,7 +1588,7 @@ class SqliteStore(FileStore):
             wal = self._wal_path()
             report.problems.append(
                 Problem(
-                    WAL_UNCHECKPOINTED,
+                    _WAL_UNCHECKPOINTED,
                     "warning",
                     "most of the store is in the write-ahead log",
                     f"{wal_bytes} bytes in {wal.name} against {main_bytes} in "
