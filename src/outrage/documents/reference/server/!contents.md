@@ -50,19 +50,19 @@
 7952 7952
 
 ### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
-10154 10156
+10090 10092
 
 ### outrage.server.main(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
-12447 12451
+12215 12219
 
 ### outrage.server.parse_args(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Namespace](https://docs.python.org/3/library/argparse.html#argparse.Namespace)
-13241 13247
+13009 13015
 
 ### outrage.server.skill(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
-14476 14484
+14202 14210
 
 ### outrage.server.static_instructions() → [str](https://docs.python.org/3/library/stdtypes.html#str)
-15567 15577
+15293 15303
 
 ### outrage.server.tool_description(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
-16016 16028
+15742 15754

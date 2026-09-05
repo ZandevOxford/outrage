@@ -79,10 +79,10 @@ LAST = "?last"
 #: key will grow -- a subtree filter, a range, a choice between two keys.
 #:
 #: Reserved **before** anything needs it, deliberately and at a known cost:
-#: ``a/?x`` was a legal key until 2026-08-23 and is not one now. The
-#: alternative is adding each operator to a namespace that already allows it as
-#: ordinary text, where every one of them silently changes what an existing key
-#: means. One refusal now, or an unbounded number of migrations later.
+#: ``a/?x`` is refused today for the sake of operators that do not exist yet.
+#: The alternative is adding each operator to a namespace that already allows it
+#: as ordinary text, where every one of them silently changes what an existing
+#: key means. One refusal now, or an unbounded number of migrations later.
 #:
 #: Only the *first* character is reserved, so a key can still mirror a name
 #: holding a question mark: ``notes/where?.md`` is fine.
@@ -117,10 +117,9 @@ MAX_SEGMENT_CHARS = 1024
 #: *by construction*. Nothing has to check the sum, and no key can exist in a
 #: mounted store that the namespace above it cannot name.
 #:
-#: This was 128 until 2026-08-20, when it was halved to buy that property.
-#: 128 was overkill - a key is typically a handful of segments - and the
-#: alternative was carrying a drop path through every listing for keys that
-#: had no name from outside. See ``project/reference/planned/mounts/cursors``.
+#: Halved from the obvious 128 to buy that property, at no real cost: a key is
+#: typically a handful of segments, and the alternative was carrying a drop
+#: path through every listing for keys that had no name from outside.
 MAX_SEGMENTS = 64
 
 #: The most segments a key may have in the namespace a mount table presents,
@@ -724,8 +723,7 @@ def remaining_depth(budget: int | None, key: str, below: str) -> int | None:
     number measured from the mounted store's own root, which is where its keys
     begin. Computed here, once, rather than at each traversal: the same
     arithmetic written twice is how the root came to be depth 1 in SQL and
-    depth 0 in Python, which cost two silent defects
-    (``project/reference/planned/root-key/impact``).
+    depth 0 in Python, which cost two silent defects.
 
     Unlimited stays unlimited. A **negative** result means ``below`` already
     lies past the budget, so nothing there is in scope -- not even its own row.

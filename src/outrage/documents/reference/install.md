@@ -18,10 +18,10 @@ already follows for `.mcp.json`, and the reason its `read_config` and
 
 [`HOOK_TARGETS`](#outrage.install.HOOK_TARGETS) is the list, and everything below takes one of them rather
 than assuming Claude Code. Adding the second one is what turned the constants
-into a [`HookTarget`](#outrage.install.HookTarget); `reference/harness-portability` said not to
-generalise before there was something real to generalise *to*, and Copilot CLI
-was it. Codex, added third, cost a template and a constant and no change to any
-function here - which is the shape working.
+into a [`HookTarget`](#outrage.install.HookTarget), on the rule that nothing is generalised before
+there is a second real case to generalise *to*, and Copilot CLI was it. Codex,
+added third, cost a template and a constant and no change to any function here
+- which is the shape working.
 
 They differ in more than spelling:
 
@@ -87,7 +87,7 @@ anyway. It depends on that tolerance continuing, which is undocumented, and if
 it ever stops the hook is rejected and delivers nothing *silently*. An ordinary
 argument belongs to the command contract and needs no undocumented JSON
 tolerance. Both client behaviours this project has been burnt by were
-undocumented ones; see `reference/harness-delivery` in the store.
+undocumented ones.
 
 **Match on the stable part, never the whole marker.** `:vN` is
 informational, and so is the product name in front of it. A matcher that
@@ -255,11 +255,10 @@ entry exactly as it is installed. [`fragment`](#outrage.install.HookTarget.fragm
 
 Relative for the same reason [`relative`](#outrage.install.HookTarget.relative) is: a field that is the whole
 installation's absolute path is different on every machine, and this
-dataclass's `repr` is *rendered into the shipped API reference*. It was
-absolute until 2026-08-29, which put the build machine's checkout into
-documents/reference/install.md and made
-`test_the_reference_is_not_stale` fail for anyone whose clone was
-somewhere else.
+dataclass's `repr` is *rendered into the shipped API reference*. An
+absolute path here commits the build machine's checkout to
+`documents/reference/install.md`, and `test_the_reference_is_not_stale`
+then fails for anyone whose clone is somewhere else.
 
 #### relative *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 

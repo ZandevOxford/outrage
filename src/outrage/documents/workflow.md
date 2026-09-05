@@ -23,6 +23,13 @@ find them.
 * Particularly if the project makes use of a glossary, complex documents
   should also have `keywords`: a list, one per line, of the topics the document
   covers.
+* A long Markdown document can carry `contents`, an offset index of its own
+  headings, written by the `make_contents` tool. Each heading is followed by
+  two numbers: the character offset it begins at, and the same position as a
+  UTF-8 byte offset. Reading the index and then one `read_document` with
+  `offset` or `byte_offset` reaches a section directly, so a large document
+  stays usable without being read whole. Nothing regenerates an index when its
+  document changes, so refresh it when you edit the document.
 
 ## Keep the current context thread live
 

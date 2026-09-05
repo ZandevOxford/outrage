@@ -11,8 +11,7 @@ the store calls it. The MCP server presents one namespace across several
 stores, so the same key has a longer name there -- ``python/nope`` inside the
 store mounted at ``ref`` is ``ref/python/nope`` to any caller. A sentence built
 where the failure happened is wrong for one of them and there is no third
-answer, which is the defect recorded in
-``project/reference/planned/error-naming``.
+answer. That was a live defect, not a hypothetical one.
 
 So ``name`` is a function from the key the raising layer used to the key the
 reader should see. It defaults to :func:`outrage.keys.displayed`, which is the
@@ -33,9 +32,9 @@ from . import keys
 from .errors import OutrageError
 
 # The conflict rules by their constants rather than as literals: a message that
-# tells a caller to pass `overwrite-unchanged` is a place the value is written
-# down, and `plans/hook-install/marker-rename` is what renaming one of those
-# behind a written-down copy costs.
+# tells a caller to pass `overwrite-unchanged` is a second place the value is
+# written down, and a rename that misses one leaves the sentence naming a
+# spelling nothing accepts.
 from .store import OVERWRITE, OVERWRITE_UNCHANGED
 
 #: How a key is named when nobody says otherwise: as one store sees it.
@@ -469,7 +468,7 @@ def _import_file_missing(
     # reported missing from `<the export directory>/export/x.md`, and the
     # doubled segment reads as a bug in the tool rather than as a path taken
     # from somewhere else. Naming the directory is what makes it read as what
-    # it is. `context/66/state`.
+    # it is.
     return f"{missing} - {given!r} is relative to the export directory {root}"
 
 

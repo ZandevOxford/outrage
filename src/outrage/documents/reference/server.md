@@ -5,11 +5,11 @@ MCP server exposing the document store.
 A thin wrapper: argument shaping and result shaping only. All behaviour lives
 in [`outrage.store`](store.md#module-outrage.store), so it can be exercised without a protocol harness.
 
-**Including the mount table.** More than one store behind one key namespace
-used to be this module's work -- the routing, the segment list a subtree is read
-as, the merge of a level with the mounts standing in it, the cursor recomputed
-at every boundary. All of it is
-[`MountedStore`](mounts.md#outrage.mounts.MountedStore) now, which *is* a
+**Including the mount table.** More than one store behind one key namespace is
+not this module's work -- not the routing, the segment list a subtree is read
+as, the merge of a level with the mounts standing in it, nor the cursor
+recomputed at every boundary. All of it is
+[`MountedStore`](mounts.md#outrage.mounts.MountedStore), which *is* a
 [`Store`](store.md#outrage.store.Store), so every handler here calls one store method and
 shapes the answer. What is left that knows about mounts is configuration
 (`--mount` at startup) and the two sentences a result carries about what a
@@ -170,11 +170,11 @@ not a [`FileStore`](store.md#outrage.store.FileStore), so it cannot be asked whe
 [`main()`](#outrage.server.main) has already resolved it for the event log, which is what still
 wants it.
 
-`document_edit` no longer does. It was registered only when there was a
-store directory to write under, because there was nowhere else to put a
-file; since `plans/robust-editing` it writes to
+`document_edit` does not need it. It writes to
 [`export_root()`](bulk.md#outrage.bulk.export_root), a per-user directory below the system
-temporary directory, which always exists. So the tool is always there.
+temporary directory, which always exists -- so the tool is registered
+unconditionally rather than only where there is a store directory to write
+under.
 
 `ingest_document` is the one tool that is not. It needs the optional
 `documents` extra, and a client offered a tool whose every call refuses
@@ -191,11 +191,9 @@ wants this: a real server passes nothing and offers what it can do.
 
 A line naming the root store's readme, then the essentials, then the tail.
 
-The readme is **named, not carried**. Inlining it was the older answer, and
-the argument for it still holds as far as it goes: a line telling a session
-to go and read a key is a line that can be read past, and this project has
-two records of exactly that happening -- see plans/agents on trap 2, and
-reference/agents on the search cascade.
+The readme is **named, not carried**. The argument for inlining it holds as
+far as it goes: a line telling a session to go and read a key is a line that
+can be read past, and this project has watched exactly that happen twice.
 
 What settled it the other way is that the length of a store's entry point
 is the project's business, not this server's. Carrying it means capping it,
@@ -207,8 +205,7 @@ it listed its namespaces, and the readme shipped as the default is 2560.
 Over the cap nothing was inlined and the length was reported instead, which
 is a failure mode that arrives *silently* at the one document meant to
 prevent silent failure -- it looks like delivery until somebody starts a
-fresh session and reads what came. See context/74, and context/73/5 for
-the session that found it.
+fresh session and reads what actually came.
 
 So the cost is fixed and small, the readme can be whatever the project needs,
 and what makes the line hard to read past is that it is first and the
@@ -245,7 +242,7 @@ The server's command line: which stores to serve, and what to record.
 Three groups of arguments, and the first two are the interesting pair.
 `--dir` says which *directory* holds the stores, `--root-mount` and the
 repeatable `--mount`/`--mount-ro` say which *files* inside it are
-mounted where -- see `project/reference/planned/mounts`. `--log` and
+mounted where. `--log` and
 `--log-content` say what is recorded about the calls that arrive.
 
 The mount options may also be written in a file rather than typed --

@@ -154,8 +154,7 @@ class SqliteStore(FileStore):
         # sync tool handlers in a worker pool, so a single shared connection
         # was being used from several threads at once -- which SQLite reported
         # as `bad parameter or other API misuse`, and, about a third of the
-        # time, as an empty result set that raised nothing at all. See
-        # `project/reference/planned/concurrency`.
+        # time, as an empty result set that raised nothing at all.
         self._local = threading.local()
         # What `PRAGMA encoding` said, once it has been asked. A property of
         # the file rather than of a connection, so it is not thread-local.
@@ -771,7 +770,7 @@ class SqliteStore(FileStore):
 
         The residual cost is walking the row's overflow-page chain, so this is
         linear in the offset and not constant -- about 0.17 ms per megabyte of
-        offset, measured in `plans/byte-offsets/measurements`. A pattern is the
+        offset, measured rather than estimated. A pattern is the
         exception it cannot help: searching is a scan, so that reads the blob
         through whatever the offset.
         """
@@ -1159,8 +1158,7 @@ class SqliteStore(FileStore):
         **That does not make it safe to bound this by document key**, and this
         still measures at the synthesised position deliberately. Exactly that
         simplification was made once before, on exactly this reasoning, and
-        reintroduced a double count that review did not catch; see
-        ``context/8`` and ``context/9`` in the outrage store.
+        reintroduced a double count that review did not catch.
         ``tests/test_store.py::test_survey_windows_tile_over_adversarial_keys``
         is the guard, and the synthesised position is correct under any
         ordering, which a document-key bound is not.
@@ -1477,7 +1475,7 @@ def _subtree_clauses(subtree: BoundedSubtree) -> tuple[list[str], list[object]]:
 
     **Depth stays measured on ``doc_key``**, because that is what depth counts:
     metadata adds none. So a depth filter reaches a key's whole metadata
-    subtree, which is the cost ``planned/metadata`` accepted, and inside a
+    subtree, which is a cost taken deliberately, and inside a
     metadata namespace it excludes nothing -- levels and depth are decoupled
     there, and a level walk is what descends.
     """

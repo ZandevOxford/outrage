@@ -435,8 +435,7 @@ Two things are settled here rather than per backend, because they are the
 same question whatever the storage is: **where the file lives**, which
 [`store_file()`](#outrage.store.store_file) decides from a directory and a name relative to it, and
 **that a store is a file inside a directory** rather than a directory of
-its own, so that several stores can share one -- see
-`project/reference/planned/mounts`.
+its own, so that several stores can share one.
 
 A backend whose "file" is a *directory* is still one of these:
 [`FilesystemStore`](store_files.md#outrage.store_files.FilesystemStore) sets `path` to the tree
@@ -636,9 +635,8 @@ reached by a caller and stays a bare `ValueError`; only what no front end
 can express in its own argument layer belongs here.
 
 Kept a `ValueError` too, so `except ValueError` around a store call
-goes on working. That matters more here than elsewhere: these sites were
-bare `ValueError` until 2026-08-29, and the mcp SDK's own boundary
-catches on the class.
+goes on working. That matters more here than elsewhere, because the mcp
+SDK's own boundary catches on the class.
 
 ### *exception* outrage.store.KeyNotFoundError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
@@ -1071,8 +1069,7 @@ read: a delete that steps over a mounted store's stretch of the order
 needs to say so in the same vocabulary a traversal does, or it removes
 keys the mount has made unreachable and reports them as deleted. Those
 keys read back fine from the mount on the very next call, which is the
-defect this argument exists for -- see
-`project/reference/planned/mounts/crossing`.
+defect this argument exists for.
 
 It bounds *both* halves. The key itself and its metadata are as capable
 of lying inside a shadowed stretch as any descendant is.
@@ -1129,8 +1126,7 @@ about the same set of keys and a caller can hold one meaning for both.
 
 **Metadata counts**, as it does there and for the same reason: a
 `!title` written since the watermark is a change to the subtree, and
-an aggregate with a second unstated meaning is what `context/59`
-cost.
+an aggregate with a second unstated meaning costs more than it saves.
 
 **What it cannot see is a deletion.** The row that would carry the
 timestamp is the row that has gone, so the newest change in a range
@@ -1141,8 +1137,8 @@ question over the same range is what answers the other half.
 Timestamps are normalised to seconds ([`store_document()`](#outrage.store.Store.store_document)), so a
 write inside the same second as a watermark is invisible to a
 comparison against one. That is the weakness `content_sha256` exists
-to avoid elsewhere, inherited here deliberately and named in
-`plans/write-preconditions/copy-tree`.
+to avoid elsewhere, inherited here deliberately: a watermark over a
+whole subtree has no single content to hash.
 
 The default implementation walks the subtree and takes the maximum,
 which is every store's answer until it has a better one: a database
@@ -1428,8 +1424,7 @@ Read a whole document, following `next_offset` until there is no more.
 
 A function beside the store rather than a method on it, deliberately.
 Whether the *library* should stop handing out silent partial documents is
-an open design question - the options are weighed in
-`project/reference/planned/agents` and none has been chosen. This settles
+an open design question, and no answer has been chosen. This settles
 only what the command line does, which is a narrower question with an
 obvious answer: a person redirecting a document to a file wants the
 document, and a slice is available by asking for one.

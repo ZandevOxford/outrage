@@ -53,181 +53,181 @@
 4670 4670
 
 #### *property* content *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None)*
-5300 5300
+5281 5281
 
 #### *property* next_offset *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
-5644 5644
+5625 5625
 
 ### *class* outrage.logread.Filter(session: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, call: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, op: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, method: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, event: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, errors: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
-5872 5872
+5853 5853
 
 #### session *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)* *= None*
-6965 6965
+6946 6946
 
 #### call *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)* *= None*
-7115 7115
+7096 7096
 
 #### op *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)* *= None*
-7263 7263
+7244 7244
 
 #### method *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)* *= None*
-7408 7408
+7389 7389
 
 #### event *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)* *= None*
-7557 7557
+7538 7538
 
 #### key *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)* *= None*
-7705 7705
+7686 7686
 
 #### errors *: [bool](https://docs.python.org/3/library/functions.html#bool)* *= False*
-7851 7851
+7832 7832
 
 #### matches(event: [Event](#outrage.logread.Event)) → [bool](https://docs.python.org/3/library/functions.html#bool)
-7940 7940
+7921 7921
 
 #### select(events: [Iterable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable)[[Event](#outrage.logread.Event)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Event](#outrage.logread.Event)]
-8342 8344
+8323 8325
 
 ### *class* outrage.logread.Log(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), events: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Event](#outrage.logread.Event)] = <factory>, malformed: [list](https://docs.python.org/3/library/stdtypes.html#list)[[int](https://docs.python.org/3/library/functions.html#int)] = <factory>)
-8861 8865
+8842 8846
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
-9362 9366
+9343 9347
 
 #### events *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Event](#outrage.logread.Event)]*
-9445 9449
+9426 9430
 
 #### malformed *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[int](https://docs.python.org/3/library/functions.html#int)]*
-9556 9560
+9537 9541
 
 #### *property* sessions *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Session](#outrage.logread.Session)]*
-9698 9702
+9679 9683
 
 ### *exception* outrage.logread.LogError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
-9826 9830
+9807 9811
 
 ### *class* outrage.logread.Session(id: [str](https://docs.python.org/3/library/stdtypes.html#str), events: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Event](#outrage.logread.Event)] = <factory>)
-10152 10156
+10133 10137
 
 #### id *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
-10515 10519
+10496 10500
 
 #### events *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Event](#outrage.logread.Event)]*
-10587 10591
+10568 10572
 
 #### *property* start *: [Event](#outrage.logread.Event) | [None](https://docs.python.org/3/library/constants.html#None)*
-10698 10702
+10679 10683
 
 #### *property* pid *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
-10889 10893
+10870 10874
 
 #### *property* version *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
-11038 11042
+11019 11023
 
 #### *property* first_ts *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
-11190 11194
+11171 11175
 
 #### *property* last_ts *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
-11279 11283
+11260 11264
 
 #### *property* calls *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[int](https://docs.python.org/3/library/functions.html#int)]*
-11367 11371
+11348 11352
 
 #### *property* tool_calls *: [int](https://docs.python.org/3/library/functions.html#int)*
-11550 11554
+11531 11535
 
 #### *property* store_accesses *: [int](https://docs.python.org/3/library/functions.html#int)*
-11642 11646
+11623 11627
 
 #### *property* is_discovery *: [bool](https://docs.python.org/3/library/functions.html#bool)*
-11738 11742
+11719 11723
 
 ### *class* outrage.logread.Summary(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), lines: [int](https://docs.python.org/3/library/functions.html#int) = 0, malformed: [int](https://docs.python.org/3/library/functions.html#int) = 0, sessions: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Session](#outrage.logread.Session)] = <factory>, calls: [int](https://docs.python.org/3/library/functions.html#int) = 0, store_accesses: [int](https://docs.python.org/3/library/functions.html#int) = 0, accesses_per_call: Counter[tuple[str, int]]=<factory>, ops: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = <factory>, methods: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = <factory>, tools: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = <factory>, errors: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = <factory>, refused: [int](https://docs.python.org/3/library/functions.html#int) = 0, reads: [int](https://docs.python.org/3/library/functions.html#int) = 0, truncated: [list](https://docs.python.org/3/library/stdtypes.html#list)[[TruncatedRead](#outrage.logread.TruncatedRead)] = <factory>, documents_truncated: [int](https://docs.python.org/3/library/functions.html#int) = 0)
-12369 12373
+12350 12354
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
-14123 14127
+14104 14108
 
 #### lines *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
-14206 14210
+14187 14191
 
 #### malformed *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
-14288 14292
+14269 14273
 
 #### sessions *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Session](#outrage.logread.Session)]*
-14374 14378
+14355 14359
 
 #### calls *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
-14491 14495
+14472 14476
 
 #### store_accesses *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
-14573 14577
+14554 14558
 
 #### accesses_per_call *: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [int](https://docs.python.org/3/library/functions.html#int)]]*
-14664 14668
+14645 14649
 
 #### ops *: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
-15190 15194
+15171 15175
 
 #### methods *: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
-15346 15350
+15327 15331
 
 #### tools *: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
-15506 15510
+15487 15491
 
 #### errors *: [Counter](https://docs.python.org/3/library/collections.html#collections.Counter)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
-15664 15668
+15645 15649
 
 #### refused *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
-15823 15827
+15804 15808
 
 #### reads *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
-15907 15911
+15888 15892
 
 #### truncated *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[TruncatedRead](#outrage.logread.TruncatedRead)]*
-15989 15993
+15970 15974
 
 #### documents_truncated *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
-16119 16123
+16100 16104
 
 #### *property* busiest_call *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[int](https://docs.python.org/3/library/functions.html#int), [str](https://docs.python.org/3/library/stdtypes.html#str), [int](https://docs.python.org/3/library/functions.html#int)] | [None](https://docs.python.org/3/library/constants.html#None)*
-16215 16219
+16196 16200
 
 #### *property* mean_accesses *: [float](https://docs.python.org/3/library/functions.html#float)*
-16761 16769
+16742 16750
 
 #### *property* followed_up *: [int](https://docs.python.org/3/library/functions.html#int)*
-17127 17135
+17108 17116
 
 ### *class* outrage.logread.TruncatedRead(read: [Event](#outrage.logread.Event), resumed_by: [Event](#outrage.logread.Event) | [None](https://docs.python.org/3/library/constants.html#None))
-17468 17476
+17449 17457
 
 #### read *: [Event](#outrage.logread.Event)*
-17807 17815
+17788 17796
 
 #### resumed_by *: [Event](#outrage.logread.Event) | [None](https://docs.python.org/3/library/constants.html#None)*
-17854 17862
+17835 17843
 
 #### *property* followed_up *: [bool](https://docs.python.org/3/library/functions.html#bool)*
-17971 17979
+17952 17960
 
 ### outrage.logread.format_event(event: [Event](#outrage.logread.Event), \*, content: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
-18372 18380
+18324 18332
 
 ### outrage.logread.format_session(session: [Session](#outrage.logread.Session)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
-18960 18970
+18912 18922
 
 ### outrage.logread.format_summary(summary: [Summary](#outrage.logread.Summary)) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
-19174 19186
+19126 19138
 
 ### outrage.logread.read_log(path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Log](#outrage.logread.Log)
-19478 19492
+19430 19444
 
 ### outrage.logread.sessions(events: [Iterable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable)[[Event](#outrage.logread.Event)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Session](#outrage.logread.Session)]
-20079 20095
+20031 20047
 
 ### outrage.logread.summarise(log: [Log](#outrage.logread.Log), events: [Iterable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable)[[Event](#outrage.logread.Event)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Summary](#outrage.logread.Summary)
-20641 20659
+20593 20611
 
 ### outrage.logread.truncated_reads(session: [Session](#outrage.logread.Session)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[TruncatedRead](#outrage.logread.TruncatedRead)]
-21170 21190
+21122 21142

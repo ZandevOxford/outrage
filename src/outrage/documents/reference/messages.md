@@ -13,8 +13,7 @@ the store calls it. The MCP server presents one namespace across several
 stores, so the same key has a longer name there -- `python/nope` inside the
 store mounted at `ref` is `ref/python/nope` to any caller. A sentence built
 where the failure happened is wrong for one of them and there is no third
-answer, which is the defect recorded in
-`project/reference/planned/error-naming`.
+answer. That was a live defect, not a hypothetical one.
 
 So `name` is a function from the key the raising layer used to the key the
 reader should see. It defaults to [`outrage.keys.displayed()`](keys.md#outrage.keys.displayed), which is the

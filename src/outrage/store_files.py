@@ -60,7 +60,8 @@ Three, each covered by a test that says so:
 
 Everything else is the contract as ``tests/test_store.py`` states it, including
 the root document, which is the file named by its extension alone at the top of
-the tree -- ``.md`` -- and closes the export gap ``planned/root-key`` left.
+the tree -- ``.md`` -- so that the root has somewhere to live in an exported
+tree rather than being the one key a tree cannot carry.
 """
 
 from __future__ import annotations
@@ -625,13 +626,13 @@ class FilesystemStore(FileStore):
         reads the window. Flat in the size of the document and in the offset,
         where the SQLite path still walks a page chain.
 
-        **A file holding CRLF reads the same both ways**, since
-        `plans/line-endings` brought the character path into agreement with
-        this one: what is addressed here is the file itself, which is the only
-        thing a byte offset can usefully mean to anything outside the store,
-        and `_read` is why the characters now come from the same bytes. Until
-        that, `issues/3`, the two numbers on a `!contents` line did not name
-        the same place in this backend.
+        **A file holding CRLF reads the same both ways**, because the
+        character path was brought into agreement with this one rather than the
+        other way about: what is addressed here is the file itself, which is the
+        only thing a byte offset can usefully mean to anything outside the
+        store, and :func:`_read` is why the characters come from the same bytes.
+        A character path that translated line endings would put the two numbers
+        on a ``!contents`` line at different places in the same document.
         """
         try:
             with path.open("rb") as handle:
@@ -1045,8 +1046,8 @@ class FilesystemStore(FileStore):
         not a document, and it could only ever disagree with the layout the
         files are actually in. Answering with :attr:`format_version` says the
         two cannot differ, which is true here and false for a file with a
-        header -- cf. "'Nothing to repair' and 'nothing to check' are not the
-        same sentence" in ``planned/storage``.
+        header: "nothing to repair" and "nothing to check" are not the same
+        sentence.
         """
         return self.format_version
 
@@ -1188,11 +1189,10 @@ def _read(path: Path) -> str:
 
     ``newline=""`` turns off the translation :meth:`~pathlib.Path.read_text`
     does by default, under which CRLF and a lone CR both arrive as LF. **A
-    directory of files returns what is on disk** - rule (a) of
-    `plans/line-endings` - so a CRLF file is a CRLF document, its length is the
-    length the file has, and its character offsets and its byte offsets name
-    the same places. Before this, `issues/3`, a store reported text its own
-    files did not hold.
+    directory of files returns what is on disk**, so a CRLF file is a CRLF
+    document, its length is the length the file has, and its character offsets
+    and its byte offsets name the same places. Translating instead makes a store
+    report text its own files do not hold.
 
     Every read of a document here comes through this, measuring and checking
     included, because a store that read a file two ways would report a size its

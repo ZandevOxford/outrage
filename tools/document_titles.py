@@ -22,9 +22,9 @@ namespace". A run over the whole tree would flatten all five back to their
 headings, so the default is to skip what is already there and `--overwrite` is
 the way to ask for the other thing.
 
-The heading is the first ATX `#` line. See `context/71/findings/layout` in the
-store for why a heading is a weaker title than the module docstring's first
-sentence, which is the alternative if these ever read too thin.
+The heading is the first ATX `#` line. A heading is a weaker title than the
+module docstring's first sentence -- it names the page rather than saying what
+is in it -- and the docstring is the alternative if these ever read too thin.
 """
 
 from __future__ import annotations

@@ -1,13 +1,13 @@
 """What does a random read into a large document actually cost, per backend?
 
-The measurement behind `plans/byte-offsets`. That plan turns on a claim about
+The measurement behind byte addressing. The case for it turns on a claim about
 cost -- that a character offset cannot be honoured cheaply by anything, and
 that byte addressing is the only thing which makes a seek into a 20 MB document
 cheap -- and a claim about cost is worth nothing quoted from a transcript. It
 depends on the SQLite build, the page size, the filesystem and the machine, so
 this is here to be re-run rather than trusted.
 
-Three questions, and the plan answers differently to each:
+Three questions, each with a different answer:
 
 * **Today's path.** `retrieve_document` on the real backend, which reads the
   whole document and slices it in Python. Measured through the project's own

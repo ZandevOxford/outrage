@@ -3,11 +3,11 @@
 A thin wrapper: argument shaping and result shaping only. All behaviour lives
 in :mod:`outrage.store`, so it can be exercised without a protocol harness.
 
-**Including the mount table.** More than one store behind one key namespace
-used to be this module's work -- the routing, the segment list a subtree is read
-as, the merge of a level with the mounts standing in it, the cursor recomputed
-at every boundary. All of it is
-:class:`~outrage.mounts.MountedStore` now, which *is* a
+**Including the mount table.** More than one store behind one key namespace is
+not this module's work -- not the routing, the segment list a subtree is read
+as, the merge of a level with the mounts standing in it, nor the cursor
+recomputed at every boundary. All of it is
+:class:`~outrage.mounts.MountedStore`, which *is* a
 :class:`~outrage.store.Store`, so every handler here calls one store method and
 shapes the answer. What is left that knows about mounts is configuration
 (``--mount`` at startup) and the two sentences a result carries about what a
@@ -113,7 +113,6 @@ def _named_key(table: MountedStore, key: str | None, *, allow_wildcard: bool = F
     Resolved **here** and not in the table, and before anything routes: a
     ``?last`` in the part of a key that names a mount decides which store
     answers, so a table asked to route one has not been told enough to route it.
-    See ``context/51/design``.
 
     Normalised too, because this is the key every tool echoes back. A caller who
     wrote ``context/?last`` is told which context they got, for the same reason a
@@ -182,10 +181,10 @@ def _note_shrink(result: dict[str, Any], previous: int | None, stored: int) -> N
     """Do the subtraction a caller would otherwise have to do themselves.
 
     Reported rather than refused -- emptying a document is a thing a person may
-    mean, and ``plans/write-preconditions`` is where enforcing anything is
-    being considered. But the arithmetic is done here: this exact workflow
-    through the command line wrote a 0-character document over a good one, and
-    a shrink nobody subtracted is a shrink nobody saw. ``context/60/findings``.
+    mean, so enforcement is a separate question from noticing. But the
+    arithmetic is done here: this exact workflow through the command line wrote
+    a 0-character document over a good one, and a shrink nobody subtracted is a
+    shrink nobody saw.
     """
     if previous is not None and stored < previous:
         _add_note(
@@ -718,11 +717,9 @@ PROTECTED_CHARS = len(_protected(READ_README))
 def instructions(store: Store) -> str:
     """A line naming the root store's readme, then the essentials, then the tail.
 
-    The readme is **named, not carried**. Inlining it was the older answer, and
-    the argument for it still holds as far as it goes: a line telling a session
-    to go and read a key is a line that can be read past, and this project has
-    two records of exactly that happening -- see `plans/agents` on trap 2, and
-    `reference/agents` on the search cascade.
+    The readme is **named, not carried**. The argument for inlining it holds as
+    far as it goes: a line telling a session to go and read a key is a line that
+    can be read past, and this project has watched exactly that happen twice.
 
     What settled it the other way is that the length of a store's entry point
     is the project's business, not this server's. Carrying it means capping it,
@@ -734,8 +731,7 @@ def instructions(store: Store) -> str:
     Over the cap nothing was inlined and the length was reported instead, which
     is a failure mode that arrives *silently* at the one document meant to
     prevent silent failure -- it looks like delivery until somebody starts a
-    fresh session and reads what came. See `context/74`, and `context/73/5` for
-    the session that found it.
+    fresh session and reads what actually came.
 
     So the cost is fixed and small, the readme can be whatever the project needs,
     and what makes the line hard to read past is that it is first and the
@@ -853,11 +849,11 @@ def build_server(
     :func:`main` has already resolved it for the event log, which is what still
     wants it.
 
-    ``document_edit`` no longer does. It was registered only when there was a
-    store directory to write under, because there was nowhere else to put a
-    file; since ``plans/robust-editing`` it writes to
+    ``document_edit`` does not need it. It writes to
     :func:`~outrage.bulk.export_root`, a per-user directory below the system
-    temporary directory, which always exists. So the tool is always there.
+    temporary directory, which always exists -- so the tool is registered
+    unconditionally rather than only where there is a store directory to write
+    under.
 
     ``ingest_document`` is the one tool that is not. It needs the optional
     ``documents`` extra, and a client offered a tool whose every call refuses
@@ -996,8 +992,7 @@ def build_server(
         # file whose *record* says what this edit was made against, and the
         # content still comes from the call. An agent that exported a document
         # and edited it in context rather than on disk gets the staleness
-        # refusal `document_edit` gets, which before this it could not ask for.
-        # `plans/write-preconditions/by-file`.
+        # refusal `document_edit` gets, without having to hand back a file.
         check = (
             None
             if against is None
@@ -1354,8 +1349,7 @@ def build_server(
         # table is what crosses it. It is the one call where crossing makes the
         # system more dangerous rather than less, and it is deliberate: a delete
         # that stopped at a boundary while every other tool crossed it would
-        # leave the caller to discover the rule from the wreckage. See
-        # `planned/mounts/crossing`.
+        # leave the caller to discover the rule from the wreckage.
         # Read before the delete, so that anything written while this call runs
         # is later than the moment a second call is measured against. The copy's
         # dry run takes its watermark the same way and for the same reason.
@@ -1377,7 +1371,7 @@ def build_server(
             # only what has not moved" a caller cannot work out for itself. The
             # command line has printed one on `rm --dry-run` since the watermark
             # was built; a session had no way to ask for one at all, which is
-            # what this tool exists to fix. `context/111/findings` 3.
+            # what this tool exists to fix.
             result["checked_at"] = checked_at
             _add_note(
                 result,
@@ -1582,7 +1576,7 @@ def build_server(
                 # notes contradicted each other without this: a copy carries the
                 # source's timestamps, so the page just written is itself a
                 # change to the target whenever the source is newer than the
-                # moment being measured against. `context/111/findings` 4.
+                # moment being measured against.
                 paging += (
                     " Except unchanged_since, where the source is newer than it: "
                     "the page just written carries the source's own timestamps "
@@ -1726,9 +1720,10 @@ def build_server(
             changed_at=imported.changed_at,
         )
         if imported.unedited and imported.copied_from is None:
-            # The silent no-op `plans/write-preconditions` names: the round trip
-            # was clean and the edit matched nothing. Free to notice, because
-            # the export recorded what it handed out.
+            # The silent no-op: the round trip was clean and the edit matched
+            # nothing, so a call that looks like a write stored the document it
+            # already had. Free to notice, because the export recorded what it
+            # handed out.
             _add_note(
                 result,
                 "the file is identical to what was exported, so the edit changed "
@@ -1884,7 +1879,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     Three groups of arguments, and the first two are the interesting pair.
     ``--dir`` says which *directory* holds the stores, ``--root-mount`` and the
     repeatable ``--mount``/``--mount-ro`` say which *files* inside it are
-    mounted where -- see ``project/reference/planned/mounts``. ``--log`` and
+    mounted where. ``--log`` and
     ``--log-content`` say what is recorded about the calls that arrive.
 
     The mount options may also be written in a file rather than typed --

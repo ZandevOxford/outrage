@@ -240,8 +240,7 @@ before `a-x`.
 **That does not make it safe to bound this by document key**, and this
 still measures at the synthesised position deliberately. Exactly that
 simplification was made once before, on exactly this reasoning, and
-reintroduced a double count that review did not catch; see
-`context/8` and `context/9` in the outrage store.
+reintroduced a double count that review did not catch.
 `tests/test_store.py::test_survey_windows_tile_over_adversarial_keys`
 is the guard, and the synthesised position is correct under any
 ordering, which a document-key bound is not.

@@ -8,16 +8,16 @@
 590 590
 
 ## Keep the current context thread live
-1000 1000
+1520 1520
 
 ## One document, one facet
-1726 1726
+2246 2246
 
 ## Editing files
-2139 2139
+2659 2659
 
 ## Deleting documents
-3746 3746
+4266 4266
 
 ## Before handoff or compaction
-4924 4924
+5444 5444

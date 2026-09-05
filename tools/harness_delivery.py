@@ -3,11 +3,10 @@
 Outrage depends on three channels that all run from the client into the model, and
 this project has now been bitten by three of them:
 
-* **`PreCompact` hooks** cannot deliver text at all -- see
-  `project/reference/planned/checkpoint-hook`. Found by trying it.
-* **MCP server instructions** are cut at 2048 characters -- see
-  `context/12/verification`, found by a bootstrap check a session had to be
-  asked to answer by hand. The cut is permanent and is no longer the question:
+* **`PreCompact` hooks** cannot deliver text at all. Found by trying it.
+* **MCP server instructions** are cut at 2048 characters, found by a bootstrap
+  check a session had to be asked to answer by hand. The cut is permanent and
+  is no longer the question:
   the text is ordered against it, so what this reports is whether the part that
   had to survive did.
 * **`SessionStart` hooks** are reported broken for new conversations in
@@ -63,7 +62,7 @@ and only text that never arrived at all counts as discarded.
 
 That distinction is what keeps the exit status meaningful in both directions:
 without it every resume looks like claude-code#10373, and the one real signal
-drowns. See `project/reference/harness-delivery/resume`.
+drowns.
 
 Usage::
 
@@ -98,7 +97,7 @@ TRANSCRIPT_ROOT = Path.home() / ".claude" / "projects"
 #: without one would read as a document that simply ended.
 TRUNCATION_MARKER = "… [truncated]"
 
-#: What the delivered block opens with since `context/74`: the sentence *naming*
+#: What the delivered block opens with: the sentence *naming*
 #: the readme, in its two forms. Matched as a prefix of each rather than the
 #: whole sentence, so rewording the rest of `READ_README` or `NO_README` does
 #: not silently turn this into a check that always fails. Copied rather than
@@ -106,11 +105,11 @@ TRUNCATION_MARKER = "… [truncated]"
 READ_README_PREFIX = "This store has a `readme` document"
 NO_README_PREFIX = "This store has no `readme` document"
 
-#: What the block opened with while the readme was *carried*. That arrangement
-#: was reversed in `context/74` -- a cap is the wrong bound when every project
-#: has its own conventions -- so this heading now marks a session served an
-#: older server's text, not a current one. Kept because instructions are sent
-#: once at initialisation and old sessions stay readable.
+#: What the block opened with while the readme was *carried* rather than named.
+#: A cap is the wrong bound when every project's conventions are their own
+#: length, so the server names the readme instead -- and this heading now marks
+#: a session served an older server's text, not a current one. Kept because
+#: instructions are sent once at initialisation and old sessions stay readable.
 README_HEADING_PREFIX = "--- `readme`:"
 
 #: What became of one invocation's output. `quiet` means it printed nothing to
@@ -508,7 +507,7 @@ def report_instructions(newest: Session) -> None:
         print("  which is the same ordering. Store one at `readme` and it is named.")
     elif body.startswith(README_HEADING_PREFIX):
         print("  SUPERSEDED ORDERING -- the block opens with the readme's *content*,")
-        print("  inlined, which is the arrangement `context/74` reversed. The session")
+        print("  inlined, where a current server names it instead. The session")
         print("  was served an older server's text. Instructions are sent once at")
         print("  initialisation, and neither /clear nor a resume replaces them: this")
         print("  needs a whole new session.")
@@ -535,7 +534,7 @@ def report_instructions(newest: Session) -> None:
         print("  inside the tail, which is what the tail is for.")
     else:
         print("  essentials CUT -- the budget is wrong, or something ahead of them")
-        print("  grew. Nothing may be said only in the tail; see planned/instructions-budget.")
+        print("  grew. Nothing may be said only in the tail: it is past the cut.")
 
 
 def server_constants() -> Any | None:

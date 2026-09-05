@@ -17,8 +17,8 @@ Two translations happen at the boundary and nothing else does:
   caller only ever sees the one namespace.
 
 The mount point itself is the inner store's **root**, which is why the root had
-to become a valid key first -- see `project/reference/planned/root-key`.
-Without it a store mounted at `ref` would have no way to answer for the
+to become a valid key first. Without it a store mounted at `ref` would have
+no way to answer for the
 document or the title *at* `ref`, and a survey could not say what the mount
 is.
 
@@ -30,9 +30,8 @@ differently. So this refuses writes *through this server*; it does not make the
 file read-only to anything else.
 
 Configuration only, and only at startup: nothing here adds or removes a mount
-on a running server, and nothing marks one read-only after it. See
-`project/reference/planned/mounts` for the questions that are deliberately
-still open, chief among them where a write to a new key goes.
+on a running server, and nothing marks one read-only after it. Some questions
+are deliberately still open, chief among them where a write to a new key goes.
 
 ### outrage.mounts.MOUNT_KIND *= 'mount'*
 
@@ -73,9 +72,9 @@ out, rather than being quietly the first option's name.
 
 The `kind` for a mount point whose store refuses writes. A separate kind
 rather than a `read_only` field on [`Entry`](store.md#outrage.store.Entry), because a
-field would appear on *every* entry in every listing as a null -- and a
-result grows a field only when there is something to say, which is decision
-5 in `context/20/decisions`. The kind is already the field that says what
+field would appear on *every* entry in every listing as a null, and a
+result grows a field only when there is something to say. The kind is
+already the field that says what
 a key is, only one key in a listing is a mount at all, and the words carry
 their own meaning to a caller who has never read any of this.
 
@@ -144,14 +143,14 @@ The mount point as written for a person to read; the root is `/`.
 
 A mount point and a key inside a store are each bounded at
 `keys.MAX_SEGMENTS`, and the joined namespace allows twice that, so
-the sum always parses. This used to be able to fail, and every listing
-carried a path for dropping the keys it failed on; halving the bound on
-2026-08-20 abolished the case rather than reporting it.
+the sum always parses. That bound is what abolishes the case rather than
+reporting it: without it a listing needs a path for dropping the keys
+that will not fit.
 
-The check stays as an assertion, because what it now guards is an
+The check stays as an assertion, because what it guards is an
 arithmetic relationship between two constants and a store's contents,
-and a store written before the bound was halved can still hold a key
-too deep for it. Raising names the mount and the key; returning a
+and a store written by an earlier outrage can still hold a key too deep
+for it. Raising names the mount and the key; returning a
 string that will not parse would fail one layer away, which is the
 failure this project keeps finding. `outrage check` reports such keys
 before anything mounts the store.
@@ -272,8 +271,8 @@ mounts below it, named from both sides: `before` ends the stretch in
 front of a mount point and `after_subtree` starts the one behind it.
 That is not only an optimisation. The outer store still holds every row
 a mount shadows, so a traversal that did not step over them would
-report documents that reading by key refuses -- the defect in
-`planned/mounts/shadow-leak`, of which this is the general form.
+report documents that reading by key refuses -- a survey offering keys
+a read denies, of which this is the general form.
 
 A mount past the depth budget is stepped over but not descended into:
 its stretch is still cut out of the store above, since those rows are
@@ -468,7 +467,7 @@ As [`delete()`](store.md#outrage.store.Store.delete), and it **crosses**.
 Deliberate, and the one place crossing makes the system more dangerous
 rather than less: a delete that stopped at a boundary while every other
 call crossed one would leave a caller to learn the rule from what
-survived. `project/reference/planned/mounts/crossing` records the call.
+survived.
 
 A read-only mount below the key is **skipped rather than fatal**, since
 one such mount deep in a subtree should not veto a delete that is legal

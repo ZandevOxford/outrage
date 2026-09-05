@@ -1,11 +1,10 @@
 """The parquet backend: one columnar file, written once and read many times.
 
 The second implementation of :class:`outrage.store.Store`, and the one the
-reference-base case is for -- use 2 of ``project/reference/scale``: tens of
-thousands of small documents, built in one pass rather than accumulated, and
-reached by survey and search. It answers the same twelve operations
-:class:`~outrage.store_sqlite.SqliteStore` does, in the same vocabulary, and
-shares none of the storage.
+reference-base case is for: tens of thousands of small documents, built in one
+pass rather than accumulated, and reached by survey and search. It answers the
+same twelve operations :class:`~outrage.store_sqlite.SqliteStore` does, in the
+same vocabulary, and shares none of the storage.
 
 **It does not write.** A parquet file is not updated in place, so
 :meth:`~ParquetStore.store_document` and :meth:`~ParquetStore.delete` refuse
@@ -23,8 +22,7 @@ The file is one row per key, carrying the columns
   vocabulary can name -- a :class:`~outrage.store.KeyRange`, a page cursor, a
   subtree -- is a *contiguous run of rows*. So a bound is found by bisecting
   rather than by testing every row, and the content of a page comes out of the
-  one or two row groups it falls in. ``planned/parquet`` predicted this would
-  be the columnar payoff, and it is.
+  one or two row groups it falls in. This is the columnar payoff.
 * **``chars`` is precomputed.** SQLite answers ``total_chars`` with
   ``sum(length(content))``, which is per-row work over the column holding all
   the bytes. Written down at build time it is a small integer column, so
@@ -716,7 +714,7 @@ class ParquetStore(FileStore):
         # the reason `SqliteStore` keeps one connection per thread: the server
         # runs its sync tool handlers in a worker pool, and a reader whose
         # state is shared between them returns another thread's answer. That
-        # was a live defect once already -- `planned/concurrency` -- and it was
+        # was a live defect once already, and it was
         # silent about a third of the time, which is what makes it worth
         # paying for here before anyone hits it.
         self._local = threading.local()
@@ -765,8 +763,7 @@ class ParquetStore(FileStore):
         whole problem away.
 
         **Never hand one of these to another thread**, which is the constraint
-        ``planned/concurrency`` records for SQLite and which holds here for the
-        same reason.
+        the SQLite backend is under and which holds here for the same reason.
         """
         opened: Any | None = getattr(self._local, "file", None)
         if opened is None:
@@ -789,8 +786,8 @@ class ParquetStore(FileStore):
         for totals. ``Page.total`` and ``Page.total_chars`` describe the
         selection rather than the page, and no row-group statistic answers "how
         many rows match this predicate" -- only "could any row in this group
-        match". Recorded in ``context/35/findings``: that field is what decides
-        how much of a columnar file a read has to open. So the small columns
+        match". That field is what decides how much of a columnar file a read
+        has to open. So the small columns
         are resident and only ``content`` is read lazily -- but resident as the
         file's own columns, which is a buffer per column, and not as a row
         object per key, which was fifteen times the size of the file it came
@@ -1461,9 +1458,8 @@ class ParquetStore(FileStore):
         a key's metadata sorts immediately after it, so whether a document
         carries a name is answered by the rows already adjacent to it rather
         than by a correlated subquery -- see :meth:`_Index.carries`. That is
-        the one place the columnar layout is unambiguously the better shape --
-        ``planned/parquet`` said this would stop being an anti-join, and it
-        has.
+        the one place the columnar layout is unambiguously the better shape:
+        the anti-join stops being one.
 
         **The lookahead deliberately reaches outside the selection.** Whether a
         document has a title is a fact about the store, not about the range the
@@ -1492,8 +1488,8 @@ class ParquetStore(FileStore):
         **The file really is the store here**, which is the difference from
         SQLite worth stating out loud. There is no WAL and no journal, so
         nothing has been written anywhere else and a copy cannot be silently
-        short -- the trap ``project/reference/snapshots`` exists for is that
-        backend's rather than the store's, and this is the evidence.
+        short. The trap where a WAL lets a plain file copy succeed and be stale
+        is SQLite's rather than the store's, and this is the evidence.
 
         The copy is still verified rather than assumed. What can go wrong is
         the copy itself: a truncated write, a full disk. So the copy is

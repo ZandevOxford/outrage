@@ -234,10 +234,10 @@ def _check_rows(store: FileStore, report: Report) -> None:
 def _report_depth(over_deep: list[str], report: Report) -> None:
     """Keys with more segments than a store may now hold.
 
-    ``keys.MAX_SEGMENTS`` was halved to 64 on 2026-08-20, so that a mount point
-    and a key inside a store - each bounded by it - always join into a valid
-    key in the namespace a mount table presents. Nothing writes such a key any
-    more; a store written by an earlier outrage can still hold one.
+    ``keys.MAX_SEGMENTS`` is 64 so that a mount point and a key inside a store
+    - each bounded by it - always join into a valid key in the namespace a mount
+    table presents. Nothing writes a deeper key; a store written by an earlier
+    outrage can still hold one.
 
     It is only a fault if the store is ever *mounted*, where the key would have
     no name from outside - so this is a warning naming the keys, not an error.

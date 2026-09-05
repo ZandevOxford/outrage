@@ -2,10 +2,10 @@
 
 The one base every failure a caller is meant to see inherits from.
 
-`cli.main` used to catch a tuple that grew with each command, and
-`planned/cli` recorded the rule for when that stopped being the right shape:
-a shared base, rather than catching `Exception`. The fourth command is where
-it came due.
+A tuple of exception classes at the front-end boundary has to grow with every
+command that raises something new, and one that is missed catches nothing. A
+shared base is what stops that, and it is not the same as catching
+`Exception`, which would swallow the bugs as well.
 
 The distinction being drawn is not severity. It is whether the failure is
 *about the request* - a key that holds nothing, a pattern that does not occur,
@@ -24,8 +24,8 @@ for a person to read: they do not know who is reading it, and in the one case
 that matters they cannot know. A key inside a mounted store is called
 `python/nope` there and `ref/python/nope` to anyone outside, so a sentence
 built in [`outrage.store`](store.md#module-outrage.store) is wrong for the MCP server or wrong for the command
-line, and there is no third choice. That was a live defect --
-`project/reference/planned/error-naming` -- and this is the fix.
+line, and there is no third choice. That was a live defect, not a hypothetical
+one, and this is the fix.
 
 `__str__` is therefore a **developer** rendering, not a message. It names the
 class, the code and the details, which is what a traceback or a log wants and

@@ -3,11 +3,10 @@
 The parquet backend: one columnar file, written once and read many times.
 
 The second implementation of [`outrage.store.Store`](store.md#outrage.store.Store), and the one the
-reference-base case is for -- use 2 of `project/reference/scale`: tens of
-thousands of small documents, built in one pass rather than accumulated, and
-reached by survey and search. It answers the same twelve operations
-[`SqliteStore`](store_sqlite.md#outrage.store_sqlite.SqliteStore) does, in the same vocabulary, and
-shares none of the storage.
+reference-base case is for: tens of thousands of small documents, built in one
+pass rather than accumulated, and reached by survey and search. It answers the
+same twelve operations [`SqliteStore`](store_sqlite.md#outrage.store_sqlite.SqliteStore) does, in the
+same vocabulary, and shares none of the storage.
 
 **It does not write.** A parquet file is not updated in place, so
 [`store_document()`](#outrage.store_parquet.ParquetStore.store_document) and [`delete()`](#outrage.store_parquet.ParquetStore.delete) refuse
@@ -25,8 +24,7 @@ The file is one row per key, carrying the columns
   vocabulary can name -- a [`KeyRange`](store.md#outrage.store.KeyRange), a page cursor, a
   subtree -- is a *contiguous run of rows*. So a bound is found by bisecting
   rather than by testing every row, and the content of a page comes out of the
-  one or two row groups it falls in. `planned/parquet` predicted this would
-  be the columnar payoff, and it is.
+  one or two row groups it falls in. This is the columnar payoff.
 * **\`\`chars\`\` is precomputed.** SQLite answers `total_chars` with
   `sum(length(content))`, which is per-row work over the column holding all
   the bytes. Written down at build time it is a small integer column, so
@@ -342,8 +340,8 @@ A file copy, and a re-read to show it is one.
 **The file really is the store here**, which is the difference from
 SQLite worth stating out loud. There is no WAL and no journal, so
 nothing has been written anywhere else and a copy cannot be silently
-short -- the trap `project/reference/snapshots` exists for is that
-backend's rather than the store's, and this is the evidence.
+short. The trap where a WAL lets a plain file copy succeed and be stale
+is SQLite's rather than the store's, and this is the evidence.
 
 The copy is still verified rather than assumed. What can go wrong is
 the copy itself: a truncated write, a full disk. So the copy is

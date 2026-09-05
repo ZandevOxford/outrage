@@ -35,11 +35,10 @@ Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
 What asking an exported file whether the store still holds it found.
 
-The answer to question 1 of `plans/robust-editing/record`, separated from
-the import that first asked it because a write's *content* and a write's
-*check* no longer have to be the same file. `plans/write-preconditions/by-file`
-is why: an exported path handed to a write is a claim about what the edit
-was made against, and that claim is useful apart from the bytes in the file.
+Separate from the import that asks it, because a write's *content* and a
+write's *check* need not be the same file: an exported path handed to a
+write is a claim about what the edit was made against, and that claim is
+useful apart from the bytes in the file.
 
 #### file *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
@@ -86,13 +85,13 @@ alias of [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`str`
 The per-user directory exports live in, below [`tempfile.gettempdir()`](https://docs.python.org/3/library/tempfile.html#tempfile.gettempdir).
 Not inside the store directory: one file per key there meant two sessions
 editing one key shared one file, and the second export overwrote the first's
-unimported edit. That is the collision that happens, and
-`plans/robust-editing` is why this moved.
+unimported edit. That is the collision that happens, and a per-user
+directory outside the store is what stops it.
 
 The uid is in the name because `gettempdir()` is shared between users on a
 POSIX machine. Windows has no uid and its temporary directory is already per
-user, so there the prefix is the whole name -- and that half is as untested
-as `plans/hook-install/windows`, which is said rather than claimed.
+user, so there the prefix is the whole name. That half is reasoned rather
+than tested: this suite does not run on Windows.
 
 ### outrage.bulk.EXPORT_MAX_AGE *= datetime.timedelta(days=7)*
 
@@ -123,8 +122,8 @@ with it. A sidecar survives a restart, extends without a format change,
 and when it is missing an import degrades to *not getting the check*
 rather than to being wrong. John's call 1, 2026-09-02.
 
-The fields are shaped for the precondition `plans/write-preconditions`
-will eventually put inside `Store.store_document`, not for the comparison
+The fields are shaped for a precondition that may eventually live inside
+`Store.store_document`, not for the comparison
 below alone: the token is what a store-level precondition would take, and
 it covers the body and nothing else, because that is exactly what a write
 covers. **Unknown fields are ignored on read**, so a later writer can
@@ -220,9 +219,9 @@ What every export is named, an id and the format's extension and nothing
 else. Not [`TEMP_PREFIX`](#outrage.bulk.TEMP_PREFIX), which marks a file that is half written and
 that a reader must skip: this one is the export, and it is finished.
 
-This was the *fallback*, for a key with no path of its own. Since
-`plans/robust-editing` there is no other naming, and the constant survives
-its own exception: what it named is now what every export is called.
+The name carries no slug of the key, deliberately: two sessions editing one
+key must not collide on one filename, so the id is the whole of what
+distinguishes an export and the sidecar is what makes a listing readable.
 
 ### outrage.bulk.FORMAT_BY_EXTENSION *= {'.html': 'html', '.json': 'json', '.md': 'markdown', '.txt': 'text'}*
 
@@ -265,8 +264,8 @@ happens either way, and the caller is told the check did not.
 
 Whether the file is byte-identical to what the export handed out, so the
 edit matched nothing. Not a refusal - storing an unchanged document is
-harmless - but it is the silent no-op `plans/write-preconditions` names,
-and the record closes it for free.
+harmless - but it is a call that looks like a write and stored the document
+the store already had, and the record closes that for free.
 
 #### copied_from *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
 
@@ -304,8 +303,8 @@ alias of [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`Tran
 ### outrage.bulk.RECORD_SUFFIX *= '.outrage.json'*
 
 What is written beside an export to record what was handed out, read back by
-an import. `plans/robust-editing/record` is the format and the three
-questions it answers.
+an import. [`ExportRecord`](#outrage.bulk.ExportRecord) is the format, and what it has to answer
+is what key the file came from, what was in it, and when.
 
 ### outrage.bulk.TEMP_PREFIX *= '.outrage-'*
 
@@ -402,9 +401,9 @@ of them as the other would send a reader to look at the wrong file. Left
 out when the content came from the call rather than from any file.
 
 What it is not is a compare-and-swap. The comparison happens here, between
-a read and a write, so two writers in the same instant both pass. The real
-precondition belongs inside `Store.store_document` and stays
-`plans/write-preconditions`.
+a read and a write, so two writers in the same instant both pass. A real
+precondition would have to live inside `Store.store_document`, and does
+not yet.
 
 ### outrage.bulk.contained_file(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
@@ -436,16 +435,13 @@ reading of a path that does not exist yet: the file being written is
 usually the part that is missing, and it is the *directories* above it that
 a link can redirect.
 
-See `project/reference/planned/export-traversal`, which is the whole
-analysis and says which of these are reachable where.
-
 ### outrage.bulk.content_hash(content: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 The token a record carries: hex sha256 of `content` as UTF-8.
 
-A hash rather than the length, which is what `context/60/findings` had
-and is a weak token: a substitution that keeps the length is exactly the
-edit a careless script makes. This costs one read an import already makes.
+A hash rather than the length, which is a weak token: a substitution that
+keeps the length is exactly the edit a careless script makes. This costs one
+read an import already makes.
 
 ### outrage.bulk.copied(source: [Store](store.md#outrage.store.Store), target: [Store](store.md#outrage.store.Store), subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = store.EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = store.UNBOUNDED, prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Generator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Generator)[[Transfer](store.md#outrage.store.Transfer), [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
 
@@ -458,7 +454,7 @@ how it is written. Here because the walk is here -- a store's own reads
 are pages and this is the caller that legitimately wants all of them.
 
 Read with [`outrage.store.read_all()`](store.md#outrage.store.read_all) rather than through
-`get_documents`, for the reason `context/11/decisions` settled: a
+`get_documents`, because a
 subtree read selects documents *or* named metadata, so there is no "all of
 it, metadata included" read, and a copy missing every `!title` leaves a
 store nothing can be surveyed by. One read per document is what
@@ -555,9 +551,9 @@ read stopped short of.
 
 A file of its own every time, with [`ExportRecord`](#outrage.bulk.ExportRecord) beside it saying
 what was handed out, so [`import_document()`](#outrage.bulk.import_document) can tell whether the store
-still holds what the edit was made against. Nothing is overwritten here,
-which is the whole of `plans/robust-editing`: the old mapped name meant a
-second session's export destroyed the first's unimported edit.
+still holds what the edit was made against. Nothing is overwritten here:
+one file per key would mean a second session's export destroying the
+first's unimported edit.
 
 ### outrage.bulk.export_root() → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
@@ -600,7 +596,7 @@ Store the content of `path` at `key`, and say what it displaced.
 
 `path` must be inside `root`, which is the whole of the security check:
 a tool that stored any file the caller named would read anything the server
-can read. See `project/reference/planned/export-traversal`.
+can read.
 
 **A relative \`\`path\`\` is relative to \`\`root\`\`**, not to the working
 directory: it is relativised before it is checked, so the containment rule
@@ -620,14 +616,13 @@ being written.
 **\`\`against\`\` is where the check comes from when the content is not.** It
 is a second exported file, exported *from* `key`, and only its record is
 read. That is what makes export A, edit, import to B safe: the content
-comes from A's file and the claim about B comes from B's, where before the
-cross-key route had no claim to make and went unchecked.
-`plans/write-preconditions/by-file`.
+comes from A's file and the claim about B comes from B's. Without it the
+cross-key route has no claim to make and goes unchecked.
 
 An empty file is stored rather than refused - emptying a document is a
 thing a person may legitimately mean. What guards the accident is the
 report: both sizes come back, so an edit script that truncated is visible
-to whoever asked. See `context/66/decisions`, call 3.
+to whoever asked.
 
 ### outrage.bulk.import_tree(opened: [Store](store.md#outrage.store.Store), source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
 
@@ -736,8 +731,7 @@ on the spelling, and the two are not symmetrical:
   so the landing zone is inside the selection exactly when `target` is at
   or below `source`. The other direction is safe and shipped:
   `copy a/b a` writes `a/a/b/...`, which the walk of `a/b` never
-  reaches. `context/68/decisions` 1 is the decision not to widen the rule
-  to cover it.
+  reaches, and the rule is deliberately not widened to cover it.
 * **re-rooted**, the source key is stripped, so every key lands beneath
   `target` alone and the two subtrees have to be disjoint. `a/b`
   re-rooted onto `a` sends `a/b/b/x` to `a/b/x` -- back inside the
@@ -769,7 +763,7 @@ Move `check`'s record on to what `key` now holds, after the write.
 Without this the tool is one edit per export: the *next* write checked
 against the same file is refused against a change this call made, and an
 agent that hits that refusal on its own second write learns to pass
-`overwrite`, which is the guard being thrown away. `context/106/findings`.
+`overwrite`, which is the guard being thrown away.
 
 Does nothing when there is no record to renew, which is the unchecked write
 `overwrite` allowed through: the file did not come from `key` and must
@@ -805,8 +799,8 @@ is what an export needs: a survey by title is worth nothing if the export it
 came from left every title behind.
 
 **It descends into a metadata entry too**, because a `!` segment opens a
-namespace and there may be documents inside it. It used to stop at one, on
-the reading that metadata was a leaf; an export then dropped `a/!x/y`
-without saying so. The shape on disk is the ordinary
+namespace and there may be documents inside it. Stopping at one, on the
+reading that metadata is a leaf, drops `a/!x/y` from an export without
+saying so. The shape on disk is the ordinary
 document-with-children one -- `!x.md` beside the directory `!x/` --
 which is what `FilesystemStore` already writes.

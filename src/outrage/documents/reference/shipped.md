@@ -13,8 +13,7 @@ other file in the repository. `reference/` is the API documentation, rendered fr
 docstrings in `src/outrage` by `make markdown` in `docs/` and copied in --
 one page per module, reached as `outrage/reference/<module>`. Editing a page
 there is editing build output: the change is lost at the next render, and the
-source is the docstring. `context/71` in the outrage store is the design and
-the three ways the render is silently wrong if it is done by hand.
+source is the docstring.
 
 Nothing in this module knows the difference, and that is on purpose. A
 generated page is a file in a directory of files, so it mounts, lists, reads
@@ -28,8 +27,7 @@ since that rule is what makes a mount configuration relocatable. So this mount
 cannot be written as a `KEY=FILE` spec at all. It is opened here, by absolute
 path, and handed to [`outrage.mounts.open_mounts()`](mounts.md#outrage.mounts.open_mounts) as an already-opened
 store -- see its `attached` argument, which is the whole of the mount-system
-change this needed. `project/reference/planned/mounts/default-store` in the
-outrage store is the argument for all of it.
+change this needed.
 
 **The one behaviour to expect.** The mount is ordinary once it is there: it
 shadows, it is listed, it takes precedence exactly as any mount at `outrage`

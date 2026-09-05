@@ -4,9 +4,7 @@ A mount table used to be *only* an argument list. For the server that meant it
 lived inside a client's ``.mcp.json``, in the ``args`` array, as a flat run of
 ``--mount ref=reference.sqlite`` strings that could only be changed by editing
 JSON belonging to somebody else; for the command line it meant there was no
-table at all. This is the file it lives in instead --
-``project/reference/planned/mounts/config`` is the whole argument, and the six
-calls in it are what the code below implements.
+table at all. This is the file it lives in instead.
 
 **The one rule to know.** A file behaves as if the equivalent options had been
 inserted into the command line at the point where the file is named. The
@@ -82,9 +80,9 @@ CONFIG_FLAG = "--mount-config"
 UNMOUNT_FLAG = "--unmount"
 
 #: Ignores the default file for one run, so that only what is typed is
-#: mounted. The escape ``project/reference/planned/mounts/config`` leaves open,
-#: settled the narrow way: it suppresses the file nobody named, and an explicit
-#: ``--mount-config`` is something the caller can simply not type. Needed
+#: mounted. Narrow on purpose: it suppresses the file nobody named, and an
+#: explicit ``--mount-config`` is something the caller can simply not type.
+#: Needed
 #: rather than tidy -- a mount table requires a writable root, so without it a
 #: project holding a table could not read a packed store at all.
 NO_CONFIG_FLAG = "--no-mount-config"
@@ -675,8 +673,8 @@ def spliced(
     An explicit file *stacks* on the default one rather than replacing it,
     because that is what the splice rule says when read literally: naming a
     file inserts its options, and inserting them says nothing about the ones
-    already there. Whether an escape from the default file is wanted is left
-    open in ``project/reference/planned/mounts/config``.
+    already there. :data:`NO_CONFIG_FLAG` is the escape from the default file,
+    and is the only way to be rid of it.
 
     ``builtin`` is whether this front end carries the shipped documentation
     without being asked -- the server does, the command line does not. It is

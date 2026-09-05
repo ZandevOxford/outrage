@@ -1555,8 +1555,8 @@ def _content(args: argparse.Namespace) -> str:
 
     A file and a pipe are both read with ``newline=""``, so ``outrage set
     --file`` and ``outrage set < file`` store the line endings they were
-    handed rather than LF. Rule (a) of `plans/line-endings`, and the same
-    reason as :func:`outrage.bulk._read_file`. ``--content`` is already a
+    handed rather than LF -- a transfer carries content, it does not author it.
+    Same reason as :func:`outrage.bulk._read_file`. ``--content`` is already a
     string and has nothing to convert.
     """
     if args.content is not None and args.file is not None:
@@ -1950,9 +1950,9 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
     # `beneath` unadjusted, and the same number the dry run above passes. It
     # counts what a plain delete would *keep*, which is already what is left
     # once one has happened; a recursive delete has no remainder to report at
-    # all, and `_report_remainder` decides that for itself. The `len(removed)`
-    # correction that stood here applied only when `recursive` -- which is
-    # exactly when nothing is printed -- so it never reached an output.
+    # all, and `_report_remainder` decides that for itself. A `len(removed)`
+    # correction here would apply only when `recursive` -- which is exactly when
+    # nothing is printed -- so it could never reach an output.
     _report_remainder(args, beneath, out)
     return 0
 
@@ -2356,7 +2356,7 @@ def _flag(argument: str, value: Any = None) -> str:
 
     The defect it exists for: a message spelled for the tools told a command
     line user to "Pass on_conflict='overwrite-unchanged'", which is not
-    something anyone can type. `context/111/findings` 5.
+    something anyone can type.
     """
     flag = f"--{argument.replace('_', '-')}"
     return flag if value is None else f"{flag} {value}"
@@ -2380,8 +2380,9 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
         # rendered like any other rather than tracebacked.
         args = parse_args(argv)
         # `outrage get > file` writes the document and nothing else, so the
-        # stream it goes to must not translate LF on the way out: rule (a) of
-        # `plans/line-endings`, the read side of which is `_content`. The cost,
+        # stream it goes to must not translate LF on the way out. This is the
+        # write side of what `_content` does on the read side: a transfer hands
+        # back the endings the document holds. The cost,
         # and it is a judgement rather than a mechanical fix: the command
         # line's own messages end in LF on Windows too, which is what every
         # other tool there does. Writing content to `sys.stdout.buffer`

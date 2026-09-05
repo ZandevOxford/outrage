@@ -62,7 +62,8 @@ Three, each covered by a test that says so:
 
 Everything else is the contract as `tests/test_store.py` states it, including
 the root document, which is the file named by its extension alone at the top of
-the tree -- `.md` -- and closes the export gap `planned/root-key` left.
+the tree -- `.md` -- so that the root has somewhere to live in an exported
+tree rather than being the one key a tree cannot carry.
 
 ### outrage.store_files.DEFAULT_TREE_NAME *= 'documents'*
 
@@ -297,8 +298,8 @@ be: a marker file would be litter in an exported tree and a key that is
 not a document, and it could only ever disagree with the layout the
 files are actually in. Answering with [`format_version`](#outrage.store_files.FilesystemStore.format_version) says the
 two cannot differ, which is true here and false for a file with a
-header -- cf. "'Nothing to repair' and 'nothing to check' are not the
-same sentence" in `planned/storage`.
+header: "nothing to repair" and "nothing to check" are not the same
+sentence.
 
 #### audit_rows() → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[AuditRow](store.md#outrage.store.AuditRow)]
 

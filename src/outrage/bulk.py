@@ -151,9 +151,9 @@ def walk(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
     came from left every title behind.
 
     **It descends into a metadata entry too**, because a ``!`` segment opens a
-    namespace and there may be documents inside it. It used to stop at one, on
-    the reading that metadata was a leaf; an export then dropped ``a/!x/y``
-    without saying so. The shape on disk is the ordinary
+    namespace and there may be documents inside it. Stopping at one, on the
+    reading that metadata is a leaf, drops ``a/!x/y`` from an export without
+    saying so. The shape on disk is the ordinary
     document-with-children one -- ``!x.md`` beside the directory ``!x/`` --
     which is what ``FilesystemStore`` already writes.
     """
@@ -184,7 +184,7 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
         # segment, so it collides with nothing. It is hidden, which is a
         # question for what *reads* a tree and not for the mapping: an import's
         # dotfile skip is a policy for foreign trees, and it makes an exception
-        # for this one file. See `planned/root-key`.
+        # for this one file.
         return PurePosixPath(extension)
     segments = parsed.split(keys.DELIMITER)
     for segment in segments:
@@ -212,8 +212,6 @@ def contained_path(root: str | os.PathLike[str], relative: PurePosixPath, key: s
     usually the part that is missing, and it is the *directories* above it that
     a link can redirect.
 
-    See ``project/reference/planned/export-traversal``, which is the whole
-    analysis and says which of these are reachable where.
     """
     inside = Path(os.path.realpath(root))
     candidate = Path(root) / relative
@@ -285,8 +283,7 @@ def overlapping(source: str, target: str, *, reroot: bool = False) -> None:
       so the landing zone is inside the selection exactly when ``target`` is at
       or below ``source``. The other direction is safe and shipped:
       ``copy a/b a`` writes ``a/a/b/...``, which the walk of ``a/b`` never
-      reaches. ``context/68/decisions`` 1 is the decision not to widen the rule
-      to cover it.
+      reaches, and the rule is deliberately not widened to cover it.
     * **re-rooted**, the source key is stripped, so every key lands beneath
       ``target`` alone and the two subtrees have to be disjoint. ``a/b``
       re-rooted onto ``a`` sends ``a/b/b/x`` to ``a/b/x`` -- back inside the
@@ -327,7 +324,7 @@ def copied(
     are pages and this is the caller that legitimately wants all of them.
 
     Read with :func:`outrage.store.read_all` rather than through
-    ``get_documents``, for the reason ``context/11/decisions`` settled: a
+    ``get_documents``, because a
     subtree read selects documents *or* named metadata, so there is no "all of
     it, metadata included" read, and a copy missing every ``!title`` leaves a
     store nothing can be surveyed by. One read per document is what
@@ -643,8 +640,7 @@ def _write_file(path: Path, content: str) -> None:
     being in bytes at all. Without it a write translates ``\n`` to
     ``os.linesep``: a no-op on POSIX, and on Windows every offset past the
     first newline names a place one byte earlier than it should. No test here
-    could have caught that, which `plans/export-traversal` already records as
-    the untested platform.
+    could have caught it: Windows is the platform this suite does not run on.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = tempfile.NamedTemporaryFile(
@@ -669,15 +665,15 @@ def _write_file(path: Path, content: str) -> None:
 def _read_file(path: Path) -> str:
     """Read ``path`` as UTF-8 text, keeping the line endings it holds.
 
-    The other half of :func:`_write_file`'s ``newline=""``, and rule (a) of
-    `plans/line-endings`: **a transfer without a format conversion converts
-    nothing**, so an export and an unchanged import round-trip byte for byte.
+    The other half of :func:`_write_file`'s ``newline=""``: **a transfer
+    without a format conversion converts nothing**, so an export and an
+    unchanged import round-trip byte for byte.
 
     Text mode translates CRLF and a lone CR to LF by default, which is a
     conversion nobody asked for. It rewrote every line of a CRLF document on
     the way back in through ``document_edit``, the recommended editing route,
     with the export record none the wiser: the hash it checks is of the
-    content that went out. `issues/3` is that, run rather than reasoned.
+    content that went out, not of the file the caller now holds.
     """
     with path.open(encoding="utf-8", newline="") as handle:
         return handle.read()
@@ -880,24 +876,24 @@ def pack(
 # The single-document half of the same mapping the tree walkers use, for the
 # document that is edited by shell tools rather than moved in bulk: a read that
 # writes a file and a write that reads one, sharing every rule above about what
-# a key is called on disk. See ``context/66/decisions``.
+# a key is called on disk.
 
 
 #: The per-user directory exports live in, below :func:`tempfile.gettempdir`.
 #: Not inside the store directory: one file per key there meant two sessions
 #: editing one key shared one file, and the second export overwrote the first's
-#: unimported edit. That is the collision that happens, and
-#: ``plans/robust-editing`` is why this moved.
+#: unimported edit. That is the collision that happens, and a per-user
+#: directory outside the store is what stops it.
 #:
 #: The uid is in the name because ``gettempdir()`` is shared between users on a
 #: POSIX machine. Windows has no uid and its temporary directory is already per
-#: user, so there the prefix is the whole name -- and that half is as untested
-#: as ``plans/hook-install/windows``, which is said rather than claimed.
+#: user, so there the prefix is the whole name. That half is reasoned rather
+#: than tested: this suite does not run on Windows.
 EXPORT_DIR_PREFIX = "outrage-export"
 
 #: What is written beside an export to record what was handed out, read back by
-#: an import. ``plans/robust-editing/record`` is the format and the three
-#: questions it answers.
+#: an import. :class:`ExportRecord` is the format, and what it has to answer
+#: is what key the file came from, what was in it, and when.
 RECORD_SUFFIX = ".outrage.json"
 
 #: How long an export and its record are kept. Exports no longer overwrite one
@@ -910,9 +906,9 @@ EXPORT_MAX_AGE = timedelta(days=7)
 #: else. Not :data:`TEMP_PREFIX`, which marks a file that is half written and
 #: that a reader must skip: this one is the export, and it is finished.
 #:
-#: This was the *fallback*, for a key with no path of its own. Since
-#: ``plans/robust-editing`` there is no other naming, and the constant survives
-#: its own exception: what it named is now what every export is called.
+#: The name carries no slug of the key, deliberately: two sessions editing one
+#: key must not collide on one filename, so the id is the whole of what
+#: distinguishes an export and the sidecar is what makes a listing readable.
 FALLBACK_PREFIX = "document-"
 
 
@@ -979,8 +975,8 @@ class Imported:
     unedited: bool = False
     """Whether the file is byte-identical to what the export handed out, so the
     edit matched nothing. Not a refusal - storing an unchanged document is
-    harmless - but it is the silent no-op ``plans/write-preconditions`` names,
-    and the record closes it for free."""
+    harmless - but it is a call that looks like a write and stored the document
+    the store already had, and the record closes that for free."""
     copied_from: str | None = None
     """The key the content file was exported from, when that is not the key
     written, and None for a round trip. What it is for is ``unedited``: an
@@ -998,11 +994,10 @@ class Imported:
 class Check:
     """What asking an exported file whether the store still holds it found.
 
-    The answer to question 1 of ``plans/robust-editing/record``, separated from
-    the import that first asked it because a write's *content* and a write's
-    *check* no longer have to be the same file. ``plans/write-preconditions/by-file``
-    is why: an exported path handed to a write is a claim about what the edit
-    was made against, and that claim is useful apart from the bytes in the file.
+    Separate from the import that asks it, because a write's *content* and a
+    write's *check* need not be the same file: an exported path handed to a
+    write is a claim about what the edit was made against, and that claim is
+    useful apart from the bytes in the file.
     """
 
     file: Path
@@ -1038,8 +1033,8 @@ class ExportRecord:
     and when it is missing an import degrades to *not getting the check*
     rather than to being wrong. John's call 1, 2026-09-02.
 
-    The fields are shaped for the precondition ``plans/write-preconditions``
-    will eventually put inside ``Store.store_document``, not for the comparison
+    The fields are shaped for a precondition that may eventually live inside
+    ``Store.store_document``, not for the comparison
     below alone: the token is what a store-level precondition would take, and
     it covers the body and nothing else, because that is exactly what a write
     covers. **Unknown fields are ignored on read**, so a later writer can
@@ -1135,9 +1130,9 @@ class ExportRecord:
 def content_hash(content: str) -> str:
     """The token a record carries: hex sha256 of ``content`` as UTF-8.
 
-    A hash rather than the length, which is what ``context/60/findings`` had
-    and is a weak token: a substitution that keeps the length is exactly the
-    edit a careless script makes. This costs one read an import already makes.
+    A hash rather than the length, which is a weak token: a substitution that
+    keeps the length is exactly the edit a careless script makes. This costs one
+    read an import already makes.
     """
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
@@ -1320,9 +1315,9 @@ def export_document(opened: store.Store, key: str, root: str | os.PathLike[str])
 
     A file of its own every time, with :class:`ExportRecord` beside it saying
     what was handed out, so :func:`import_document` can tell whether the store
-    still holds what the edit was made against. Nothing is overwritten here,
-    which is the whole of ``plans/robust-editing``: the old mapped name meant a
-    second session's export destroyed the first's unimported edit.
+    still holds what the edit was made against. Nothing is overwritten here:
+    one file per key would mean a second session's export destroying the
+    first's unimported edit.
     """
     excerpt = store.read_all(opened, key)
     # Before the export rather than after, so that a failure to write the one
@@ -1373,9 +1368,9 @@ def check_write(
     out when the content came from the call rather than from any file.
 
     What it is not is a compare-and-swap. The comparison happens here, between
-    a read and a write, so two writers in the same instant both pass. The real
-    precondition belongs inside ``Store.store_document`` and stays
-    ``plans/write-preconditions``.
+    a read and a write, so two writers in the same instant both pass. A real
+    precondition would have to live inside ``Store.store_document``, and does
+    not yet.
     """
     file = contained_file(root, path, key)
     if not file.is_file():
@@ -1438,7 +1433,7 @@ def renew(opened: store.Store, key: str, check: Check, content: str | None = Non
     Without this the tool is one edit per export: the *next* write checked
     against the same file is refused against a change this call made, and an
     agent that hits that refusal on its own second write learns to pass
-    ``overwrite``, which is the guard being thrown away. ``context/106/findings``.
+    ``overwrite``, which is the guard being thrown away.
 
     Does nothing when there is no record to renew, which is the unchecked write
     ``overwrite`` allowed through: the file did not come from ``key`` and must
@@ -1480,7 +1475,7 @@ def import_document(
 
     ``path`` must be inside ``root``, which is the whole of the security check:
     a tool that stored any file the caller named would read anything the server
-    can read. See ``project/reference/planned/export-traversal``.
+    can read.
 
     **A relative ``path`` is relative to ``root``**, not to the working
     directory: it is relativised before it is checked, so the containment rule
@@ -1500,14 +1495,13 @@ def import_document(
     **``against`` is where the check comes from when the content is not.** It
     is a second exported file, exported *from* ``key``, and only its record is
     read. That is what makes export A, edit, import to B safe: the content
-    comes from A's file and the claim about B comes from B's, where before the
-    cross-key route had no claim to make and went unchecked.
-    ``plans/write-preconditions/by-file``.
+    comes from A's file and the claim about B comes from B's. Without it the
+    cross-key route has no claim to make and goes unchecked.
 
     An empty file is stored rather than refused - emptying a document is a
     thing a person may legitimately mean. What guards the accident is the
     report: both sizes come back, so an edit script that truncated is visible
-    to whoever asked. See ``context/66/decisions``, call 3.
+    to whoever asked.
     """
     from .store_files import NotTextError
 

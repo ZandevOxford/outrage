@@ -103,8 +103,8 @@ def _reason(error: BaseException) -> str:
 def _prefer_lf(markdown: str) -> str:
     """Every line ending in converted output as LF.
 
-    Rule (b) of `plans/line-endings`: **where there is no line ending to
-    preserve, prefer LF.** A conversion *authors* its output rather than
+    **Where there is no line ending to preserve, prefer LF.** A conversion
+    *authors* its output rather than
     carrying it, so nothing here is a transfer being converted -- the CRLF
     MarkItDown emits is an artefact of whatever it read, not a property of the
     Markdown it wrote, and one canonical answer beats whatever the source

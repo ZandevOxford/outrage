@@ -6,8 +6,7 @@
 implicit key called `api` -- a listing of the section that tells a reader
 nothing. This flattens it to `outrage/reference/<module>`.
 
-Three moves, and each is a decision recorded in `context/71` in the outrage
-store rather than a tidy-up:
+Three moves, and each is a decision rather than a tidy-up:
 
 * **Sphinx's `index.md` is dropped.** It restates the shipped `readme`, and it
   is the only page carrying links to `genindex`, `py-modindex` and `search`,

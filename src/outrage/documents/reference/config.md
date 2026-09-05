@@ -163,12 +163,12 @@ file beside the store. Logging is off unless it is asked for here, and it is
 asked for here rather than by hand because an entry edited by hand is the
 failure this module exists to prevent.
 
-**The mounts are not here.** They were, as a flat run of `--mount
-ref=reference.sqlite` strings in this array, which made a client's JSON the
-place a mount table was maintained and hand-editing it the supported way to
-change one. They live in `mounts.toml` in the store directory since
-2026-08-27 - [`outrage.mountfile`](mountfile.md#module-outrage.mountfile) - which is what leaves `--dir` as
-the only thing this entry has to carry. **An entry already naming mounts
+**The mounts are not here.** A flat run of `--mount ref=reference.sqlite`
+strings in this array would make a client's JSON the place a mount table is
+maintained, and hand-editing it the supported way to change one. They live
+in `mounts.toml` in the store directory instead -
+[`outrage.mountfile`](mountfile.md#module-outrage.mountfile) - which is what leaves `--dir` as the only thing
+this entry has to carry. **An entry already naming mounts
 keeps them**: [`merge_entry()`](#outrage.config.merge_entry) inherits what a new entry does not
 mention, and they still win, since the command line comes after the file.
 Nothing migrates that automatically, deliberately; `outrage config` says

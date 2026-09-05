@@ -87,8 +87,8 @@ The failure, from either layer.
 The store records a raised exception under `error`. The request layer
 records a *refused* call as a result with `ok` false, because a tool
 that returns an error result never raises - reading only `error`
-would report every rejected call as a success, which is the bug that
-the first version of the writer shipped with.
+would report every rejected call as a success, which is a bug this
+reader has already had once.
 
 #### *property* content *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None)*
 
@@ -279,8 +279,8 @@ Whether the caller ever came back for the rest of the document.
 
 The question the pairing exists to answer. False is the interesting
 answer: it means an agent was handed part of a document and acted on
-it, which is what `project/reference/planned/agents` was guessing
-about before this could be measured.
+it. How often that happens was guesswork until it could be measured
+here.
 
 ### outrage.logread.format_event(event: [Event](#outrage.logread.Event), \*, content: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 

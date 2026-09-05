@@ -144,8 +144,8 @@ class Event:
         The store records a raised exception under ``error``. The request layer
         records a *refused* call as a result with ``ok`` false, because a tool
         that returns an error result never raises - reading only ``error``
-        would report every rejected call as a success, which is the bug that
-        the first version of the writer shipped with.
+        would report every rejected call as a success, which is a bug this
+        reader has already had once.
         """
         error = self.record.get("error")
         if isinstance(error, dict):
@@ -361,8 +361,8 @@ class TruncatedRead:
 
         The question the pairing exists to answer. False is the interesting
         answer: it means an agent was handed part of a document and acted on
-        it, which is what ``project/reference/planned/agents`` was guessing
-        about before this could be measured.
+        it. How often that happens was guesswork until it could be measured
+        here.
         """
         return self.resumed_by is not None
 
@@ -565,7 +565,8 @@ def format_summary(summary: Summary) -> Iterator[str]:
         share = f" ({len(summary.truncated) * 100 // summary.reads}%)"
         yield f"  {summary.reads} document reads, {len(summary.truncated)} truncated{share}"
         if summary.truncated:
-            # The number the second trap in planned/agents was a guess about.
+            # How often a truncated read is actually followed up, which was
+            # guesswork until it could be counted.
             yield f"  {summary.followed_up} of those resumed at next_offset in the same session"
             for read in summary.truncated:
                 if not read.followed_up:
