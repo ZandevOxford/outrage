@@ -59,7 +59,7 @@ from typing import Any
 
 from . import keys
 from .errors import OutrageError
-from .notes import Note
+from .notes import UNCHECKED_NO_RECORD, Note
 
 # The conflict rules by their constants rather than as literals: a message that
 # tells a caller to pass `overwrite-unchanged` is a second place the value is
@@ -263,7 +263,18 @@ def _overwrote_a_change(name: Namer, /, *, changed_at: str | None, **_: Any) -> 
 
 
 @MCP.template("write-not-checked")
-def _write_not_checked(name: Namer, /, *, key: str, reason: str, **_: Any) -> str:
+def _write_not_checked(
+    name: Namer, /, *, key: str, why: str, came_from: str | None = None, **_: Any
+) -> str:
+    # The reason spelled here rather than handed over ready-made. It arrived as
+    # prose from the library until the note layer reached it, which meant a
+    # parenthesis written for these tools was put in front of whoever was
+    # reading -- the command line included, where nothing could respell it.
+    reason = (
+        "no export record"
+        if why == UNCHECKED_NO_RECORD
+        else f"exported from {name(came_from or '')!r}"
+    )
     return (
         f"this write was not checked against the document ({reason}), so "
         f"if somebody else had written {name(key)!r} since it was "

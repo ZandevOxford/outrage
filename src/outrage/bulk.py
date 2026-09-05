@@ -43,7 +43,7 @@ from stat import S_ISDIR, S_ISLNK
 
 from . import keys, messages, store
 from .errors import OutrageError
-from .notes import Note
+from .notes import UNCHECKED_NO_RECORD, UNCHECKED_OTHER_KEY, Note
 from .store import (
     CHANGED,
     CONFLICTS,
@@ -973,7 +973,20 @@ class Imported:
     unchecked: str | None = None
     """Why the document was not compared with what was exported, or None when
     it was. A missing record and a cross-key import both land here: the write
-    happens either way, and the caller is told the check did not."""
+    happens either way, and the caller is told the check did not.
+
+    **Prose, and dated.** Read ``unchecked_code`` instead: this says the same
+    thing in words a caller has to parse, and it goes in the first release
+    allowed to break a reader."""
+    unchecked_code: str | None = None
+    """The same reason as a code -- :data:`~outrage.notes.UNCHECKED_NO_RECORD`
+    or :data:`~outrage.notes.UNCHECKED_OTHER_KEY` -- or None when the
+    comparison happened. What a front end words for whoever is reading."""
+    unchecked_from: str | None = None
+    """The key the record named when it named another one, which is the fact
+    :data:`UNCHECKED_OTHER_KEY`'s sentence needs. About the *checking* file, so
+    it is not ``copied_from``: with ``against`` the two are different files and
+    may name different keys."""
     unedited: bool = False
     """Whether the file is byte-identical to what the export handed out, so the
     edit matched nothing. Not a refusal - storing an unchanged document is
@@ -1016,7 +1029,13 @@ class Check:
     """``updated_at`` of what was there, for the sentence ``overwrite`` owes."""
     unchecked: str | None = None
     """Why no comparison was made, when ``overwrite`` allowed one to be
-    skipped. None when the comparison happened."""
+    skipped. None when the comparison happened.
+
+    **Prose, and dated**, exactly as :attr:`Imported.unchecked` is."""
+    unchecked_code: str | None = None
+    """The same reason as a code, for a front end to word."""
+    unchecked_from: str | None = None
+    """The key the record named, when it named another one."""
     overwritten: bool = False
     """Whether ``overwrite`` allowed a write the staleness refusal would have
     stopped. Separate from ``unchecked``: this one knows somebody's write is
@@ -1339,6 +1358,25 @@ def export_document(opened: store.Store, key: str, root: str | os.PathLike[str])
     return Exported(path=path, excerpt=excerpt, record=record)
 
 
+def unchecked_prose(code: str, came_from: str | None) -> str:
+    """The sentence :attr:`Check.unchecked` has carried since before it had a code.
+
+    That field is public and its value is prose, which is a thing a caller ends
+    up parsing; the code beside it is what a caller should read, and the field
+    goes in a release allowed to break one. Until then both exist, and the
+    prose is written here rather than where the reason is discovered, so the
+    two cannot come to disagree while a caller can see both.
+
+    A **second** spelling of these reasons lives in the wording tables, and
+    deliberately: this one is a value in an answer, dated, and that one is a
+    sentence for a reader who may be at either front end. They are the same
+    words today because this field's wording is the wording the tools had.
+    """
+    if code == UNCHECKED_NO_RECORD:
+        return "no export record"
+    return f"exported from {came_from!r}"
+
+
 def check_write(
     opened: store.Store,
     key: str,
@@ -1388,7 +1426,8 @@ def check_write(
         )
     record = ExportRecord.read(file)
     if record is None or record.key != key:
-        why = "no export record" if record is None else f"exported from {record.key!r}"
+        code = UNCHECKED_NO_RECORD if record is None else UNCHECKED_OTHER_KEY
+        came_from = None if record is None else record.key
         if not overwrite:
             raise UncheckedWriteError(
                 "write-unchecked",
@@ -1400,7 +1439,14 @@ def check_write(
         # `record` dropped rather than carried: it is a claim about the key it
         # names, and renewing it against a different one would silently turn
         # the file into an edit claim on a key it did not come from.
-        return Check(file=file, record=None, previous=size_of(opened, key), unchecked=why)
+        return Check(
+            file=file,
+            record=None,
+            previous=size_of(opened, key),
+            unchecked=unchecked_prose(code, came_from),
+            unchecked_code=code,
+            unchecked_from=came_from,
+        )
     try:
         held: store.Excerpt | None = store.read_all(opened, key)
     except store.KeyNotFoundError:
@@ -1550,6 +1596,8 @@ def import_document(
         stored=len(content),
         previous=check.previous,
         unchecked=check.unchecked,
+        unchecked_code=check.unchecked_code,
+        unchecked_from=check.unchecked_from,
         unedited=unedited,
         copied_from=copied_from,
         overwritten=check.overwritten,
@@ -1585,7 +1633,8 @@ def notes_for(imported: Imported) -> list[Note]:
     notes = _notes_on_what_a_check_allowed(
         imported.key,
         overwritten=imported.overwritten,
-        unchecked=imported.unchecked,
+        unchecked_code=imported.unchecked_code,
+        unchecked_from=imported.unchecked_from,
         changed_at=imported.changed_at,
     )
     if imported.unedited and imported.copied_from is None:
@@ -1619,13 +1668,19 @@ def notes_for_checked_write(key: str, check: Check, stored: int) -> list[Note]:
     return _notes_on_what_a_check_allowed(
         key,
         overwritten=check.overwritten,
-        unchecked=check.unchecked,
+        unchecked_code=check.unchecked_code,
+        unchecked_from=check.unchecked_from,
         changed_at=check.changed_at,
     ) + _note_if_it_shrank(check.previous, stored)
 
 
 def _notes_on_what_a_check_allowed(
-    key: str, *, overwritten: bool, unchecked: str | None, changed_at: str | None
+    key: str,
+    *,
+    overwritten: bool,
+    unchecked_code: str | None,
+    unchecked_from: str | None,
+    changed_at: str | None,
 ) -> list[Note]:
     """What ``overwrite`` let a write past, for either shape of write.
 
@@ -1639,10 +1694,14 @@ def _notes_on_what_a_check_allowed(
         # Said at all because what it means is that somebody else's write is
         # now gone, and the person who lost it is not reading this.
         notes.append(Note("overwrote-a-change", changed_at=changed_at))
-    if unchecked is not None:
-        # `reason` is prose built in this module, which is the leak this design
-        # closes last: a code cannot be spelled for a reader until it is a code.
-        notes.append(Note("write-not-checked", key=key, reason=unchecked))
+    if unchecked_code is not None:
+        # A code and the key it came from, not the sentence. The reason used to
+        # go out as prose built here, where no front end could respell it, and
+        # a reader was handed a parenthesis this module had written for the
+        # tools -- which is the leak the note layer closes last.
+        notes.append(
+            Note("write-not-checked", key=key, why=unchecked_code, came_from=unchecked_from)
+        )
     return notes
 
 
@@ -1895,5 +1954,6 @@ __all__ = [
     "renew",
     "size_of",
     "sweep_exports",
+    "unchecked_prose",
     "walk",
 ]

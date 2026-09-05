@@ -304,7 +304,17 @@ class _StoreDocumentResult(_ToolResult):
             description=(
                 "Why the write was not compared with what was exported, when "
                 "'against' was given and 'overwrite' allowed it through "
-                "uncompared"
+                "uncompared. Prose, and going: read unchecked_code"
+            )
+        ),
+    ] = None
+    unchecked_code: Annotated[
+        str | None,
+        Field(
+            description=(
+                "The same reason as a code: 'no-record' when nothing beside "
+                "the file said what it held, 'other-key' when the record names "
+                "the key it was exported from"
             )
         ),
     ] = None
@@ -537,7 +547,17 @@ class _DocumentEditResult(_ToolResult):
                 "Why an import was not compared with what was exported, when "
                 "'overwrite' allowed it through uncompared: there was no export "
                 "record, or the file came from another key and no 'against' file "
-                "was given"
+                "was given. Prose, and going: read unchecked_code"
+            )
+        ),
+    ] = None
+    unchecked_code: Annotated[
+        str | None,
+        Field(
+            description=(
+                "The same reason as a code: 'no-record' when nothing beside "
+                "the file said what it held, 'other-key' when the record names "
+                "the key it was exported from"
             )
         ),
     ] = None
@@ -980,6 +1000,7 @@ def build_server(
             bulk.renew(table, written, check, content if encoding is None else None)
             result["previous"] = check.previous
             result["unchecked"] = check.unchecked
+            result["unchecked_code"] = check.unchecked_code
             _say(result, bulk.notes_for_checked_write(written, check, result["stored"]))
         if title is not None:
             # Parsed rather than joined: the root's title is `!title`, not
@@ -1606,6 +1627,7 @@ def build_server(
             "stored": imported.stored,
             "previous": imported.previous,
             "unchecked": imported.unchecked,
+            "unchecked_code": imported.unchecked_code,
         }
         _say(result, bulk.notes_for(imported))
         return _DocumentEditResult.model_validate(result)

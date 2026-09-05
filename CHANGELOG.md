@@ -20,6 +20,14 @@ deciding whether that reader hears it.
   read-only mounted store is not a key, so a delete that stopped at one printed
   exactly what a delete that took everything printed.
 
+* **`unchecked` gains a code beside it.** `store_document` and
+  `document_edit` answer with `unchecked_code` -- `no-record` or `other-key` --
+  saying in one word what `unchecked` says in a sentence. The sentence is
+  unchanged and is now derived from the code, so the two cannot disagree; it is
+  the value a caller had to parse, and it goes in a release allowed to break
+  one. `bulk.Check` and `bulk.Imported` carry the code and, where the record
+  named another key, that key.
+
 What the MCP tools say is unchanged, word for word, with one exception: a
 read-only mount below the root is named `/` rather than `''`.
 

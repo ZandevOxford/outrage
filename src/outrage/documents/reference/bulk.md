@@ -29,7 +29,7 @@ What this is not is a backup. updated_at does not survive the round trip and
 neither does anything else the database holds about a document; `FileStore.backup`
 is the copy that keeps all of it.
 
-### *class* outrage.bulk.Check(file: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), record: [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/library/constants.html#None), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), changed_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
+### *class* outrage.bulk.Check(file: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), record: [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/library/constants.html#None), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), changed_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked_code: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked_from: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -64,6 +64,16 @@ An empty document and no document are different things to have replaced.
 
 Why no comparison was made, when `overwrite` allowed one to be
 skipped. None when the comparison happened.
+
+**Prose, and dated**, exactly as [`Imported.unchecked`](#outrage.bulk.Imported.unchecked) is.
+
+#### unchecked_code *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+The same reason as a code, for a front end to word.
+
+#### unchecked_from *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+The key the record named, when it named another one.
 
 #### overwritten *: [bool](https://docs.python.org/3/library/functions.html#bool)*
 
@@ -234,7 +244,7 @@ as they are -- an export never writes one, so an import reads it as part of
 the name. Not to be confused with [`outrage.store.FORMATS`](store.md#outrage.store.FORMATS), which is what
 a document may be *stored* as; this is what a file name says it is.
 
-### *class* outrage.bulk.Imported(key: [str](https://docs.python.org/3/library/stdtypes.html#str), stored: [int](https://docs.python.org/3/library/functions.html#int), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), unchecked: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unedited: [bool](https://docs.python.org/3/library/functions.html#bool) = False, copied_from: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/library/functions.html#bool) = False, changed_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.bulk.Imported(key: [str](https://docs.python.org/3/library/stdtypes.html#str), stored: [int](https://docs.python.org/3/library/functions.html#int), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), unchecked: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked_code: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked_from: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unedited: [bool](https://docs.python.org/3/library/functions.html#bool) = False, copied_from: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/library/functions.html#bool) = False, changed_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -259,6 +269,23 @@ things to have overwritten.
 Why the document was not compared with what was exported, or None when
 it was. A missing record and a cross-key import both land here: the write
 happens either way, and the caller is told the check did not.
+
+**Prose, and dated.** Read `unchecked_code` instead: this says the same
+thing in words a caller has to parse, and it goes in the first release
+allowed to break a reader.
+
+#### unchecked_code *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+The same reason as a code -- [`UNCHECKED_NO_RECORD`](notes.md#outrage.notes.UNCHECKED_NO_RECORD)
+or [`UNCHECKED_OTHER_KEY`](notes.md#outrage.notes.UNCHECKED_OTHER_KEY) -- or None when the
+comparison happened. What a front end words for whoever is reading.
+
+#### unchecked_from *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+The key the record named when it named another one, which is the fact
+`UNCHECKED_OTHER_KEY`'s sentence needs. About the *checking* file, so
+it is not `copied_from`: with `against` the two are different files and
+may name different keys.
 
 #### unedited *: [bool](https://docs.python.org/3/library/functions.html#bool)*
 
@@ -895,6 +922,21 @@ Best effort throughout - a file that cannot be stat'd or removed is left
 alone rather than raising. This runs on the way to an export, and failing
 that export because somebody else's leftovers are unreadable would be a
 worse answer than leaving them there.
+
+### outrage.bulk.unchecked_prose(code: [str](https://docs.python.org/3/library/stdtypes.html#str), came_from: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+The sentence [`Check.unchecked`](#outrage.bulk.Check.unchecked) has carried since before it had a code.
+
+That field is public and its value is prose, which is a thing a caller ends
+up parsing; the code beside it is what a caller should read, and the field
+goes in a release allowed to break one. Until then both exist, and the
+prose is written here rather than where the reason is discovered, so the
+two cannot come to disagree while a caller can see both.
+
+A **second** spelling of these reasons lives in the wording tables, and
+deliberately: this one is a value in an answer, dated, and that one is a
+sentence for a reader who may be at either front end. They are the same
+words today because this field's wording is the wording the tools had.
 
 ### outrage.bulk.walk(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
 

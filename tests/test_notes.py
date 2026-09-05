@@ -44,7 +44,7 @@ from conftest import long_options
 from outrage import bulk, cli, cli_messages, keys, messages
 from outrage.messages import NoteTable
 from outrage.mounts import Mount
-from outrage.notes import Note
+from outrage.notes import UNCHECKED_NO_RECORD, UNCHECKED_OTHER_KEY, Note
 from outrage.store import OVERWRITE, SKIP
 from outrage.store_sqlite import SqliteStore
 
@@ -491,7 +491,7 @@ def test_a_note_names_a_key_the_way_the_reader_would_name_it():
     inside a mounted store -- the same defect the namer was built for on the
     error side, one layer down.
     """
-    note, *_ = bulk.notes_for(_imported(unchecked="no export record"))
+    note, *_ = bulk.notes_for(_imported(unchecked_code=UNCHECKED_NO_RECORD))
 
     assert "'a'" in messages.MCP.render(note)
     assert "'ref/a'" in messages.MCP.render(note, name=Mount(prefix="ref", store=None).outer)
@@ -504,7 +504,7 @@ def test_what_a_write_destroyed_is_said_before_what_it_stored():
         previous=90,
         overwritten=True,
         changed_at="2026-09-05T10:00:00+00:00",
-        unchecked="no export record",
+        unchecked_code=UNCHECKED_NO_RECORD,
     )
 
     assert [note.code for note in bulk.notes_for(imported)] == [
@@ -525,7 +525,7 @@ def test_every_note_the_import_path_can_produce_is_worded():
         note.code
         for imported in [
             _imported(overwritten=True, changed_at="2026-09-05T10:00:00+00:00"),
-            _imported(unchecked="no export record"),
+            _imported(unchecked_code=UNCHECKED_NO_RECORD),
             _imported(unedited=True),
             _imported(unedited=True, copied_from="a"),
             _imported(stored=0, previous=90),
@@ -730,7 +730,7 @@ def test_every_note_the_tools_can_reach_is_worded_and_nothing_they_word_is_stran
         note.code
         for notes in [
             bulk.notes_for(_imported(overwritten=True, changed_at="2026-09-05T10:00:00Z")),
-            bulk.notes_for(_imported(unchecked="no export record")),
+            bulk.notes_for(_imported(unchecked_code=UNCHECKED_NO_RECORD)),
             bulk.notes_for(_imported(unedited=True)),
             bulk.notes_for(_imported(unedited=True, copied_from="a")),
             bulk.notes_for(_imported(stored=0, previous=90)),
@@ -836,3 +836,37 @@ def test_the_command_line_names_a_refusing_mount_with_its_own_flags():
 
     assert "--recursive" in said and "--mount-ro" in said
     assert "recursive=true" not in said
+
+
+def test_the_reason_a_write_was_unchecked_is_a_code_by_the_time_a_table_sees_it():
+    """Step 5's leak, closed: the parenthesis used to be built in ``bulk``.
+
+    A reader was handed *"not checked against the document (exported from
+    'a')"* with the inner half written where no front end could respell it --
+    the wording layer's own defect, one level down. Now the note carries the
+    code and the key, and each table writes the reason.
+    """
+    (note,) = bulk.notes_for(_imported(unchecked_code=UNCHECKED_OTHER_KEY, unchecked_from="a"))
+
+    assert note == Note("write-not-checked", key="a", why=UNCHECKED_OTHER_KEY, came_from="a")
+    assert "no export record" not in str(note), "the sentence is not in the note"
+    assert "(exported from 'a')" in messages.MCP.render(note)
+
+
+def test_a_write_with_no_record_and_one_from_another_key_read_differently():
+    """Two situations behind one flag, which is why the reason is a code at all."""
+    (missing,) = bulk.notes_for(_imported(unchecked_code=UNCHECKED_NO_RECORD))
+    (other,) = bulk.notes_for(_imported(unchecked_code=UNCHECKED_OTHER_KEY, unchecked_from="b"))
+
+    assert "(no export record)" in messages.MCP.render(missing)
+    assert "(exported from 'b')" in messages.MCP.render(other)
+
+
+def test_the_prose_field_still_says_what_it_always_said():
+    """``unchecked`` is public prose and dated; until it goes, it does not move.
+
+    Derived from the code now rather than built where the reason is found, so
+    the field and the note cannot come to disagree while both are readable.
+    """
+    assert bulk.unchecked_prose(UNCHECKED_NO_RECORD, None) == "no export record"
+    assert bulk.unchecked_prose(UNCHECKED_OTHER_KEY, "project") == "exported from 'project'"

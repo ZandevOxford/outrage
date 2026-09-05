@@ -66,4 +66,18 @@ class Note:
     __repr__ = __str__
 
 
-__all__ = ["Note"]
+#: Why a write could not be checked: no readable record beside the file.
+#:
+#: Here rather than beside the write, because a value a detail may take is
+#: part of the vocabulary a note carries: the layer that finds the situation
+#: and the tables that word it must agree about it, and this is the module
+#: both of them are allowed to import. Read off
+#: :attr:`outrage.bulk.Check.unchecked_code`.
+UNCHECKED_NO_RECORD = "no-record"
+
+#: Why a write could not be checked: the record names the key the file was
+#: exported *from*, so it is a claim about that key and not about this one.
+UNCHECKED_OTHER_KEY = "other-key"
+
+
+__all__ = ["UNCHECKED_NO_RECORD", "UNCHECKED_OTHER_KEY", "Note"]
