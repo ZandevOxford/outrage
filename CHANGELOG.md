@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.9.0 - 2026-09-05
 
 The command line remarks on two things it used to leave to the reader, and both
 come out of the same change underneath: what an operation has to say about
