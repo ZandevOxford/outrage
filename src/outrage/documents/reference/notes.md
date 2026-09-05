@@ -31,6 +31,21 @@ and spelled twice.
 reason: anything printing a note straight at a person looks wrong when it is
 read, rather than looking fine and being a sentence nobody chose.
 
+### outrage.notes.UNCHECKED_NO_RECORD *= 'no-record'*
+
+Why a write could not be checked: no readable record beside the file.
+
+Here rather than beside the write, because a value a detail may take is
+part of the vocabulary a note carries: the layer that finds the situation
+and the tables that word it must agree about it, and this is the module
+both of them are allowed to import. Read off
+[`outrage.bulk.Check.unchecked_code`](bulk.md#outrage.bulk.Check.unchecked_code).
+
+### outrage.notes.UNCHECKED_OTHER_KEY *= 'other-key'*
+
+Why a write could not be checked: the record names the key the file was
+exported *from*, so it is a claim about that key and not about this one.
+
 ### *class* outrage.notes.Note(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
@@ -44,6 +59,8 @@ to. `details` are the facts that sentence needs, by name.
 Equality is by code and details, so a test can say which notes an operation
 produced without reading anybody's prose. There is no hash: a detail is
 whatever the situation held, and some of them are lists.
+
+#### details *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
 
 #### \_\_str_\_() → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
