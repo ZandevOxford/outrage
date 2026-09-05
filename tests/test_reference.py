@@ -47,6 +47,7 @@ DOCS = REPO / "docs"
 # the path here, the way `test_harness_delivery.py` reaches its own.
 sys.path.insert(0, str(REPO / "tools"))
 
+import document_contents  # noqa: E402
 import document_titles  # noqa: E402
 import render_reference  # noqa: E402
 
@@ -191,6 +192,13 @@ def regenerated(tmp_path_factory) -> Path:
     dest = tmp_path_factory.mktemp("documents")
     assert render_reference.rearrange(build, dest) == 0
     assert document_titles.main([str(dest)]) == 0
+    # The indexes are compared with the pages, because `section_files` reads
+    # every file of the section and a `!contents.md` is one. That is the point:
+    # an index is rendered from the page it sits beside, so a docstring edited
+    # without a re-render moves the offsets as surely as it moves the prose,
+    # and an index left out of the comparison is the half that goes stale
+    # quietly.
+    assert document_contents.main([str(dest)]) == 0
     return dest
 
 
@@ -208,9 +216,10 @@ def test_the_reference_is_not_stale(regenerated):
 
     To fix a failure, do not edit the page. Run::
 
-        make -C docs markdown
-        python tools/render_reference.py docs/_build/markdown src/outrage/documents
-        python tools/document_titles.py src/outrage/documents
+        make -C docs documents
+
+    which is those four steps: the markdown build, the rearrangement, the
+    titles and the indexes.
     """
     fresh = section_files(regenerated)
     committed = section_files(shipped.tree())
