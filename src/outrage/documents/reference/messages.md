@@ -58,9 +58,9 @@ What the MCP tools say about a note. The tools' spelling for an argument is
 the library's own -- see [`keyword()`](#outrage.messages.keyword) -- so this table sits beside the
 error wording both front ends share rather than in a module of its own.
 
-It starts empty on purpose. The carrier, the machinery, the guards and this
-table land before anything emits a note, so nothing can regress while the
-rule that silence must be deliberate is shown to be workable.
+Its entries are the sentences `server.py` composed by hand until the notes
+on one document write moved here; the wording is theirs, and the naming is
+no longer fixed to one store, since a table renders for whoever is reading.
 
 ### outrage.messages.Namer
 

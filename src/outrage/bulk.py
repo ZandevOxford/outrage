@@ -43,6 +43,7 @@ from stat import S_ISDIR, S_ISLNK
 
 from . import keys, messages, store
 from .errors import OutrageError
+from .notes import Note
 from .store import (
     CHANGED,
     CONFLICTS,
@@ -1556,6 +1557,109 @@ def import_document(
     )
 
 
+# -- what an answer that worked has to remark on -------------------------
+
+
+def notes_for(imported: Imported) -> list[Note]:
+    """Every situation :func:`import_document` reached that is worth remarking on.
+
+    One place, front end agnostic, deciding *which* situations arose and never
+    how to say them: each is a :class:`~outrage.notes.Note`, a code and the
+    facts its sentence will need, and a wording table turns it into words for
+    whoever is reading.
+
+    **Why this is not left to each front end.** It was, and that is where the
+    worst of these defects came from. The branch below on ``unedited`` and
+    ``copied_from`` lived in the MCP server, so the command line neither had it
+    nor could have got it right independently -- and when the server had only
+    ``unedited`` to go on it called a verbatim cross-key copy an edit that
+    changed nothing, beside its own ``previous`` and ``stored`` saying the
+    document had grown. One flag, two true sentences: the pair is decided here
+    once, where a test can point at it, rather than in a conditional that only
+    one caller has.
+
+    The order is the order a reader meets them, and it is not arbitrary. What
+    a write destroyed comes before what it stored, because the first is the
+    thing somebody may have to go and recover.
+    """
+    notes = _notes_on_what_a_check_allowed(
+        imported.key,
+        overwritten=imported.overwritten,
+        unchecked=imported.unchecked,
+        changed_at=imported.changed_at,
+    )
+    if imported.unedited and imported.copied_from is None:
+        # The silent no-op: the round trip was clean and the edit matched
+        # nothing, so a call that looks like a write stored the document it
+        # already had. Free to notice, because the export recorded what it
+        # handed out.
+        notes.append(Note("edit-matched-nothing"))
+    elif imported.unedited:
+        # The same bytes going to another key are a copy, not a no-op: the
+        # document here did change, and `previous` beside `stored` says by how
+        # much. So the sentence is about the file, which is the only thing that
+        # did not move, and never about the write.
+        notes.append(Note("stored-a-copy", copied_from=imported.copied_from))
+    return notes + _note_if_it_shrank(imported.previous, imported.stored)
+
+
+def notes_for_checked_write(key: str, check: Check, stored: int) -> list[Note]:
+    """The same, for a write whose content did not come from a file.
+
+    ``store_document`` takes ``against`` and gets the staleness refusal without
+    handing back a file, so what it has afterwards is a :class:`Check` and the
+    size it wrote rather than an :class:`Imported`. The situations are the ones
+    any write past a check reaches; there is no file, so nothing here can be a
+    copy or a no-op.
+
+    ``stored`` is passed rather than read off the check because the check
+    happens *before* the write, and on the encoded path what was stored is not
+    the length of what arrived.
+    """
+    return _notes_on_what_a_check_allowed(
+        key,
+        overwritten=check.overwritten,
+        unchecked=check.unchecked,
+        changed_at=check.changed_at,
+    ) + _note_if_it_shrank(check.previous, stored)
+
+
+def _notes_on_what_a_check_allowed(
+    key: str, *, overwritten: bool, unchecked: str | None, changed_at: str | None
+) -> list[Note]:
+    """What ``overwrite`` let a write past, for either shape of write.
+
+    Shared because the refusals are: :func:`check_write` answers for both, so
+    one place has to say what lifting it meant. The two situations stay
+    separate because they are separate -- a write that lost somebody's work is
+    a thing you can go and look at, and a write nobody could check is not.
+    """
+    notes: list[Note] = []
+    if overwritten:
+        # Said at all because what it means is that somebody else's write is
+        # now gone, and the person who lost it is not reading this.
+        notes.append(Note("overwrote-a-change", changed_at=changed_at))
+    if unchecked is not None:
+        # `reason` is prose built in this module, which is the leak this design
+        # closes last: a code cannot be spelled for a reader until it is a code.
+        notes.append(Note("write-not-checked", key=key, reason=unchecked))
+    return notes
+
+
+def _note_if_it_shrank(previous: int | None, stored: int) -> list[Note]:
+    """The subtraction a caller would otherwise have to do themselves.
+
+    Reported rather than refused -- emptying a document is a thing a person may
+    mean, so enforcement is a separate question from noticing. But the
+    arithmetic is done here: this exact workflow through the command line wrote
+    a 0-character document over a good one, and a shrink nobody subtracted is a
+    shrink nobody saw.
+    """
+    if previous is None or stored >= previous:
+        return []
+    return [Note("document-shrank", previous=previous, stored=stored)]
+
+
 def _updated_at(opened: store.Store, key: str) -> str | None:
     """When ``key`` was last written, or None if it holds nothing.
 
@@ -1664,6 +1768,8 @@ __all__ = [
     "key_for_path",
     "levels",
     "new_export_file",
+    "notes_for",
+    "notes_for_checked_write",
     "overlapping",
     "path_for_key",
     "renew",

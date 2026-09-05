@@ -37,9 +37,11 @@ import pathlib
 import pytest
 
 import outrage
-from outrage import keys
+from outrage import bulk, keys, messages
 from outrage.messages import NoteTable
+from outrage.mounts import Mount
 from outrage.notes import Note
+from outrage.store_sqlite import SqliteStore
 
 SOURCE = pathlib.Path(outrage.__file__).parent
 
@@ -88,10 +90,10 @@ def _emitted_codes() -> set[str]:
 
 #: Stand-in details by shape rather than by meaning, as ``test_messages.py``
 #: does it: a count has to survive arithmetic and a plural has to be iterable,
-#: and nothing here is about what the value would really be. Both start empty
-#: because nothing emits a note yet; a note whose detail is counted or listed
-#: adds its name here rather than teaching the guard about its meaning.
-_COUNTS: set[str] = set()
+#: and nothing here is about what the value would really be. A note whose
+#: detail is counted or listed adds its name here rather than teaching the
+#: guard anything about what it means.
+_COUNTS = {"previous", "stored"}
 _PLURALS: set[str] = set()
 
 
@@ -384,3 +386,146 @@ def test_a_template_reaching_for_a_detail_its_emit_site_does_not_pass_fails():
 
     with pytest.raises(TypeError):
         table.render(Note("shrank", previous=90))
+
+
+# -- what an import has to remark on -----------------------------------------
+#
+# `bulk.notes_for` is the derivation layer: it decides which situations arose,
+# and the table above decides how this reader hears them. These tests read the
+# answer's own fields and the answer's own prose in one place and require them
+# to agree, which is the shape that would have caught all three of the
+# 2026-09-02 defects and did not exist to.
+
+
+@pytest.fixture
+def store(tmp_path):
+    with SqliteStore(tmp_path / "store") as opened:
+        yield opened
+
+
+def _imported(**fields) -> bulk.Imported:
+    """An import result, with only the fields a test is about spelled out."""
+    return bulk.Imported(**({"key": "a", "stored": 10, "previous": None} | fields))
+
+
+def _heard(imported: bulk.Imported) -> str:
+    """Everything the MCP tools would say about ``imported``, as one string."""
+    return " ".join(messages.MCP.render(note) for note in bulk.notes_for(imported))
+
+
+def test_a_verbatim_cross_key_copy_is_not_called_a_no_op(store, tmp_path):
+    """The purest of the seven, driven through the real import rather than by hand.
+
+    The library's `unedited` was right and pinned by a test; the sentence built
+    on it turned a true claim about *bytes* into a false claim about the write.
+    So this asserts the answer's own numbers disagree with a no-op, and then
+    that nothing said beside them claims one.
+    """
+    store.store_document("a", "# The source, which is longer")
+    store.store_document("b", "# short")
+    source = bulk.export_document(store, "a", tmp_path / "export")
+    target = bulk.export_document(store, "b", tmp_path / "export")
+
+    imported = bulk.import_document(
+        store, "b", source.path, tmp_path / "export", against=target.path
+    )
+
+    assert imported.unedited and imported.copied_from == "a"
+    assert imported.previous != imported.stored, "the document at 'b' did change"
+
+    codes = [note.code for note in bulk.notes_for(imported)]
+    assert "stored-a-copy" in codes
+    assert "edit-matched-nothing" not in codes
+
+    said = _heard(imported)
+    assert "the edit changed nothing" not in said
+    assert "exported from 'a'" in said
+
+
+def test_a_clean_round_trip_that_matched_nothing_still_says_so(store, tmp_path):
+    """The other half of the same flag: here the file and the write agree."""
+    store.store_document("a", "# The document")
+    exported = bulk.export_document(store, "a", tmp_path / "export")
+
+    imported = bulk.import_document(store, "a", exported.path, tmp_path / "export")
+
+    assert imported.unedited and imported.copied_from is None
+    assert [note.code for note in bulk.notes_for(imported)] == ["edit-matched-nothing"]
+    assert "the edit changed nothing" in _heard(imported)
+
+
+def test_a_write_that_changed_the_document_has_nothing_to_remark_on(store, tmp_path):
+    """Silence is the common case, and it comes from there being no situation.
+
+    Worth pinning separately from the guard about *deliberate* silence: this
+    one is the derivation finding nothing, which is what should happen on
+    almost every write.
+    """
+    store.store_document("a", "# The document")
+    exported = bulk.export_document(store, "a", tmp_path / "export")
+    (tmp_path / "export" / exported.path.name).write_text("# The document, edited and longer")
+
+    imported = bulk.import_document(store, "a", exported.path, tmp_path / "export")
+
+    assert bulk.notes_for(imported) == []
+
+
+def test_the_sentence_about_a_shrink_carries_the_answer_s_own_numbers():
+    """Restatement is the first of the three kinds, and the cheapest to check."""
+    imported = _imported(stored=0, previous=90)
+
+    (note,) = bulk.notes_for(imported)
+    assert note == Note("document-shrank", previous=90, stored=0)
+    assert f"from {imported.previous} to {imported.stored} characters" in _heard(imported)
+
+
+def test_a_note_names_a_key_the_way_the_reader_would_name_it():
+    """What `server.py`'s `_note_check` could not do: it hardcoded one spelling.
+
+    Harmless while one front end used it, and wrong the moment the key is
+    inside a mounted store -- the same defect the namer was built for on the
+    error side, one layer down.
+    """
+    note, *_ = bulk.notes_for(_imported(unchecked="no export record"))
+
+    assert "'a'" in messages.MCP.render(note)
+    assert "'ref/a'" in messages.MCP.render(note, name=Mount(prefix="ref", store=None).outer)
+
+
+def test_what_a_write_destroyed_is_said_before_what_it_stored():
+    """The order is not arbitrary: the first is the one somebody has to act on."""
+    imported = _imported(
+        stored=0,
+        previous=90,
+        overwritten=True,
+        changed_at="2026-09-05T10:00:00+00:00",
+        unchecked="no export record",
+    )
+
+    assert [note.code for note in bulk.notes_for(imported)] == [
+        "overwrote-a-change",
+        "write-not-checked",
+        "document-shrank",
+    ]
+
+
+def test_every_note_the_import_path_can_produce_is_worded():
+    """The guards say this over the tree; this says it over one operation.
+
+    A situation the derivation can reach and no audience says is a situation
+    nobody is ever told about, and the tree guard only notices because the code
+    is a literal somewhere. Here the codes come from running the derivation.
+    """
+    reached = {
+        note.code
+        for imported in [
+            _imported(overwritten=True, changed_at="2026-09-05T10:00:00+00:00"),
+            _imported(unchecked="no export record"),
+            _imported(unedited=True),
+            _imported(unedited=True, copied_from="a"),
+            _imported(stored=0, previous=90),
+        ]
+        for note in bulk.notes_for(imported)
+    }
+
+    assert reached == set(messages.MCP.sentences())

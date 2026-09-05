@@ -718,6 +718,43 @@ longer work out where a key's export is. The export result carries the
 path, and [`ExportRecord`](#outrage.bulk.ExportRecord) is what makes a directory of ids readable
 after the fact - every file has one, and it names the key.
 
+### outrage.bulk.notes_for(imported: [Imported](#outrage.bulk.Imported)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+
+Every situation [`import_document()`](#outrage.bulk.import_document) reached that is worth remarking on.
+
+One place, front end agnostic, deciding *which* situations arose and never
+how to say them: each is a [`Note`](notes.md#outrage.notes.Note), a code and the
+facts its sentence will need, and a wording table turns it into words for
+whoever is reading.
+
+**Why this is not left to each front end.** It was, and that is where the
+worst of these defects came from. The branch below on `unedited` and
+`copied_from` lived in the MCP server, so the command line neither had it
+nor could have got it right independently -- and when the server had only
+`unedited` to go on it called a verbatim cross-key copy an edit that
+changed nothing, beside its own `previous` and `stored` saying the
+document had grown. One flag, two true sentences: the pair is decided here
+once, where a test can point at it, rather than in a conditional that only
+one caller has.
+
+The order is the order a reader meets them, and it is not arbitrary. What
+a write destroyed comes before what it stored, because the first is the
+thing somebody may have to go and recover.
+
+### outrage.bulk.notes_for_checked_write(key: [str](https://docs.python.org/3/library/stdtypes.html#str), check: [Check](#outrage.bulk.Check), stored: [int](https://docs.python.org/3/library/functions.html#int)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+
+The same, for a write whose content did not come from a file.
+
+`store_document` takes `against` and gets the staleness refusal without
+handing back a file, so what it has afterwards is a [`Check`](#outrage.bulk.Check) and the
+size it wrote rather than an [`Imported`](#outrage.bulk.Imported). The situations are the ones
+any write past a check reaches; there is no file, so nothing here can be a
+copy or a no-op.
+
+`stored` is passed rather than read off the check because the check
+happens *before* the write, and on the encoded path what was stored is not
+the length of what arrived.
+
 ### outrage.bulk.overlapping(source: [str](https://docs.python.org/3/library/stdtypes.html#str), target: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [None](https://docs.python.org/3/library/constants.html#None)
 
 Refuse a source and target pair a copy cannot safely stream between.
