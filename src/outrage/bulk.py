@@ -34,7 +34,7 @@ import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Generator, Iterator
+from collections.abc import Generator, Iterator, Sequence
 from dataclasses import asdict, dataclass, replace
 from dataclasses import fields as dataclass_fields
 from datetime import UTC, datetime, timedelta
@@ -1660,6 +1660,104 @@ def _note_if_it_shrank(previous: int | None, stored: int) -> list[Note]:
     return [Note("document-shrank", previous=previous, stored=stored)]
 
 
+def notes_for_export(exported: Exported) -> list[Note]:
+    """What handing a document out as a file has to remark on.
+
+    One note, and the only one in this module that is not a discovery: an
+    export always has the same thing to say, because what is worth saying is
+    what happens *next*, and a file handed over with nothing said about it
+    reads as the answer rather than as half of a round trip.
+
+    It is derived here anyway, with the others, so that emitting a note is one
+    thing a front end does rather than two -- a table it asks, and a sentence
+    it may write for itself. The exported document is taken and not read for
+    the same reason: this is a note about a result, and a caller should not
+    have to know which of these need the result to decide.
+    """
+    return [Note("exported-for-editing")]
+
+
+def notes_for_delete(
+    key: str, *, dry_run: bool, remaining: int, mounts_kept: Sequence[str]
+) -> list[Note]:
+    """What a delete has to remark on, which is all about what it left standing.
+
+    ``deleted`` and its count describe what went, and nothing in them describes
+    what stayed -- so an answer to a call that removed a fraction of what the
+    caller meant reads exactly like an answer to one that removed all of it.
+    Each note here names a different way that happens.
+
+    The facts are passed rather than taken off a result, because a delete's
+    answer is the store's and says only what it did: ``remaining`` is what lies
+    below ``key`` after a delete that was not recursive, and ``mounts_kept``
+    names read-only mounted stores below it, which are not keys and so are
+    counted by nothing. ``key`` is the caller's own spelling, echoed back so
+    that the advice to try again names the call they made.
+    """
+    notes: list[Note] = []
+    if dry_run:
+        notes.append(Note("delete-was-a-dry-run"))
+    if remaining:
+        # Both halves of the situation, because the sentence is in two tenses:
+        # a dry run kept nothing, it is reporting what a real one would keep.
+        notes.append(Note("keys-kept-below", key=key, remaining=remaining, dry_run=dry_run))
+    if mounts_kept:
+        notes.append(Note("mounts-refused-delete", key=key, mounts=list(mounts_kept)))
+    return notes
+
+
+def notes_for_copy(
+    landing: str,
+    *,
+    dry_run: bool,
+    on_conflict: str,
+    unchanged_since: str | None,
+    changed: Sequence[str],
+    next_cursor: str | None,
+    limit: int,
+    failed: int,
+    named: int,
+    stopped: bool,
+    mounts_kept: Sequence[str],
+) -> list[Note]:
+    """The same for a copy, which has more ways to do less than it was asked.
+
+    A copy reports counts, and a count cannot say that the run stopped early,
+    that a page of it was refused, or that the failures beside it are a sample.
+    Six situations, in the order a reader meets them: what did not happen at
+    all, then what was left behind, then where to carry on from, then what the
+    numbers are not telling them.
+
+    ``landing`` is where the documents actually arrive, which under a graft is
+    not the target key, and it is the key a refusing mount has to be named
+    against. ``named`` is how many failures the answer spells out, against
+    ``failed`` for how many there were. ``on_conflict`` decides only whether
+    the advice can be followed as it stands: a watermark refuses to be handed
+    to the plain overwrite rule, so a dry run under that rule has to point at
+    the narrowed one instead.
+    """
+    notes: list[Note] = []
+    if dry_run:
+        notes.append(Note("copy-was-a-dry-run", overwriting=on_conflict == OVERWRITE))
+    if changed:
+        notes.append(
+            Note("keys-changed-since", changed=list(changed), unchanged_since=unchanged_since)
+        )
+    if next_cursor is not None:
+        # The watermark reaches this note because a copy carries the source's
+        # timestamps: the page just written is itself a change to the target
+        # whenever the source is newer, so a caller told to resume unchanged
+        # would be refused by the check they were told to keep.
+        notes.append(Note("copy-stopped-at-limit", limit=limit, unchanged_since=unchanged_since))
+    if failed > named:
+        notes.append(Note("failures-sampled", failed=failed, named=named))
+    if stopped:
+        notes.append(Note("copy-stopped-at-conflict"))
+    if mounts_kept:
+        notes.append(Note("mounts-refused-write", key=landing, mounts=list(mounts_kept)))
+    return notes
+
+
 def _updated_at(opened: store.Store, key: str) -> str | None:
     """When ``key`` was last written, or None if it holds nothing.
 
@@ -1770,6 +1868,9 @@ __all__ = [
     "new_export_file",
     "notes_for",
     "notes_for_checked_write",
+    "notes_for_copy",
+    "notes_for_delete",
+    "notes_for_export",
     "overlapping",
     "path_for_key",
     "renew",

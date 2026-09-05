@@ -54,7 +54,7 @@ silence by neglect and nothing ever notices.
 from __future__ import annotations
 
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from . import keys
@@ -296,6 +296,109 @@ def _document_shrank(name: Namer, /, *, previous: int, stored: int, **_: Any) ->
     return (
         f"the document shrank from {previous} to {stored} characters; if "
         f"that was not intended, the previous content is gone."
+    )
+
+
+@MCP.template("exported-for-editing")
+def _exported_for_editing(name: Namer, /, **_: Any) -> str:
+    return "Edit this file in place and call again with its path to store it back."
+
+
+@MCP.template("delete-was-a-dry-run")
+def _delete_was_a_dry_run(name: Namer, /, **_: Any) -> str:
+    return (
+        "Nothing was deleted; `deleted` is what the delete would have "
+        "taken. Pass checked_at back as unchanged_since to refuse the "
+        "real delete if anything moves in between."
+    )
+
+
+@MCP.template("keys-kept-below")
+def _keys_kept_below(name: Namer, /, *, key: str, remaining: int, dry_run: bool, **_: Any) -> str:
+    return (
+        f"{remaining} key(s) below {name(key)!r} "
+        f"{'would be kept' if dry_run else 'were kept'}; "
+        f"pass recursive=true to delete them too"
+    )
+
+
+@MCP.template("mounts-refused-delete")
+def _mounts_refused_delete(name: Namer, /, *, key: str, mounts: Sequence[str], **_: Any) -> str:
+    return (
+        f"{len(mounts)} read-only mounted store(s) below {name(key)!r} refuse a "
+        f"delete: {', '.join(repr(mount) for mount in mounts)}. Nothing there was "
+        f"removed, and `recursive` will not reach it either; restart the "
+        f"server with --mount rather than --mount-ro to delete there too."
+    )
+
+
+@MCP.template("copy-was-a-dry-run")
+def _copy_was_a_dry_run(name: Namer, /, *, overwriting: bool, **_: Any) -> str:
+    # The advice has to name a conflict rule that will accept a watermark:
+    # `overwrite` beside one is the pairing `bulk` refuses, so unconditionally
+    # telling a caller to hand the moment back recommended the call that fails.
+    guarded = " with on_conflict='overwrite-unchanged'" if overwriting else ""
+    return (
+        "Nothing was written; this is what the copy would have done. Pass "
+        f"checked_at back as unchanged_since{guarded} to refuse the real "
+        "copy if anything moves in between."
+    )
+
+
+@MCP.template("keys-changed-since")
+def _keys_changed_since(
+    name: Namer, /, *, changed: Sequence[str], unchanged_since: str | None, **_: Any
+) -> str:
+    return (
+        f"{len(changed)} key(s) changed since {unchanged_since!r} "
+        f"and were left as they are; they are named in `changed`. Read "
+        f"them before deciding whether the copy should still land."
+    )
+
+
+@MCP.template("copy-stopped-at-limit")
+def _copy_stopped_at_limit(
+    name: Namer, /, *, limit: int, unchanged_since: str | None, **_: Any
+) -> str:
+    said = (
+        f"The limit of {limit} stopped this call and more is left to "
+        f"copy; call again with cursor set to next_cursor and every "
+        f"other argument unchanged."
+    )
+    if not unchanged_since:
+        return said
+    # The watermark is the exception to "unchanged", and the two halves
+    # contradicted each other without this.
+    return said + (
+        " Except unchanged_since, where the source is newer than it: "
+        "the page just written carries the source's own timestamps "
+        "into the target, so take the moment again from a dry run at "
+        "that cursor rather than have it refuse the next call."
+    )
+
+
+@MCP.template("failures-sampled")
+def _failures_sampled(name: Namer, /, *, failed: int, named: int, **_: Any) -> str:
+    return (
+        f"{failed} document(s) failed and the first {named} are named; the rest are only counted."
+    )
+
+
+@MCP.template("copy-stopped-at-conflict")
+def _copy_stopped_at_conflict(name: Namer, /, **_: Any) -> str:
+    return (
+        "on_conflict='stop' ended the copy at a key that was already "
+        "stored; nothing after it was copied and next_cursor is not a "
+        "way back to it."
+    )
+
+
+@MCP.template("mounts-refused-write")
+def _mounts_refused_write(name: Namer, /, *, key: str, mounts: Sequence[str], **_: Any) -> str:
+    return (
+        f"{len(mounts)} read-only mounted store(s) below {name(key)!r} refuse a "
+        f"write: {', '.join(repr(mount) for mount in mounts)}. Nothing lands there; "
+        f"restart the server with --mount rather than --mount-ro to copy there too."
     )
 
 

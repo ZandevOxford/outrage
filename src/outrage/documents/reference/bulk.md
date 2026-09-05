@@ -755,6 +755,55 @@ copy or a no-op.
 happens *before* the write, and on the encoded path what was stored is not
 the length of what arrived.
 
+### outrage.bulk.notes_for_copy(landing: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool), on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str), unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), changed: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], next_cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), limit: [int](https://docs.python.org/3/library/functions.html#int), failed: [int](https://docs.python.org/3/library/functions.html#int), named: [int](https://docs.python.org/3/library/functions.html#int), stopped: [bool](https://docs.python.org/3/library/functions.html#bool), mounts_kept: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+
+The same for a copy, which has more ways to do less than it was asked.
+
+A copy reports counts, and a count cannot say that the run stopped early,
+that a page of it was refused, or that the failures beside it are a sample.
+Six situations, in the order a reader meets them: what did not happen at
+all, then what was left behind, then where to carry on from, then what the
+numbers are not telling them.
+
+`landing` is where the documents actually arrive, which under a graft is
+not the target key, and it is the key a refusing mount has to be named
+against. `named` is how many failures the answer spells out, against
+`failed` for how many there were. `on_conflict` decides only whether
+the advice can be followed as it stands: a watermark refuses to be handed
+to the plain overwrite rule, so a dry run under that rule has to point at
+the narrowed one instead.
+
+### outrage.bulk.notes_for_delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool), remaining: [int](https://docs.python.org/3/library/functions.html#int), mounts_kept: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+
+What a delete has to remark on, which is all about what it left standing.
+
+`deleted` and its count describe what went, and nothing in them describes
+what stayed -- so an answer to a call that removed a fraction of what the
+caller meant reads exactly like an answer to one that removed all of it.
+Each note here names a different way that happens.
+
+The facts are passed rather than taken off a result, because a delete's
+answer is the store's and says only what it did: `remaining` is what lies
+below `key` after a delete that was not recursive, and `mounts_kept`
+names read-only mounted stores below it, which are not keys and so are
+counted by nothing. `key` is the caller's own spelling, echoed back so
+that the advice to try again names the call they made.
+
+### outrage.bulk.notes_for_export(exported: [Exported](#outrage.bulk.Exported)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+
+What handing a document out as a file has to remark on.
+
+One note, and the only one in this module that is not a discovery: an
+export always has the same thing to say, because what is worth saying is
+what happens *next*, and a file handed over with nothing said about it
+reads as the answer rather than as half of a round trip.
+
+It is derived here anyway, with the others, so that emitting a note is one
+thing a front end does rather than two -- a table it asks, and a sentence
+it may write for itself. The exported document is taken and not read for
+the same reason: this is a note about a result, and a caller should not
+have to know which of these need the result to decide.
+
 ### outrage.bulk.overlapping(source: [str](https://docs.python.org/3/library/stdtypes.html#str), target: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [None](https://docs.python.org/3/library/constants.html#None)
 
 Refuse a source and target pair a copy cannot safely stream between.
