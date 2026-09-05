@@ -14,7 +14,7 @@ SPHINXBUILD   ?= $(PYTHON) -m sphinx
 SOURCEDIR     = .
 BUILDDIR      = _build
 
-.PHONY: help strict markdown clean Makefile
+.PHONY: help strict markdown documents clean Makefile
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
@@ -43,6 +43,23 @@ strict:
 markdown:
 	@$(SPHINXBUILD) -b markdown "$(SOURCEDIR)" "$(BUILDDIR)/markdown" \
 		-d "$(BUILDDIR)/doctrees-markdown" -W --keep-going -a -E $(SPHINXOPTS) $(O)
+
+# The whole pipeline that produces `src/outrage/documents`, which is what a
+# person actually wants: `markdown` alone leaves the pages in `_build` and the
+# shipped tree untouched, and the steps after it were three commands nobody had
+# written down anywhere but a test docstring.
+#
+# The last two sweep the **whole tree**, not the section the render wrote. That
+# is deliberate for the indexes: `design` and `cli` are hand-written and their
+# `!contents` goes stale on an ordinary edit rather than at a render, so the
+# only run that could refresh them is one that does not care which half a
+# document is in. `tests/test_shipped.py` is what fails when this has not been
+# run; `tools/document_titles.py` skips a title that is already there, and
+# `tools/document_contents.py` rewrites an index that has moved.
+documents: markdown
+	@$(PYTHON) ../tools/render_reference.py "$(BUILDDIR)/markdown" ../src/outrage/documents
+	@$(PYTHON) ../tools/document_titles.py ../src/outrage/documents
+	@$(PYTHON) ../tools/document_contents.py ../src/outrage/documents
 
 clean:
 	@rm -rf "$(BUILDDIR)"

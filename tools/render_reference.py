@@ -24,7 +24,12 @@ store rather than a tidy-up:
 
 Titles are not written here. `tools/document_titles.py` does that, over the
 whole tree, so that the one rule about not overwriting a hand-written title
-lives in one place.
+lives in one place. `tools/document_contents.py` writes the `!contents`
+indexes on the same argument and over the same whole tree -- a hand-written
+page's index goes stale on an edit rather than at a render, so the sweep that
+refreshes one cannot be the step that only sees this section.
+
+`make -C docs documents` is the three of them after the markdown build.
 """
 
 from __future__ import annotations
