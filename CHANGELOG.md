@@ -23,7 +23,8 @@ exactly as they were.
   characters — a quarter of the rows in a store like this project's own, and
   nine tenths of the text. A subtree total costs about 58% less as a result.
   It is a cache: a missing entry is counted instead, so nothing depends on it
-  being complete. Triggers on the document table empty it, so no writer can
+  being complete, and a read that had to work a length out writes it down, so
+  a document only pays for that once. Triggers on the document table empty it, so no writer can
   leave an entry describing text that has changed — including a build of
   `outrage` older than the cache, since the triggers live in the file. `outrage
   check` reports what the cache holds and warns if an entry ever disagrees with

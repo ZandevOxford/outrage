@@ -575,8 +575,7 @@ def test_totals_are_the_same_whether_or_not_the_cache_has_the_answer(store):
         )
 
     with_cache = totals()
-    store._conn.execute(f"DELETE FROM {sqlite_module.LENGTH_CACHE_TABLE}")
-    store._conn.commit()
+    _empty_the_cache(store)
     without_cache = totals()
 
     assert with_cache == without_cache == (len(LONG) + len(SHORT) + len(LONG) * 2,) * 2
@@ -641,10 +640,115 @@ def test_a_byte_read_reports_the_character_total_from_the_cache(store):
 def test_a_byte_read_of_a_long_document_is_right_without_an_entry(store):
     """Correct first, fast second: an empty cache costs time and not accuracy."""
     store.store_document("long", LONG)
+    _empty_the_cache(store)
+
+    assert store.retrieve_document("long", byte_offset=0).total == len(LONG)
+
+
+# -- a read that fills the cache -----------------------------------------
+#
+# John's call, 2026-09-05: a cache should be invisible to the user, so a write
+# on a read path is not the surprise it would be if it changed a document. A
+# document is only ever found uncached because a writer older than the cache
+# emptied the entry, and the read has already paid for the length by then.
+
+
+def _empty_the_cache(store):
     store._conn.execute(f"DELETE FROM {sqlite_module.LENGTH_CACHE_TABLE}")
     store._conn.commit()
 
-    assert store.retrieve_document("long", byte_offset=0).total == len(LONG)
+
+def test_a_byte_read_writes_down_the_length_it_had_to_count(store):
+    store.store_document("long", LONG)
+    _empty_the_cache(store)
+
+    store.retrieve_document("long", byte_offset=0)
+
+    # Or every byte read of this document would keep paying for the count that
+    # the offset was chosen to avoid, with nothing to change that but a write.
+    assert _cached(store) == {"long": len(LONG)}
+
+
+def test_a_character_read_writes_it_down_too(store):
+    """The same fact, arrived at more cheaply rather than differently.
+
+    A character read holds the whole document, so the length is in hand and
+    writing it down costs a row rather than a count. Drawing the line at the
+    byte path would have left the commonest read of all not filling a cache it
+    could fill for nothing.
+    """
+    store.store_document("long", LONG)
+    _empty_the_cache(store)
+
+    store.retrieve_document("long")
+
+    assert _cached(store) == {"long": len(LONG)}
+
+
+def test_a_read_of_a_short_document_writes_nothing(store):
+    store.store_document("short", SHORT)
+
+    store.retrieve_document("short")
+    store.retrieve_document("short", byte_offset=0)
+
+    assert _cached(store) == {}
+
+
+def test_a_read_does_not_rewrite_an_entry_that_is_already_there(store):
+    """A hit is a hit: the read trusts the cache and does not check it.
+
+    Asserted through a deliberately wrong entry, which survives. Verifying it
+    on every read would mean counting on every read, which is the whole cost
+    being avoided -- checking that entries agree with their documents is
+    ``check``'s job and it is the expensive path on purpose.
+    """
+    store.store_document("long", LONG)
+    store._conn.execute(f"UPDATE {sqlite_module.LENGTH_CACHE_TABLE} SET chars = 7")
+    store._conn.commit()
+
+    store.retrieve_document("long")
+    store.retrieve_document("long", byte_offset=0)
+
+    assert _cached(store) == {"long": 7}
+
+
+def test_a_bulk_read_does_not_fill_the_cache(store):
+    """The line between a note taken in passing and a scan nobody asked for.
+
+    Reading one document establishes one length. A subtree read establishes a
+    sum, and filling the cache from it would be the backfill again, run on
+    somebody's read of a corpus rather than once when the table was made.
+    """
+    store.store_document("a/long", LONG)
+    _empty_the_cache(store)
+
+    assert store.get_documents(BoundedSubtree("a")).total_chars == len(LONG)
+    assert _cached(store) == {}
+
+
+def test_a_read_still_answers_when_the_cache_cannot_be_written(store):
+    """Invisible in both directions.
+
+    A store another writer holds locked would otherwise turn a read that had
+    already succeeded into an error, over a note nobody asked to be taken.
+    ``query_only`` stands in for the lock: it refuses writes and answers reads,
+    which is the shape of every way this can fail.
+
+    Note what is *not* being claimed. The cache table itself is load-bearing
+    once it exists -- every read names it -- so a store somebody has dropped it
+    from is a broken store, exactly as it would be for any other table. What is
+    tolerated is a write that cannot land, not a table that is not there.
+    """
+    store.store_document("long", LONG)
+    _empty_the_cache(store)
+    store._conn.execute("PRAGMA query_only=ON")
+    try:
+        assert store.retrieve_document("long").content == LONG
+        assert store.retrieve_document("long", byte_offset=0).total == len(LONG)
+    finally:
+        store._conn.execute("PRAGMA query_only=OFF")
+
+    assert _cached(store) == {}
 
 
 def test_listing_a_level_does_not_select_the_documents_it_lists(store):

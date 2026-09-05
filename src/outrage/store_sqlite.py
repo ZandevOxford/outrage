@@ -161,10 +161,11 @@ END;
 #: table carrying a ``key`` of its own would make all of them ambiguous. It
 #: measures the same: 0.99 ms against 0.94 for the join, where counting every
 #: row outright is 2.49.
-_CHARS = (
-    f"coalesce((SELECT chars FROM {LENGTH_CACHE_TABLE} "
-    f"WHERE {LENGTH_CACHE_TABLE}.key = documents.key), length(content))"
+_CACHED_CHARS = (
+    f"(SELECT chars FROM {LENGTH_CACHE_TABLE} WHERE {LENGTH_CACHE_TABLE}.key = documents.key)"
 )
+
+_CHARS = f"coalesce({_CACHED_CHARS}, length(content))"
 
 #: How long a writer waits for another writer to finish before giving up, in
 #: milliseconds. SQLite's own default is zero -- a busy database fails on the
@@ -580,6 +581,34 @@ class SqliteStore(FileStore):
                 (parsed.key, len(content)),
             )
 
+    def _remember_length(self, key: str, chars: int) -> None:
+        """Write a length down that a read has just worked out, if it is worth it.
+
+        A read that writes, deliberately. The cache is meant to be invisible --
+        John's call, 2026-09-05 -- and what makes a write on this path
+        unsurprising is that it changes no document and no answer: the same
+        length is returned whether or not this succeeds, and all it buys is
+        that the next read of the same document does not work it out again.
+        A document only reaches here uncached if it was written by something
+        that emptied the entry and did not refill it, which is what any writer
+        older than the cache does.
+
+        **A failure here is swallowed on purpose.** Invisible has to mean
+        invisible in both directions: a store another writer holds locked would
+        otherwise turn a read that had already succeeded into an error, over a
+        note nobody asked to be taken.
+        """
+        if chars <= LENGTH_THRESHOLD:
+            return
+        try:
+            with self._transaction():
+                self._conn.execute(
+                    f"INSERT OR REPLACE INTO {LENGTH_CACHE_TABLE} (key, chars) VALUES (?, ?)",
+                    (key, chars),
+                )
+        except sqlite3.Error:
+            pass
+
     @contextmanager
     def _transaction(self, immediate: bool = False) -> Iterator[None]:
         """Commit on success, roll back on failure.
@@ -828,7 +857,9 @@ class SqliteStore(FileStore):
         # where the document is long enough to be in it, and by counting a
         # short one, which costs nothing because it is short.
         columns = (
-            "*" if byte_offset is None else f"rowid, key, format, updated_at, {_CHARS} AS chars"
+            f"*, {_CACHED_CHARS} AS cached"
+            if byte_offset is None
+            else f"rowid, key, format, updated_at, {_CACHED_CHARS} AS cached, {_CHARS} AS chars"
         )
         row = self._conn.execute(
             f"SELECT {columns} FROM documents WHERE key = ?", (keys.parse(key).key,)
@@ -844,6 +875,17 @@ class SqliteStore(FileStore):
         check_read_position(
             key, offset=offset, byte_offset=byte_offset, pattern=pattern, occurrence=occurrence
         )
+
+        if row["cached"] is None:
+            # This read has just established a length the cache did not have,
+            # either by counting one it had to count or by holding the document
+            # anyway, so it writes it down. Reading a document is the one place
+            # a single length is arrived at; the bulk reads arrive at sums, and
+            # filling the whole cache from one of those would be a scan nobody
+            # asked for rather than a note taken in passing.
+            self._remember_length(
+                row["key"], row["chars"] if byte_offset is not None else len(row["content"])
+            )
 
         if byte_offset is not None:
             return self._byte_read(row, key, byte_offset, pattern, occurrence, length, max_chars)
