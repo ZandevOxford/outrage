@@ -10,8 +10,9 @@ this project ships and the least likely to be read whole -- `reference/store`
 is 96k characters, `cli` 52k, `design` 55k. A generated reference page's
 headings are its public names, so an index of one is a symbol table with two
 offsets beside every entry, and a byte-addressed read jumps straight to a class
-or a function. `context/115/decisions` in the store is the call that made an
-index the answer for a large static document rather than splitting it.
+or a function. An index is the alternative to splitting such a document, not a
+consolation for having failed to split it: one read of the index and one read
+of the section costs what surveying titles and reading a child would.
 
 **It goes through the store rather than over the files.** Every question about
 where an index lands is one :class:`outrage.store_files.FilesystemStore`

@@ -11,10 +11,10 @@
 # PYTHON is whatever the activated environment resolves, and can be overridden:
 # make markdown PYTHON=/path/to/python
 #
-# It was an absolute path into one miniforge environment until 2026-09-05 --
-# committed, and correct on exactly one machine -- and the `rage` environment
-# until 2026-08-29, before `environment.yml` named `outrage` and before the
-# Python floor dropped to 3.12. `reference/env` in the store is that record.
+# Never a path to a particular interpreter here. This file is committed, so a
+# default naming a directory under somebody's home is correct on one machine and
+# broken everywhere else, including in the same checkout under a rebuilt
+# environment.
 
 PYTHON        ?= python
 SPHINXOPTS    ?=
