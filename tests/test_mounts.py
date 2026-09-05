@@ -1108,7 +1108,7 @@ def test_outrage_check_finds_a_key_that_predates_the_bound(tmp_path):
         store.connection.commit()
 
         report = maintenance.check(store)
-        deep = [p for p in report.problems if "more than 64 segments" in p.summary]
+        deep = [p for p in report.problems if p.code == maintenance.KEYS_TOO_DEEP]
         assert len(deep) == 1
         assert "cannot be mounted" in deep[0].detail
         assert not report.sound
@@ -1116,7 +1116,9 @@ def test_outrage_check_finds_a_key_that_predates_the_bound(tmp_path):
         # A store nobody has done that to says nothing about depth.
     with SqliteStore(tmp_path / "clean") as clean:
         clean.store_document("ordinary", "fine")
-        assert not [p for p in maintenance.check(clean).problems if "segments" in p.summary]
+        assert not [
+            p for p in maintenance.check(clean).problems if p.code == maintenance.KEYS_TOO_DEEP
+        ]
 
 
 # -- read-only mounts -----------------------------------------------------

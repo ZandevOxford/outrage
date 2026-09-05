@@ -75,11 +75,6 @@ When the sidecar is worth reporting. A WAL always holds something between
 checkpoints; it is only interesting once it holds more than the database it
 belongs to, which is the state that makes a file copy lose real content.
 
-### outrage.store_sqlite.WAL_UNCHECKPOINTED *= 'most of the store is in the write-ahead log'*
-
-The one problem `repair` acts on, named so that the test asserting a
-repaired store stops reporting it does not have to spell it again.
-
 ### *class* outrage.store_sqlite.SqliteStore(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`FileStore`](store.md#outrage.store.FileStore)

@@ -953,8 +953,7 @@ def test_the_row_checks_are_not_sqlites_and_fire_for_parquet_too(tmp_path):
         report = maintenance.check(store)
 
     assert not report.sound
-    disagree = "some rows disagree with the key they are stored under"
-    problem = next(p for p in report.problems if p.summary == disagree)
+    problem = next(p for p in report.problems if p.code == maintenance.ROWS_UNDER_WRONG_KEY)
     assert problem.severity == "warning"
     assert "a/b claims parent 'elsewhere', implies 'a'" in problem.detail
 
@@ -985,7 +984,7 @@ def test_check_finds_a_parquet_file_that_is_not_in_sort_order(tmp_path):
 
     assert report.details["order"] == "not sorted"
     assert not report.sound
-    problem = next(p for p in report.problems if p.summary == "the file is not in sort order")
+    problem = next(p for p in report.problems if p.code == maintenance.ROWS_OUT_OF_ORDER)
     assert problem.severity == "error"
     assert "outrage pack" in problem.detail
     # Reported, and left alone: rebuilding is not moving bytes about.

@@ -34,17 +34,86 @@ Nothing here is destructive. A repair moves bytes about and never changes a
 document; one that could lose content would need a backup taken first, and no
 backend offers such a repair.
 
+### outrage.maintenance.DATABASE_DAMAGED *= 'database-damaged'*
+
+The storage itself reports the file as damaged.
+
+### outrage.maintenance.FILES_NOT_KEYS *= 'files-not-keys'*
+
+Files in a directory store whose names do not map to a key.
+
+### outrage.maintenance.FILES_NOT_TEXT *= 'files-not-text'*
+
+Files in a directory store that are not UTF-8 text.
+
+### outrage.maintenance.FORMAT_OLDER *= 'format-older'*
+
+A store older than this build's format, which a writable backend migrates
+when it opens it. Not a fault.
+
+### outrage.maintenance.FORMAT_TOO_NEW *= 'format-too-new'*
+
+A store written by a build newer than this one, which cannot read it safely.
+
+### outrage.maintenance.KEYS_DOUBLED *= 'keys-doubled'*
+
+One key held by more than one file, where only the first can be read.
+
+### outrage.maintenance.KEYS_TOO_DEEP *= 'keys-too-deep'*
+
+Keys with more segments than [`outrage.keys.MAX_SEGMENTS`](keys.md#outrage.keys.MAX_SEGMENTS) allows.
+
+### outrage.maintenance.LENGTH_CACHE_STALE *= 'length-cache-stale'*
+
+Cached document lengths describing documents that have since changed.
+
+### outrage.maintenance.METADATA_WITHOUT_DOCUMENT *= 'metadata-without-document'*
+
+Metadata whose document does not exist. Legal, and worth naming.
+
+### outrage.maintenance.PROBLEM_CODES *= ('format-too-new', 'format-older', 'keys-too-deep', 'rows-under-wrong-key', 'metadata-without-document', 'database-damaged', 'length-cache-stale', 'wal-uncheckpointed', 'files-not-keys', 'keys-doubled', 'files-not-text', 'rows-out-of-order')*
+
+Every code above. For a caller deciding what it can act on, and for the
+guard in `tests/test_maintenance.py` that keeps the list complete: a code
+constant this does not name is one nothing has agreed to.
+
+### outrage.maintenance.ROWS_OUT_OF_ORDER *= 'rows-out-of-order'*
+
+Rows not in sort order, which every read bisects and so answers wrongly.
+
+### outrage.maintenance.ROWS_UNDER_WRONG_KEY *= 'rows-under-wrong-key'*
+
+Rows whose stored `parent` disagrees with the key they are stored under.
+
+### outrage.maintenance.WAL_UNCHECKPOINTED *= 'wal-uncheckpointed'*
+
+More of the store is in the write-ahead log than in the database file, so
+anything copying that file alone gets a store missing recent writes. The one
+problem `repair` acts on.
+
 ### *exception* outrage.maintenance.CheckError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/library/exceptions.html#RuntimeError)
 
 Raised when a store cannot be checked at all.
 
-### *class* outrage.maintenance.Problem(severity: [str](https://docs.python.org/3/library/stdtypes.html#str), summary: [str](https://docs.python.org/3/library/stdtypes.html#str), detail: [str](https://docs.python.org/3/library/stdtypes.html#str) = '', repairable: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
+### *class* outrage.maintenance.Problem(code: [str](https://docs.python.org/3/library/stdtypes.html#str), severity: [str](https://docs.python.org/3/library/stdtypes.html#str), summary: [str](https://docs.python.org/3/library/stdtypes.html#str), detail: [str](https://docs.python.org/3/library/stdtypes.html#str) = '', repairable: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
 Something wrong, or worth knowing, about the store rather than a document.
+
+`code` names *which* problem this is, one of [`PROBLEM_CODES`](#outrage.maintenance.PROBLEM_CODES), and
+is what a caller with something to do about a particular fault selects on.
+First, as it is on [`OutrageError`](errors.md#outrage.errors.OutrageError) and
+[`Note`](notes.md#outrage.notes.Note), and for the same reason: what a thing is
+comes before how it reads.
+
+`summary` and `detail` are that same problem as prose, and they are the
+report -- `outrage check` prints them and nothing else consumes them.
+They stay where the fault is found rather than moving to a wording table,
+because there is one reader of them; a second one would change that answer.
+Nothing should match on them.
 
 `severity` is 'error' for a store that is damaged or unreadable by this
 build, 'warning' for something that will cause a wrong answer later, and
@@ -56,6 +125,8 @@ only place the answer is known: a backend appending this from
 [`repair()`](store.md#outrage.store.FileStore.repair) acts on it, and nothing above can. It
 defaults to False so that a problem nobody thought about cannot claim to
 be fixable.
+
+#### code *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
 #### severity *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
