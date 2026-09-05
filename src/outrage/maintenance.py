@@ -110,11 +110,20 @@ class Report:
 
 @dataclass(frozen=True)
 class Repaired:
-    """What a repair actually did, in bytes rather than in claims."""
+    """What a repair actually did, measured rather than claimed.
+
+    ``unit`` is what ``before`` and ``after`` are counted in. It exists because
+    the vocabulary started out assuming every repair moves bytes about inside a
+    file, which was true while the only repairs were a checkpoint and a
+    compaction, and stopped being true for one that drops rows: a count of
+    three rows printed as "3 bytes" is a sentence that reads correctly and
+    says something false.
+    """
 
     action: str
     before: int
     after: int
+    unit: str = "bytes"
 
 
 def check(store: FileStore) -> Report:

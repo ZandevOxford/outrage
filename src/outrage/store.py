@@ -2712,6 +2712,7 @@ def _byte_excerpt(
     *,
     read: Callable[[int, int], bytes],
     total_bytes: int,
+    total: int | None = None,
 ) -> Excerpt:
     """One document's stored text as the slice a *byte* offset asked for.
 
@@ -2727,6 +2728,12 @@ def _byte_excerpt(
     read: the budget a caller spends is context, and context is counted in
     characters. So this over-reads by the worst ratio UTF-8 can spend -- 32 KB
     of bytes for 8 000 characters -- decodes, and cuts back.
+
+    ``total`` is the document's length in characters where the backend knows it
+    without reading the document -- from a stored length, or because it holds
+    the text anyway -- and None where finding out would mean the scan a byte
+    offset exists to avoid. So it stays backend-dependent by design, and a
+    caller reads ``total_bytes``, which every backend always knows.
     """
     if max_chars <= 0:
         raise ValueError("max_chars must be positive")
@@ -2752,7 +2759,7 @@ def _byte_excerpt(
         updated_at=updated_at,
         offset=None,
         returned=len(excerpt),
-        total=None,
+        total=total,
         next_offset=None,
         byte_offset=start,
         total_bytes=total_bytes,

@@ -52,7 +52,12 @@ from outrage.store import (
     Store,
 )
 from outrage.store_files import FilesystemStore
-from outrage.store_parquet import ParquetStore
+from outrage.store_parquet import (
+    FORMAT_VERSION,
+    HELD_COLUMNS,
+    INDEX_COLUMNS,
+    ParquetStore,
+)
 from outrage.store_sqlite import SqliteStore
 
 pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
@@ -1297,3 +1302,87 @@ def test_the_derived_columns_agree_with_the_ones_the_file_still_stores(packed):
     from outrage import maintenance
 
     assert maintenance.check(packed).sound
+
+
+# -- the byte-length column ----------------------------------------------
+#
+# Written by default, left out on request, and read by *nothing here yet*.
+# Which of the two lengths is expensive is a property of the storage: SQLite
+# gets bytes from a blob handle and a directory of files from `st_size`, and
+# only this backend has to open the content column to find out. And a parquet
+# file is never updated in place, so a store packed without the column can
+# gain it only by being packed again -- which is why it is written now, at the
+# one moment it costs a flag test per document, rather than when something
+# first wants it.
+
+
+#: A document whose bytes and characters differ, so a column holding one
+#: cannot pass for a column holding the other.
+WIDE_DOC = "héllo wörld \U0001f600"
+
+
+def _column(path, name):
+    pq = pytest.importorskip("pyarrow.parquet")
+    opened = pq.ParquetFile(path)
+    if name not in opened.schema_arrow.names:
+        return None
+    return opened.read(columns=[name]).column(name).to_pylist()
+
+
+def test_a_pack_writes_each_document_s_length_in_bytes(tmp_path):
+    target = tmp_path / "out.parquet"
+    ParquetStore.build(target, [("a", "ascii", None, None), ("b", WIDE_DOC, None, None)])
+
+    assert _column(target, "bytes") == [len(b"ascii"), len(WIDE_DOC.encode())]
+    # Beside `chars` and not instead of it: the two differ exactly where the
+    # document is not ASCII, which is the whole reason both are kept.
+    assert _column(target, "chars") == [len("ascii"), len(WIDE_DOC)]
+    assert _column(target, "bytes") != _column(target, "chars")
+
+
+def test_a_pack_can_be_asked_not_to_write_it(tmp_path):
+    target = tmp_path / "out.parquet"
+    ParquetStore.build(target, [("a", WIDE_DOC, None, None)], byte_lengths=False)
+
+    assert _column(target, "bytes") is None
+    # `chars` is not optional and cannot be: a total and a listing are answered
+    # from it without the content column being opened at all, so a file without
+    # it would read every document to list a level.
+    assert _column(target, "chars") == [len(WIDE_DOC)]
+
+
+def test_a_file_without_the_column_reads_exactly_like_one_with_it(tmp_path):
+    """The stamp does not move for this column, so both are ordinary stores.
+
+    A reader keys on the column being there rather than on the format version,
+    which it has to anyway -- the pack option means two files carry the same
+    version and differ in columns -- and which is what keeps every file written
+    before this readable rather than refused.
+    """
+    documents = [(key, content, None, "2026-01-01T00:00:00+00:00") for key, content in CORPUS]
+    ParquetStore.build(tmp_path / "with.parquet", documents)
+    ParquetStore.build(tmp_path / "without.parquet", documents, byte_lengths=False)
+
+    with (
+        ParquetStore(tmp_path, filename="with.parquet") as rich,
+        ParquetStore(tmp_path, filename="without.parquet") as plain,
+    ):
+        assert rich.stored_format_version == plain.stored_format_version == FORMAT_VERSION
+        for call in (
+            lambda s: s.list_keys("a"),
+            lambda s: s.get_documents(BoundedSubtree("a")),
+            lambda s: s.retrieve_document("a"),
+            lambda s: s.retrieve_document("a", byte_offset=1),
+        ):
+            assert call(rich) == call(plain)
+
+
+def test_the_byte_column_is_written_but_not_held_in_memory(tmp_path):
+    """Written for a reader of the file, not for a read of the store.
+
+    The same answer ``doc_key`` and ``parent`` get: a column a reader can
+    recompute is still a column a query engine should not have to, and holding
+    one nothing here reads would be bytes per row of an open store for nothing.
+    """
+    assert "bytes" in INDEX_COLUMNS
+    assert "bytes" not in HELD_COLUMNS

@@ -106,6 +106,23 @@ file is repacked rather than upgraded.
 swallowed everything below the first `!`; both come off `key`, which the
 file carries, so `ParquetStore._build()` derives them on the way in.
 
+### outrage.store_parquet.BYTE_LENGTHS *= True*
+
+Whether a pack writes `bytes`. On by default and omitted by `outrage pack
+--no-byte-lengths`, and the only column here that is optional: `chars` is
+what answers a total without opening `content`, so a file without it would
+read every document to list a level.
+
+**Written before anything reads it, which needs its reason.** Which of the
+two lengths is expensive is a property of the storage: SQLite gets bytes
+from a blob handle and a directory of files from `st_size`, while here
+only the content column holds them. And a parquet file is never updated, so
+a file packed without this can only gain it by being packed again -- unlike
+the other two backends, where the same fact can be written down at any later
+date for nothing. So it is written at the one moment it is cheap, for the
+same reason `doc_key` and `parent` are written and not held: a column a
+reader can recompute is still a column a query engine should not have to.
+
 ### outrage.store_parquet.HELD_COLUMNS *= ('key', 'meta_name', 'meta_path', 'format', 'updated_at', 'sort_key', 'chars')*
 
 Of those, the ones actually read into memory. `doc_key` and `parent`
@@ -121,7 +138,7 @@ a column a reader can recompute is still a column a query engine should not
 have to, and [`ParquetStore.audit_rows()`](#outrage.store_parquet.ParquetStore.audit_rows) checks the written ones against
 the keys they claim to describe.
 
-### outrage.store_parquet.INDEX_COLUMNS *= ('key', 'doc_key', 'meta_name', 'meta_path', 'parent', 'format', 'updated_at', 'sort_key', 'chars')*
+### outrage.store_parquet.INDEX_COLUMNS *= ('key', 'doc_key', 'meta_name', 'meta_path', 'parent', 'format', 'updated_at', 'sort_key', 'chars', 'bytes')*
 
 The columns held whole once a file is opened: everything except `content`.
 Naming them is what keeps the promise in the module docstring checkable --
@@ -422,7 +439,7 @@ arrives after forty thousand documents have been read - which is the
 right answer delivered at the least useful moment. `build` calls it
 too, so the guarantee does not depend on the caller remembering.
 
-#### *classmethod* build(path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], documents: [Iterable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]], \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [int](https://docs.python.org/3/library/functions.html#int)
+#### *classmethod* build(path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], documents: [Iterable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]], \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False, byte_lengths: [bool](https://docs.python.org/3/library/functions.html#bool) = BYTE_LENGTHS) → [int](https://docs.python.org/3/library/functions.html#int)
 
 Write a whole parquet store in one pass, and return the row count.
 

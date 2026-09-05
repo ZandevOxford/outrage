@@ -290,7 +290,9 @@ class _ExcerptResult(_ToolResult):
         int | None,
         Field(
             description=(
-                "Total characters in the document, absent when the read was addressed in bytes"
+                "Total characters in the document. Absent only where the read "
+                "was addressed in bytes and the store would have to read the "
+                "whole document to count them; total_bytes is always given"
             )
         ),
     ] = None

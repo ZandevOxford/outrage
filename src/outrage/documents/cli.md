@@ -514,7 +514,8 @@ behind and the report says `read` rather than `wrote`. Mount the result with the
 
 ```text
 outrage pack [-h] (--from-dir DIRECTORY | --from-store FILE)
-             [--dir PATH] [--hidden] [--overwrite] [--dry-run]
+             [--dir PATH] [--hidden] [--no-byte-lengths] [--overwrite]
+             [--dry-run]
              FILE [key]
 ```
 
@@ -527,6 +528,7 @@ outrage pack [-h] (--from-dir DIRECTORY | --from-store FILE)
 - `--dir PATH` - Store directory --from-store is read from. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
 - `key` - Key prefix. Documents are stored beneath it when packing a directory, and the subtree packed when packing a store.
 - `--hidden` - Include files and directories whose name begins with a dot.
+- `--no-byte-lengths` - Leave out the column holding each document's length in UTF-8 bytes. It is written by default because a parquet file is never updated, so a store packed without it can only gain it by being packed again.
 - `--overwrite` - Replace the target if it is already there.
 - `--dry-run` - Report what would be packed without writing it.
 

@@ -2,6 +2,41 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+Document lengths are written down instead of being counted, and which length
+gets written down is decided per backend, because which of the two is expensive
+is a property of the storage rather than of the store.
+
+**Upgrading:** nothing to do. No format version moves. A SQLite store gains a
+cache table and its triggers the first time this build opens it, and a build
+without this change goes on reading and writing that store; a parquet file
+gains a column when it is next packed, and files packed before this are read
+exactly as they were.
+
+* **A byte-addressed read now reports `total`**, the document's length in
+  characters, where the store can answer without reading the document — which
+  is a SQLite store and a parquet one. A directory of files recomputes every
+  derived fact and still reports `null` rather than paying for the scan a byte
+  offset exists to avoid. `total_bytes` is given by all three, as before.
+* **SQLite keeps a cache of document lengths**, for documents past 2 048
+  characters — a quarter of the rows in a store like this project's own, and
+  nine tenths of the text. A subtree total costs about 58% less as a result.
+  It is a cache: a missing entry is counted instead, so nothing depends on it
+  being complete. Triggers on the document table empty it, so no writer can
+  leave an entry describing text that has changed — including a build of
+  `outrage` older than the cache, since the triggers live in the file. `outrage
+  check` reports what the cache holds and warns if an entry ever disagrees with
+  its document; `--repair` drops those entries.
+* **Listing a level no longer reads the documents it lists.** The size of each
+  entry was found by pulling every listed document's whole text into Python and
+  measuring it.
+* **`outrage pack` writes a `bytes` column**, each document's length in UTF-8,
+  and takes `--no-byte-lengths` to leave it out. It is written by default
+  because a parquet file is never updated in place: a store packed without it
+  can only gain it by being packed again. `chars` was already there and is not
+  optional.
+
 ## 0.8.0 - 2026-09-05
 
 0.8.0 lets a caller address a document by byte as well as by character, so an

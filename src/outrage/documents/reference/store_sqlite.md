@@ -42,6 +42,26 @@ needing a qualifier to say which storage it is for. That a store *is* a file
 inside a directory is not decided here -- see [`outrage.store.store_file()`](store.md#outrage.store.store_file);
 only what this backend calls one.
 
+### outrage.store_sqlite.LENGTH_CACHE_TABLE *= 'document_lengths'*
+
+Where the cache of document lengths lives, and the columns it holds. Not
+part of `_SCHEMA` and not behind a schema version: it is a cache, so a
+missing row is answered by counting and a store that has never been opened
+by a build that knows about it is merely slower. That is what lets
+[`SCHEMA_VERSION`](#outrage.store_sqlite.SCHEMA_VERSION) stay where it is, and an older build go on writing
+this store rather than refusing it.
+
+### outrage.store_sqlite.LENGTH_THRESHOLD *= 2048*
+
+How long a document has to be before its length is worth writing down.
+Measured rather than guessed, over this project's own store: the saving on a
+subtree total is flat from 128 characters to here -- around 63% -- and falls
+away above it, because what a threshold buys is the *characters* it covers
+and not the rows. At this value a quarter of the rows carry nine tenths of
+the text. Notably it is not the page size, so the tempting derivation from
+`PRAGMA page_size` would have been wrong: counting characters decodes the
+whole string whether or not the row spilled onto an overflow page.
+
 ### outrage.store_sqlite.SCHEMA_VERSION *= 6*
 
 The schema this code writes, and the version a store is migrated up to when
@@ -288,7 +308,7 @@ one it would be foolish to pull into memory to count.
 
 What SQLite knows about the database and its sidecar.
 
-Both questions here are the stooutrage's and have no meaning above it:
+Both questions here are the store's and have no meaning above it:
 whether SQLite still considers its own pages sound, and how much of the
 store is in the write-ahead log rather than the database.
 

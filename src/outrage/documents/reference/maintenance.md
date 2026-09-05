@@ -65,17 +65,26 @@ be fixable.
 
 #### repairable *: [bool](https://docs.python.org/3/library/functions.html#bool)* *= False*
 
-### *class* outrage.maintenance.Repaired(action: [str](https://docs.python.org/3/library/stdtypes.html#str), before: [int](https://docs.python.org/3/library/functions.html#int), after: [int](https://docs.python.org/3/library/functions.html#int))
+### *class* outrage.maintenance.Repaired(action: [str](https://docs.python.org/3/library/stdtypes.html#str), before: [int](https://docs.python.org/3/library/functions.html#int), after: [int](https://docs.python.org/3/library/functions.html#int), unit: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'bytes')
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
-What a repair actually did, in bytes rather than in claims.
+What a repair actually did, measured rather than claimed.
+
+`unit` is what `before` and `after` are counted in. It exists because
+the vocabulary started out assuming every repair moves bytes about inside a
+file, which was true while the only repairs were a checkpoint and a
+compaction, and stopped being true for one that drops rows: a count of
+three rows printed as "3 bytes" is a sentence that reads correctly and
+says something false.
 
 #### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
 #### before *: [int](https://docs.python.org/3/library/functions.html#int)*
 
 #### after *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### unit *: [str](https://docs.python.org/3/library/stdtypes.html#str)* *= 'bytes'*
 
 ### *class* outrage.maintenance.Report(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), backend: [str](https://docs.python.org/3/library/stdtypes.html#str) = '', format_version: [int](https://docs.python.org/3/library/functions.html#int) = 0, documents: [int](https://docs.python.org/3/library/functions.html#int) = 0, metadata: [int](https://docs.python.org/3/library/functions.html#int) = 0, characters: [int](https://docs.python.org/3/library/functions.html#int) = 0, details: dict[str, str]=<factory>, problems: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)] = <factory>)
 

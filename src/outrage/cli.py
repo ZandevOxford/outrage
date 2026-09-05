@@ -733,6 +733,17 @@ def argument_parser() -> argparse.ArgumentParser:
         help="Include files and directories whose name begins with a dot.",
     )
     pack.add_argument(
+        "--no-byte-lengths",
+        dest="byte_lengths",
+        action="store_false",
+        help=(
+            "Leave out the column holding each document's length in UTF-8 "
+            "bytes. It is written by default because a parquet file is never "
+            "updated, so a store packed without it can only gain it by being "
+            "packed again."
+        ),
+    )
+    pack.add_argument(
         "--overwrite", action="store_true", help="Replace the target if it is already there."
     )
     pack.add_argument(
@@ -1469,11 +1480,15 @@ def _get_command(args: argparse.Namespace, out: TextIO) -> int:
     # the same length it went in.
     out.write(excerpt.content)
     if excerpt.truncated:
-        # Told in the unit it was asked in. A byte-addressed read knows how
-        # many bytes the document holds and not how many characters, so the
-        # size it reports and the flag it recommends are both that unit's --
-        # telling a caller to resume at a character offset the read never
-        # computed would send them somewhere else in the document.
+        # Told in the unit it was asked in. A byte-addressed read has no
+        # character *positions* -- converting one means decoding the prefix,
+        # which is the cost a byte offset exists to avoid -- so the window it
+        # reports and the flag it recommends are both in bytes. Telling a
+        # caller to resume at a character offset the read never computed would
+        # send them somewhere else in the document. The character *total* is a
+        # separate question and some backends do now answer it, but a total is
+        # not a position and mixing the two units in one sentence is how this
+        # message went wrong before.
         if excerpt.next_byte_offset is not None and excerpt.next_offset is None:
             note = (
                 f"{excerpt.returned} characters, bytes {excerpt.byte_offset} to "
@@ -1873,6 +1888,7 @@ def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
                     bulk.documents_from_store(opened, args.key),
                     overwrite=args.overwrite,
                     dry_run=args.dry_run,
+                    byte_lengths=args.byte_lengths,
                 ),
                 args,
                 out,
@@ -1885,6 +1901,7 @@ def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
                 bulk.documents_from_tree(args.from_dir, args.key, hidden=args.hidden),
                 overwrite=args.overwrite,
                 dry_run=args.dry_run,
+                byte_lengths=args.byte_lengths,
             ),
             args,
             out,
@@ -2132,7 +2149,7 @@ def _check_command(args: argparse.Namespace, out: TextIO) -> int:
         print("\nrepairing", file=out)
         done = maintenance.repair(opened)
         for action in done:
-            print(f"  {action.action}: {action.before} -> {action.after} bytes", file=out)
+            print(f"  {action.action}: {action.before} -> {action.after} {action.unit}", file=out)
         if not done:
             # An empty list is a backend saying there is nothing its storage
             # could need, which is not the same as finding nothing wrong. Said
