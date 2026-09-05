@@ -1,8 +1,12 @@
-"""Turning a :class:`~outrage.errors.OutrageError` into a sentence for a person.
+"""Turning what the library carries into a sentence for a person.
 
-The one place wording lives. The layers that *raise* carry facts and a code
-(see :mod:`outrage.errors`); this renders them, and the front end says how a key
-should be named.
+Two kinds of thing reach a reader as prose, and both arrive here as a code and
+its facts rather than as words. A **failure** is an
+:class:`~outrage.errors.OutrageError`, raised by the layer that hit it. A
+**note** is a :class:`~outrage.notes.Note` on an answer that *worked* -- the
+document shrank, the write went past a check nobody could make -- carried on
+the result object, because a success path has nothing to raise. Neither is
+worded where it was found.
 
 **Why the naming is a parameter.** There are two front ends and the right name
 for a key differs between them. The command line opens one store directory and
@@ -18,8 +22,33 @@ reader should see. It defaults to :func:`outrage.keys.displayed`, which is the
 right answer for a single store and spells the root ``/`` rather than as the
 empty string that reads like a missing value.
 
-Wording is shared rather than written per front end. Two copies of the same
-sentence drift, and the drift is invisible until somebody compares them.
+An **error's** wording is shared rather than written per front end. Two copies
+of the same sentence drift, and the drift is invisible until somebody compares
+them.
+
+A **note's** wording is not shared, and the difference is deliberate. Each
+audience gets a table of its own -- :data:`MCP` below is the tools' -- because
+two front ends should remark on *different* situations and one of them should
+often say nothing at all. A front end wanting its own selection brings its own
+table rather than a branch inside a template here. So this file is the one
+place an error's wording lives, and one of the places a note's does.
+
+The next reader will want to unify the two mechanisms. The reason not to:
+
+    An error **must always be reported**. Whoever catches it has to say
+    something, so silence is not an option and only the spelling varies --
+    hence one table, and :data:`Speller` for the words that differ between
+    readers. A note is **optional by nature**, so *which* notes are said is
+    the primary question and the wording is secondary -- hence a table per
+    audience, and no speller, because the table already is the audience: a
+    command line's note writes ``--unchanged-since`` itself.
+
+Different problems, different shapes. What makes the note side safe is the
+guard in ``tests/test_notes.py`` that the error side does not need: **silence
+must be deliberate.** A code an audience has no sentence for is a failure
+unless that audience has said, with a reason, that it means to be quiet about
+it -- otherwise "this front end is quiet for now" decays into permanent
+silence by neglect and nothing ever notices.
 """
 
 from __future__ import annotations
@@ -30,6 +59,7 @@ from typing import Any
 
 from . import keys
 from .errors import OutrageError
+from .notes import Note
 
 # The conflict rules by their constants rather than as literals: a message that
 # tells a caller to pass `overwrite-unchanged` is a second place the value is
@@ -112,6 +142,116 @@ def render(error: OutrageError, name: Namer | None = None, *, spell: Speller | N
 def codes() -> Mapping[str, Callable[..., str]]:
     """The whole table, for the test that checks it against the raise sites."""
     return dict(_TEMPLATES)
+
+
+# -- notes on an answer that worked ---------------------------------------
+
+
+class NoteTable:
+    """What one audience is told about a :class:`~outrage.notes.Note`, if anything.
+
+    A table per audience rather than one table spelled two ways, for the reason
+    the module docstring gives: selection is the note side's primary question,
+    and a template that branched on who is reading would be one function with
+    two meanings -- the shape every message defect this project has had came
+    out of, two readings agreeing the day they are written and drifting after.
+
+    Two ways in, and a code must take exactly one of them. :meth:`template`
+    says how this audience puts the situation; :meth:`silent` says that this
+    audience means not to mention it, and why. A code with neither is the
+    failure the guard exists for, because a table that may legitimately be
+    quiet cannot otherwise tell a decision from an omission.
+
+    The audience is the whole of the reader's identity here, so there is no
+    speller: a table belonging to the command line writes ``--unchanged-since``
+    into its own sentence, and nothing has to be parameterised for it.
+    """
+
+    def __init__(self, audience: str) -> None:
+        #: Who this table words notes for, as a sentence would name them. It
+        #: is only ever read by a failure -- here or in the guards -- so it is
+        #: a phrase that can be read out in one, not an identifier.
+        self.audience = audience
+        self._templates: dict[str, Callable[..., str]] = {}
+        self._silences: dict[str, str] = {}
+
+    def template(self, code: str) -> Callable[[Callable[..., str]], Callable[..., str]]:
+        """Register how this audience says ``code``.
+
+        The function takes the namer **positionally** and the note's details by
+        keyword, exactly as :func:`template` does above and for the same
+        reason: a detail may be called ``name`` without colliding with it.
+        """
+
+        def register(function: Callable[..., str]) -> Callable[..., str]:
+            self._claim(code)
+            self._templates[code] = function
+            return function
+
+        return register
+
+    def silent(self, code: str, reason: str) -> None:
+        """Declare that this audience says nothing about ``code``, and why.
+
+        The reason is required and is the point of the call. "Not written yet"
+        is a legitimate one; what is not legitimate is the empty set entry that
+        reads the same whether somebody decided or nobody looked.
+        """
+        if not reason:
+            raise AssertionError(f"{self.audience} is silent about {code!r} for no stated reason")
+        self._claim(code)
+        self._silences[code] = reason
+
+    def _claim(self, code: str) -> None:
+        """Take ``code`` for this table, refusing a second entry for it."""
+        if code in self._templates or code in self._silences:
+            # A duplicate is a bug rather than a case: whichever of the two
+            # loaded last would decide, silently, whether the reader hears it.
+            raise AssertionError(f"{self.audience} already has an entry for note {code!r}")
+
+    def render(self, note: Note, name: Namer | None = None) -> str | None:
+        """``note`` as one line for this audience, or ``None`` where it is silent.
+
+        ``None`` is a real answer -- this reader is not told -- and a caller
+        drops it. A code this table has never heard of is not that: it raises,
+        the way :func:`render` does for an error, because a note quietly lost
+        for want of an entry is indistinguishable from one deliberately not
+        said, which is the distinction the whole table exists to keep.
+        """
+        if note.code in self._silences:
+            return None
+        try:
+            write = self._templates[note.code]
+        except KeyError:
+            raise AssertionError(
+                f"{self.audience} has no wording for note {note.code!r} and has "
+                f"not declared itself silent about it"
+            ) from None
+        return write(name or keys.displayed, **note.details)
+
+    def sentences(self) -> Mapping[str, Callable[..., str]]:
+        """The codes this audience has words for, for the guards that check them."""
+        return dict(self._templates)
+
+    def silences(self) -> Mapping[str, str]:
+        """The codes it means not to mention, and why, for the same.
+
+        Kept apart from :meth:`sentences` rather than merged into one table of
+        codes, because the guards ask different questions of the two: a code
+        nobody has words for anywhere is unreachable, while a code nobody has
+        *decided* about is the neglect this design is guarding against.
+        """
+        return dict(self._silences)
+
+
+#: What the MCP tools say about a note. The tools' spelling for an argument is
+#: the library's own -- see :func:`keyword` -- so this table sits beside the
+#: error wording both front ends share rather than in a module of its own.
+#:
+#: It starts empty on purpose. The carrier, the machinery, the guards and this
+#: table land before anything emits a note, so nothing can regress while the
+#: rule that silence must be deliberate is shown to be workable.
+MCP = NoteTable("the MCP tools")
 
 
 # -- store: reading --------------------------------------------------------
@@ -1173,4 +1313,4 @@ def _contents_not_markdown(name: Namer, /, *, key: str, format: str | None, **_:
     return f"cannot make contents for {name(key)!r}: its format is {format!r}, not 'markdown'"
 
 
-__all__ = ["Namer", "Speller", "codes", "keyword", "render", "template"]
+__all__ = ["MCP", "Namer", "NoteTable", "Speller", "codes", "keyword", "render", "template"]

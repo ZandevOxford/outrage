@@ -1,10 +1,14 @@
 # outrage.messages
 
-Turning a [`OutrageError`](errors.md#outrage.errors.OutrageError) into a sentence for a person.
+Turning what the library carries into a sentence for a person.
 
-The one place wording lives. The layers that *raise* carry facts and a code
-(see [`outrage.errors`](errors.md#module-outrage.errors)); this renders them, and the front end says how a key
-should be named.
+Two kinds of thing reach a reader as prose, and both arrive here as a code and
+its facts rather than as words. A **failure** is an
+[`OutrageError`](errors.md#outrage.errors.OutrageError), raised by the layer that hit it. A
+**note** is a [`Note`](notes.md#outrage.notes.Note) on an answer that *worked* -- the
+document shrank, the write went past a check nobody could make -- carried on
+the result object, because a success path has nothing to raise. Neither is
+worded where it was found.
 
 **Why the naming is a parameter.** There are two front ends and the right name
 for a key differs between them. The command line opens one store directory and
@@ -20,14 +24,116 @@ reader should see. It defaults to [`outrage.keys.displayed()`](keys.md#outrage.k
 right answer for a single store and spells the root `/` rather than as the
 empty string that reads like a missing value.
 
-Wording is shared rather than written per front end. Two copies of the same
-sentence drift, and the drift is invisible until somebody compares them.
+An **error's** wording is shared rather than written per front end. Two copies
+of the same sentence drift, and the drift is invisible until somebody compares
+them.
+
+A **note's** wording is not shared, and the difference is deliberate. Each
+audience gets a table of its own -- [`MCP`](#outrage.messages.MCP) below is the tools' -- because
+two front ends should remark on *different* situations and one of them should
+often say nothing at all. A front end wanting its own selection brings its own
+table rather than a branch inside a template here. So this file is the one
+place an error's wording lives, and one of the places a note's does.
+
+The next reader will want to unify the two mechanisms. The reason not to:
+
+> An error **must always be reported**. Whoever catches it has to say
+> something, so silence is not an option and only the spelling varies --
+> hence one table, and [`Speller`](#outrage.messages.Speller) for the words that differ between
+> readers. A note is **optional by nature**, so *which* notes are said is
+> the primary question and the wording is secondary -- hence a table per
+> audience, and no speller, because the table already is the audience: a
+> command line's note writes `--unchanged-since` itself.
+
+Different problems, different shapes. What makes the note side safe is the
+guard in `tests/test_notes.py` that the error side does not need: **silence
+must be deliberate.** A code an audience has no sentence for is a failure
+unless that audience has said, with a reason, that it means to be quiet about
+it -- otherwise "this front end is quiet for now" decays into permanent
+silence by neglect and nothing ever notices.
+
+### outrage.messages.MCP *= <outrage.messages.NoteTable object>*
+
+What the MCP tools say about a note. The tools' spelling for an argument is
+the library's own -- see [`keyword()`](#outrage.messages.keyword) -- so this table sits beside the
+error wording both front ends share rather than in a module of its own.
+
+It starts empty on purpose. The carrier, the machinery, the guards and this
+table land before anything emits a note, so nothing can regress while the
+rule that silence must be deliberate is shown to be workable.
 
 ### outrage.messages.Namer
 
 How a key is named when nobody says otherwise: as one store sees it.
 
 alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/library/stdtypes.html#str)], [`str`](https://docs.python.org/3/library/stdtypes.html#str)]
+
+### *class* outrage.messages.NoteTable(audience: [str](https://docs.python.org/3/library/stdtypes.html#str))
+
+Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+
+What one audience is told about a [`Note`](notes.md#outrage.notes.Note), if anything.
+
+A table per audience rather than one table spelled two ways, for the reason
+the module docstring gives: selection is the note side's primary question,
+and a template that branched on who is reading would be one function with
+two meanings -- the shape every message defect this project has had came
+out of, two readings agreeing the day they are written and drifting after.
+
+Two ways in, and a code must take exactly one of them. [`template()`](#outrage.messages.template)
+says how this audience puts the situation; [`silent()`](#outrage.messages.NoteTable.silent) says that this
+audience means not to mention it, and why. A code with neither is the
+failure the guard exists for, because a table that may legitimately be
+quiet cannot otherwise tell a decision from an omission.
+
+The audience is the whole of the reader's identity here, so there is no
+speller: a table belonging to the command line writes `--unchanged-since`
+into its own sentence, and nothing has to be parameterised for it.
+
+#### audience
+
+Who this table words notes for, as a sentence would name them. It
+is only ever read by a failure -- here or in the guards -- so it is
+a phrase that can be read out in one, not an identifier.
+
+#### template(code: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]], [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]]
+
+Register how this audience says `code`.
+
+The function takes the namer **positionally** and the note's details by
+keyword, exactly as [`template()`](#outrage.messages.template) does above and for the same
+reason: a detail may be called `name` without colliding with it.
+
+#### silent(code: [str](https://docs.python.org/3/library/stdtypes.html#str), reason: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [None](https://docs.python.org/3/library/constants.html#None)
+
+Declare that this audience says nothing about `code`, and why.
+
+The reason is required and is the point of the call. "Not written yet"
+is a legitimate one; what is not legitimate is the empty set entry that
+reads the same whether somebody decided or nobody looked.
+
+#### render(note: [Note](notes.md#outrage.notes.Note), name: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/library/stdtypes.html#str)], [str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+
+`note` as one line for this audience, or `None` where it is silent.
+
+`None` is a real answer -- this reader is not told -- and a caller
+drops it. A code this table has never heard of is not that: it raises,
+the way [`render()`](#outrage.messages.render) does for an error, because a note quietly lost
+for want of an entry is indistinguishable from one deliberately not
+said, which is the distinction the whole table exists to keep.
+
+#### sentences() → [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]]
+
+The codes this audience has words for, for the guards that check them.
+
+#### silences() → [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str)]
+
+The codes it means not to mention, and why, for the same.
+
+Kept apart from [`sentences()`](#outrage.messages.NoteTable.sentences) rather than merged into one table of
+codes, because the guards ask different questions of the two: a code
+nobody has words for anywhere is unreachable, while a code nobody has
+*decided* about is the neglect this design is guarding against.
 
 ### outrage.messages.Speller
 
