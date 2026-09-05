@@ -20,12 +20,14 @@ Like ``test_messages.py`` these are rules about where code lives, so they are
 checked by reading the source: a note emitted tomorrow with its sentence baked
 in should fail here rather than reach a reader in whatever shape it was written.
 
-**Nothing emits a note yet**, which is the point of landing this first -- no
-caller is moved, so nothing can regress. The guards over the real tree are
-therefore vacuous today and would stay silent if they were wrong, so each one's
-decision is a function tested below against tables built by hand. That is what
-this step is for: finding out whether the guards are workable before any
-sentence depends on them.
+The guards over the real tree were vacuous when they were written, because
+nothing emitted a note yet -- and a guard that cannot fail is a guard nobody
+has tested. So each one's decision is a function, called both by the test over
+the real tree and by a test further down that hands it tables built by hand and
+checks it says what it should. They bite over the tree now that every note the
+tools give lives here, and the hand-built cases stay: what they check is the
+decision, which is the part that would go on passing while the tree changed
+under it.
 """
 
 from __future__ import annotations
@@ -41,6 +43,7 @@ from outrage import bulk, keys, messages
 from outrage.messages import NoteTable
 from outrage.mounts import Mount
 from outrage.notes import Note
+from outrage.store import OVERWRITE, SKIP
 from outrage.store_sqlite import SqliteStore
 
 SOURCE = pathlib.Path(outrage.__file__).parent
@@ -93,8 +96,8 @@ def _emitted_codes() -> set[str]:
 #: and nothing here is about what the value would really be. A note whose
 #: detail is counted or listed adds its name here rather than teaching the
 #: guard anything about what it means.
-_COUNTS = {"previous", "stored"}
-_PLURALS: set[str] = set()
+_COUNTS = {"failed", "limit", "named", "previous", "remaining", "stored"}
+_PLURALS = {"changed", "mounts"}
 
 
 def _stand_in(detail: str) -> object:
@@ -107,8 +110,8 @@ def _stand_in(detail: str) -> object:
 
 # -- what each guard decides, as a function so it can be shown to bite --------
 #
-# The four guards below are vacuous over today's tree, and a guard that cannot
-# fail is a guard nobody has tested. Each one's decision lives in a function
+# A guard that cannot fail is a guard nobody has tested, and these were all
+# vacuous the day they were written. Each one's decision lives in a function
 # here, the test over the real tree calls it, and a test further down calls the
 # same function with tables built by hand and checks it says so.
 
@@ -184,8 +187,8 @@ def test_no_emit_site_composes_a_sentence():
     """The rule itself: facts go in, prose does not.
 
     An f-string as the code is the shape this catches, because it is what
-    ``server.py``'s fourteen notes look like today and what writing a new one
-    from memory would produce.
+    every one of these notes looked like when they were built in ``server.py``,
+    and what writing a new one from memory would produce.
     """
     for filename, lineno, call in _emits():
         assert not isinstance(call.args[0], ast.JoinedStr), (
@@ -526,6 +529,225 @@ def test_every_note_the_import_path_can_produce_is_worded():
             _imported(stored=0, previous=90),
         ]
         for note in bulk.notes_for(imported)
+    }
+
+    assert reached <= set(messages.MCP.sentences())
+
+
+# -- what a delete, a copy and an export have to remark on -------------------
+#
+# The same shape as the import tests above: the answer's own fields and the
+# answer's own prose read in one place, and required to agree. What these three
+# have in common is that every note is about a call that did *less* than it was
+# asked -- the counts describe what happened, and nothing in them describes
+# what did not.
+
+
+def _words(notes: list[Note]) -> str:
+    """Everything the MCP tools would say about ``notes``, as one string."""
+    return " ".join(said for note in notes if (said := messages.MCP.render(note)) is not None)
+
+
+def _deleted(**facts) -> list[Note]:
+    """A delete's notes, with only the facts a test is about spelled out."""
+    return bulk.notes_for_delete(
+        **({"key": "a", "dry_run": False, "remaining": 0, "mounts_kept": []} | facts)
+    )
+
+
+def _copied(**facts) -> list[Note]:
+    """A copy's, likewise. Every default is the call that did all of it."""
+    return bulk.notes_for_copy(
+        **(
+            {
+                "landing": "a",
+                "dry_run": False,
+                "on_conflict": SKIP,
+                "unchanged_since": None,
+                "changed": [],
+                "next_cursor": None,
+                "limit": 100,
+                "failed": 0,
+                "named": 0,
+                "stopped": False,
+                "mounts_kept": [],
+            }
+            | facts
+        )
+    )
+
+
+def test_a_delete_that_took_all_of_it_has_nothing_to_remark_on():
+    assert _deleted() == []
+
+
+def test_the_keys_a_delete_kept_back_are_counted_in_the_sentence_about_them():
+    notes = _deleted(remaining=12)
+
+    assert notes == [Note("keys-kept-below", key="a", remaining=12, dry_run=False)]
+    assert "12 key(s) below 'a'" in _words(notes)
+
+
+def test_a_dry_run_says_what_would_be_kept_rather_than_what_was():
+    """One situation in two tenses, which is why ``dry_run`` is a detail.
+
+    Nothing was kept back by a dry run, because nothing was deleted. The
+    sentence has to be about the delete it is describing rather than about the
+    call that produced it.
+    """
+    assert "would be kept" in _words(_deleted(remaining=1, dry_run=True))
+    assert "were kept" in _words(_deleted(remaining=1))
+
+
+def test_the_mounts_a_delete_could_not_reach_are_both_counted_and_named():
+    """Counted because a caller reads the number, named because it has to act."""
+    said = _words(_deleted(mounts_kept=["ref", "docs"]))
+
+    assert "2 read-only mounted store(s) below 'a'" in said
+    assert "'ref', 'docs'" in said
+
+
+def test_a_delete_says_what_it_did_not_do_before_what_it_could_not_do():
+    assert [note.code for note in _deleted(dry_run=True, remaining=1, mounts_kept=["ref"])] == [
+        "delete-was-a-dry-run",
+        "keys-kept-below",
+        "mounts-refused-delete",
+    ]
+
+
+def test_a_copy_that_did_all_of_it_has_nothing_to_remark_on():
+    assert _copied() == []
+
+
+def test_the_advice_after_a_dry_run_names_a_conflict_rule_that_takes_a_watermark():
+    """`overwrite` beside a watermark is the pairing ``bulk`` refuses.
+
+    So the advice to hand the moment back is only followable under the narrowed
+    rule, and unconditional it recommended the call that fails. The situation is
+    one note; which rule was asked for is a detail the table words.
+    """
+    assert "unchanged_since with on_conflict='overwrite-unchanged'" in _words(
+        _copied(dry_run=True, on_conflict=OVERWRITE)
+    )
+    assert "overwrite-unchanged" not in _words(_copied(dry_run=True, on_conflict=SKIP))
+
+
+def test_a_paged_copy_is_warned_about_the_watermark_only_when_it_has_one():
+    """The two halves contradicted each other before they were one sentence.
+
+    A copy carries the source's timestamps, so the page just written is itself
+    a change to the target whenever the source is newer -- and a caller told to
+    call again with every argument unchanged would be refused by the check they
+    were told to keep.
+    """
+    paged = _words(_copied(next_cursor="a/b", limit=50))
+    guarded = _words(_copied(next_cursor="a/b", limit=50, unchanged_since="2026-09-05T10:00:00Z"))
+
+    assert "The limit of 50 stopped this call" in paged
+    assert "Except unchanged_since" not in paged
+    assert "Except unchanged_since" in guarded
+
+
+def test_a_sample_of_failures_says_which_of_the_two_numbers_is_the_list():
+    """A sample presented as a list is a list that lies, and only sometimes."""
+    assert "9 document(s) failed and the first 3 are named" in _words(_copied(failed=9, named=3))
+    assert _copied(failed=3, named=3) == [], "nothing is a sample when all of it is named"
+
+
+def test_the_keys_a_watermark_left_alone_are_counted_against_the_moment():
+    said = _words(_copied(changed=["a/b", "a/c"], unchanged_since="2026-09-05T10:00:00Z"))
+
+    assert "2 key(s) changed since '2026-09-05T10:00:00Z'" in said
+
+
+def test_a_copy_names_a_refusing_mount_the_way_the_reader_would_name_it():
+    """The landing key is a key in the reader's namespace, so it is spelled for one.
+
+    The delete's is the caller's own spelling handed back, which needs nothing;
+    this one is worked out from the target and a graft, and a reader inside a
+    mounted store calls it something longer.
+    """
+    (note,) = _copied(mounts_kept=["ref"])
+
+    assert "below 'a'" in messages.MCP.render(note)
+    assert "below 'ref/a'" in messages.MCP.render(note, name=Mount(prefix="ref", store=None).outer)
+
+
+def test_a_copy_reports_what_it_did_not_do_in_the_order_a_reader_meets_it():
+    """What did not happen at all, what was left behind, where to carry on."""
+    everything = _copied(
+        dry_run=True,
+        unchanged_since="2026-09-05T10:00:00Z",
+        changed=["a/b"],
+        next_cursor="a/c",
+        failed=9,
+        named=3,
+        stopped=True,
+        mounts_kept=["ref"],
+    )
+
+    assert [note.code for note in everything] == [
+        "copy-was-a-dry-run",
+        "keys-changed-since",
+        "copy-stopped-at-limit",
+        "failures-sampled",
+        "copy-stopped-at-conflict",
+        "mounts-refused-write",
+    ]
+
+
+def test_an_export_says_what_the_file_it_handed_over_is_for(store, tmp_path):
+    """The one note that is not a discovery: what matters is what happens next.
+
+    Driven through the real export rather than built by hand, because the point
+    of the note is that a file was written and the caller is expected to come
+    back with it.
+    """
+    store.store_document("a", "# The document")
+    exported = bulk.export_document(store, "a", tmp_path / "export")
+
+    assert exported.path.exists()
+    assert "call again with its path" in _words(bulk.notes_for_export(exported))
+
+
+def test_every_note_the_tools_can_reach_is_worded_and_nothing_they_word_is_stranded(
+    store, tmp_path
+):
+    """The strong form of the two tree guards, over situations rather than source.
+
+    The guards read the package and ask whether a code written down somewhere
+    is worded and whether a worded code is written down somewhere. Neither can
+    tell that a situation is *reachable*: an emit site behind a condition that
+    can no longer hold passes both. Here the codes come from running every
+    derivation over every situation it has, so an entry the library can no
+    longer arrive at is stranded and this says so.
+    """
+    store.store_document("a", "# The document")
+
+    reached = {
+        note.code
+        for notes in [
+            bulk.notes_for(_imported(overwritten=True, changed_at="2026-09-05T10:00:00Z")),
+            bulk.notes_for(_imported(unchecked="no export record")),
+            bulk.notes_for(_imported(unedited=True)),
+            bulk.notes_for(_imported(unedited=True, copied_from="a")),
+            bulk.notes_for(_imported(stored=0, previous=90)),
+            # `notes_for_checked_write` is not here: it shares its situations
+            # with the import path above and reaches no code of its own.
+            bulk.notes_for_export(bulk.export_document(store, "a", tmp_path / "export")),
+            _deleted(dry_run=True, remaining=1, mounts_kept=["ref"]),
+            _copied(
+                dry_run=True,
+                unchanged_since="2026-09-05T10:00:00Z",
+                changed=["a/b"],
+                next_cursor="a/c",
+                failed=9,
+                named=3,
+                stopped=True,
+                mounts_kept=["ref"],
+            ),
+        ]
+        for note in notes
     }
 
     assert reached == set(messages.MCP.sentences())

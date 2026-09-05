@@ -132,36 +132,31 @@ def _named_key(table: MountedStore, key: str | None, *, allow_wildcard: bool = F
     ).key
 
 
-def _add_note(result: dict[str, Any], text: str) -> None:
-    """Add a sentence to a result's ``note``, keeping whatever is already there.
-
-    Three separate things want to say something on one result -- keys kept back
-    by a non-recursive delete, keys with no name from outside, and mounts a
-    delete stopped at -- and each used to assign the field. The last one to run
-    then erased the others, which is the failure mode of every one of these
-    notes: a caller reads a complete-looking answer and does not know what it
-    left out.
-    """
-    result["note"] = f"{result['note']} {text}" if result.get("note") else text
-
-
 def _say(result: dict[str, Any], notes: list[Note]) -> None:
-    """Put what the tools say about each note onto the result.
+    """Put what the tools say about each note onto the result's ``note``.
 
-    Which situations arose is :func:`outrage.bulk.notes_for`'s answer and how
-    this reader hears them is :data:`outrage.messages.MCP`'s, and neither is
-    decided here. That is the whole of the change: the sentences used to be
-    built in this file, where the other front end could not reach them and
-    nothing checked them against the fields printed beside them.
+    Which situations arose is a ``notes_for_*`` function in
+    :mod:`outrage.bulk`, and how this reader hears them is
+    :data:`outrage.messages.MCP`; neither is decided here. That is the whole of
+    the change: the sentences used to be built in this file, where the other
+    front end could not reach them and nothing checked them against the fields
+    printed beside them.
 
     A table may render a note as ``None``, meaning this reader is not told.
     The tools are silent about none of them today, and the loop does not
     assume that.
+
+    Each sentence is appended rather than assigned, and this is the only place
+    the field is written. Three separate things want to say something on one
+    delete -- keys kept back by a non-recursive one, keys with no name from
+    outside, and mounts it stopped at -- and each used to assign, so the last
+    to run erased the others. That is the failure mode of every note here: a
+    caller reads a complete-looking answer and does not know what it left out.
     """
     for note in notes:
         said = messages.MCP.render(note)
         if said is not None:
-            _add_note(result, said)
+            result["note"] = f"{result['note']} {said}" if result.get("note") else said
 
 
 def _forbid_unknown_arguments() -> None:
@@ -1338,35 +1333,19 @@ def build_server(
             # was built; a session had no way to ask for one at all, which is
             # what this tool exists to fix.
             result["checked_at"] = checked_at
-            _add_note(
-                result,
-                "Nothing was deleted; `deleted` is what the delete would have "
-                "taken. Pass checked_at back as unchanged_since to refuse the "
-                "real delete if anything moves in between.",
-            )
-        if not recursive:
-            # Without this a no-op delete and a successful one look identical,
-            # so a key left standing reads as a key removed. Counted across the
-            # whole table, since "below this key" now means below it in
-            # whichever store answers for each part of the subtree.
-            remaining = table.descendant_count(at)
-            if remaining:
-                result["remaining"] = remaining
-                _add_note(
-                    result,
-                    f"{remaining} key(s) below {key!r} "
-                    f"{'would be kept' if dry_run else 'were kept'}; "
-                    f"pass recursive=true to delete them too",
-                )
+        # Without this a no-op delete and a successful one look identical, so a
+        # key left standing reads as a key removed. Counted across the whole
+        # table, since "below this key" now means below it in whichever store
+        # answers for each part of the subtree.
+        remaining = 0 if recursive else table.descendant_count(at)
+        if remaining:
+            result["remaining"] = remaining
         if refused:
             result["mounts_kept"] = refused
-            _add_note(
-                result,
-                f"{len(refused)} read-only mounted store(s) below {key!r} refuse a "
-                f"delete: {', '.join(repr(m) for m in refused)}. Nothing there was "
-                f"removed, and `recursive` will not reach it either; restart the "
-                f"server with --mount rather than --mount-ro to delete there too.",
-            )
+        _say(
+            result,
+            bulk.notes_for_delete(key, dry_run=dry_run, remaining=remaining, mounts_kept=refused),
+        )
         return _DeleteKeysResult.model_validate(result)
 
     @server.tool(
@@ -1509,62 +1488,6 @@ def build_server(
             # The moment to hand back, which is the half of "look, then write
             # only what has not moved" a caller cannot work out for itself.
             result["checked_at"] = checked_at
-            # `overwrite` beside a watermark is the pairing `bulk` refuses, so
-            # advice to hand the moment back has to name the conflict rule that
-            # takes one. Unconditional, it recommended the call that fails.
-            guarded = (
-                " with on_conflict='overwrite-unchanged'"
-                if on_conflict == store_module.OVERWRITE
-                else ""
-            )
-            _add_note(
-                result,
-                "Nothing was written; this is what the copy would have done. Pass "
-                f"checked_at back as unchanged_since{guarded} to refuse the real "
-                "copy if anything moves in between.",
-            )
-        if result.get("changed"):
-            _add_note(
-                result,
-                f"{len(result['changed'])} key(s) changed since {unchanged_since!r} "
-                f"and were left as they are; they are named in `changed`. Read "
-                f"them before deciding whether the copy should still land.",
-            )
-        if result["next_cursor"] is not None:
-            paging = (
-                f"The limit of {limit} stopped this call and more is left to "
-                f"copy; call again with cursor set to next_cursor and every "
-                f"other argument unchanged."
-            )
-            if unchanged_since:
-                # The watermark is the exception to "unchanged", and the two
-                # notes contradicted each other without this: a copy carries the
-                # source's timestamps, so the page just written is itself a
-                # change to the target whenever the source is newer than the
-                # moment being measured against.
-                paging += (
-                    " Except unchanged_since, where the source is newer than it: "
-                    "the page just written carries the source's own timestamps "
-                    "into the target, so take the moment again from a dry run at "
-                    "that cursor rather than have it refuse the next call."
-                )
-            _add_note(result, paging)
-        failed = result["copied"].get(store_module.FAILED, 0)
-        if failed > len(result["failures"]):
-            # A sample presented as a list is a list that lies. The count is
-            # already there; this says which of the two the caller is reading.
-            _add_note(
-                result,
-                f"{failed} document(s) failed and the first "
-                f"{len(result['failures'])} are named; the rest are only counted.",
-            )
-        if result["copied"].get(store_module.STOPPED):
-            _add_note(
-                result,
-                "on_conflict='stop' ended the copy at a key that was already "
-                "stored; nothing after it was copied and next_cursor is not a "
-                "way back to it.",
-            )
         # What a read-only mount kept back is not a failed key alone: the
         # failures are sampled, and a caller reading a count needs to know that
         # a whole stretch of what it wrote to refuses writes however often it
@@ -1578,12 +1501,22 @@ def build_server(
         refused = table.read_only_below(landing)
         if refused:
             result["mounts_kept"] = refused
-            _add_note(
-                result,
-                f"{len(refused)} read-only mounted store(s) below {landing!r} refuse a "
-                f"write: {', '.join(repr(m) for m in refused)}. Nothing lands there; "
-                f"restart the server with --mount rather than --mount-ro to copy there too.",
-            )
+        _say(
+            result,
+            bulk.notes_for_copy(
+                landing,
+                dry_run=dry_run,
+                on_conflict=on_conflict,
+                unchanged_since=unchanged_since,
+                changed=result.get("changed") or [],
+                next_cursor=result["next_cursor"],
+                limit=limit,
+                failed=result["copied"].get(store_module.FAILED, 0),
+                named=len(result["failures"]),
+                stopped=bool(result["copied"].get(store_module.STOPPED)),
+                mounts_kept=refused,
+            ),
+        )
         return _CopyTreeResult.model_validate(result)
 
     @server.tool(
@@ -1662,10 +1595,7 @@ def build_server(
                 "exported": exported.excerpt.total,
                 "format": exported.excerpt.format,
             }
-            _add_note(
-                result,
-                "Edit this file in place and call again with its path to store it back.",
-            )
+            _say(result, bulk.notes_for_export(exported))
             return _DocumentEditResult.model_validate(result)
         imported = bulk.import_document(
             table, at, path, exports, against=against, overwrite=overwrite
