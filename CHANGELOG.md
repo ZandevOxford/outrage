@@ -2,6 +2,57 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.7.1 - 2026-09-05
+
+0.7.1 lets a caller address a document by byte as well as by character, so an
+index can drive a seeking read of a very large document, and settles what
+happens to line endings when text crosses into or out of the store.
+
+* **`read_document` and `outrage get` take `byte_offset` / `--byte-offset`.**
+  A character offset is a fact about a Python string and does not survive
+  leaving the store; a byte offset does, so a number the store produced can be
+  handed to anything byte-addressed downstream. A byte offset landing inside a
+  character snaps backward to that character's first byte, and the result says
+  where the read began. Passing both `offset` and `byte_offset` is refused.
+  `pattern` composes: the search starts at or after that byte. `max_chars`
+  remains a cap in *characters* whichever unit addressed the read, since that
+  is the budget a caller is actually spending.
+* **A byte-addressed read reports byte positions**, and the character offset of
+  where it began is reported as unknown rather than computed, because deriving
+  it means decoding the whole prefix. Take both numbers from `!contents`, where
+  they are already a pair for the same position.
+* **`make_contents` now writes two numbers under each heading**, the character
+  offset then the byte offset, bare and space-separated. **This changes the
+  index format**: an index written by an earlier version carries one number per
+  heading, and the token count on the line is the only thing that tells the two
+  apart. Regenerate any index you rely on rather than mixing the two.
+* **Seeking is now used where a backend can seek.** On an 8 MB document a
+  random byte-addressed read costs about 2.4 ms in SQLite and 0.4 ms in a
+  directory of files, against about 12 ms before. A character-addressed read
+  cannot be accelerated by any of this on any backend, which is exactly why the
+  index carries the byte number.
+* **Text crossing into or out of the store keeps the line endings it arrived
+  with.** An export and an unchanged re-import round-trip byte for byte, a
+  directory of files returns what is on disk, and `outrage set --file`,
+  `outrage set < file` and `outrage get > file` all preserve CRLF. Previously a
+  CRLF document could be reported with text its own files did not hold, and the
+  two numbers on a `!contents` line could name different places in it.
+* **Where there is no line ending to preserve, LF is chosen.** A document the
+  store *authors* rather than carries is written with `\n`: `ingest_document`
+  now normalises converted output, so the character count it reports counts
+  what was stored. Documents already in a store are untouched, and need no
+  migration.
+* **On Windows the command line's own messages now end in LF**, which is the
+  cost of not translating the document content it writes to standard output.
+  This is what every other tool there does.
+* **`ingest_document` is offered only where the `documents` extra is
+  installed.** A client shown a tool whose every call refuses has been told the
+  store can do something it cannot.
+* **The design and implementation guides ship in the package**, mounted as
+  `outrage/design` and `outrage/implementation`, and every shipped document now
+  carries a `!contents` offset index, so the guide can be navigated the same way
+  any other large document can.
+
 ## 0.7.0 - 2026-09-04
 
 0.7.0 makes a copy or a delete refusable when the target has moved since you
