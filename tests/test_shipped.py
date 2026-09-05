@@ -15,6 +15,9 @@ the mount off.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import pytest
 
 from conftest import raises_rendered
@@ -22,6 +25,14 @@ from outrage import keys, mounts, server, shipped
 from outrage.mounts import ReadOnlyMountError
 from outrage.store import BoundedSubtree
 from outrage.store_files import FilesystemStore
+
+# The sweep that writes the `!contents` indexes lives in `tools/`, run after a
+# docs build rather than imported by anything outrage installs, so it goes on
+# the path here the way `test_reference.py` and `test_harness_delivery.py`
+# reach their own.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
+
+import document_contents  # noqa: E402
 
 #: The documents the tree is expected to hold. Named rather than counted: a
 #: test that only counted would pass on a tree that had lost the readme and
@@ -82,6 +93,35 @@ def test_every_document_has_a_title():
     titled = {item.key.rpartition("/")[0] for item in top.items}
     assert titled == set(EXPECTED)
     assert missing.items == []
+
+
+def test_every_index_matches_its_document():
+    """The `!contents` indexes are build output, and this is what says they are current.
+
+    An index whose document has moved is worse than no index at all: its
+    offsets address the wrong place, and a reader who follows one lands in the
+    middle of some other section with nothing to say it went wrong. Absent, at
+    least, is visible.
+
+    The generated half of the tree is covered by ``test_reference.py``, which
+    re-renders and compares whole files -- but only the reference section, and
+    only where the ``docs`` extra is installed. This is the other half and the
+    cheap half: ``design``, ``cli`` and the rest are hand-written, nothing
+    regenerates an index when one of them is edited, and the check costs a
+    render of text already in memory.
+
+    A failure names the documents. To fix it, do not edit an index::
+
+        python tools/document_contents.py src/outrage/documents
+    """
+    with shipped.open_documents() as store:
+        swept = document_contents.sweep(store, dry_run=True)
+
+    assert swept.written == []
+    assert swept.removed == []
+    # Not an assertion about how many documents there are, which comes and goes
+    # with the modules: only that the sweep found the tree and did something.
+    assert swept.unchanged
 
 
 def test_the_delivered_instructions_are_the_documents_here():
