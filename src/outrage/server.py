@@ -51,6 +51,7 @@ from . import store as store_module
 from .errors import OutrageError
 from .eventlog import EventLog
 from .mounts import MountedStore
+from .notes import Note
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
@@ -144,54 +145,23 @@ def _add_note(result: dict[str, Any], text: str) -> None:
     result["note"] = f"{result['note']} {text}" if result.get("note") else text
 
 
-def _note_check(
-    result: dict[str, Any],
-    key: str,
-    *,
-    overwritten: bool,
-    unchecked: str | None,
-    changed_at: str | None,
-) -> None:
-    """Say what a write got past, when ``overwrite`` let it past a refusal.
+def _say(result: dict[str, Any], notes: list[Note]) -> None:
+    """Put what the tools say about each note onto the result.
 
-    Shared by ``store_document`` and ``document_edit`` because the refusals
-    are: :func:`~outrage.bulk.check_write` answers for both, so one place has
-    to say what lifting it meant. The two sentences are separate because the
-    situations are - a write that lost somebody's work is a thing you can go
-    and look at, and a write nobody could check is not.
+    Which situations arose is :func:`outrage.bulk.notes_for`'s answer and how
+    this reader hears them is :data:`outrage.messages.MCP`'s, and neither is
+    decided here. That is the whole of the change: the sentences used to be
+    built in this file, where the other front end could not reach them and
+    nothing checked them against the fields printed beside them.
+
+    A table may render a note as ``None``, meaning this reader is not told.
+    The tools are silent about none of them today, and the loop does not
+    assume that.
     """
-    if overwritten:
-        # Said loudly because what it means is that somebody else's write is
-        # now gone, and the person who lost it is not reading this.
-        _add_note(
-            result,
-            f"the document had changed since it was exported and has been "
-            f"overwritten anyway; what was written at {changed_at} is gone.",
-        )
-    if unchecked is not None:
-        _add_note(
-            result,
-            f"this write was not checked against the document ({unchecked}), so "
-            f"if somebody else had written {keys.displayed(key)!r} since it was "
-            f"exported, their work is now gone.",
-        )
-
-
-def _note_shrink(result: dict[str, Any], previous: int | None, stored: int) -> None:
-    """Do the subtraction a caller would otherwise have to do themselves.
-
-    Reported rather than refused -- emptying a document is a thing a person may
-    mean, so enforcement is a separate question from noticing. But the
-    arithmetic is done here: this exact workflow through the command line wrote
-    a 0-character document over a good one, and a shrink nobody subtracted is a
-    shrink nobody saw.
-    """
-    if previous is not None and stored < previous:
-        _add_note(
-            result,
-            f"the document shrank from {previous} to {stored} characters; if "
-            f"that was not intended, the previous content is gone.",
-        )
+    for note in notes:
+        said = messages.MCP.render(note)
+        if said is not None:
+            _add_note(result, said)
 
 
 def _forbid_unknown_arguments() -> None:
@@ -1015,14 +985,7 @@ def build_server(
             bulk.renew(table, written, check, content if encoding is None else None)
             result["previous"] = check.previous
             result["unchecked"] = check.unchecked
-            _note_check(
-                result,
-                written,
-                overwritten=check.overwritten,
-                unchecked=check.unchecked,
-                changed_at=check.changed_at,
-            )
-            _note_shrink(result, check.previous, result["stored"])
+            _say(result, bulk.notes_for_checked_write(written, check, result["stored"]))
         if title is not None:
             # Parsed rather than joined: the root's title is `!title`, not
             # `/!title`, and a caller told the wrong key cannot read it back.
@@ -1714,36 +1677,7 @@ def build_server(
             "previous": imported.previous,
             "unchecked": imported.unchecked,
         }
-        _note_check(
-            result,
-            imported.key,
-            overwritten=imported.overwritten,
-            unchecked=imported.unchecked,
-            changed_at=imported.changed_at,
-        )
-        if imported.unedited and imported.copied_from is None:
-            # The silent no-op: the round trip was clean and the edit matched
-            # nothing, so a call that looks like a write stored the document it
-            # already had. Free to notice, because the export recorded what it
-            # handed out.
-            _add_note(
-                result,
-                "the file is identical to what was exported, so the edit changed "
-                "nothing; if an edit was intended, it matched nothing.",
-            )
-        elif imported.unedited:
-            # The same bytes going to another key are a copy, not a no-op: the
-            # document here did change, and `previous` beside `stored` says by
-            # how much. So the sentence is about the file, which is the only
-            # thing that did not move, and never about the write.
-            _add_note(
-                result,
-                f"the file is unchanged since it was exported from "
-                f"{keys.displayed(imported.copied_from)!r}, so this stored a "
-                f"copy of it as it came out; if an edit was intended, it "
-                f"matched nothing.",
-            )
-        _note_shrink(result, imported.previous, imported.stored)
+        _say(result, bulk.notes_for(imported))
         return _DocumentEditResult.model_validate(result)
 
     return server

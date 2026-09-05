@@ -248,10 +248,55 @@ class NoteTable:
 #: the library's own -- see :func:`keyword` -- so this table sits beside the
 #: error wording both front ends share rather than in a module of its own.
 #:
-#: It starts empty on purpose. The carrier, the machinery, the guards and this
-#: table land before anything emits a note, so nothing can regress while the
-#: rule that silence must be deliberate is shown to be workable.
+#: Its entries are the sentences ``server.py`` composed by hand until the notes
+#: on one document write moved here; the wording is theirs, and the naming is
+#: no longer fixed to one store, since a table renders for whoever is reading.
 MCP = NoteTable("the MCP tools")
+
+
+@MCP.template("overwrote-a-change")
+def _overwrote_a_change(name: Namer, /, *, changed_at: str | None, **_: Any) -> str:
+    return (
+        f"the document had changed since it was exported and has been "
+        f"overwritten anyway; what was written at {changed_at} is gone."
+    )
+
+
+@MCP.template("write-not-checked")
+def _write_not_checked(name: Namer, /, *, key: str, reason: str, **_: Any) -> str:
+    return (
+        f"this write was not checked against the document ({reason}), so "
+        f"if somebody else had written {name(key)!r} since it was "
+        f"exported, their work is now gone."
+    )
+
+
+@MCP.template("edit-matched-nothing")
+def _edit_matched_nothing(name: Namer, /, **_: Any) -> str:
+    return (
+        "the file is identical to what was exported, so the edit changed "
+        "nothing; if an edit was intended, it matched nothing."
+    )
+
+
+@MCP.template("stored-a-copy")
+def _stored_a_copy(name: Namer, /, *, copied_from: str, **_: Any) -> str:
+    # About the file, which is the only thing that did not move, and never
+    # about the write: the document at this key did change, and `previous`
+    # beside `stored` in the same answer says by how much.
+    return (
+        f"the file is unchanged since it was exported from "
+        f"{name(copied_from)!r}, so this stored a copy of it as it came out; "
+        f"if an edit was intended, it matched nothing."
+    )
+
+
+@MCP.template("document-shrank")
+def _document_shrank(name: Namer, /, *, previous: int, stored: int, **_: Any) -> str:
+    return (
+        f"the document shrank from {previous} to {stored} characters; if "
+        f"that was not intended, the previous content is gone."
+    )
 
 
 # -- store: reading --------------------------------------------------------
