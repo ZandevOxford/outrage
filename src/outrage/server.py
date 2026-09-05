@@ -298,23 +298,15 @@ class _StoreDocumentResult(_ToolResult):
             )
         ),
     ] = None
-    unchecked: Annotated[
+    unchecked_code: Annotated[
         str | None,
         Field(
             description=(
                 "Why the write was not compared with what was exported, when "
                 "'against' was given and 'overwrite' allowed it through "
-                "uncompared. Prose, and going: read unchecked_code"
-            )
-        ),
-    ] = None
-    unchecked_code: Annotated[
-        str | None,
-        Field(
-            description=(
-                "The same reason as a code: 'no-record' when nothing beside "
-                "the file said what it held, 'other-key' when the record names "
-                "the key it was exported from"
+                "uncompared: 'no-record' when nothing beside the file said what "
+                "it held, 'other-key' when the record names the key it was "
+                "exported from"
             )
         ),
     ] = None
@@ -540,24 +532,14 @@ class _DocumentEditResult(_ToolResult):
     previous: Annotated[
         int | None, Field(description="Previous document size, or null when it did not exist")
     ] = None
-    unchecked: Annotated[
-        str | None,
-        Field(
-            description=(
-                "Why an import was not compared with what was exported, when "
-                "'overwrite' allowed it through uncompared: there was no export "
-                "record, or the file came from another key and no 'against' file "
-                "was given. Prose, and going: read unchecked_code"
-            )
-        ),
-    ] = None
     unchecked_code: Annotated[
         str | None,
         Field(
             description=(
-                "The same reason as a code: 'no-record' when nothing beside "
-                "the file said what it held, 'other-key' when the record names "
-                "the key it was exported from"
+                "Why an import was not compared with what was exported, when "
+                "'overwrite' allowed it through uncompared: 'no-record' when "
+                "there was no export record, 'other-key' when the file came "
+                "from another key and no 'against' file was given"
             )
         ),
     ] = None
@@ -999,7 +981,6 @@ def build_server(
             # something else, and a record hashes what the store holds.
             bulk.renew(table, written, check, content if encoding is None else None)
             result["previous"] = check.previous
-            result["unchecked"] = check.unchecked
             result["unchecked_code"] = check.unchecked_code
             _say(result, bulk.notes_for_checked_write(written, check, result["stored"]))
         if title is not None:
@@ -1626,7 +1607,6 @@ def build_server(
             "path": str(path),
             "stored": imported.stored,
             "previous": imported.previous,
-            "unchecked": imported.unchecked,
             "unchecked_code": imported.unchecked_code,
         }
         _say(result, bulk.notes_for(imported))

@@ -1666,7 +1666,7 @@ def test_an_export_and_an_import_may_name_different_keys(exporting):
 
     assert imported["key"] == "context/c3d4/design"
     assert imported["stored"] == 22
-    assert imported["unchecked"] == "exported from 'context/a1b2/design'"
+    assert imported["unchecked_code"] == "other-key"
     assert "not checked against the document" in imported["note"]
 
 
@@ -1697,7 +1697,7 @@ def test_a_second_file_makes_a_cross_key_import_checked(exporting):
         against=target["path"],
     )
 
-    assert imported["unchecked"] is None
+    assert imported["unchecked_code"] is None
     assert imported.get("note") is None
     assert call(exporting, "read_document", key="context/c3d4/design")["content"] == (
         "# Store schema, copied"
@@ -1760,7 +1760,7 @@ def test_store_document_checks_the_write_against_an_exported_file(exporting):
     )
 
     assert stored["previous"] == 14
-    assert stored["unchecked"] is None
+    assert stored["unchecked_code"] is None
     assert call(exporting, "read_document", key="context/a1b2/design")["content"] == (
         "# Store schema, edited in context"
     )
@@ -1836,7 +1836,7 @@ def test_a_second_checked_store_is_not_refused_by_the_first(exporting):
         against=exported["path"],
     )
 
-    assert stored["unchecked"] is None
+    assert stored["unchecked_code"] is None
     assert call(exporting, "read_document", key="context/a1b2/design")["content"] == "# Second"
 
 
@@ -1861,7 +1861,7 @@ def test_a_checked_store_of_an_encoded_call_renews_what_was_stored(exporting):
         against=exported["path"],
     )
 
-    assert stored["unchecked"] is None
+    assert stored["unchecked_code"] is None
 
 
 def test_a_check_file_exported_from_another_key_is_refused(exporting):
