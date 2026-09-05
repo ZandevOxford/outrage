@@ -28,6 +28,7 @@ from typing import Any, TextIO
 from . import (
     __version__,
     bulk,
+    cli_messages,
     contents,
     eventlog,
     ingest,
@@ -44,6 +45,7 @@ from . import (
 from . import config as config_module
 from .errors import OutrageError
 from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND
+from .notes import Note
 
 #: The subcommands that act across a whole mount table rather than on one
 #: store file. Everything that reads or writes documents is here; ``check`` and
@@ -1509,6 +1511,16 @@ def _set_command(args: argparse.Namespace, out: TextIO) -> int:
     content = _content(args)
     with _open_table(args, create=True) as opened:
         _resolved(opened, args)
+        # Measured before the write, because afterwards there is nothing left
+        # to measure. One character is read, not the document: what this is
+        # for is the subtraction, and a store that keeps its lengths answers
+        # without touching the text at all.
+        #
+        # Not for a `?`, which allocates a key nothing is stored at yet: there
+        # is nothing there to have shrunk, and asking about the unresolved key
+        # is an error, since a wildcard is allowed only in the write itself.
+        allocating = keys.WILDCARD in args.key.split(keys.DELIMITER)
+        previous = None if allocating else bulk.size_of(opened, args.key)
         written = opened.store_document(args.key, content, args.format, title=args.title)
         # Which file, resolved through the table rather than assumed to be the
         # root: a key below a mount point lands in that mount's store, and a
@@ -1518,6 +1530,7 @@ def _set_command(args: argparse.Namespace, out: TextIO) -> int:
     # The resolved path, not the one asked for: a mistyped --dir creates a
     # store rather than failing, so the only defence is saying where it went.
     print(f"{keys.displayed(written)}  {len(content)} characters in {where}", file=out)
+    _remark(bulk.notes_for_write(previous, len(content)))
     return 0
 
 
@@ -1954,11 +1967,13 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
                 print(f"  and below: {key}", file=out)
             _report_remainder(args, beneath, out, dry_run=True)
             _report_watermark(args, checked_at)
+            _remark(_delete_notes(opened, args, beneath, dry_run=True))
             return 0
 
         removed = opened.delete(
             args.key, recursive=args.recursive, unchanged_since=args.unchanged_since
         )
+        refused = _delete_notes(opened, args, beneath, dry_run=False)
 
     for key in removed:
         print(f"deleted {keys.displayed(key)}", file=out)
@@ -1971,7 +1986,28 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
     # correction here would apply only when `recursive` -- which is exactly when
     # nothing is printed -- so it could never reach an output.
     _report_remainder(args, beneath, out)
+    _remark(refused)
     return 0
+
+
+def _delete_notes(
+    opened: store.Store, args: argparse.Namespace, beneath: int, *, dry_run: bool
+) -> list[Note]:
+    """Every situation the delete reached, whether or not this front end says it.
+
+    Asked of the table while it is still open, because a read-only mount is not
+    a key and no answer the delete gives mentions one. The command line words
+    that alone and is silent about the rest; the selection is
+    :data:`outrage.cli_messages.CLI`'s to make, so all of it is handed over.
+    """
+    return bulk.notes_for_delete(
+        args.key,
+        dry_run=dry_run,
+        remaining=0 if args.recursive else beneath,
+        mounts_kept=(
+            opened.read_only_below(args.key) if isinstance(opened, mounts.MountedStore) else []
+        ),
+    )
 
 
 def _report_remainder(
@@ -2358,6 +2394,27 @@ def _report_assets(
 def _print_command(label: str, entry: dict[str, object], out: TextIO) -> None:
     command = " ".join([str(entry.get("command", ""))] + [str(a) for a in entry.get("args", [])])
     print(f"{label} {command}".rstrip(), file=out)
+
+
+def _remark(notes: list[Note]) -> None:
+    """Say what this front end has to say about ``notes``, which is rarely much.
+
+    Which situations arose is a ``notes_for_*`` function in
+    :mod:`outrage.bulk`, shared with the tools; whether this reader hears any
+    of them is :data:`outrage.cli_messages.CLI`, which is silent about most and
+    says why. Neither is decided here, and a command must not filter the list
+    it passes: a situation dropped before the table sees it is a decision made
+    where nothing records it.
+
+    To stderr, with this front end's other remarks about its own output. What a
+    command prints is its answer -- a document, a listing, a line per key -- and
+    a note about the answer is not part of it, so a report piped onward must
+    not carry one.
+    """
+    for note in notes:
+        said = cli_messages.CLI.render(note)
+        if said is not None:
+            print(f"outrage: {said}", file=sys.stderr)
 
 
 def _flag(argument: str, value: Any = None) -> str:

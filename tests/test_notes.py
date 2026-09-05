@@ -35,11 +35,13 @@ from __future__ import annotations
 import ast
 import importlib
 import pathlib
+import re
 
 import pytest
 
 import outrage
-from outrage import bulk, keys, messages
+from conftest import long_options
+from outrage import bulk, cli, cli_messages, keys, messages
 from outrage.messages import NoteTable
 from outrage.mounts import Mount
 from outrage.notes import Note
@@ -751,3 +753,86 @@ def test_every_note_the_tools_can_reach_is_worded_and_nothing_they_word_is_stran
     }
 
     assert reached == set(messages.MCP.sentences())
+
+
+# -- the second audience -----------------------------------------------------
+#
+# What `cli_messages` is for: the same situations, a different selection. These
+# are about the selection itself, which is the axis the note side has and the
+# error side does not.
+
+
+def test_the_command_line_says_less_than_the_tools_and_says_why():
+    """The design's call, as a fact about the tables rather than a claim in prose.
+
+    Not an assertion that the command line is *right* to be quiet -- that is
+    the reason on each silence, and a person reads those. What this pins is
+    that quiet is a decision it made: every code it does not word, it has
+    declined by name.
+    """
+    tools = set(messages.MCP.sentences())
+    line = set(cli_messages.CLI.sentences())
+
+    assert line < tools, "the command line is expected to say fewer of them, not more"
+    assert set(cli_messages.CLI.silences()) == tools - line
+    assert all(cli_messages.CLI.silences().values()), "a silence without a reason"
+
+
+def test_the_command_line_only_names_flags_somebody_can_type():
+    """The note side of what ``test_messages`` guards for errors.
+
+    There the danger is a speller reaching for an argument only the tools take;
+    here it is a template writing a flag out by hand, which is what a table
+    with no speller is *for*. The failure looks the same to a reader: advice
+    naming something that is not on the command line at all.
+    """
+    options = long_options(cli.argument_parser())
+
+    named = []
+    for code, write in cli_messages.CLI.sentences().items():
+        details = {name: _stand_in(name) for name in _details_of(code)}
+        said = write(keys.displayed, **details)
+        for word in re.findall(r"--[a-z][a-z-]*", said):
+            named.append(word)
+            assert word in options, f"the note {code!r} names {word}, which is not an option"
+
+    # Otherwise a table that stopped naming flags would pass by checking
+    # nothing, which is how a guard quietly stops working.
+    assert named, "no note named a flag, so this checked nothing"
+
+
+def _details_of(code: str) -> set[str]:
+    """Every detail name an emit site passes with ``code``, read from the source."""
+    return {
+        word.arg
+        for _, _, call in _emits()
+        if call.args and getattr(call.args[0], "value", None) == code
+        for word in call.keywords
+        if word.arg
+    }
+
+
+def test_the_command_line_says_a_shrink_in_its_own_words():
+    """The one note it wants more than the tools do, and the numbers are the point."""
+    (note,) = bulk.notes_for_write(90, 0)
+
+    assert note == Note("document-shrank", previous=90, stored=0)
+    assert "shrank from 90 to 0 characters" in cli_messages.CLI.render(note)
+
+
+def test_a_write_that_grew_says_nothing_at_either_end():
+    assert bulk.notes_for_write(0, 90) == []
+    assert bulk.notes_for_write(None, 90) == [], "an unknown previous size is not a shrink"
+
+
+def test_the_command_line_names_a_refusing_mount_with_its_own_flags():
+    """`--recursive` and `--mount-ro`, where the tools' table writes `recursive=true`.
+
+    The whole of what a table per audience buys, in one sentence: nobody has
+    to parameterise a flag, because the table already knows who is reading.
+    """
+    (note,) = bulk.notes_for_delete("a", dry_run=False, remaining=0, mounts_kept=["ref"])
+    said = cli_messages.CLI.render(note)
+
+    assert "--recursive" in said and "--mount-ro" in said
+    assert "recursive=true" not in said
