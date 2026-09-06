@@ -1371,6 +1371,15 @@ def test_a_parquet_mount_refuses_a_write_without_offering_a_flag(tmp_path):
             table.resolve("ro/anything").writable()
         assert raised.value.code == "mount-read-only"
 
+        # It must not offer the parquet store as a possible cause. It cannot be
+        # one: `writable` asks the store before the configuration, so a backend
+        # that refuses writes has already raised `store-read-only` above and
+        # never reaches this code. The sentence said otherwise until
+        # 2026-09-06, which is an explanation that cannot be the explanation --
+        # worse than a shorter sentence, and the sort of thing only a reading
+        # finds because both codes and both raises were correct.
+        assert "parquet" not in messages.render(raised.value)
+
 
 def test_a_parquet_mount_reads_through_the_server(tmp_path):
     """The point of the whole piece: a reference base behind a prefix."""

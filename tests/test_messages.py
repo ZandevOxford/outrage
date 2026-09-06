@@ -186,11 +186,17 @@ def test_the_container_advice_names_the_key_the_caller_would_use(tmp_path):
 def test_the_command_line_only_names_arguments_it_actually_has():
     """A flag in a sentence has to be a flag somebody can type.
 
-    `cli._flag` is a rule rather than a table -- a dest is its long option with
-    the dashes turned into underscores -- and this is what keeps the rule
+    `messages.flag` is a rule rather than a table -- a dest is its long option
+    with the dashes turned into underscores -- and this is what keeps the rule
     honest. A template converted to `spell` for an argument only the tools take
     would produce `--against`, and the failure would look exactly like the
     defect the speller exists to fix, one level down.
+
+    Checked against the command line's parser although `server.main` spells
+    flags too, and deliberately: the server's own options are a superset in the
+    places that matter, so a template spelling one of those fails here. Too
+    strict is the safe direction for a guard whose whole job is to refuse a
+    flag nobody can type.
     """
     options = long_options(cli.argument_parser())
 
@@ -199,7 +205,7 @@ def test_the_command_line_only_names_arguments_it_actually_has():
 
         def spell(argument: str, value: object = None, seen: list[str] = named) -> str:
             seen.append(f"--{argument.replace('_', '-')}")
-            return cli._flag(argument, value)
+            return messages.flag(argument, value)
 
         details = {keyword.arg: _stand_in(keyword.arg) for keyword in call.keywords if keyword.arg}
         messages.render(OutrageError(call.args[0].value, **details), spell=spell)
@@ -234,7 +240,7 @@ def test_the_speller_is_what_makes_one_argument_two_spellings():
     assert messages.render(error).startswith("on_conflict='overwrite-unchanged' overwrites")
     assert "it needs unchanged_since to measure against" in messages.render(error)
 
-    typed = messages.render(error, spell=cli._flag)
+    typed = messages.render(error, spell=messages.flag)
     assert typed.startswith("--on-conflict overwrite-unchanged overwrites")
     assert "it needs --unchanged-since to measure against" in typed
     assert "Pass the time you looked, or --on-conflict overwrite to replace" in typed

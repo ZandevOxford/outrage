@@ -28,6 +28,22 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
   in the target now. No output changes; what changes is that one command
   produces it.
 
+* **A read-only mount no longer offers a reason it cannot have.** "Cannot
+  write here" listed a packed parquet store among the possible causes, and a
+  parquet store never produces that refusal: the store is asked before the
+  configuration is, so a backend that cannot be written raises its own message
+  about repacking instead. What the sentence now names are the two cases that
+  do reach it -- a mount made read-only by `--mount-ro`, and a store lent to
+  the server already open, which is how the shipped documentation is mounted.
+
+* **A failed copy is worded by the front end reading it.** A copy, an export
+  and an import run inside the library, which turned each refusal into a
+  sentence where it happened -- so the words reached both the command line and
+  the MCP tools already written, spelled one way, and neither could say an
+  argument the way its own reader types it. The refusal now travels whole and
+  each front end renders it. No message changes today; what changes is that the
+  next one to name an argument cannot come out wrong at one of them.
+
 * **`outrage.store_sqlite.WAL_UNCHECKPOINTED` is really gone now.** 0.9.0 said
   it was removed and it was not: the import that replaced the definition
   brought the name back as a module attribute, holding the problem code where

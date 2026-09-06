@@ -478,6 +478,18 @@ class Transfer:
     copy grafted it somewhere else. ``path`` is the file behind it where
     either end keeps its documents in files, which is what makes an export
     report readable; None where neither does, and the report is key to key.
+
+    **Why a refusal is carried and not written down.** ``reason`` is prose, and
+    the walk that produces a transfer is a library: it does not know whether
+    the reader spells an argument ``overwrite`` or ``--overwrite``, nor which
+    of a mount table's names a key should be given. So a store's own refusal
+    travels as ``error``, unrendered, and each front end turns it into the
+    sentence its reader gets -- the rule ``plans/error-naming`` settled for
+    every other error and that this one was still outside. ``reason`` stays for
+    what has no error behind it: a symlink skipped, a key already stored, a
+    document written again since the caller looked, and what the operating
+    system said about a file, which has no code to carry. Exactly one of the
+    two is set.
     """
 
     action: str
@@ -485,6 +497,31 @@ class Transfer:
     path: Path | None
     reason: str | None = None
     characters: int = 0
+    error: OutrageError | None = None
+
+
+def _said(transfer: Transfer) -> str | None:
+    """A transfer's refusal as a sentence, for a message built inside the library.
+
+    The one place that legitimately renders one here rather than leaving it to
+    a front end: :meth:`FileStore.backup` nests the reason inside a
+    ``BackupError`` of its own, and by then it is a detail of another error
+    rather than something a caller can be handed unrendered.
+
+    The defaults are the right answer and not merely the available one. A
+    backup is a :class:`FileStore` copied to a file of its own, never a mount
+    table, so the key a store used *is* the key to print; and every refusal
+    reachable from a store-to-store copy names no argument, so there is nothing
+    for a speller to spell.
+
+    Imported where it is used, like :meth:`Store.copy_from`'s walk and for the
+    same reason: :mod:`outrage.messages` is written in terms of this module.
+    """
+    if transfer.error is None:
+        return transfer.reason
+    from . import messages
+
+    return messages.render(transfer.error)
 
 
 @dataclass(frozen=True, slots=True)
@@ -1599,7 +1636,7 @@ class FileStore(Store):
                         raise BackupError(
                             "backup-unwritable",
                             target=str(target),
-                            reason=f"{transfer.key}: {transfer.reason}",
+                            reason=f"{transfer.key}: {_said(transfer)}",
                         )
         except OSError as exc:
             _clear(target)
