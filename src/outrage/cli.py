@@ -1030,6 +1030,18 @@ def _log_options(parser: argparse.ArgumentParser) -> None:
             "file."
         ),
     )
+    parser.add_argument(
+        "--no-remount",
+        dest="no_remount",
+        action="store_true",
+        help=(
+            "Record --no-remount on the server entry, so the server offers no "
+            "'mount' or 'unmount' tool and its mounts are only what it was "
+            "started with. On by default there, and MCP-only: this front end "
+            "builds its table from scratch every run and has nothing to "
+            "change. Added by a re-run, never removed by one."
+        ),
+    )
 
 
 def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
@@ -1229,6 +1241,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
         log=args.log,
         log_content=args.log_content,
         no_info=args.no_info,
+        no_remount=args.no_remount,
         root_mount=args.root_mount,
         mounts=args.mounts,
         read_only_mounts=args.read_only_mounts,
@@ -1289,7 +1302,11 @@ def _config_command(args: argparse.Namespace, out: TextIO) -> int:
     )
     directory = args.directory or config_module.default_store_dir(project_dir)
     entry = config_module.server_entry(
-        directory, log=args.log, log_content=args.log_content, no_info=args.no_info
+        directory,
+        log=args.log,
+        log_content=args.log_content,
+        no_info=args.no_info,
+        no_remount=args.no_remount,
     )
     table = mountfile.plan_starter(
         directory,

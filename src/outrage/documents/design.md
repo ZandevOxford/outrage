@@ -150,8 +150,26 @@ key prefix to a store, the longest prefix matching a key owns it, and the store
 mount claims. A server with no `--mount` argument is a table of one, which is
 the same code path rather than a second one.
 
-Configuration, and only at startup: `--mount KEY=FILE`, repeatable. Nothing
-adds or removes a mount on a running server.
+Configured at startup with `--mount KEY=FILE`, repeatable, and changed after it
+by the `mount` and `unmount` tools -- MCP only, and withheld by `--no-remount`.
+The command line needs neither: it builds its table from scratch on every run.
+
+**A change never edits a table.** A mount table is immutable, so a change
+builds a new one and swaps a single reference, and every call takes one
+snapshot of it at entry and uses that for its whole duration. So no traversal
+can see two tables, which is what makes this safe where mutating a table would
+not have been. Mounts that keep their prefix keep the very same store, which is
+sound because the only thing a store knows about its own mounting is where it
+is; a mount at a new prefix always opens a new one. What is not solved: a page
+taken before a change and continued after it may skip or repeat keys, since a
+cursor is a key and which store answers for it is exactly what changed.
+
+**The root cannot change.** It owns every key no mount claims, and the
+instructions a client is given are built once, at connect, from its readme --
+so a root that cannot move is what keeps them honest for the life of the
+connection. A change lasts as long as the server: a mount configuration file is
+read and never written, because a machine rewrite is what loses the comments
+such a file exists for.
 
 **Every mount is a file in the one directory**, named the same way the root
 mount is and by the same rule - relative to `--dir`, never absolute. So a

@@ -337,7 +337,7 @@ Every packaged Codex skill, as a source and path below `.codex`.
 
 Every packaged Copilot agent, as a source and path below `.github`.
 
-### outrage.install.init(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/library/functions.html#bool) = False, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Installation](#outrage.install.Installation)
+### outrage.install.init(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/library/functions.html#bool) = False, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Installation](#outrage.install.Installation)
 
 Set a project up: the MCP server entry, hooks, and packaged skills.
 
@@ -348,9 +348,9 @@ after the same planning the real run does, so it cannot preview something a
 write would disagree with.
 
 `outrage config` writes the server entry alone and this calls it rather than
-repeating it, which is also why `log`, `log_content` and `no_info`
-are passed through. `root_mount` and the two mount lists no longer reach the entry
-at all: a mount table lives in `mounts.toml` in the store directory, and
+repeating it, which is also why `log`, `log_content`, `no_info` and
+`no_remount` are passed through. `root_mount` and the two mount lists no
+longer reach the entry at all: a mount table lives in `mounts.toml`, and
 they seed it - see [`outrage.mountfile.plan_starter()`](mountfile.md#outrage.mountfile.plan_starter), and note that a
 table already there is reported and left alone rather than rewritten.
 

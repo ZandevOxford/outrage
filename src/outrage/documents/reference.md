@@ -43,6 +43,13 @@ Which storage a store *file* is kept in follows from its extension --
 a filesystem store is constructed directly at its path rather than opened by
 name.
 
+[`outrage.remount`](reference/remount.md#module-outrage.remount) is what a *process* has, which [`outrage.mounts`](reference/mounts.md#module-outrage.mounts)
+deliberately is not: one table reference, swapped under a lock, and the stores
+that fall out of it closed when nothing serves them. A change never edits a
+table -- it builds a new one and swaps the reference, and every server call
+takes one snapshot at entry -- which is what lets the mounts of a running
+server change at all.
+
 [`outrage.mountfile`](reference/mountfile.md#module-outrage.mountfile) is the table written down rather than typed: a TOML
 file in the store directory, read as though its options had been given on the
 command line at the point where the file is named. Both front ends read it, so
@@ -59,6 +66,7 @@ read-only at `outrage`. A store file is relative to `--dir` and a tree in
 * [outrage.store_parquet](reference/store_parquet.md)
 * [outrage.store_files](reference/store_files.md)
 * [outrage.mounts](reference/mounts.md)
+* [outrage.remount](reference/remount.md)
 * [outrage.mountfile](reference/mountfile.md)
 * [outrage.shipped](reference/shipped.md)
 * [Markdown contents](reference/contents.md)

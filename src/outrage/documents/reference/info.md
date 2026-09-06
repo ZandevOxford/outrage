@@ -107,3 +107,15 @@ namespace of one, which is what it answers as.
 asked -- [`outrage.mountfile.sources()`](mountfile.md#outrage.mountfile.sources) and
 [`outrage.store.resolve_directory()`](store.md#outrage.store.resolve_directory) know them, and by the time there is
 a table both have been flattened away.
+
+### outrage.info.mount_infos(opened: [Store](store.md#outrage.store.Store)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[MountInfo](#outrage.info.MountInfo), ...]
+
+Every mount behind `opened`, or the one store when it is not a table.
+
+A [`Mount`](mounts.md#outrage.mounts.Mount) is made for the lone store rather than a
+table of one, because a table refuses a root that will not take writes and
+describing a store must not fail where reading it succeeds.
+
+Public because the mount tools answer with the table as it now is, and a
+second projection of a mount into a report is a second place for the two to
+disagree about what a mount point is called.

@@ -58,7 +58,7 @@ moves.
 outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
              [--mount KEY=FILE] [--mount-ro KEY=FILE] [--log [PATH]]
              [--log-content {none,excerpt,full}] [--no-info]
-             [--dry-run]
+             [--no-remount] [--dry-run]
 ```
 
 ### Arguments
@@ -72,6 +72,7 @@ outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
 - `--log [PATH]` - Record the server's requests and store accesses as JSON lines. Without a path, writes log.jsonl in the store directory. Omitted, and so off, unless asked for.
 - `--log-content {none,excerpt,full}` - How much document text the log keeps. Only used alongside --log.
 - `--no-info` - Record --no-info on the server entry, so the server offers no 'info' tool: no report of its Python environment, store directory, mount configuration files, mounts or log. On by default there. Like every option here it can only be added by a re-run, never removed by one -- taking it away is an edit to the file.
+- `--no-remount` - Record --no-remount on the server entry, so the server offers no 'mount' or 'unmount' tool and its mounts are only what it was started with. On by default there, and MCP-only: this front end builds its table from scratch every run and has nothing to change. Added by a re-run, never removed by one.
 - `--dry-run` - Report what would change without writing anything.
 
 ## `sessionstart`
@@ -106,7 +107,7 @@ outrage config [-h] [--scope {project,user}] [--project-dir PATH]
                [--root-mount FILE] [--mount KEY=FILE]
                [--mount-ro KEY=FILE] [--log [PATH]]
                [--log-content {none,excerpt,full}] [--no-info]
-               [--dry-run]
+               [--no-remount] [--dry-run]
 ```
 
 ### Arguments
@@ -123,6 +124,7 @@ outrage config [-h] [--scope {project,user}] [--project-dir PATH]
 - `--log [PATH]` - Record the server's requests and store accesses as JSON lines. Without a path, writes log.jsonl in the store directory. Omitted, and so off, unless asked for.
 - `--log-content {none,excerpt,full}` - How much document text the log keeps. Only used alongside --log.
 - `--no-info` - Record --no-info on the server entry, so the server offers no 'info' tool: no report of its Python environment, store directory, mount configuration files, mounts or log. On by default there. Like every option here it can only be added by a re-run, never removed by one -- taking it away is an edit to the file.
+- `--no-remount` - Record --no-remount on the server entry, so the server offers no 'mount' or 'unmount' tool and its mounts are only what it was started with. On by default there, and MCP-only: this front end builds its table from scratch every run and has nothing to change. Added by a re-run, never removed by one.
 - `--dry-run` - Report what would change without writing anything.
 
 ## `backup`

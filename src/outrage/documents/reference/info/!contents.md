@@ -48,3 +48,6 @@
 
 ### outrage.info.describe(opened: [Store](store.md#outrage.store.Store), \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Info](#outrage.info.Info)
 5859 5859
+
+### outrage.info.mount_infos(opened: [Store](store.md#outrage.store.Store)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[MountInfo](#outrage.info.MountInfo), ...]
+7232 7234

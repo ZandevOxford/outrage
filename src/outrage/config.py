@@ -126,6 +126,7 @@ def server_entry(
     log: Any = None,
     log_content: str | None = None,
     no_info: bool = False,
+    no_remount: bool = False,
 ) -> dict[str, Any]:
     """Build the configuration entry for the stores in ``directory``.
 
@@ -158,6 +159,11 @@ def server_entry(
     failure this module exists to prevent. Being valueless makes no difference
     to :func:`merge_entry` -- it inherits by flag, so a re-run that does not
     mention it keeps it.
+
+    ``no_remount`` adds ``--no-remount``, withholding the tools that change the
+    mounts while the server runs. Same shape, same reason, and it is the one
+    place the decision can be recorded: those tools are the server's, so there
+    is no command line run to pass a flag to.
     """
     argv = list(command) if command is not None else launch_command()
     args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
@@ -170,6 +176,8 @@ def server_entry(
             args += ["--log-content", log_content]
     if no_info:
         args.append("--no-info")
+    if no_remount:
+        args.append("--no-remount")
     return {"command": argv[0], "args": args}
 
 

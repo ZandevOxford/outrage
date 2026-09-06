@@ -768,6 +768,13 @@ class Store(ABC):
         # A backend speaks in keys relative to itself. The mount point is only
         # how those keys are rendered in the event log; storage, routing and
         # every value returned to the caller remain unchanged.
+        #
+        # This being the *only* thing a store knows about its own mounting is
+        # what lets a live table share a store with the table that replaces it,
+        # rather than reopening the file: `MountedStore.remounted` copies a
+        # surviving mount whole, so a shared store is always at the same prefix
+        # and the log it writes goes on naming the keys that are there. A mount
+        # at a new prefix has to take a newly opened store for the same reason.
         self.mount_point = keys.parse(_scope(mount_point)).key
 
     def _log_key(self, key: str | None) -> str | None:

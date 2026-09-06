@@ -121,14 +121,38 @@
 ### Returns
 26287 26645
 
-## `info`
+## `mount`
 27127 27501
 
 ### Parameters
-28278 28652
+28830 29206
 
 ### Returns
-28301 28675
+29382 29766
 
 #### `MountInfo` fields
-29235 29627
+29563 29951
+
+## `unmount`
+29927 30323
+
+### Parameters
+31000 31396
+
+### Returns
+31098 31496
+
+#### `MountInfo` fields
+31279 31681
+
+## `info`
+31643 32053
+
+### Parameters
+32794 33204
+
+### Returns
+32817 33227
+
+#### `MountInfo` fields
+33751 34179

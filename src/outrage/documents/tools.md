@@ -463,6 +463,99 @@ safe as saving back - or pass `overwrite` to write it unchecked.
 - `unchecked_code` (string or null; optional) — Why an import was not compared with what was exported, when 'overwrite' allowed it through uncompared: 'no-record' when there was no export record, 'other-key' when the file came from another key and no 'against' file was given
 - `note` (string or null; optional) — Important qualification of the result
 
+## `mount`
+
+Mount a store at `key`, for as long as this server runs.
+
+The store answers for `key` and everything below it from the moment this
+returns. A mount **shadows**: whatever the store beneath held at those keys is
+never consulted while this is mounted, so it becomes unreachable rather than
+merged, and the result says so when it happens.
+
+`file` is a store file **relative to the store directory** — the same rule
+every mount follows, and what makes a mount configuration relocatable. `info`
+reports that directory. `type` names the backend where the file name cannot say
+it: a directory of files has no extension to read.
+
+Omit `file` to mount the store **outrage ships** for that key. Today that is
+the `outrage` manual and nothing else. It is the way back after unmounting the
+manual, which otherwise has no spelling here at all: it lives inside the
+installed package rather than in the store directory. A shipped store is always
+mounted read-only.
+
+`read_only` refuses every write routed here, before the store is asked. It
+refuses writes *through this server* and does nothing to the file, which stays
+writable to anything else. A read-only mount must already exist: a mistyped
+name would otherwise be created and read as though the reference base were
+simply empty.
+
+A mount at a point something already holds **replaces** it. The root cannot be
+mounted over: it owns every key no mount claims, and the instructions this
+connection was given were built from its readme.
+
+Returns the whole table, not the one mount, because what shadows what is not
+visible in an answer about a single mount. The change lasts as long as this
+server; write it into the mount configuration file to keep it.
+
+### Parameters
+
+- `key` (string; required) — Key to mount the store at; the root cannot be mounted over
+- `file` (string or null; default null) — Store file, relative to the store directory. Omit it to mount the store outrage ships for this key, which is how the 'outrage' manual is put back after unmounting it
+- `type` (string or null; default null) — Backend to open `file` with, when the file name does not say: 'files' for a directory of files
+- `read_only` (boolean; default false) — Refuse every write routed here; the file itself is untouched
+
+### Returns
+
+- `mounts` (array[MountInfo]; required) — The stores behind the namespace, as they now are
+- `note` (string or null; optional) — Important qualification of the result
+
+#### `MountInfo` fields
+
+- `mount` (string; required) — The mount point, '/' for the root
+- `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
+- `kind` (string; required) — 'root', 'mount' or 'read-only mount'
+- `read_only` (boolean; required) — Whether this server refuses writes routed here
+
+## `unmount`
+
+Remove the mount at `key`, for as long as this server runs.
+
+The store stops answering for `key` and everything below it, and whatever the
+store beneath holds there comes back into view. That is the part worth
+expecting: a mount shadows rather than merges, so keys the outer store held at
+the mount point have been unreachable for as long as it was mounted, and they
+are there again the moment this returns. The result says when it happens.
+
+Nothing is deleted and no file is touched. The store is closed once no table
+this server serves still holds it.
+
+The root cannot be unmounted: it owns every key no mount claims, so nothing
+would answer for them. Unmounting a point nothing is mounted at is refused
+rather than passed over, since what a mistyped one leaves behind is the mount
+it was meant to take away.
+
+The `outrage` manual can be unmounted like anything else, and `mount` with no
+`file` puts it back.
+
+Returns the whole table, not the mount that went. The change lasts as long as
+this server; a mount configuration file is what survives a restart.
+
+### Parameters
+
+- `key` (string; required) — Mount point to remove; the root cannot be unmounted
+
+### Returns
+
+- `mounts` (array[MountInfo]; required) — The stores behind the namespace, as they now are
+- `note` (string or null; optional) — Important qualification of the result
+
+#### `MountInfo` fields
+
+- `mount` (string; required) — The mount point, '/' for the root
+- `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
+- `kind` (string; required) — 'root', 'mount' or 'read-only mount'
+- `read_only` (boolean; required) — Whether this server refuses writes routed here
+
 ## `info`
 
 Report what this server is: its Python environment, its stores, and its log.

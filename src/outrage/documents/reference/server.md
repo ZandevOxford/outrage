@@ -155,7 +155,7 @@ risk is accepted on the same terms as `extra="forbid"`: what a change
 would cost is logging silently ceasing to happen, and
 `test_the_middleware_is_reached` fails loudly rather than letting it.
 
-### outrage.server.build_server(store: [Store](store.md#outrage.store.Store), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/library/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/library/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → MCPServer
+### outrage.server.build_server(store: [Store](store.md#outrage.store.Store) | [Live](remount.md#outrage.remount.Live), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/library/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/library/functions.html#bool) = True, remount_tool: [bool](https://docs.python.org/3/library/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → MCPServer
 
 Build a server exposing `store`, which may be one store or a mount table.
 
@@ -163,6 +163,13 @@ A lone `Store` is wrapped in a table of one rather than served by a
 second path through this module. There is then no routing that only runs
 when something is mounted, and the single store case exercises the same
 code every call takes.
+
+`store` may also be an [`outrage.remount.Live`](remount.md#outrage.remount.Live), and that is what
+[`main()`](#outrage.server.main) passes: a table that can be replaced while this server runs.
+Anything else is wrapped in one, so there is a single path here too. Every
+tool body opens with `table = live.table` and uses what it got for its
+whole duration -- one snapshot per call, which is the whole of why a change
+is safe.
 
 `directory` is the store directory, and it has to be passed in: what is
 served is a [`MountedStore`](mounts.md#outrage.mounts.MountedStore), which is a `Store` and
@@ -198,6 +205,11 @@ too, for the same reason.
 work out: the configuration files the mount table was read from, which
 [`outrage.mountfile.sources()`](mountfile.md#outrage.mountfile.sources) knows and which are flattened away by the
 time there is a table.
+
+`remount_tool` is the `mount` and `unmount` pair, on for the same
+reason and withheld the same way -- the server's `--no-remount`. They are
+MCP-only, which is a decision rather than an omission: the command line
+builds its table from scratch on every run and has nothing to change.
 
 ### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
@@ -243,7 +255,8 @@ stops.
 The console script `outrage-server`, and the entry point an MCP client
 launches. It resolves the store directory once -- the event log defaults to
 a file beside it -- opens the mount table, warns on stderr about any mount that
-shadows keys already held, and hands the table to [`build_server()`](#outrage.server.build_server).
+shadows keys already held, and hands it to [`build_server()`](#outrage.server.build_server) as the
+[`outrage.remount.Live`](remount.md#outrage.remount.Live) table this process serves.
 
 Returns rather than exits, for the same reason [`outrage.cli.main()`](cli.md#outrage.cli.main) does.
 
@@ -255,8 +268,9 @@ Four groups of arguments, and the first two are the interesting pair.
 `--dir` says which *directory* holds the stores, `--root-mount` and the
 repeatable `--mount`/`--mount-ro` say which *files* inside it are
 mounted where. `--log` and
-`--log-content` say what is recorded about the calls that arrive, and
-`--no-info` withholds the one tool that describes any of it.
+`--log-content` say what is recorded about the calls that arrive,
+`--no-info` withholds the one tool that describes any of it, and
+`--no-remount` the pair that changes the mounts while the server runs.
 
 The mount options may also be written in a file rather than typed --
 [`outrage.mountfile`](mountfile.md#module-outrage.mountfile), and the whole point of it here: with a table in

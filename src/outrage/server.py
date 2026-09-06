@@ -45,7 +45,18 @@ from pydantic import (
     model_serializer,
 )
 
-from . import __version__, bulk, contents, eventlog, ingest, keys, messages, mountfile, shipped
+from . import (
+    __version__,
+    bulk,
+    contents,
+    eventlog,
+    ingest,
+    keys,
+    messages,
+    mountfile,
+    remount,
+    shipped,
+)
 from . import info as info_module
 from . import mounts as mounts_module
 from . import store as store_module
@@ -562,6 +573,22 @@ class _MountInfoResult(_ToolResult):
     read_only: Annotated[bool, Field(description="Whether this server refuses writes routed here")]
 
 
+class _MountsResult(_ToolResult):
+    """The namespace after a mount or an unmount, as its stores.
+
+    The whole table rather than the one mount that changed, because what a
+    caller has to know next is which store now answers for a key -- and a mount
+    can shadow, replace, or reveal what another was hiding, none of which is
+    visible in an answer about itself.
+    """
+
+    mounts: Annotated[
+        list[_MountInfoResult],
+        Field(description="The stores behind the namespace, as they now are"),
+    ]
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
+
+
 class _InfoResult(_ToolResult):
     version: Annotated[str, Field(description="The outrage version this server is running")]
     python: Annotated[
@@ -856,12 +883,13 @@ class RequestLog:
 
 
 def build_server(
-    store: Store,
+    store: Store | remount.Live,
     log: EventLog | None = None,
     directory: str | os.PathLike[str] | None = None,
     *,
     all_tools: bool = False,
     info_tool: bool = True,
+    remount_tool: bool = True,
     mount_config: Sequence[str] = (),
 ) -> MCPServer:
     """Build a server exposing ``store``, which may be one store or a mount table.
@@ -870,6 +898,13 @@ def build_server(
     second path through this module. There is then no routing that only runs
     when something is mounted, and the single store case exercises the same
     code every call takes.
+
+    ``store`` may also be an :class:`outrage.remount.Live`, and that is what
+    :func:`main` passes: a table that can be replaced while this server runs.
+    Anything else is wrapped in one, so there is a single path here too. Every
+    tool body opens with ``table = live.table`` and uses what it got for its
+    whole duration -- one snapshot per call, which is the whole of why a change
+    is safe.
 
     ``directory`` is the store directory, and it has to be passed in: what is
     served is a :class:`~outrage.mounts.MountedStore`, which is a ``Store`` and
@@ -905,13 +940,30 @@ def build_server(
     work out: the configuration files the mount table was read from, which
     :func:`outrage.mountfile.sources` knows and which are flattened away by the
     time there is a table.
+
+    ``remount_tool`` is the ``mount`` and ``unmount`` pair, on for the same
+    reason and withheld the same way -- the server's ``--no-remount``. They are
+    MCP-only, which is a decision rather than an omission: the command line
+    builds its table from scratch on every run and has nothing to change.
     """
     log = log if log is not None else eventlog.NULL
-    table = store if isinstance(store, MountedStore) else MountedStore.single(store)
+    live = (
+        store
+        if isinstance(store, remount.Live)
+        else remount.Live(
+            store if isinstance(store, MountedStore) else MountedStore.single(store),
+            directory=directory,
+            log=log,
+        )
+    )
     server = MCPServer(
         name="outrage",
         version=__version__,
-        instructions=instructions(table),
+        # Built once, from the table as it is now, and that is what fixes the
+        # root: a mount tool may change anything except the store whose readme
+        # this was composed from, so what a connection was told stays true for
+        # as long as the connection does.
+        instructions=instructions(live.table),
         # Registered only when there is somewhere to write, so that the default
         # configuration adds nothing to the SDK's chain at all.
         middleware=[RequestLog(log)] if log.enabled else None,
@@ -951,6 +1003,7 @@ def build_server(
             int, Field(description="Maximum characters to return", gt=0)
         ] = DEFAULT_MAX_CHARS,
     ) -> _ExcerptResult:
+        table = live.table
         return _excerpt_result(
             table.retrieve_document(
                 _named_key(table, key),
@@ -1027,6 +1080,7 @@ def build_server(
             ),
         ] = False,
     ) -> _StoreDocumentResult:
+        table = live.table
         at = _named_key(table, key, allow_wildcard=True)
         # Before the write, and the whole of what `against` does: it names a
         # file whose *record* says what this edit was made against, and the
@@ -1093,6 +1147,7 @@ def build_server(
                 bool, Field(description="Convert and report without writing the document or title")
             ] = False,
         ) -> _IngestDocumentResult:
+            table = live.table
             converted = ingest.ingest_document(
                 table,
                 source,
@@ -1128,6 +1183,7 @@ def build_server(
             ),
         ] = "contents",
     ) -> _MakeContentsResult:
+        table = live.table
         made = contents.make_contents(table, _named_key(table, key), metadata_name=metadata_name)
         return _MakeContentsResult.model_validate(dataclasses.asdict(made))
 
@@ -1149,6 +1205,7 @@ def build_server(
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
     ) -> _ListKeysResult:
+        table = live.table
         at = _named_key(table, key)
         page = table.list_keys(at, limit=limit, cursor=after)
         return _ListKeysResult(
@@ -1198,6 +1255,7 @@ def build_server(
             Field(description="Maximum characters across the whole page", gt=0),
         ] = DEFAULT_PAGE_CHARS,
     ) -> _GetDocumentsResult:
+        table = live.table
         at = _named_key(table, key)
         subtree = BoundedSubtree(at, depth)
         page = table.get_documents(
@@ -1274,6 +1332,7 @@ def build_server(
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
     ) -> _FindDocumentsResult:
+        table = live.table
         at = _named_key(table, key)
         page = table.find_documents(
             BoundedSubtree(at, depth),
@@ -1332,6 +1391,7 @@ def build_server(
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
     ) -> _KeysMissingMetaResult:
+        table = live.table
         at = _named_key(table, key)
         page = table.keys_missing_meta(
             BoundedSubtree(at, depth),
@@ -1377,6 +1437,7 @@ def build_server(
             bool, Field(description="Report what would be deleted without deleting any of it")
         ] = False,
     ) -> _DeleteKeysResult:
+        table = live.table
         at = _named_key(table, key)
         # A delete crosses a mount boundary, exactly as a read does, and the
         # table is what crosses it. It is the one call where crossing makes the
@@ -1519,6 +1580,7 @@ def build_server(
         # answers. The cursor is not resolved with them - it is this server's
         # own output being handed back, and a `?last` in it would mean the
         # selection had moved under the caller.
+        table = live.table
         at_source = _named_key(table, source)
         at_target = _named_key(table, target)
         # The rule is `bulk`'s and not this module's, so the command line
@@ -1650,6 +1712,7 @@ def build_server(
         # No wildcard: `?` allocates a number, and a round trip is about a
         # key that already exists on one end or the other. Allocating one
         # is `store_document`'s business.
+        table = live.table
         at = _named_key(table, key)
         if path is None and against is not None:
             # Refused rather than ignored, and before the export directory is
@@ -1683,6 +1746,58 @@ def build_server(
         _say(result, bulk.notes_for(imported))
         return _DocumentEditResult.model_validate(result)
 
+    if all_tools or remount_tool:
+
+        @server.tool(
+            annotations=ToolAnnotations(idempotent_hint=True),
+            description=tool_description("mount"),
+        )
+        @_reported
+        def mount(
+            key: Annotated[
+                str,
+                Field(description="Key to mount the store at; the root cannot be mounted over"),
+            ],
+            file: Annotated[
+                str | None,
+                Field(
+                    description=(
+                        "Store file, relative to the store directory. Omit it to "
+                        "mount the store outrage ships for this key, which is how "
+                        "the 'outrage' manual is put back after unmounting it"
+                    )
+                ),
+            ] = None,
+            type: Annotated[
+                str | None,
+                Field(
+                    description=(
+                        "Backend to open `file` with, when the file name does not "
+                        "say: 'files' for a directory of files"
+                    )
+                ),
+            ] = None,
+            read_only: Annotated[
+                bool,
+                Field(description="Refuse every write routed here; the file itself is untouched"),
+            ] = False,
+        ) -> _MountsResult:
+            changed = live.mount(key, file=file, type=type, read_only=read_only)
+            return _mounts_result(changed)
+
+        @server.tool(
+            annotations=ToolAnnotations(idempotent_hint=True),
+            description=tool_description("unmount"),
+        )
+        @_reported
+        def unmount(
+            key: Annotated[
+                str,
+                Field(description="Mount point to remove; the root cannot be unmounted"),
+            ],
+        ) -> _MountsResult:
+            return _mounts_result(live.unmount(key))
+
     if all_tools or info_tool:
 
         @server.tool(
@@ -1697,7 +1812,7 @@ def build_server(
             return _InfoResult.model_validate(
                 dataclasses.asdict(
                     info_module.describe(
-                        table,
+                        live.table,
                         directory=directory,
                         mount_config=mount_config,
                         log=log,
@@ -1706,6 +1821,21 @@ def build_server(
             )
 
     return server
+
+
+def _mounts_result(changed: remount.Changed) -> _MountsResult:
+    """A finished change as the table it produced, with its notes said.
+
+    The table comes from the change rather than from ``live.table``: another
+    thread may have changed it again in between, and an answer describing a
+    table that is no longer there is the one thing a report of a change must
+    not be.
+    """
+    result: dict[str, Any] = {
+        "mounts": [dataclasses.asdict(one) for one in info_module.mount_infos(changed.table)]
+    }
+    _say(result, list(changed.notes))
+    return _MountsResult.model_validate(result)
 
 
 def _copied_result(
@@ -1846,8 +1976,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ``--dir`` says which *directory* holds the stores, ``--root-mount`` and the
     repeatable ``--mount``/``--mount-ro`` say which *files* inside it are
     mounted where. ``--log`` and
-    ``--log-content`` say what is recorded about the calls that arrive, and
-    ``--no-info`` withholds the one tool that describes any of it.
+    ``--log-content`` say what is recorded about the calls that arrive,
+    ``--no-info`` withholds the one tool that describes any of it, and
+    ``--no-remount`` the pair that changes the mounts while the server runs.
 
     The mount options may also be written in a file rather than typed --
     :mod:`outrage.mountfile`, and the whole point of it here: with a table in
@@ -1914,7 +2045,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "holds everything no mount claims, and a mount takes precedence "
             "over it for the keys below its mount point. Reads and writes "
             "cross a mount boundary; a query, a survey and a recursive delete "
-            "stop at one and say so. Mounts are fixed when the server starts."
+            "stop at one and say so. This is the table the server starts "
+            "with; the 'mount' and 'unmount' tools change it while it runs, "
+            "unless --no-remount withheld them."
         ),
     )
     parser.add_argument(
@@ -2017,6 +2150,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "be part of what a caller is told."
         ),
     )
+    parser.add_argument(
+        "--no-remount",
+        dest="no_remount",
+        action="store_true",
+        help=(
+            "Do not offer the 'mount' and 'unmount' tools, which add and "
+            "remove mounts on this running server. On by default: a session "
+            "that finds it needs a reference store should not have to be "
+            "restarted to read one. A change made through them lasts only as "
+            "long as this server, whatever it is."
+        ),
+    )
     args = parser.parse_args(argv)
     # Answered here rather than in `main` for the reason this function is
     # separate at all: what an argument list means is decided in one place, and
@@ -2056,7 +2201,8 @@ def main(argv: list[str] | None = None) -> int:
     The console script ``outrage-server``, and the entry point an MCP client
     launches. It resolves the store directory once -- the event log defaults to
     a file beside it -- opens the mount table, warns on stderr about any mount that
-    shadows keys already held, and hands the table to :func:`build_server`.
+    shadows keys already held, and hands it to :func:`build_server` as the
+    :class:`outrage.remount.Live` table this process serves.
 
     Returns rather than exits, for the same reason :func:`outrage.cli.main` does.
     """
@@ -2082,28 +2228,40 @@ def main(argv: list[str] | None = None) -> int:
     )
     log.start(version=__version__, directory=str(directory), log=str(log.path))
     try:
-        with mounts_module.open_mounts(
-            directory,
-            args.mounts,
-            args.read_only_mounts,
-            root_mount=args.root_mount,
+        # `Live` is the context manager and `open_mounts` is not, which matters
+        # rather than being a preference: a mount tool replaces the table, so
+        # `with open_mounts(...)` would close a table that is no longer the one
+        # being served -- and with it the stores the live one still shares.
+        with remount.Live(
+            mounts_module.open_mounts(
+                directory,
+                args.mounts,
+                args.read_only_mounts,
+                root_mount=args.root_mount,
+                log=log,
+                attached=_documents(args.mount_docs, log),
+            ),
+            directory=directory,
             log=log,
-            attached=_documents(args.mount_docs, log),
-        ) as table:
-            for mount in table.shadowing():
+        ) as live:
+            for mount in live.table.shadowing():
                 # Stderr, not a refusal: the configuration is usable, and the
                 # keys that vanish are in a store the operator can still reach.
                 # Refusing to start over a stray key would be worse.
+                #
+                # A mount made later through the tool says the same thing as a
+                # note on its own result, where a tool caller can read it.
                 print(
                     f"outrage: warning: the store at {mount.name!r} shadows keys already "
                     f"held there; they are unreachable while it is mounted",
                     file=sys.stderr,
                 )
             build_server(
-                table,
+                live,
                 log,
                 directory,
                 info_tool=not args.no_info,
+                remount_tool=not args.no_remount,
                 mount_config=args.config_files,
             ).run("stdio")
     except OutrageError as exc:

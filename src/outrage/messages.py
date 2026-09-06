@@ -362,8 +362,10 @@ def _mounts_refused_delete(name: Namer, /, *, key: str, mounts: Sequence[str], *
     return (
         f"{len(mounts)} read-only mounted store(s) below {name(key)!r} refuse a "
         f"delete: {', '.join(repr(mount) for mount in mounts)}. Nothing there was "
-        f"removed, and `recursive` will not reach it either; restart the "
-        f"server with --mount rather than --mount-ro to delete there too."
+        f"removed, and `recursive` will not reach it either. Mount one again "
+        f"with `mount` and `read_only` false to delete there too, where this "
+        f"server offers that tool; otherwise it is a restart with --mount "
+        f"rather than --mount-ro, which is an operator's to do."
     )
 
 
@@ -432,8 +434,52 @@ def _copy_stopped_at_conflict(name: Namer, /, **_: Any) -> str:
 def _mounts_refused_write(name: Namer, /, *, key: str, mounts: Sequence[str], **_: Any) -> str:
     return (
         f"{len(mounts)} read-only mounted store(s) below {name(key)!r} refuse a "
-        f"write: {', '.join(repr(mount) for mount in mounts)}. Nothing lands there; "
-        f"restart the server with --mount rather than --mount-ro to copy there too."
+        f"write: {', '.join(repr(mount) for mount in mounts)}. Nothing lands "
+        f"there. Mount one again with `mount` and `read_only` false to copy "
+        f"there too, where this server offers that tool; otherwise it is a "
+        f"restart with --mount rather than --mount-ro, which is an operator's "
+        f"to do."
+    )
+
+
+@MCP.template("mount-replaced-another")
+def _mount_replaced_another(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"a store was already mounted at {name(mount)!r} and is no longer: a "
+        f"mount at a point something holds replaces it, and the table below is "
+        f"what the namespace is now."
+    )
+
+
+@MCP.template("mount-shadows-keys")
+def _mount_shadows_keys(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"the store beneath {name(mount)!r} already held keys there, and they "
+        f"are unreachable while this is mounted: a mount shadows rather than "
+        f"merges, so nothing below the mount point is consulted outside it. "
+        f"Unmount to reach them again."
+    )
+
+
+@MCP.template("unmount-revealed-keys")
+def _unmount_revealed_keys(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"the store that answers for {name(mount)!r} now holds keys there. "
+        f"They were shadowed by the mount rather than removed by it, so what "
+        f"is at that key has changed without anything being written."
+    )
+
+
+@MCP.template("remount-not-permanent")
+def _remount_not_permanent(name: Namer, /, *, mount: str, **_: Any) -> str:
+    # Said on every change rather than once, because it is the one thing about
+    # a remount a caller cannot work out from the answer: the table it is
+    # handed back looks exactly like the table a restart would give.
+    return (
+        f"this table lasts as long as this server and no longer. To keep "
+        f"{name(mount)!r} across a restart, write it into the mount "
+        f"configuration file: nothing here edits one, since a machine rewrite "
+        f"is what loses the comments such a file exists for."
     )
 
 
@@ -585,8 +631,9 @@ def _store_file_unnamed(name: Namer, /, **_: Any) -> str:
 def _store_file_absolute(name: Namer, /, *, filename: str, **_: Any) -> str:
     return (
         f"store file {filename!r} is an absolute path; it names a file "
-        f"relative to the store directory, so pass the directory as --dir "
-        f"and the file alone here"
+        f"relative to the store directory, so pass the file alone. The store "
+        f"directory is settled once, by --dir where the store is opened, and "
+        f"`info` is what reports which one this is."
     )
 
 
@@ -922,19 +969,25 @@ def _mount_read_only(name: Namer, /, *, key: str, mount: str, action: str, **_: 
     # `store-read-only` instead and this code never sees one. An explanation
     # that cannot be the explanation is worse than a shorter sentence.
     #
-    # No `spell` either, and that is the point rather than an omission. A
-    # speller turns one argument into each front end's spelling; `--mount-ro`
-    # has no spelling at a tool call, because a tool caller cannot start the
-    # server. So this states how the server was started and stops, rather than
-    # telling one of its two readers to type something they cannot.
+    # Still no `spell`, and still on purpose, but the reason has moved. A
+    # speller turns one argument into each front end's spelling, and
+    # `--mount-ro` has none at a tool call: a tool caller cannot start the
+    # server. What changed with the `mount` tool is that the two readers now
+    # have *different remedies* rather than one remedy spelled two ways, which
+    # is a thing the error side does not carry -- an error's wording is shared
+    # precisely because only the spelling was ever supposed to vary. So both
+    # remedies are named, each qualified by when it is the reader's to take,
+    # and no reader is told to type something they cannot.
     return (
         f"cannot {action} {keys.displayed(key)!r}: the store mounted at "
         f"{keys.displayed(mount)!r} is read-only through this server. Either it "
-        f"was mounted with --mount-ro, which --mount instead would allow "
-        f"changes to; or it was lent to the server already open, as the "
-        f"documentation shipped inside outrage is, and the next upgrade would "
-        f"replace anything written there. The file itself is not read-only to "
-        f"anything else."
+        f"was mounted with --mount-ro; or it was lent to the server already "
+        f"open, as the documentation shipped inside outrage is, and the next "
+        f"upgrade would replace anything written there. Mounting it again "
+        f"writable is what changes that: the `mount` tool with `read_only` "
+        f"false, where this server offers it, and otherwise --mount rather "
+        f"than --mount-ro at startup, which is an operator's to do. The file "
+        f"itself is not read-only to anything else."
     )
 
 
@@ -1061,16 +1114,51 @@ def _documents_not_installed(name: Namer, /, *, path: str, **_: Any) -> str:
 def _mount_unmount_at_root(name: Namer, /, **_: Any) -> str:
     return (
         "the store at the root cannot be unmounted: it owns every key no "
-        "mount claims, so nothing would answer for them. --root-mount is how "
-        "a different store is put there."
+        "mount claims, so nothing would answer for them. Starting the server "
+        "with --root-mount is how a different store is put there."
+    )
+
+
+@template("mount-nothing-shipped")
+def _mount_nothing_shipped(name: Namer, /, *, mount: str, shipped: object, **_: Any) -> str:
+    listed = ", ".join(repr(keys.displayed(one)) for one in shipped)  # type: ignore[union-attr]
+    return (
+        f"outrage ships no store for {keys.displayed(mount)!r}, so there is "
+        f"nothing to mount there without a file. It ships one for {listed}; "
+        f"anything else is a store file, named relative to the store directory."
+    )
+
+
+@template("mount-shipped-takes-no-type")
+def _mount_shipped_takes_no_type(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"the store outrage ships for {keys.displayed(mount)!r} is opened by "
+        f"name and not from a file, so there is no backend to choose: drop "
+        f"`type`, or name a file to mount something else there."
+    )
+
+
+@template("mount-remount-at-root")
+def _mount_remount_at_root(name: Namer, /, **_: Any) -> str:
+    return (
+        "nothing can be mounted at the root of a running server: it owns "
+        "every key no mount claims, and the instructions a connection was "
+        "given were built from its readme. Start the server with --root-mount "
+        "to put a different store there."
     )
 
 
 @template("mount-unmount-unmatched")
-def _mount_unmount_unmatched(name: Namer, /, *, mount: str, **_: Any) -> str:
+def _mount_unmount_unmatched(name: Namer, /, *, mount: str, spell: Speller, **_: Any) -> str:
+    # The one genuine two-spellings case among the mount messages, and it
+    # became one when the `unmount` tool started raising the same code: a
+    # server flag and a tool of the same name, one argument spelled twice.
+    # Everything else these templates name is a *startup* flag, which has no
+    # tool spelling at all -- so it needs different advice rather than a
+    # respelling, which is a different problem and is not this.
     return (
-        f"nothing is mounted at {keys.displayed(mount)!r}, so --unmount there "
-        f"removes nothing. Refused rather than passed over, since what a "
+        f"nothing is mounted at {keys.displayed(mount)!r}, so {spell('unmount')} "
+        f"there removes nothing. Refused rather than passed over, since what a "
         f"mistyped one leaves behind is the mount it was meant to take away."
     )
 

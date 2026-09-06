@@ -130,6 +130,26 @@ CLI.silent(
     "the refusal that names the mount, so the count is not the only account",
 )
 CLI.silent(
+    "mount-replaced-another",
+    "there is nothing to replace: this front end builds its table from scratch "
+    "every run, and a mount lives exactly as long as the command",
+)
+CLI.silent(
+    "mount-shadows-keys",
+    "the same table is built each run from flags the caller just typed, and "
+    "`outrage mounts` is where what shadows what is read",
+)
+CLI.silent(
+    "unmount-revealed-keys",
+    "an unmount here is a `--unmount` on the command being run, so nothing was "
+    "shadowed a moment ago for the reveal to be news",
+)
+CLI.silent(
+    "remount-not-permanent",
+    "nothing here is permanent to begin with: the table is the flags of one "
+    "run, which is why there is no mount tool on this side to warn about",
+)
+CLI.silent(
     "exported-for-editing",
     "there is no round trip through an exported file here; `outrage get > file` "
     "and `outrage set --file` are the shell's, and it holds the path already",

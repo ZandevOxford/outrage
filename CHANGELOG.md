@@ -4,6 +4,47 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+* **New `mount` and `unmount` tools: a server's stores are no longer fixed
+  when it starts.** A session that finds it needs a reference base had to ask
+  for a restart and lose everything it was holding. `mount` takes a key, a
+  store file relative to the store directory, an optional backend and a
+  `read_only` flag; `unmount` takes a key. Both answer with the whole table as
+  it now is, since what shadows what is not visible in an answer about one
+  mount. A mount at a point something already holds replaces it. The root
+  cannot be mounted over or unmounted: it owns every key no mount claims, and
+  the instructions a client is given are built from its readme when it
+  connects.
+
+  MCP only, and deliberately: the command line builds its table from scratch on
+  every run and has nothing to change. A change lasts as long as the server --
+  a mount configuration file is still read and never written, because a machine
+  rewrite is what loses the comments it exists for -- and every answer says so.
+
+  Nothing changes at the store level. A mount table is immutable, a change
+  builds a new one and swaps a single reference, and every call takes one
+  snapshot of it at entry, so no read spanning several stores can see two
+  tables. A page taken before a change and continued after it may still skip or
+  repeat keys, which is the same class of thing as a document written between
+  two pages.
+
+* **`mount` with no `file` mounts the store outrage ships for that key**, which
+  today is the `outrage` manual and nothing else. It exists so that unmounting
+  the manual is reversible: the tree lives inside the installed package rather
+  than in the store directory, so it has no spelling as a mount file at all.
+  It is always mounted read-only.
+
+* **`outrage-server --no-remount` withholds both tools**, with `outrage config
+  --no-remount` and `outrage init --no-remount` recording the flag on the
+  server entry. Offered by default, and a person keeps the capability either
+  way: restarting the server with different flags is what an operator does.
+
+* **A read-only mount now says what each reader can do about it.** "Cannot
+  write here" told every caller to restart the server with `--mount` rather
+  than `--mount-ro`, which a tool caller cannot do -- and now need not, since
+  mounting it again writable is a tool call. Both remedies are named, each
+  said to be whose it is. The notes on a copy and a delete that stopped at a
+  read-only mount changed the same way.
+
 * **A new `info` tool, and `outrage info` beside it.** A session could see
   everything in a store and nothing about the server holding it. The tool
   reports the Python environment the server runs in -- with the absolute path

@@ -42,9 +42,9 @@ import pytest
 
 import outrage
 from conftest import long_options
-from outrage import bulk, cli, cli_messages, keys, messages
+from outrage import bulk, cli, cli_messages, keys, messages, remount
 from outrage.messages import NoteTable
-from outrage.mounts import Mount
+from outrage.mounts import Mount, MountedStore
 from outrage.notes import UNCHECKED_NO_RECORD, UNCHECKED_OTHER_KEY, Note
 from outrage.store import OVERWRITE, SKIP
 from outrage.store_sqlite import SqliteStore
@@ -713,6 +713,22 @@ def test_an_export_says_what_the_file_it_handed_over_is_for(store, tmp_path):
     assert "call again with its path" in _words(bulk.notes_for_export(exported))
 
 
+def _remounted(store, tmp_path) -> list[list[Note]]:
+    """Every note a live remount derives, from the situations that produce them.
+
+    A two-store table, because both notes here are about what one store hides
+    from another: a mount shadows what the store beneath holds at its point,
+    and unmounting reveals it again. One store can show neither.
+    """
+    store.store_document("ref/left", "Shadowed by the mount above it.")
+    with SqliteStore(tmp_path / "inner") as inner:
+        before = MountedStore({keys.ROOT: store, "ref": inner})
+        return [
+            remount.notes_for_mount(before, "ref", replaced=True),
+            remount.notes_for_unmount(before.remounted(unmount=["ref"]), "ref"),
+        ]
+
+
 def test_every_note_the_tools_can_reach_is_worded_and_nothing_they_word_is_stranded(
     store, tmp_path
 ):
@@ -749,6 +765,7 @@ def test_every_note_the_tools_can_reach_is_worded_and_nothing_they_word_is_stran
                 stopped=True,
                 mounts_kept=["ref"],
             ),
+            *_remounted(store, tmp_path),
         ]
         for note in notes
     }

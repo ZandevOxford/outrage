@@ -812,6 +812,143 @@ def test_nothing_changes_for_a_key_with_no_mount_below_it(table):
     assert "mounts_not_searched" not in result
 
 
+# -- table algebra: remounted ----------------------------------------------
+#
+# `remounted` opens nothing and closes nothing: it is the shape of the new
+# table and no more. When a table is swapped, and who then owns the stores that
+# fell out of it, is `outrage.remount` and is tested there.
+
+
+def test_a_surviving_mount_keeps_the_very_same_store(table, tmp_path):
+    """Shared by identity, which is the whole of why sharing is safe.
+
+    A store learns one thing about its own mounting, ``mount_point``, and only
+    the event log reads it -- so a store may be shared between two tables only
+    at the same prefix. Copying the surviving mounts whole is what guarantees
+    that, and this asserts the identity rather than the behaviour, because a
+    reopened store would answer every read the same way and differ only in
+    having a second connection to the same file.
+    """
+    before = {m.prefix: m.store for m in table}
+    with SqliteStore(tmp_path / "extra") as extra:
+        after = table.remounted(mount={"extra": extra})
+
+    for prefix, store in before.items():
+        assert after.resolve(prefix).mount.store is store
+    assert after.resolve("extra").mount.store is extra
+    assert [m.prefix for m in after] == ["", "extra", "lib/deep", "ref"]
+
+
+def test_the_table_it_was_built_from_is_unchanged(table, tmp_path):
+    """The immutability the whole design rests on, asserted rather than read."""
+    with SqliteStore(tmp_path / "extra") as extra:
+        table.remounted(mount={"extra": extra}, unmount=["ref"])
+
+    assert [m.prefix for m in table] == ["", "lib/deep", "ref"]
+    assert table.resolve("ref/python/typing").mount.prefix == "ref"
+    assert table.retrieve_document("ref/python/typing").content == "Annotations."
+
+
+def test_a_new_mount_answers_and_an_unmounted_one_falls_to_the_root(table):
+    root = table.root.store
+    root.store_document("ref/left", "Left behind under the mount.", title="Left")
+
+    # Shadowed while `ref` is mounted: the outer store is never consulted for a
+    # key a mount claims.
+    assert not table.exists("ref/left")
+
+    after = table.remounted(unmount=["ref"])
+    assert after.retrieve_document("ref/left").content == "Left behind under the mount."
+    with pytest.raises(KeyNotFoundError):
+        after.retrieve_document("ref/python/typing")
+
+
+def test_removals_are_applied_before_additions_so_a_store_can_move(table, tmp_path):
+    moved = table.resolve("ref").mount.store
+    after = table.remounted(mount={"lib/ref": moved}, unmount=["ref"])
+
+    assert after.resolve("lib/ref").mount.store is moved
+    assert after.retrieve_document("lib/ref/python/typing").content == "Annotations."
+    assert [m.prefix for m in after] == ["", "lib/deep", "lib/ref"]
+
+
+def test_a_mount_at_a_point_something_holds_replaces_it(table, tmp_path):
+    with SqliteStore(tmp_path / "other") as other:
+        other.store_document("python/typing", "Something else.", title="Other")
+        after = table.remounted(mount={"ref": other})
+
+        assert after.resolve("ref").mount.store is other
+        assert after.retrieve_document("ref/python/typing").content == "Something else."
+        assert len(after) == len(table)
+
+
+def test_the_root_is_refused_in_both_arguments(table, tmp_path):
+    with SqliteStore(tmp_path / "extra") as extra:
+        with raises_rendered(MountError, "at the root of a running server"):
+            table.remounted(mount={keys.ROOT: extra})
+        with raises_rendered(MountError, "cannot be unmounted"):
+            table.remounted(unmount=[keys.ROOT])
+
+
+def test_unmounting_what_is_not_mounted_is_refused(table):
+    """A mistyped unmount leaves behind the mount it was meant to take away."""
+    with raises_rendered(MountError, "nothing is mounted at 'lib'"):
+        table.remounted(unmount=["lib"])
+    # A mount point below one that exists is not a match either.
+    with raises_rendered(MountError, "nothing is mounted at 'ref/python'"):
+        table.remounted(unmount=["ref/python"])
+
+
+def test_a_surviving_read_only_mount_stays_read_only(tmp_path):
+    stores = [SqliteStore(tmp_path / "root"), SqliteStore(tmp_path / "ref")]
+    with MountedStore({"": stores[0], "ref": stores[1]}, read_only=["ref"]) as table:
+        with SqliteStore(tmp_path / "extra") as extra:
+            after = table.remounted(mount={"extra": extra})
+        assert [m.prefix for m in after.read_only] == ["ref"]
+        assert not after.resolve("extra").read_only
+
+
+def test_a_replaced_mount_does_not_inherit_read_only(tmp_path):
+    """A replacement states what it is; nothing carries over from what it replaced.
+
+    The other way round is the failure worth refusing: a mount asked for
+    read-write that came up read-only because something at that point once was,
+    with nothing in the call saying so.
+    """
+    stores = [SqliteStore(tmp_path / "root"), SqliteStore(tmp_path / "ref")]
+    with MountedStore({"": stores[0], "ref": stores[1]}, read_only=["ref"]) as table:
+        with SqliteStore(tmp_path / "other") as other:
+            after = table.remounted(mount={"ref": other})
+            assert after.read_only == []
+
+            again = table.remounted(mount={"ref": other}, read_only=["ref"])
+            assert [m.prefix for m in again.read_only] == ["ref"]
+
+
+def test_every_constructor_invariant_is_re_checked(table, tmp_path):
+    """The result goes through ``__init__``, so this states it rather than restating them."""
+    with SqliteStore(tmp_path / "extra") as extra:
+        with raises_rendered(MountError, "may not be metadata"):
+            table.remounted(mount={"lib/!title": extra})
+        with raises_rendered(MountError, "cannot be mounted read-only"):
+            table.remounted(mount={"extra": extra}, read_only=[keys.ROOT])
+        with raises_rendered(MountError, "nothing is mounted at 'nowhere'"):
+            table.remounted(mount={"extra": extra}, read_only=["nowhere"])
+
+
+def test_two_spellings_of_one_prefix_are_a_duplicate(table, tmp_path):
+    """The one duplicate ``__init__`` cannot see, because a dict has collapsed it."""
+    with SqliteStore(tmp_path / "extra") as extra:
+        with raises_rendered(MountError, "more than one store is mounted at 'extra'"):
+            table.remounted(mount={"extra": extra, "/extra/": extra})
+
+
+def test_remounting_nothing_is_a_new_table_holding_the_same_stores(table):
+    after = table.remounted()
+    assert after is not table
+    assert [(m.prefix, m.store) for m in after] == [(m.prefix, m.store) for m in table]
+
+
 # -- configuration ---------------------------------------------------------
 
 
@@ -1366,8 +1503,9 @@ def test_a_parquet_mount_refuses_a_write_without_offering_a_flag(tmp_path):
             table.resolve("ref/python/new").writable()
         assert raised.value.code == "store-read-only"
 
-        # And a store that *could* be written still says which flag did it.
-        with raises_rendered(ReadOnlyMountError, "--mount instead") as raised:
+        # And a store that *could* be written still says how to change it --
+        # both ways, since a tool caller and an operator have different ones.
+        with raises_rendered(ReadOnlyMountError, "Mounting it again writable") as raised:
             table.resolve("ro/anything").writable()
         assert raised.value.code == "mount-read-only"
 

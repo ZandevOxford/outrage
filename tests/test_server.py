@@ -81,6 +81,8 @@ def test_tools_are_registered(server):
         "copy_tree",
         "document_edit",
         "info",
+        "mount",
+        "unmount",
     }
     # `document_edit` included, though this server was built without a store
     # directory: it writes below the system temporary directory, which always
@@ -108,6 +110,8 @@ def test_every_tool_description_is_the_shipped_document(exporting):
         "copy_tree",
         "document_edit",
         "info",
+        "mount",
+        "unmount",
     }
     for name, tool in tools.items():
         assert tool.description == server_module.tool_description(name)

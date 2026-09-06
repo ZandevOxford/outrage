@@ -27,9 +27,14 @@ lives here, in the routing, and is checked before the store is called at all --
 differently. So this refuses writes *through this server*; it does not make the
 file read-only to anything else.
 
-Configuration only, and only at startup: nothing here adds or removes a mount
-on a running server, and nothing marks one read-only after it. Some questions
-are deliberately still open, chief among them where a write to a new key goes.
+A table is **immutable**: it has no mutable state after ``__init__``, and a
+change is a *new* table built by :meth:`MountedStore.remounted` rather than an
+edit to this one. That is what makes a mount table changeable on a running
+server at all -- a call holds the table it started with for its whole duration,
+so no traversal can see two -- and everything about serving one, swapping it and
+owning the stores that fall out of it lives in :mod:`outrage.remount`, not here.
+Some questions are deliberately still open, chief among them where a write to a
+new key goes.
 """
 
 from __future__ import annotations
@@ -833,6 +838,79 @@ class MountedStore(Store):
         no second code path that only runs when nothing is mounted.
         """
         return cls({keys.ROOT: store})
+
+    def remounted(
+        self,
+        *,
+        mount: Mapping[str, Store] = MappingProxyType({}),
+        read_only: Collection[str] = (),
+        unmount: Collection[str] = (),
+    ) -> MountedStore:
+        """This table with mounts removed and added, as a new table.
+
+        Pure table algebra: no file is opened, no directory is consulted, and
+        nothing here knows where a store came from. The caller opens what it
+        wants mounted and passes the open stores in ``mount``, keyed by the
+        prefix each is to answer for; ``unmount`` names prefixes to drop, and
+        removals are applied before additions, so one call can move a store.
+        A prefix in ``mount`` that something already holds **replaces** it.
+
+        Every surviving mount is copied whole, so **a shared store keeps its
+        prefix by construction** -- which is the whole of why sharing is safe,
+        since :attr:`~outrage.store.Store.mount_point` is the only thing a
+        store knows about its own mounting. A mount at a *new* prefix takes a
+        newly opened store, and this cannot silently do otherwise: the stores
+        it mounts are the ones it was handed.
+
+        A surviving mount keeps its read-only flag; a replaced one does not,
+        since a replacement states what it is. The result goes through
+        :meth:`__init__`, so every invariant a table has is re-checked here
+        rather than restated -- a metadata mount point, a duplicate, a root
+        that must exist and be writable, a read-only flag matching nothing.
+
+        The root is refused in both arguments. It owns every key no mount
+        claims, so a table without one has nowhere to put anything, and
+        ``server.instructions()`` is built once from its ``readme`` -- a root
+        that cannot change is what keeps a connection's delivered instructions
+        honest for as long as it lasts.
+
+        This says nothing about *when* a table is swapped, or who then owns the
+        stores that fell out of it. That is :mod:`outrage.remount`, which is
+        where the mutable state and the lock live.
+        """
+        removing = set()
+        for prefix in unmount:
+            parsed = keys.parse(prefix)
+            if parsed.key == keys.ROOT:
+                raise MountError("mount-unmount-at-root")
+            if parsed.key not in self._by_prefix:
+                # The same argument `open_mounts` makes for an unmatched
+                # read-only flag: what a mistyped unmount leaves behind is the
+                # mount it was meant to take away.
+                raise MountError("mount-unmount-unmatched", mount=parsed.key)
+            removing.add(parsed.key)
+
+        adding: dict[str, Store] = {}
+        for prefix, store in mount.items():
+            parsed = keys.parse(prefix)
+            if parsed.key == keys.ROOT:
+                raise MountError("mount-remount-at-root")
+            # Two spellings of one prefix would otherwise collapse into one
+            # entry here and reach `__init__` as a single mount, which is the
+            # one duplicate its own check cannot see.
+            if parsed.key in adding:
+                raise MountError("mount-duplicate", mount=parsed.key)
+            adding[parsed.key] = store
+
+        stores = {m.prefix: m.store for m in self._mounts if m.prefix not in removing}
+        refusing = {
+            m.prefix
+            for m in self._mounts
+            if m.read_only and m.prefix in stores and m.prefix not in adding
+        }
+        stores.update(adding)
+        refusing.update(keys.parse(prefix).key for prefix in read_only)
+        return MountedStore(stores, read_only=sorted(refusing, key=keys.sort_form))
 
     @property
     def root(self) -> Mount:

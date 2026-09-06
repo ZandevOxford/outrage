@@ -123,16 +123,20 @@ def describe(
         mount_config=tuple(_absolute(path) for path in mount_config),
         log=_absolute(log.path) if log.enabled and log.path is not None else None,
         log_content=log.content if log.enabled else None,
-        mounts=_mounts(opened),
+        mounts=mount_infos(opened),
     )
 
 
-def _mounts(opened: Store) -> tuple[MountInfo, ...]:
+def mount_infos(opened: Store) -> tuple[MountInfo, ...]:
     """Every mount behind ``opened``, or the one store when it is not a table.
 
     A :class:`~outrage.mounts.Mount` is made for the lone store rather than a
     table of one, because a table refuses a root that will not take writes and
     describing a store must not fail where reading it succeeds.
+
+    Public because the mount tools answer with the table as it now is, and a
+    second projection of a mount into a report is a second place for the two to
+    disagree about what a mount point is called.
     """
     if isinstance(opened, mounts_module.MountedStore):
         return tuple(_mount(mount) for mount in opened)
@@ -165,4 +169,5 @@ __all__ = [
     "Info",
     "MountInfo",
     "describe",
+    "mount_infos",
 ]
