@@ -2,6 +2,56 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+A directory of files can now be read at the keys its own documents link to, so
+a documentation bundle somebody else wrote is mountable as a store without
+rewriting a single link inside it.
+
+**Upgrading:** nothing. The mapping every existing tree is in is unchanged and
+is still the default; `extensions=keep` is a thing a mount asks for. No public
+name is removed or renamed.
+
+* **`extensions=keep` makes a file name and a key segment the same string**, so
+  `guide.md` is the key `guide.md`. **The reason is links rather than naming.**
+  A bundle's documents link to each other by file name, and under the ordinary
+  mapping — now spelled `extensions=strip`, and still the default — the
+  extension comes off to make the key, so every one of those links names a key
+  the store does not hold. The package's own shipped documents are the worked
+  example: their readme names `agents.md`, `cli.md` and the rest, and under
+  `keep` each of those is a key that reads.
+* **It is sayable wherever a tree can be named**: `--mount
+  docs=bundle,type=files,extensions=keep`, the same after `--store`, an
+  `extensions` field in a `mounts.toml` entry, an `extensions` argument to the
+  `mount` tool, and `--extensions strip|keep` on `outrage import`, `export` and
+  `pack`. A store kept in one file has no such question and **refuses** the
+  option rather than ignoring it, which is the rule a mount spec already
+  follows for an option name it does not recognise; so does a value naming no
+  mapping.
+* **A document keeps the keys below it in a directory named `.!` and the
+  document's name.** A name in a directory is a file or a directory and not
+  both, so `guide.md` the document would otherwise have had nowhere to put so
+  much as a title. Inside that container it is the ordinary mapping again — a
+  title is `.!guide.md/!title.md` — so what a container holds is exactly what
+  an ordinary export writes, and metadata carrying its extension is what lets a
+  listing report its format without opening it. A bundle's own directories are
+  left plain, so `guide/intro.md` is still `guide/intro.md`, and a *file* whose
+  name begins with `.!` spells no key and is reported by `outrage check`.
+* **Two costs, both of them the mode's and neither hidden.** A document whose
+  key spells no extension is written to a file with none, so a format the key
+  does not name does not survive the round trip: `notes` stored as text reads
+  back as markdown. And `notes` the document and `notes/` a bundle's own
+  directory are the same string, so which names need a container is the one
+  thing this mapping asks the tree rather than the key — a child written
+  *before* its parent's document takes the plain directory, and the document is
+  then refused rather than a bundle's directory being renamed under the links
+  pointing into it.
+* **A mount specification is now opened in one place.** Every field of one says
+  how to open a store, and three command-line paths took a specification apart
+  by hand and so quietly dropped the new field: the option parsed, the store
+  opened, and every key was the key of a mapping nobody asked for. Fixed for
+  good rather than one field at a time.
+
 ## 0.10.0 - 2026-09-06
 
 A running server's stores are no longer fixed when it starts. A session that
