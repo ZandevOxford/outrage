@@ -2,7 +2,19 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.10.0 - 2026-09-06
+
+A running server's stores are no longer fixed when it starts. A session that
+finds it needs a reference base mounts one and carries on, instead of asking
+for a restart and losing everything it was holding -- and a second new tool
+tells it what the server it is talking to actually is.
+
+**Upgrading:** one public name goes. `outrage.store_sqlite.WAL_UNCHECKPOINTED`
+is gone for real this time: 0.9.0 said it had been removed, and the import that
+replaced its definition brought the name back holding a different value, so a
+caller matching on it stopped matching without anything failing. Read
+`outrage.maintenance.WAL_UNCHECKPOINTED` instead, whose value is a problem
+code. Nothing else in this release removes or renames anything.
 
 * **New `mount` and `unmount` tools: a server's stores are no longer fixed
   when it starts.** A session that finds it needs a reference base had to ask
