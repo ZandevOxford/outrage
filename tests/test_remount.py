@@ -145,6 +145,28 @@ def test_every_change_says_it_lasts_only_as_long_as_this_server(server):
         assert "mount configuration file" in said["note"]
 
 
+def test_a_second_note_is_capitalised_where_it_follows_the_first(server):
+    """The join, and the case that produced the defect.
+
+    Nothing gave two notes on one result until these tools did, and the day
+    something did, an unmount answered "... without anything being written.
+    this table lasts as long as this server", which is one run-on sentence to
+    whoever reads it. The capital belongs at the join and not in the table: a
+    table entry is a sentence and does not know what will precede it, and the
+    entries are deliberately mixed -- some open with a word, some with a count
+    -- each written to read correctly on its own. John's call, 2026-09-06.
+    """
+    note = call(server, "unmount", key="ref")["note"]
+
+    assert note.startswith("the store that answers for 'ref'")
+    assert "written. This table lasts as long as this server" in note
+
+    sentences = [part.strip() for part in note.split(". ") if part.strip()]
+    assert len(sentences) > 1
+    for following in sentences[1:]:
+        assert following[0].isupper() or following[0].isdigit(), note
+
+
 def test_a_read_only_mount_refuses_a_write_and_names_both_ways_out(server):
     call(server, "mount", key="lib", file="other.sqlite", read_only=True)
 

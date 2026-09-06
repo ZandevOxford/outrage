@@ -45,12 +45,37 @@ The next reader will want to unify the two mechanisms. The reason not to:
 > audience, and no speller, because the table already is the audience: a
 > command line's note writes `--unchanged-since` itself.
 
-Different problems, different shapes. What makes the note side safe is the
-guard in `tests/test_notes.py` that the error side does not need: **silence
-must be deliberate.** A code an audience has no sentence for is a failure
-unless that audience has said, with a reason, that it means to be quiet about
-it -- otherwise "this front end is quiet for now" decays into permanent
-silence by neglect and nothing ever notices.
+Different problems, different shapes.
+
+**Where the advice varies and the spelling does not.** The argument above rests
+on only the spelling varying between readers, and there is one place it does
+not: a store mounted read-only is remounted by an MCP caller with the `mount`
+tool and by an operator with `--mount` at startup, which are two remedies and
+not two spellings of one. **The rule, John's call of 2026-09-06: a message
+never tells a reader to do something they cannot. Where the remedy differs,
+name each of them and say whose it is** -- in the one shared sentence, with no
+mechanism for it.
+
+Considered and not taken: a third parameter beside [`Namer`](#outrage.messages.Namer) and
+[`Speller`](#outrage.messages.Speller) supplying the remedy, and splitting the fact from the advice
+into a table per audience the way notes are split. Both are contained changes
+and either is still open. The reason for neither *yet* is that there is one
+case: of the five templates naming a server startup flag, four have a single
+remedy that simply belongs to an operator, and only `mount-read-only` has
+two. **Revisit when there is a second genuine two-remedy case, or a third front
+end** -- at which point the rule below stops being enough, because nothing
+enforces it.
+
+Note the shape of the mistake this replaced, since it is easy to make again:
+a sentence naming `--mount-ro` is not *misspelled* for a tool caller, it is
+addressed to somebody else. A speller cannot help, and reaching for one is how
+the wrong fix gets built.
+
+What makes the note side safe is the guard in `tests/test_notes.py` that the
+error side does not need: **silence must be deliberate.** A code an audience
+has no sentence for is a failure unless that audience has said, with a reason,
+that it means to be quiet about it -- otherwise "this front end is quiet for
+now" decays into permanent silence by neglect and nothing ever notices.
 
 ### outrage.messages.MCP *= <outrage.messages.NoteTable object>*
 

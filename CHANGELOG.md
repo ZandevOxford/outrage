@@ -38,12 +38,20 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
   server entry. Offered by default, and a person keeps the capability either
   way: restarting the server with different flags is what an operator does.
 
-* **A read-only mount now says what each reader can do about it.** "Cannot
+* **A message never tells a reader to do something they cannot.** "Cannot
   write here" told every caller to restart the server with `--mount` rather
   than `--mount-ro`, which a tool caller cannot do -- and now need not, since
-  mounting it again writable is a tool call. Both remedies are named, each
-  said to be whose it is. The notes on a copy and a delete that stopped at a
-  read-only mount changed the same way.
+  mounting it again writable is a tool call. Both remedies are named, each said
+  to be whose it is, and the notes on a copy and a delete that stopped at a
+  read-only mount changed the same way. Four other refusals that named a server
+  startup flag were reworded to say whose it is, rather than pretending it is
+  something every reader can type.
+
+* **Two remarks on one result no longer run together.** Nothing produced two
+  until the mount tools did, and then an unmount answered "...without anything
+  being written. this table lasts as long as this server", which is one
+  sentence to whoever reads it. A remark that follows another is capitalised
+  where they are joined.
 
 * **A new `info` tool, and `outrage info` beside it.** A session could see
   everything in a store and nothing about the server holding it. The tool

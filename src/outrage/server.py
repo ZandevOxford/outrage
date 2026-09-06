@@ -164,11 +164,28 @@ def _say(result: dict[str, Any], notes: list[Note]) -> None:
     outside, and mounts it stopped at -- and each used to assign, so the last
     to run erased the others. That is the failure mode of every note here: a
     caller reads a complete-looking answer and does not know what it left out.
+
+    **A sentence that follows another is capitalised here**, not in the table.
+    The tables are mixed -- some notes open with a word, some with a count, some
+    with a capital -- and each reads correctly on its own, which is how they
+    were written and checked. What did not read correctly is the *join*: until
+    the mount tools nothing produced two notes on one result, and the day
+    something did, an unmount answered "... without anything being written. this
+    table lasts as long as this server", which is one run-on sentence to a
+    reader. Fixed at the join because that is where the defect is: a table
+    entry is a sentence and does not know what will precede it. John's call,
+    2026-09-06, over a rule that every note must be written capitalised --
+    which would have edited every existing template to fix a fault none of them
+    has.
     """
     for note in notes:
         said = messages.MCP.render(note)
-        if said is not None:
-            result["note"] = f"{result['note']} {said}" if result.get("note") else said
+        if said is None:
+            continue
+        if result.get("note"):
+            result["note"] = f"{result['note']} {said[:1].upper()}{said[1:]}"
+        else:
+            result["note"] = said
 
 
 def _forbid_unknown_arguments() -> None:
