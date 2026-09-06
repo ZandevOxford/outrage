@@ -280,6 +280,24 @@ goes through, rather than being written a second time here. A file that
 grew its own idea of what a key is would be a second grammar, and the
 project has one.
 
+### outrage.mountfile.sources(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, front: [int](https://docs.python.org/3/library/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+
+The configuration files a splice read, in the order it read them.
+
+The default file in the store directory first, when there is one and
+nothing suppressed it, then each [`CONFIG_FLAG`](#outrage.mountfile.CONFIG_FLAG) as it was written.
+The same pass [`spliced()`](#outrage.mountfile.spliced) and [`origins()`](#outrage.mountfile.origins) make, answering the third
+question the splice created: *which files does this run read*, as against
+which mounts came out of them.
+
+What wants it is a front end reporting itself, since a file that was read
+is where a mount is edited -- and a table flattened into one argument list
+can no longer say which files it came from, which is exactly what the
+splice is for.
+
+A file named twice appears once: these are sources, and the second naming
+of one is the same source read again.
+
 ### outrage.mountfile.spliced(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, front: [int](https://docs.python.org/3/library/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
 `argv` with every mount configuration file's options written into it.

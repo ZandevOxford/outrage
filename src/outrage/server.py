@@ -29,7 +29,7 @@ import itertools
 import os
 import sys
 import time
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
@@ -46,6 +46,7 @@ from pydantic import (
 )
 
 from . import __version__, bulk, contents, eventlog, ingest, keys, messages, mountfile, shipped
+from . import info as info_module
 from . import mounts as mounts_module
 from . import store as store_module
 from .errors import OutrageError
@@ -546,6 +547,62 @@ class _DocumentEditResult(_ToolResult):
     note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
+class _MountInfoResult(_ToolResult):
+    mount: Annotated[str, Field(description="The mount point, '/' for the root")]
+    path: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Absolute path of the file this store is kept in, or null for a "
+                "store that keeps none"
+            )
+        ),
+    ]
+    kind: Annotated[str, Field(description="'root', 'mount' or 'read-only mount'")]
+    read_only: Annotated[bool, Field(description="Whether this server refuses writes routed here")]
+
+
+class _InfoResult(_ToolResult):
+    version: Annotated[str, Field(description="The outrage version this server is running")]
+    python: Annotated[
+        str,
+        Field(
+            description=(
+                "The interpreter running it, for running the command line in the same environment"
+            )
+        ),
+    ]
+    prefix: Annotated[str, Field(description="The Python environment that interpreter belongs to")]
+    command: Annotated[
+        list[str],
+        Field(
+            description=(
+                "The `outrage` command line entry point in that environment, empty when it has none"
+            )
+        ),
+    ]
+    directory: Annotated[
+        str | None,
+        Field(description="The store directory holding the stores, the log and the backups"),
+    ]
+    mount_config: Annotated[
+        list[str],
+        Field(description="The mount configuration files read, in the order they were read"),
+    ]
+    log: Annotated[
+        str | None,
+        Field(description="Where this server records what it does, or null when it does not"),
+    ]
+    log_content: Annotated[
+        str | None,
+        Field(description="How much document text that log keeps: 'none', 'excerpt' or 'full'"),
+    ]
+    mounts: Annotated[
+        list[_MountInfoResult],
+        Field(description="The stores behind the namespace, as they were opened"),
+    ]
+
+
 #: What a client is assumed to deliver of a server's instructions before it
 #: cuts them. An observation of one client, not a protocol guarantee: Claude
 #: Code truncates at 2048 characters, measured on 2026-08-19 across this
@@ -804,6 +861,8 @@ def build_server(
     directory: str | os.PathLike[str] | None = None,
     *,
     all_tools: bool = False,
+    info_tool: bool = True,
+    mount_config: Sequence[str] = (),
 ) -> MCPServer:
     """Build a server exposing ``store``, which may be one store or a mount table.
 
@@ -834,6 +893,18 @@ def build_server(
     installation of it, so it must not gain or lose a tool according to what
     happened to be installed where it was generated. It is the only caller that
     wants this: a real server passes nothing and offers what it can do.
+
+    ``info_tool`` is the other tool that may be absent, and it is absent
+    because somebody said so rather than because anything is missing. What it
+    reports is a list of absolute paths into the machine the server runs on,
+    which is worth having by default and worth being able to withhold; the
+    server's ``--no-info`` is how it is withheld. ``all_tools`` overrides this
+    too, for the same reason.
+
+    ``mount_config`` is the one thing that tool needs and this server cannot
+    work out: the configuration files the mount table was read from, which
+    :func:`outrage.mountfile.sources` knows and which are flattened away by the
+    time there is a table.
     """
     log = log if log is not None else eventlog.NULL
     table = store if isinstance(store, MountedStore) else MountedStore.single(store)
@@ -1612,6 +1683,28 @@ def build_server(
         _say(result, bulk.notes_for(imported))
         return _DocumentEditResult.model_validate(result)
 
+    if all_tools or info_tool:
+
+        @server.tool(
+            annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
+            description=tool_description("info"),
+        )
+        @_reported
+        def info() -> _InfoResult:
+            # Asked per call rather than built with the server, so that what is
+            # reported is the table as it is now and the answer cannot outlive
+            # what it describes.
+            return _InfoResult.model_validate(
+                dataclasses.asdict(
+                    info_module.describe(
+                        table,
+                        directory=directory,
+                        mount_config=mount_config,
+                        log=log,
+                    )
+                )
+            )
+
     return server
 
 
@@ -1744,11 +1837,12 @@ def _error_text(result: Any) -> str | None:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """The server's command line: which stores to serve, and what to record.
 
-    Three groups of arguments, and the first two are the interesting pair.
+    Four groups of arguments, and the first two are the interesting pair.
     ``--dir`` says which *directory* holds the stores, ``--root-mount`` and the
     repeatable ``--mount``/``--mount-ro`` say which *files* inside it are
     mounted where. ``--log`` and
-    ``--log-content`` say what is recorded about the calls that arrive.
+    ``--log-content`` say what is recorded about the calls that arrive, and
+    ``--no-info`` withholds the one tool that describes any of it.
 
     The mount options may also be written in a file rather than typed --
     :mod:`outrage.mountfile`, and the whole point of it here: with a table in
@@ -1760,6 +1854,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parses to without opening a store or starting a server.
     """
     argv = list(sys.argv[1:] if argv is None else argv)
+    # The list as it was *written*, kept because the splice is what flattens
+    # several sources into one and a report of which files were read is the
+    # one thing the flattened list can no longer say.
+    written = list(argv)
     # ``builtin``: the server carries the shipped documentation unless told
     # otherwise, and it is spliced in as an option so that the table treats it
     # as one. The command line does not -- a bare ``outrage`` stays a clean
@@ -1901,7 +1999,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "hash, 'excerpt' for both ends of it (default), 'full' for all of it."
         ),
     )
-    return parser.parse_args(argv)
+    parser.add_argument(
+        "--no-info",
+        dest="no_info",
+        action="store_true",
+        help=(
+            "Do not offer the 'info' tool, which reports this server's Python "
+            "environment, store directory, mount configuration files, mounts "
+            "and log. On by default: a session that can see the environment "
+            "can drive the same installation's command line. Withhold it where "
+            "the absolute paths of the machine the server runs on should not "
+            "be part of what a caller is told."
+        ),
+    )
+    args = parser.parse_args(argv)
+    # Answered here rather than in `main` for the reason this function is
+    # separate at all: what an argument list means is decided in one place, and
+    # can be asked without opening a store.
+    args.config_files = mountfile.sources(written, builtin=True)
+    return args
 
 
 def _documents(wanted: bool, log: EventLog | None = None) -> dict[str, Store]:
@@ -1973,7 +2089,13 @@ def main(argv: list[str] | None = None) -> int:
                     f"held there; they are unreachable while it is mounted",
                     file=sys.stderr,
                 )
-            build_server(table, log, directory).run("stdio")
+            build_server(
+                table,
+                log,
+                directory,
+                info_tool=not args.no_info,
+                mount_config=args.config_files,
+            ).run("stdio")
     except OutrageError as exc:
         # The same rule `cli.main` follows, and for the same reason: a mount
         # table that cannot be built is an answer about the configuration, not

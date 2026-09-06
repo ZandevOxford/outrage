@@ -53,6 +53,12 @@ SCOPES = ("project", "user")
 #: scripts directory of which is not where sys.executable lives.
 SCRIPT_NAME = "outrage-server"
 
+#: Console script for the command line, the other half of the pair. A caller
+#: told which environment this server runs in wants it to run ``outrage`` there,
+#: and there is no module fallback for this one: ``python -m outrage`` is the
+#: *server*, so an installation without the script has no second spelling.
+CLI_SCRIPT_NAME = "outrage"
+
 _DEFAULT_INDENT = 2
 
 
@@ -78,6 +84,28 @@ class Change:
         return self.action != "unchanged"
 
 
+def script_command(
+    script: str, executable: str | os.PathLike[str] | None = None
+) -> list[str] | None:
+    """The absolute command running ``script`` beside the given interpreter, or None.
+
+    A console script names the environment unambiguously, which is the whole
+    reason a path is reported rather than a bare name: a caller elsewhere runs
+    *this* installation rather than whatever the same word resolves to on their
+    PATH.
+
+    None rather than a guess when it is not there. Which fallback is right is a
+    property of the script -- the server has one and the command line has none
+    -- so the caller who knows that decides, and a report that cannot name a
+    command says so.
+    """
+    python = Path(executable or sys.executable)
+    for candidate in (python.parent / script, python.parent / f"{script}.exe"):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return [str(candidate)]
+    return None
+
+
 def launch_command(executable: str | os.PathLike[str] | None = None) -> list[str]:
     """Build the absolute command that starts the server.
 
@@ -88,10 +116,7 @@ def launch_command(executable: str | os.PathLike[str] | None = None) -> list[str
     already imported.
     """
     python = Path(executable or sys.executable)
-    for candidate in (python.parent / SCRIPT_NAME, python.parent / f"{SCRIPT_NAME}.exe"):
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return [str(candidate)]
-    return [str(python), "-m", "outrage"]
+    return script_command(SCRIPT_NAME, python) or [str(python), "-m", "outrage"]
 
 
 def server_entry(
@@ -100,6 +125,7 @@ def server_entry(
     *,
     log: Any = None,
     log_content: str | None = None,
+    no_info: bool = False,
 ) -> dict[str, Any]:
     """Build the configuration entry for the stores in ``directory``.
 
@@ -125,6 +151,13 @@ def server_entry(
     mention, and they still win, since the command line comes after the file.
     Nothing migrates that automatically, deliberately; ``outrage config`` says
     they are there.
+
+    ``no_info`` adds ``--no-info``, withholding the tool that reports the
+    server's environment and stores. Written here for the same reason ``--log``
+    is: it belongs to the launch, and a client's JSON edited by hand is the
+    failure this module exists to prevent. Being valueless makes no difference
+    to :func:`merge_entry` -- it inherits by flag, so a re-run that does not
+    mention it keeps it.
     """
     argv = list(command) if command is not None else launch_command()
     args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
@@ -135,6 +168,8 @@ def server_entry(
             args.append(str(Path(log).expanduser().resolve()))
         if log_content is not None:
             args += ["--log-content", log_content]
+    if no_info:
+        args.append("--no-info")
     return {"command": argv[0], "args": args}
 
 
@@ -358,6 +393,7 @@ def _mode_for(path: Path) -> int:
 
 
 __all__ = [
+    "CLI_SCRIPT_NAME",
     "PROJECT_CONFIG_NAME",
     "SCOPES",
     "SCRIPT_NAME",
@@ -373,6 +409,7 @@ __all__ = [
     "mounts_in",
     "plan",
     "read_config",
+    "script_command",
     "server_entry",
     "split_args",
     "write_config",

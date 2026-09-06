@@ -12,6 +12,7 @@ from mcp.client.session import ClientSession
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
+import outrage
 from outrage import bulk, eventlog, mountfile, shipped
 from outrage import mounts as mounts_module
 from outrage import server as server_module
@@ -79,6 +80,7 @@ def test_tools_are_registered(server):
         "delete_keys",
         "copy_tree",
         "document_edit",
+        "info",
     }
     # `document_edit` included, though this server was built without a store
     # directory: it writes below the system temporary directory, which always
@@ -105,6 +107,7 @@ def test_every_tool_description_is_the_shipped_document(exporting):
         "delete_keys",
         "copy_tree",
         "document_edit",
+        "info",
     }
     for name, tool in tools.items():
         assert tool.description == server_module.tool_description(name)
@@ -177,10 +180,87 @@ def test_the_documentation_generator_gets_every_tool_regardless(store, monkeypat
     """`all_tools` documents the server rather than the host it was built on."""
     monkeypatch.setitem(sys.modules, "markitdown", None)
 
-    tools = list_tools(build_server(store, all_tools=True))
+    tools = list_tools(build_server(store, all_tools=True, info_tool=False))
 
     assert "ingest_document" in tools
     assert tools["ingest_document"].description == server_module.tool_description("ingest_document")
+    # The other tool that can be absent, and absent here because this server
+    # was told to withhold it: the documentation still describes it.
+    assert "info" in tools
+
+
+def test_info_reports_the_environment_the_stores_and_the_log(tmp_path):
+    """What a session cannot see from the outside, over a table of two."""
+    with SqliteStore(tmp_path, filename="ref.sqlite") as reference:
+        reference.store_document("asyncio", "the reference")
+    log = EventLog(tmp_path / "log.jsonl", content="none")
+    with mounts_module.open_mounts(tmp_path, read_only_specs=["ref=ref.sqlite"]) as table:
+        server = build_server(table, log, tmp_path, mount_config=[str(tmp_path / "mounts.toml")])
+        result = call(server, "info")
+
+    assert result["version"] == outrage.__version__
+    assert result["python"] == sys.executable
+    assert result["prefix"] == sys.prefix
+    assert result["directory"] == str(tmp_path.resolve())
+    assert result["mount_config"] == [str((tmp_path / "mounts.toml").resolve())]
+    assert result["log"] == str((tmp_path / "log.jsonl").resolve())
+    assert result["log_content"] == "none"
+    assert result["mounts"] == [
+        {
+            "mount": "/",
+            "path": str((tmp_path / "store.sqlite").resolve()),
+            "kind": "root",
+            "read_only": False,
+        },
+        {
+            "mount": "ref",
+            "path": str((tmp_path / "ref.sqlite").resolve()),
+            "kind": "read-only mount",
+            "read_only": True,
+        },
+    ]
+    log.close()
+
+
+def test_info_reports_a_mount_nobody_named(tmp_path):
+    """The shipped documentation arrives with the server, and is in the answer.
+
+    The reason the report is taken from the live table rather than from the
+    argument list: a mount lent to `open_mounts` was never written on any
+    command line, and is exactly the one a session is most likely to be
+    confused by.
+    """
+    with mounts_module.open_mounts(tmp_path, attached=shipped.attached()) as table:
+        result = call(build_server(table, directory=tmp_path), "info")
+
+    mounted = {mount["mount"]: mount for mount in result["mounts"]}
+    assert mounted[shipped.MOUNT_POINT]["path"] == str(shipped.tree().resolve())
+    assert mounted[shipped.MOUNT_POINT]["read_only"] is True
+
+
+def test_info_does_not_guess_at_a_store_directory_it_was_not_given(store):
+    """None rather than the default, which would be a confident wrong answer."""
+    result = call(build_server(store), "info")
+
+    assert result["directory"] is None
+    assert result["log"] is None
+    assert result["log_content"] is None
+    assert result["mounts"] == [
+        {
+            "mount": "/",
+            "path": str(store.path.resolve()),
+            "kind": "root",
+            "read_only": False,
+        }
+    ]
+
+
+def test_info_is_absent_when_the_server_was_started_without_it(store):
+    """`--no-info`: the paths of the machine are not part of what is offered."""
+    tools = list_tools(build_server(store, info_tool=False))
+
+    assert "info" not in tools
+    assert "read_document" in tools
 
 
 def test_ingest_document_writes_markdown_and_title(server, tmp_path, monkeypatch):
@@ -1048,6 +1128,30 @@ def test_parse_args_leaves_logging_off():
     assert parse_args(["--log"]).log is eventlog.DEFAULT
     assert parse_args(["--log", "/tmp/l.jsonl"]).log == "/tmp/l.jsonl"
     assert parse_args([]).log_content == "excerpt"
+
+
+def test_parse_args_offers_the_info_tool_unless_told_not_to():
+    assert parse_args([]).no_info is False
+    assert parse_args(["--no-info"]).no_info is True
+
+
+def test_parse_args_reports_the_configuration_files_it_read(tmp_path):
+    """The splice flattens the sources away, so the list is kept as it goes.
+
+    What wants it is the `info` tool: a file that was read is where a mount is
+    edited, and by the time there is a table nothing can say which files those
+    were.
+    """
+    (tmp_path / "mounts.toml").write_text('[mount]\nteam = "team.sqlite"\n', encoding="utf-8")
+    other = tmp_path / "extra.toml"
+    other.write_text('[mount]\nref = "ref.sqlite"\n', encoding="utf-8")
+
+    args = parse_args(["--dir", str(tmp_path), "--mount-config", str(other)])
+
+    assert args.config_files == [str(tmp_path / "mounts.toml"), str(other)]
+    # `--no-mount-config` is the escape from the default file, and the list
+    # says so rather than naming a file whose options were never spliced in.
+    assert parse_args(["--dir", str(tmp_path), "--no-mount-config"]).config_files == []
 
 
 # -- the request log -------------------------------------------------------

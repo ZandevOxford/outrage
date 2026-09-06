@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+import outrage
 from outrage import ingest as ingest_module
 from outrage import install as install_module
 from outrage import mountfile, mounts, shipped
@@ -2292,6 +2293,49 @@ def test_mounts_reports_the_table_and_where_each_entry_came_from(tmp_path):
     assert rows["ref"].split()[1] == "reference.sqlite"
     assert "read-only mount" in rows["ref"]
     assert rows["ref"].endswith(table) and rows["team"].endswith(table)
+
+
+def test_info_reports_this_installation_and_the_stores_it_opened(tmp_path):
+    """The command line half of the `info` tool: same facts, a person's layout."""
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run("info", "--dir", str(tmp_path / ".outrage"))
+
+    assert status == 0
+    lines = output.splitlines()
+    assert lines[0] == f"outrage {outrage.__version__}"
+    fields = {line.split()[0]: line.split(maxsplit=1)[1].strip() for line in lines[1:] if line}
+    assert fields["python"] == sys.executable
+    assert fields["prefix"] == sys.prefix
+    assert fields["dir"] == str((tmp_path / ".outrage").resolve())
+    assert fields["config"] == str((tmp_path / ".outrage" / "mounts.toml").resolve())
+    rows = {line.split()[0]: line for line in lines if line.startswith(("/", "ref", "team"))}
+    assert rows["/"].endswith("root")
+    assert str((tmp_path / ".outrage" / "reference.sqlite").resolve()) in rows["ref"]
+    assert rows["ref"].endswith("read-only mount")
+    assert rows["team"].endswith("mount")
+
+
+def test_info_says_nothing_about_a_log_it_cannot_know_about(tmp_path):
+    """A command line run has no event log, and does not imply the server has none."""
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run("info", "--dir", str(tmp_path / ".outrage"))
+
+    assert status == 0
+    assert "log" not in output
+
+
+def test_info_refuses_a_store_directory_that_is_not_there(tmp_path):
+    """Like every command that opens the table, and for the same reason.
+
+    A mistyped --dir reported as a healthy empty installation is the wrong
+    answer delivered as a clean bill of health. `outrage mounts` is the one to
+    run before a store exists.
+    """
+    status, output = run("info", "--dir", str(tmp_path / "nothing"))
+
+    assert status == 1
 
 
 def test_mounts_opens_nothing_and_so_creates_nothing(tmp_path):

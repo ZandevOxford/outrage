@@ -20,6 +20,7 @@ import argparse
 import contextlib
 import io
 import json
+import shlex
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -31,6 +32,7 @@ from . import (
     cli_messages,
     contents,
     eventlog,
+    info,
     ingest,
     install,
     keys,
@@ -44,7 +46,7 @@ from . import (
 )
 from . import config as config_module
 from .errors import OutrageError
-from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND
+from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND, ROOT_KIND
 from .notes import Note
 
 #: The subcommands that act across a whole mount table rather than on one
@@ -71,6 +73,7 @@ MOUNTED = (
     "export",
     "import",
     "mounts",
+    "info",
 )
 
 #: The rules a command with no watermark can offer. ``overwrite-unchanged``
@@ -822,6 +825,25 @@ def argument_parser() -> argparse.ArgumentParser:
     _table_options(mounts_)
     mounts_.set_defaults(handler=_mounts_command)
 
+    info_ = subcommands.add_parser(
+        "info",
+        help="report this installation, and the stores it has open",
+        description=(
+            "Say what is answering: the outrage version, the Python "
+            "environment it is installed in, the store directory, the mount "
+            "configuration files read, and every store the table opened. The "
+            "same report the MCP server's `info` tool gives, which is what it "
+            "is for -- a session can be told which installation is serving it "
+            "and run this command line in the same one. Unlike `outrage "
+            "mounts` this *opens* the table, so it answers for the stores as "
+            "they are rather than for the line that would open them; `outrage "
+            "mounts` is the one to run before a store exists."
+        ),
+    )
+    _store_option(info_)
+    _table_options(info_)
+    info_.set_defaults(handler=_info_command)
+
     return parser
 
 
@@ -994,6 +1016,19 @@ def _log_options(parser: argparse.ArgumentParser) -> None:
         choices=eventlog.CONTENT_POLICIES,
         default=None,
         help="How much document text the log keeps. Only used alongside --log.",
+    )
+    parser.add_argument(
+        "--no-info",
+        dest="no_info",
+        action="store_true",
+        help=(
+            "Record --no-info on the server entry, so the server offers no "
+            "'info' tool: no report of its Python environment, store "
+            "directory, mount configuration files, mounts or log. On by "
+            "default there. Like every option here it can only be added by a "
+            "re-run, never removed by one -- taking it away is an edit to the "
+            "file."
+        ),
     )
 
 
@@ -1193,6 +1228,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
         args.directory,
         log=args.log,
         log_content=args.log_content,
+        no_info=args.no_info,
         root_mount=args.root_mount,
         mounts=args.mounts,
         read_only_mounts=args.read_only_mounts,
@@ -1252,7 +1288,9 @@ def _config_command(args: argparse.Namespace, out: TextIO) -> int:
         else config_module.config_path(args.scope, project_dir)
     )
     directory = args.directory or config_module.default_store_dir(project_dir)
-    entry = config_module.server_entry(directory, log=args.log, log_content=args.log_content)
+    entry = config_module.server_entry(
+        directory, log=args.log, log_content=args.log_content, no_info=args.no_info
+    )
     table = mountfile.plan_starter(
         directory,
         root_mount=args.root_mount,
@@ -2154,10 +2192,65 @@ def _mount_row(
     return (
         keys.displayed(point),
         filename,
-        "root" if point == keys.ROOT else kind,
+        ROOT_KIND if point == keys.ROOT else kind,
         state,
         source,
     )
+
+
+def _info_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Report this installation, and the stores this command line opens.
+
+    The command line half of the MCP server's ``info`` tool, and the reason
+    there is one: a capability withheld from a session's tool list is not
+    thereby withheld from the person at the terminal, who gets a refusal or an
+    answer either way and can read which it was.
+
+    It **opens** the table, which is what separates it from
+    :func:`_mounts_command`. That one reports what a command line would open
+    and opens nothing, so that a read-write mount naming a store that is not
+    there is reported rather than created; this one reports what *did* open,
+    which is the only way to answer for a mount nobody named on any line.
+
+    No log line: this process has no event log, and printing an empty one would
+    read as a claim that the server for these stores has none either.
+    """
+    directory = store.resolve_directory(args.directory)
+    written, front = args.written or ([], 0)
+    with _open_table(args) as opened:
+        described = info.describe(
+            opened,
+            directory=directory,
+            mount_config=mountfile.sources(written, directory=directory, front=front),
+        )
+
+    print(f"outrage {described.version}", file=out)
+    rows = [("python", described.python), ("prefix", described.prefix)]
+    if described.command:
+        # Joined for a shell, since that is what a reader does with it, and a
+        # path through somebody's home directory may have a space in it.
+        rows.append(("command", shlex.join(described.command)))
+    if described.directory is not None:
+        rows.append(("dir", described.directory))
+    # One line each rather than a list on one, so that a file is a whole line
+    # to copy. The label repeats for the same reason a listing repeats a key.
+    rows += [("config", path) for path in described.mount_config]
+    label = max(len(name) for name, _ in rows)
+    for name, value in rows:
+        print(f"{name:<{label}}  {value}", file=out)
+
+    print(file=out)
+    table = _info_rows(described)
+    widths = [max(len(value) for value in column) for column in zip(*table, strict=True)]
+    for row in table:
+        line = "  ".join(f"{value:<{width}}" for value, width in zip(row, widths, strict=True))
+        print(line.rstrip(), file=out)
+    return 0
+
+
+def _info_rows(described: info.Info) -> list[tuple[str, str, str]]:
+    """The mounts as columns: where it is mounted, the file, and what it is."""
+    return [(mount.mount, mount.path or "", mount.kind) for mount in described.mounts]
 
 
 def _check_command(args: argparse.Namespace, out: TextIO) -> int:

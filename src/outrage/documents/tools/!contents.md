@@ -120,3 +120,15 @@
 
 ### Returns
 26287 26645
+
+## `info`
+27127 27501
+
+### Parameters
+28278 28652
+
+### Returns
+28301 28675
+
+#### `MountInfo` fields
+29235 29627

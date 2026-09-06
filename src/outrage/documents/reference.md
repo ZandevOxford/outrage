@@ -80,7 +80,13 @@ own: the command line is silent about most notes, and says there why.
 
 Configuration, installation, and the record of what happened.
 
+[`outrage.info`](reference/info.md#module-outrage.info) is the answer to the question a session cannot ask any
+other way: which installation is serving it, where the stores are, and which
+configuration files they were read from. Both front ends report it and neither
+words it -- the tool returns the fields, `outrage info` prints them.
+
 * [outrage.config](reference/config.md)
+* [outrage.info](reference/info.md)
 * [outrage.install](reference/install.md)
 * [outrage.eventlog](reference/eventlog.md)
 * [outrage.logread](reference/logread.md)

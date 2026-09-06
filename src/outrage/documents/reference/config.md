@@ -14,6 +14,13 @@ the configuration is a command rather than something a user does by hand. The
 `.mcp.json` originally written by hand in this repository is the illustration:
 it names one machine's conda prefix and is wrong everywhere else.
 
+### outrage.config.CLI_SCRIPT_NAME *= 'outrage'*
+
+Console script for the command line, the other half of the pair. A caller
+told which environment this server runs in wants it to run `outrage` there,
+and there is no module fallback for this one: `python -m outrage` is the
+*server*, so an installation without the script has no second spelling.
+
 ### outrage.config.PROJECT_CONFIG_NAME *= '.mcp.json'*
 
 Project scoped configuration, committed with the project and read by clients
@@ -147,7 +154,21 @@ overwrite. The user scoped file in particular holds a great deal of
 unrelated state, and replacing it wholesale because one read failed would
 do far more damage than declining to write.
 
-### outrage.config.server_entry(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], command: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+### outrage.config.script_command(script: [str](https://docs.python.org/3/library/stdtypes.html#str), executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None)
+
+The absolute command running `script` beside the given interpreter, or None.
+
+A console script names the environment unambiguously, which is the whole
+reason a path is reported rather than a bare name: a caller elsewhere runs
+*this* installation rather than whatever the same word resolves to on their
+PATH.
+
+None rather than a guess when it is not there. Which fallback is right is a
+property of the script -- the server has one and the command line has none
+-- so the caller who knows that decides, and a report that cannot name a
+command says so.
+
+### outrage.config.server_entry(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], command: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 Build the configuration entry for the stores in `directory`.
 
@@ -173,6 +194,13 @@ keeps them**: [`merge_entry()`](#outrage.config.merge_entry) inherits what a new
 mention, and they still win, since the command line comes after the file.
 Nothing migrates that automatically, deliberately; `outrage config` says
 they are there.
+
+`no_info` adds `--no-info`, withholding the tool that reports the
+server's environment and stores. Written here for the same reason `--log`
+is: it belongs to the launch, and a client's JSON edited by hand is the
+failure this module exists to prevent. Being valueless makes no difference
+to [`merge_entry()`](#outrage.config.merge_entry) -- it inherits by flag, so a re-run that does not
+mention it keeps it.
 
 ### outrage.config.split_args(args: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]]]
 

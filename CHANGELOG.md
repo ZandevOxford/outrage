@@ -4,6 +4,23 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+* **A new `info` tool, and `outrage info` beside it.** A session could see
+  everything in a store and nothing about the server holding it. The tool
+  reports the Python environment the server runs in -- with the absolute path
+  to the `outrage` command line in it, so a caller can drive the same
+  installation rather than whatever is on their PATH -- the store directory,
+  the mount configuration files that were read, every mount as it was opened
+  with the file behind it, whether writes are refused there, and whether the
+  server is logging. `outrage info` prints the same report, and `outrage
+  mounts` is still the one to run before the stores exist, since it opens
+  nothing.
+
+* **`outrage-server --no-info` withholds that tool**, and `outrage config
+  --no-info` / `outrage init --no-info` record the flag on the server entry.
+  It is offered by default: what it reports is a list of absolute paths into
+  the machine the server runs on, which is worth having and worth being able
+  to keep back.
+
 * **`outrage.store_sqlite.WAL_UNCHECKPOINTED` is really gone now.** 0.9.0 said
   it was removed and it was not: the import that replaced the definition
   brought the name back as a module attribute, holding the problem code where

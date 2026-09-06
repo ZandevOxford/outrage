@@ -8,7 +8,7 @@ Command line tool for the Outrage document store
 
 ```text
 outrage [-h] [--version]
-        {init,sessionstart,config,backup,log,get,set,ingest,make_contents,ls,dump,copy,export,import,pack,rm,check,mounts}
+        {init,sessionstart,config,backup,log,get,set,ingest,make_contents,ls,dump,copy,export,import,pack,rm,check,mounts,info}
         ...
 ```
 
@@ -37,6 +37,7 @@ outrage [-h] [--version]
 - [`rm`](#rm) - delete a key
 - [`check`](#check) - check the store, and optionally repair it
 - [`mounts`](#mounts) - report the mount table a command line would open
+- [`info`](#info) - report this installation, and the stores it has open
 
 ## `init`
 
@@ -56,7 +57,8 @@ moves.
 ```text
 outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
              [--mount KEY=FILE] [--mount-ro KEY=FILE] [--log [PATH]]
-             [--log-content {none,excerpt,full}] [--dry-run]
+             [--log-content {none,excerpt,full}] [--no-info]
+             [--dry-run]
 ```
 
 ### Arguments
@@ -69,6 +71,7 @@ outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
 - `--mount-ro KEY=FILE` - Set a read-only mount: as --mount, but every write routed there is refused before it reaches the store. Repeatable.
 - `--log [PATH]` - Record the server's requests and store accesses as JSON lines. Without a path, writes log.jsonl in the store directory. Omitted, and so off, unless asked for.
 - `--log-content {none,excerpt,full}` - How much document text the log keeps. Only used alongside --log.
+- `--no-info` - Record --no-info on the server entry, so the server offers no 'info' tool: no report of its Python environment, store directory, mount configuration files, mounts or log. On by default there. Like every option here it can only be added by a re-run, never removed by one -- taking it away is an edit to the file.
 - `--dry-run` - Report what would change without writing anything.
 
 ## `sessionstart`
@@ -102,7 +105,8 @@ outrage config [-h] [--scope {project,user}] [--project-dir PATH]
                [--dir PATH] [--path PATH] [--name NAME]
                [--root-mount FILE] [--mount KEY=FILE]
                [--mount-ro KEY=FILE] [--log [PATH]]
-               [--log-content {none,excerpt,full}] [--dry-run]
+               [--log-content {none,excerpt,full}] [--no-info]
+               [--dry-run]
 ```
 
 ### Arguments
@@ -118,6 +122,7 @@ outrage config [-h] [--scope {project,user}] [--project-dir PATH]
 - `--mount-ro KEY=FILE` - Record a read-only mount: as --mount, but every write routed there is refused before it reaches the store. Repeatable.
 - `--log [PATH]` - Record the server's requests and store accesses as JSON lines. Without a path, writes log.jsonl in the store directory. Omitted, and so off, unless asked for.
 - `--log-content {none,excerpt,full}` - How much document text the log keeps. Only used alongside --log.
+- `--no-info` - Record --no-info on the server entry, so the server offers no 'info' tool: no report of its Python environment, store directory, mount configuration files, mounts or log. On by default there. Like every option here it can only be added by a re-run, never removed by one -- taking it away is an edit to the file.
 - `--dry-run` - Report what would change without writing anything.
 
 ## `backup`
@@ -602,6 +607,35 @@ open them.
 outrage mounts [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
                [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
                [--mount-config FILE] [--no-mount-config]
+```
+
+### Arguments
+
+- `-h, --help` - show this help message and exit
+- `--dir PATH` - Store directory. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
+- `--store FILE, --root-mount FILE` - Which store in that directory, as a file relative to it (default: store.sqlite). On a command that takes mounts this is the root mount -- the store answering for every key no mount claims -- and --root-mount is the same option. Takes the same options a --mount does, so --store documents,type=files reads a directory of files as the whole store.
+- `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: files, parquet, sqlite. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
+- `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
+- `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
+- `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
+
+## `info`
+
+Say what is answering: the outrage version, the Python environment it is installed in, the store
+directory, the mount configuration files read, and every store the table opened. The same report the
+MCP server's `info` tool gives, which is what it is for -- a session can be told which installation
+is serving it and run this command line in the same one. Unlike `outrage mounts` this *opens* the
+table, so it answers for the stores as they are rather than for the line that would open them;
+`outrage mounts` is the one to run before a store exists.
+
+### Usage
+
+```text
+outrage info [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+             [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
+             [--mount-config FILE] [--no-mount-config]
 ```
 
 ### Arguments
