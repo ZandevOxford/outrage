@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
 import stat
 import tempfile
 import time
@@ -389,6 +390,68 @@ def test_export_reports_a_file_it_cannot_write_and_carries_on(populated, tmp_pat
 
     assert (store_module.FAILED, "project/!title") in actions(moved)
     assert (store_module.WROTE, "notes/src/myfile.py") in actions(moved)
+
+
+def test_a_refusal_travels_as_the_error_and_not_as_a_sentence(store, tmp_path):
+    """The walk carries why, and each front end writes the words.
+
+    A copy runs inside the library, which does not know whether its reader
+    spells an argument `overwrite` or `--overwrite`, nor which of a mount
+    table's names a key should be given. So a store's own refusal is put on
+    `Transfer.error` whole, and rendering it is the front end's job -- the rule
+    `plans/error-naming` settled for every other error, and the one this was
+    still outside.
+    """
+    store.store_document("a/../escaped", "out of the tree")
+
+    moved = list(bulk.export_tree(store, None, tmp_path / "out"))
+
+    (failed,) = moved
+    assert failed.action == store_module.FAILED
+    assert failed.reason is None, "the walk worded it, which is the defect"
+    assert failed.error is not None
+    # A code and its facts, which is what a front end needs to say anything at
+    # all; the sentence exists only once somebody renders it.
+    assert failed.error.code == "key-segment-is-traversal"
+    assert "escaped" in messages.render(failed.error)
+
+
+def test_the_operating_system_still_speaks_for_itself(populated, tmp_path):
+    """An OSError has no code, so it stays a string, and that is the honest answer.
+
+    The other half of the rule above: `error` is for a refusal that carries
+    facts, `reason` for one that carries only what the system said. Exactly one
+    of the two is ever set, which is what lets a front end write
+    `reason if error is None else render(error)` and cover both.
+    """
+    target = tmp_path / "out"
+    target.mkdir()
+    (target / "project").write_text("in the way")
+
+    moved = list(bulk.export_tree(populated, None, target))
+
+    failed = [t for t in moved if t.action == store_module.FAILED]
+    assert failed, "a plain file where a directory has to go should refuse"
+    for transfer in failed:
+        assert transfer.error is None
+        assert transfer.reason
+
+
+def test_the_walk_cannot_word_anything(populated, tmp_path):
+    """`outrage.bulk` does not import `outrage.messages`, and that is the point.
+
+    Stated as an absence because the defect was one: a sentence built here
+    reaches both front ends already written, so neither can spell an argument
+    its own way and the wording layer is bypassed without anything saying so.
+    An import creeping back is how it would return, and it would return
+    silently -- the copy would keep working and only the words would be wrong,
+    which is the failure mode `issues/2` is a list of.
+    """
+    source = pathlib.Path(bulk.__file__).read_text(encoding="utf-8")
+    for line in source.splitlines():
+        assert not line.startswith(("import ", "from ")) or "messages" not in line, (
+            f"outrage.bulk imports messages again: {line!r}"
+        )
 
 
 def test_export_writes_as_it_goes(populated, tmp_path):

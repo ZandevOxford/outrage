@@ -37,7 +37,7 @@ from conftest import (
     walk_documents,
     walk_level,
 )
-from outrage import bulk, keys
+from outrage import bulk, keys, messages
 from outrage import store as store_module
 from outrage.store import (
     EVERYTHING,
@@ -785,14 +785,22 @@ def test_copying_into_a_parquet_store_is_refused_document_by_document(parquet, t
 
     Not a hole in ``copy_from``: a parquet file is written whole and the way
     in is a build, which is what ``pack`` is. What matters here is that the
-    refusal arrives per document with the backend's own sentence rather than
-    as an exception ending a transfer half way through.
+    refusal arrives per document, carrying the backend's own refusal, rather
+    than as an exception ending a transfer half way through.
+
+    The refusal travels as the error and not as a sentence, so this asserts the
+    code: which end refused is a fact, and the prose beside it belongs to
+    whichever front end is reading. Rendered here too, once, because "the
+    backend's own" is a claim about the sentence and not only about the code.
     """
     with SqliteStore(tmp_path / "source") as source:
         source.store_document("zzz/nothing-here", "body")
         transfers = list(parquet.copy_from(source))
     assert [t.action for t in transfers] == [store_module.FAILED]
-    assert "written whole rather than updated in place" in transfers[0].reason
+    assert transfers[0].reason is None
+    assert transfers[0].error is not None
+    assert transfers[0].error.code == "store-read-only"
+    assert "written whole rather than updated in place" in messages.render(transfers[0].error)
 
 
 def test_a_built_timestamp_is_normalised_like_a_written_one(tmp_path):

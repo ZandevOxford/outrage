@@ -120,6 +120,30 @@ def keyword(argument: str, value: Any = None) -> str:
     return argument if value is None else f"{argument}={value!r}"
 
 
+def flag(argument: str, value: Any = None) -> str:
+    """An argument as a command line writes it: what a person types in a shell.
+
+    ``argparse``'s own convention read backwards: a ``dest`` is its long option
+    with the dashes turned into underscores, so the way back is mechanical. It
+    is a rule rather than a table because a table is a second place to remember
+    a flag, and ``test_messages`` keeps the rule honest by checking every flag a
+    message can produce against the parser's own options -- inventing
+    ``--against`` for an argument only the tools take would be this same defect
+    one level down.
+
+    The defect it exists for: a message spelled for the tools told a command
+    line user to "Pass on_conflict='overwrite-unchanged'", which is not
+    something anyone can type.
+
+    Here beside :func:`keyword` rather than in :mod:`outrage.cli`, where it was
+    written, because two front ends spell flags: the command line, and
+    :func:`outrage.server.main`, whose refusals about a bad ``--mount`` go to an
+    operator's stderr and not to a tool call.
+    """
+    written = f"--{argument.replace('_', '-')}"
+    return written if value is None else f"{written} {value}"
+
+
 def render(error: OutrageError, name: Namer | None = None, *, spell: Speller | None = None) -> str:
     """``error`` as one line, named the way ``name`` and ``spell`` say.
 
@@ -892,12 +916,25 @@ def _mount_key_too_deep(name: Namer, /, *, key: str, mount: str, **_: Any) -> st
 
 @template("mount-read-only")
 def _mount_read_only(name: Namer, /, *, key: str, mount: str, action: str, **_: Any) -> str:
+    # The two causes that actually reach here, and no third. A parquet store
+    # used to be offered as one and cannot be: `Resolved.writable` asks the
+    # store before the configuration, so a backend that refuses writes raises
+    # `store-read-only` instead and this code never sees one. An explanation
+    # that cannot be the explanation is worse than a shorter sentence.
+    #
+    # No `spell` either, and that is the point rather than an omission. A
+    # speller turns one argument into each front end's spelling; `--mount-ro`
+    # has no spelling at a tool call, because a tool caller cannot start the
+    # server. So this states how the server was started and stops, rather than
+    # telling one of its two readers to type something they cannot.
     return (
         f"cannot {action} {keys.displayed(key)!r}: the store mounted at "
-        f"{keys.displayed(mount)!r} is read-only. Either --mount-ro says so, and "
-        f"--mount instead allows changes here; or it is a store nothing can "
-        f"write - a packed parquet one, or the documentation shipped inside "
-        f"outrage, which the next upgrade would replace."
+        f"{keys.displayed(mount)!r} is read-only through this server. Either it "
+        f"was mounted with --mount-ro, which --mount instead would allow "
+        f"changes to; or it was lent to the server already open, as the "
+        f"documentation shipped inside outrage is, and the next upgrade would "
+        f"replace anything written there. The file itself is not read-only to "
+        f"anything else."
     )
 
 
@@ -1472,4 +1509,14 @@ def _contents_not_markdown(name: Namer, /, *, key: str, format: str | None, **_:
     return f"cannot make contents for {name(key)!r}: its format is {format!r}, not 'markdown'"
 
 
-__all__ = ["MCP", "Namer", "NoteTable", "Speller", "codes", "keyword", "render", "template"]
+__all__ = [
+    "MCP",
+    "Namer",
+    "NoteTable",
+    "Speller",
+    "codes",
+    "flag",
+    "keyword",
+    "render",
+    "template",
+]

@@ -1748,7 +1748,12 @@ def _copied_result(
         counted[transfer.action] = counted.get(transfer.action, 0) + 1
         characters += transfer.characters
         if transfer.action == store_module.FAILED and len(failures) < COPY_FAILURE_SAMPLE:
-            failures.append({"key": transfer.key, "reason": transfer.reason})
+            # The default speller is this reader's, since a tool argument is
+            # spelled the way the library already spells it. What matters is
+            # that the sentence is written *here* at all: the walk carries the
+            # refusal and neither front end inherits the other's wording.
+            said = transfer.reason if transfer.error is None else messages.render(transfer.error)
+            failures.append({"key": transfer.key, "reason": said})
         # Named in full rather than sampled, unlike the failures: a caller told
         # that three keys moved and shown two has to go looking for the third,
         # and the whole value of this answer is that it is the list to look at.
@@ -2061,7 +2066,12 @@ def main(argv: list[str] | None = None) -> int:
         # A mount configuration file that will not parse fails here, before
         # there is a log to record it in. Same rule as the block below: it is
         # an answer about the configuration, not a bug.
-        print(f"outrage: {messages.render(exc)}", file=sys.stderr)
+        #
+        # Spelled as flags, not as keyword arguments: this goes to an
+        # operator's stderr about the command line they just typed, and every
+        # message reachable here is about that command line. It is a tool call
+        # that is the exception in this module, not a shell.
+        print(f"outrage: {messages.render(exc, spell=messages.flag)}", file=sys.stderr)
         return 1
     # Resolved here rather than left to the store, because the log defaults to
     # a file beside the database and so needs the same answer.
@@ -2105,8 +2115,9 @@ def main(argv: list[str] | None = None) -> int:
         #
         # The default namer: nothing has been mounted yet when a table refuses
         # to build, and every key one of these names is a mount point, which is
-        # already a name in the whole namespace.
-        print(f"outrage: {messages.render(exc)}", file=sys.stderr)
+        # already a name in the whole namespace. Flags for the same reason as
+        # above -- the reader is whoever started the server.
+        print(f"outrage: {messages.render(exc, spell=messages.flag)}", file=sys.stderr)
         return 1
     finally:
         # A process that is killed writes no stop event, which is itself worth

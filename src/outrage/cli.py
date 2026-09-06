@@ -24,7 +24,7 @@ import shlex
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, TextIO
+from typing import TextIO
 
 from . import (
     __version__,
@@ -1845,8 +1845,17 @@ def _report_transfers(
             if source_first:
                 left, right = right, left
             line = f"{_verb(transfer.action, args.dry_run):<11} {left}  ->  {right}"
-        if transfer.reason is not None:
-            line += f"  ({transfer.reason})"
+        # Rendered here rather than in the walk that found it, which is what
+        # `Transfer.error` is for: this is the front end that spells an
+        # argument as a flag, and until this was moved a failed copy told a
+        # shell user to pass something only a tool call takes.
+        said = (
+            transfer.reason
+            if transfer.error is None
+            else messages.render(transfer.error, spell=messages.flag)
+        )
+        if said is not None:
+            line += f"  ({said})"
         print(line, file=out)
 
     if not counted:
@@ -2510,25 +2519,6 @@ def _remark(notes: list[Note]) -> None:
             print(f"outrage: {said}", file=sys.stderr)
 
 
-def _flag(argument: str, value: Any = None) -> str:
-    """An argument as this front end spells it, for :func:`outrage.messages.render`.
-
-    ``argparse``'s own convention read backwards: a ``dest`` is its long option
-    with the dashes turned into underscores, so the way back is mechanical. It
-    is a rule rather than a table because a table is a second place to remember
-    a flag, and ``test_messages`` keeps the rule honest by checking every flag a
-    message can produce against the parser's own options -- inventing
-    ``--against`` for an argument only the tools take would be this same defect
-    one level down.
-
-    The defect it exists for: a message spelled for the tools told a command
-    line user to "Pass on_conflict='overwrite-unchanged'", which is not
-    something anyone can type.
-    """
-    flag = f"--{argument.replace('_', '-')}"
-    return flag if value is None else f"{flag} {value}"
-
-
 def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
     """Run one command and return its exit status.
 
@@ -2566,7 +2556,7 @@ def main(argv: list[str] | None = None, out: TextIO | None = None) -> int:
         # one here and the mount-aware one would be wrong. An *argument* is the
         # other way about -- the default spelling is the tools', and this front
         # end has to say so. See `messages`.
-        print(f"outrage: {messages.render(exc, spell=_flag)}", file=sys.stderr)
+        print(f"outrage: {messages.render(exc, spell=messages.flag)}", file=sys.stderr)
         return 1
 
 

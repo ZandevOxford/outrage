@@ -41,7 +41,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from stat import S_ISDIR, S_ISLNK
 
-from . import keys, messages, store
+from . import keys, store
 from .errors import OutrageError
 from .notes import UNCHECKED_NO_RECORD, UNCHECKED_OTHER_KEY, Note
 from .store import (
@@ -439,7 +439,7 @@ def copied(
         except (OutrageError, OSError) as exc:
             # A key can go between the listing and the read; the walk is not a
             # snapshot and nothing here pretends it is.
-            yield Transfer(FAILED, landed, path, _reason(exc))
+            yield _failed(landed, path, exc)
             continue
 
         if not dry_run:
@@ -455,7 +455,7 @@ def copied(
                 # refusals because one end may be a directory of files, and
                 # "a plain file is in the way of this key's directory" is the
                 # far end answering rather than this one breaking.
-                yield Transfer(FAILED, landed, path, _reason(exc))
+                yield _failed(landed, path, exc)
                 continue
         yield Transfer(
             READ if target.writes_deferred else WROTE,
@@ -466,15 +466,24 @@ def copied(
     return None
 
 
-def _reason(exc: OutrageError | OSError) -> str:
-    """What to print beside a failed transfer, from either kind of refusal.
+def _failed(
+    key: str | None, path: Path | None, exc: OutrageError | OSError | UnicodeDecodeError
+) -> Transfer:
+    """One document that did not cross, carrying why rather than saying it.
 
-    A store's own refusal has a written sentence and a code;
-    :func:`outrage.messages.render` is what turns one into report text. An
-    ``OSError`` has only what the operating system said, which is the honest
-    thing to pass on rather than dress up.
+    This used to render the sentence here, and that was the defect: a walk is a
+    library and does not know its reader, so every refusal from a copy reached
+    the command line spelled for the tools and named as one store saw it.
+    A store's own refusal has a code and facts, so it travels whole in
+    ``Transfer.error`` and the front end renders it.
+
+    An ``OSError`` has only what the operating system said. There is no code to
+    carry and nothing a namer or a speller could do to it, so it stays a string
+    in ``reason`` -- the honest thing to pass on rather than dress up.
     """
-    return messages.render(exc) if isinstance(exc, OutrageError) else str(exc)
+    if isinstance(exc, OutrageError):
+        return Transfer(FAILED, key, path, error=exc)
+    return Transfer(FAILED, key, path, str(exc))
 
 
 def _grafted(key: str, prefix: str | None, *, inner: str = keys.ROOT) -> str:
@@ -799,12 +808,12 @@ def documents_from_tree(
         try:
             stored, format = key_for_path(relative, key)
         except keys.InvalidKeyError as exc:
-            yield Transfer(FAILED, None, path, messages.render(exc)), None
+            yield _failed(None, path, exc), None
             continue
         try:
             content = _read_file(path)
         except (OSError, UnicodeDecodeError) as exc:
-            yield Transfer(FAILED, stored, path, str(exc)), None
+            yield _failed(stored, path, exc), None
             continue
         yield (
             Transfer(READ, stored, path, characters=len(content)),

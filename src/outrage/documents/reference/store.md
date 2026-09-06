@@ -1326,7 +1326,7 @@ free of absolute paths that stop being true when a project moves. An
 absolute path, or one climbing out with `..`, is refused here rather than
 quietly opening a database somewhere nobody was looking.
 
-### *class* outrage.store.Transfer(action: [str](https://docs.python.org/3/library/stdtypes.html#str), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None), reason: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, characters: [int](https://docs.python.org/3/library/functions.html#int) = 0)
+### *class* outrage.store.Transfer(action: [str](https://docs.python.org/3/library/stdtypes.html#str), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None), reason: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, characters: [int](https://docs.python.org/3/library/functions.html#int) = 0, error: [OutrageError](errors.md#outrage.errors.OutrageError) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -1343,6 +1343,18 @@ copy grafted it somewhere else. `path` is the file behind it where
 either end keeps its documents in files, which is what makes an export
 report readable; None where neither does, and the report is key to key.
 
+**Why a refusal is carried and not written down.** `reason` is prose, and
+the walk that produces a transfer is a library: it does not know whether
+the reader spells an argument `overwrite` or `--overwrite`, nor which
+of a mount table's names a key should be given. So a store's own refusal
+travels as `error`, unrendered, and each front end turns it into the
+sentence its reader gets -- the rule `plans/error-naming` settled for
+every other error and that this one was still outside. `reason` stays for
+what has no error behind it: a symlink skipped, a key already stored, a
+document written again since the caller looked, and what the operating
+system said about a file, which has no code to carry. Exactly one of the
+two is set.
+
 #### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
 #### key *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
@@ -1352,6 +1364,8 @@ report readable; None where neither does, and the report is key to key.
 #### reason *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
 
 #### characters *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+#### error *: [OutrageError](errors.md#outrage.errors.OutrageError) | [None](https://docs.python.org/3/library/constants.html#None)*
 
 ### outrage.store.default_store(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, backend: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [FileStore](#outrage.store.FileStore)
 

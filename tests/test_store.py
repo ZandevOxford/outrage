@@ -741,8 +741,13 @@ def test_copy_from_a_key_the_far_end_cannot_hold_fails_on_its_own(store, source)
         store_module.FAILED if refused else store_module.WROTE
     )
     if refused:
-        # The far end's own sentence, rendered, rather than "it did not work".
-        assert "notes/../escape" in transfers["notes/../escape"].reason
+        # The far end's own refusal, carried rather than worded: the walk hands
+        # over the error and the front end writes the sentence. Rendered here
+        # the way one would, to show the key it names survives the journey.
+        failed = transfers["notes/../escape"]
+        assert failed.reason is None
+        assert failed.error is not None
+        assert "notes/../escape" in messages.render(failed.error)
 
 
 def test_copy_from_names_the_file_where_one_end_keeps_files(store, source, tmp_path):

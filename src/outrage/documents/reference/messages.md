@@ -155,6 +155,27 @@ alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#col
 
 The whole table, for the test that checks it against the raise sites.
 
+### outrage.messages.flag(argument: [str](https://docs.python.org/3/library/stdtypes.html#str), value: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+An argument as a command line writes it: what a person types in a shell.
+
+`argparse`'s own convention read backwards: a `dest` is its long option
+with the dashes turned into underscores, so the way back is mechanical. It
+is a rule rather than a table because a table is a second place to remember
+a flag, and `test_messages` keeps the rule honest by checking every flag a
+message can produce against the parser's own options -- inventing
+`--against` for an argument only the tools take would be this same defect
+one level down.
+
+The defect it exists for: a message spelled for the tools told a command
+line user to "Pass on_conflict='overwrite-unchanged'", which is not
+something anyone can type.
+
+Here beside [`keyword()`](#outrage.messages.keyword) rather than in [`outrage.cli`](cli.md#module-outrage.cli), where it was
+written, because two front ends spell flags: the command line, and
+[`outrage.server.main()`](server.md#outrage.server.main), whose refusals about a bad `--mount` go to an
+operator's stderr and not to a tool call.
+
 ### outrage.messages.keyword(argument: [str](https://docs.python.org/3/library/stdtypes.html#str), value: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 An argument as a keyword call writes it: what an MCP tool is passed.
