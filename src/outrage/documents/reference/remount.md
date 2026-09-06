@@ -126,7 +126,7 @@ unreachable for as long as it was mounted.
 
 Close every store the live table holds.
 
-### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/library/functions.html#bool)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/library/functions.html#bool), shipped: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What a mount is worth remarking on, as codes and facts.
 
@@ -139,6 +139,14 @@ it. And a mount at a point something already held has *replaced* it, which
 is the rule a tool call makes unambiguous in a way two configuration
 sources do not.
 
+`shipped` is whether this mounted the store outrage ships rather than a
+file, and it changes the last note rather than adding one. A file mount is
+made permanent by writing it into the mount configuration file; the shipped
+tree cannot be written there at all -- having no `KEY=FILE` spelling is
+the reason it can be mounted by name -- and needs no entry, because it is
+mounted by default. Telling that caller to write it down named a file they
+could not name.
+
 ### outrage.remount.notes_for_unmount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What an unmount is worth remarking on.
@@ -147,3 +155,9 @@ Asked of the table *after* the change, which is what makes it true: whether
 anything is there now is a question about the store that answers for the
 key now, and the old table's mount is exactly what stopped that store being
 consulted.
+
+The permanence note is **not** the one a mount gets. Both say the table
+lasts only as long as the server, which is the fact; what follows from it
+is the opposite instruction, and for a while this shared the mount's, so an
+unmount ended by telling the caller to write the mount they had just
+removed into the configuration file.

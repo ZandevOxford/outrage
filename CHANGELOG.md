@@ -53,6 +53,32 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
   sentence to whoever reads it. A remark that follows another is capitalised
   where they are joined.
 
+* **What a mount change says about keeping it now depends on the change.** One
+  sentence served all of them, and it was the mount's: an `unmount` ended by
+  telling the caller to write the mount they had just removed into the mount
+  configuration file, and mounting the shipped manual by name told them to
+  write down a store that has no spelling in that file at all. A mount still
+  says to write it down; an unmount says a restart brings it back, that the
+  configuration file has no unmount to write, and names the two remedies that
+  do work with whose each is; the shipped manual says it needs nothing written
+  down, because it is mounted by default.
+
+* **A copy into a read-only mount now names the mount.** It reported every
+  document as a separate failure, each carrying the whole refusal, and said
+  nothing about the mount that refused them all -- so with the failures sampled
+  the one fact reached the caller five times as an excerpt and never once as a
+  sentence. The table was being asked which read-only mounts lie *below* the
+  landing, which is the right question for a delete, whose key is the top of
+  what it removes, and the wrong one for a copy, which is as often landing
+  inside such a mount. `MountedStore.read_only_at_or_below` is the question a
+  copy asks.
+
+* **A read of the shipped manual is logged under the key it was read by.** The
+  documentation store was opened without being told where it mounts, so an
+  event log recorded a read of `outrage/readme` as `readme` -- the same name as
+  a document in the root store, and indistinguishable from it. This affected
+  the default mount as well as one made with the `mount` tool.
+
 * **A new `info` tool, and `outrage info` beside it.** A session could see
   everything in a store and nothing about the server holding it. The tool
   reports the Python environment the server runs in -- with the absolute path

@@ -457,11 +457,16 @@ def _copy_stopped_at_conflict(name: Namer, /, **_: Any) -> str:
 
 @MCP.template("mounts-refused-write")
 def _mounts_refused_write(name: Namer, /, *, key: str, mounts: Sequence[str], **_: Any) -> str:
+    # "at or below", because the mount that refuses a copy is as often the one
+    # the documents are landing *inside* as one standing under the landing
+    # zone. Saying only "below" was how the first case went unreported: the
+    # question asked of the table could not see upwards, and the sentence
+    # written for its answer could not have described it if it had.
     return (
-        f"{len(mounts)} read-only mounted store(s) below {name(key)!r} refuse a "
-        f"write: {', '.join(repr(mount) for mount in mounts)}. Nothing lands "
-        f"there. Mount one again with `mount` and `read_only` false to copy "
-        f"there too, where this server offers that tool; otherwise it is a "
+        f"{len(mounts)} read-only mounted store(s) refuse a write at or below "
+        f"{name(key)!r}: {', '.join(repr(mount) for mount in mounts)}. Nothing "
+        f"lands there. Mount one again with `mount` and `read_only` false to "
+        f"copy there too, where this server offers that tool; otherwise it is a "
         f"restart with --mount rather than --mount-ro, which is an operator's "
         f"to do."
     )
@@ -495,16 +500,63 @@ def _unmount_revealed_keys(name: Namer, /, *, mount: str, **_: Any) -> str:
     )
 
 
+# Three templates rather than one, and the split is not decorative. All three
+# say the same first thing -- this table lasts as long as the server -- which
+# is the one fact about a change a caller cannot work out from the answer,
+# since the table handed back looks exactly like the table a restart would
+# give. What differs is what to do about it, and one sentence covering all
+# three was wrong in two of them: it told a caller who had just *unmounted*
+# something to write that very mount into the configuration file, and it told
+# a caller who had mounted the shipped manual to write down a store that has
+# no `KEY=FILE` spelling at all. Which change this was is known where the note
+# is made, so the wording is chosen there rather than hedged here.
+
+
 @MCP.template("remount-not-permanent")
 def _remount_not_permanent(name: Namer, /, *, mount: str, **_: Any) -> str:
-    # Said on every change rather than once, because it is the one thing about
-    # a remount a caller cannot work out from the answer: the table it is
-    # handed back looks exactly like the table a restart would give.
     return (
         f"this table lasts as long as this server and no longer. To keep "
         f"{name(mount)!r} across a restart, write it into the mount "
         f"configuration file: nothing here edits one, since a machine rewrite "
         f"is what loses the comments such a file exists for."
+    )
+
+
+@MCP.template("remount-shipped-is-default")
+def _remount_shipped_is_default(name: Namer, /, *, mount: str, **_: Any) -> str:
+    # Nothing to write down, which is the whole of the news: this is the store
+    # outrage ships, it arrives with the server, and the reason it can be
+    # mounted by name in the first place is that it lives in `site-packages`
+    # and has no spelling as a mount file. Telling this caller to write it into
+    # the configuration file named a file they could not name.
+    return (
+        f"this table lasts as long as this server and no longer, but "
+        f"{name(mount)!r} needs nothing written down: it is the store outrage "
+        f"ships and is mounted by default, so a restart puts it back."
+    )
+
+
+@MCP.template("unmount-not-permanent")
+def _unmount_not_permanent(name: Namer, /, *, mount: str, **_: Any) -> str:
+    # The mount configuration file has no unmount to write: its fields are
+    # `root-mount`, `mount` and `mount-ro`, and `--unmount` is a command line
+    # flag for one run. So the two remedies are of different kinds -- take the
+    # entry out of the file, or start the server with the flag -- and the
+    # second is an operator's, since a tool caller cannot start the server.
+    # Both named, each with whose it is, per the rule at the top of this module.
+    #
+    # No `spell`, and this is the distinction that rule turns on: `--unmount`
+    # here is the *startup* flag, which a tool caller cannot type at all. The
+    # `unmount` tool is what they just called, and calling it again is exactly
+    # what does not persist. `mount-unmount-unmatched` does take a speller for
+    # the same word, and correctly: there the flag and the tool are one
+    # argument spelled twice, and either reader can act on their own spelling.
+    return (
+        f"this table lasts as long as this server and no longer: a restart "
+        f"mounts {name(mount)!r} again. There is no unmount to write into the "
+        f"mount configuration file, so keeping it away means taking its entry "
+        f"out of that file, or, for a mount no file names, starting the server "
+        f"with --unmount, which is an operator's to do."
     )
 
 

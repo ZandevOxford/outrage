@@ -1649,8 +1649,14 @@ def build_server(
         # which under a graft is a level above them: a read-only mount beside
         # the landing zone refuses nothing, and naming it would be a warning
         # about a store this copy never touched.
+        #
+        # `at_or_below`, not `below`, and the difference is a whole case rather
+        # than an edge of one: a copy *into* a read-only mount is refused by the
+        # mount it is landing inside, which is above the landing and so invisible
+        # to the question a delete asks. Every document failed and the answer
+        # named no mount, sampling the same refusal five times instead.
         landing = at_target if reroot else keys.with_prefix(at_target, at_source)
-        refused = table.read_only_below(landing)
+        refused = table.read_only_at_or_below(landing)
         if refused:
             result["mounts_kept"] = refused
         _say(

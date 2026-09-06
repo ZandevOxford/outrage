@@ -2276,6 +2276,51 @@ def test_read_only_mounts_below_a_key_are_named_without_being_deleted(tmp_path):
         assert table.retrieve_document("a/ref/y").content == "safe"
 
 
+def test_a_read_only_mount_the_key_is_inside_is_named_too(tmp_path):
+    """The other direction, and the one a copy needs.
+
+    ``read_only_below`` looks downwards, which is the whole question for a
+    delete: the key names the top of what is being removed, so every mount that
+    can refuse it is underneath. A copy names where documents *land*, and the
+    mount that refuses them is as often the one they are landing inside -- above
+    the key, and invisible to the downward question.
+    """
+    root = SqliteStore(tmp_path, filename="root.sqlite")
+    kept = SqliteStore(tmp_path, filename="kept.sqlite")
+    deeper = SqliteStore(tmp_path, filename="deeper.sqlite")
+    with MountedStore(
+        {keys.ROOT: root, "ref": kept, "ref/deep": deeper}, read_only=["ref", "ref/deep"]
+    ) as table:
+        assert table.read_only_below("ref/notes") == []
+        assert table.read_only_at_or_below("ref/notes") == ["ref"]
+        # Both, in key order, when the key is inside one and above another.
+        assert table.read_only_at_or_below("ref") == ["ref", "ref/deep"]
+        # A writable key is unchanged by the new question.
+        assert table.read_only_at_or_below("elsewhere") == []
+
+
+def test_a_copy_landing_inside_a_read_only_mount_names_it_once(tmp_path):
+    """Twenty failures and no mount named, which is what live use looked like.
+
+    Every document fails, each failure carries the whole read-only refusal, and
+    the failures are *sampled* -- so the one fact reached the caller five times
+    as an excerpt and never once as a sentence. `mounts_kept` and the wording
+    for it both existed; the table was being asked the delete's question.
+    """
+    root = SqliteStore(tmp_path, filename="root.sqlite")
+    kept = SqliteStore(tmp_path, filename="kept.sqlite")
+    for n in range(3):
+        root.store_document(f"notes/{n}", f"Note {n}.")
+
+    with MountedStore({keys.ROOT: root, "ref": kept}, read_only=["ref"]) as table:
+        server = build_server(table)
+        result = call(server, "copy_tree", source="notes", target="ref/notes")
+
+        assert result["mounts_kept"] == ["ref"]
+        assert "refuse a write at or below" in result["note"]
+        assert "'ref'" in result["note"]
+
+
 def test_an_error_from_inside_a_mount_names_the_key_the_caller_passed(tmp_path):
     """Renamed where the crossing happens, so every front end gets it.
 

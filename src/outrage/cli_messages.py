@@ -150,6 +150,18 @@ CLI.silent(
     "run, which is why there is no mount tool on this side to warn about",
 )
 CLI.silent(
+    "remount-shipped-is-default",
+    "the same reason, and one more: this front end does not carry the shipped "
+    "documentation unless `--mount-docs` asked for it, so being mounted by "
+    "default is not a fact about this side at all",
+)
+CLI.silent(
+    "unmount-not-permanent",
+    "the same reason as the mount it mirrors: `--unmount` here is a flag on the "
+    "command being run, and advice about keeping it across a restart would be "
+    "advice about the run that just ended",
+)
+CLI.silent(
     "exported-for-editing",
     "there is no round trip through an exported file here; `outrage get > file` "
     "and `outrage set --file` are the shell's, and it holds the path already",

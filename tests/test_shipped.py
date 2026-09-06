@@ -15,6 +15,7 @@ the mount off.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -22,6 +23,7 @@ import pytest
 
 from conftest import raises_rendered
 from outrage import keys, mounts, server, shipped
+from outrage.eventlog import EventLog
 from outrage.mounts import ReadOnlyMountError
 from outrage.store import BoundedSubtree
 from outrage.store_files import FilesystemStore
@@ -225,6 +227,31 @@ def test_a_write_through_the_mount_is_refused(tmp_path):
         assert [mount.prefix for mount in table.read_only] == [shipped.MOUNT_POINT]
         with pytest.raises(ReadOnlyMountError):
             table.store_document(f"{shipped.MOUNT_POINT}/readme", "no")
+
+
+def test_the_log_names_a_read_of_the_manual_in_the_outer_namespace(tmp_path):
+    """``outrage/readme``, not ``readme``, which is a key in the root store.
+
+    A store learns where it was mounted for exactly one purpose --
+    ``Store._log_key``, so an event names the key the reader of the log would
+    pass -- and every mount says, except this one, which was opened by name and
+    told nothing. So a read of the manual logged ``readme`` and a log holding
+    both was ambiguous about which store answered.
+
+    Fixed in ``open_documents``, so the startup path gets it as well: the
+    default mount has always logged this way, and the ``mount`` tool inherited
+    it rather than introducing it.
+    """
+    log = EventLog(tmp_path / "events.jsonl")
+    with mounts.open_mounts(tmp_path, attached=shipped.attached(log=log)) as table:
+        table.retrieve_document(f"{shipped.MOUNT_POINT}/readme", max_chars=1)
+
+    logged = [
+        json.loads(line)
+        for line in (tmp_path / "events.jsonl").read_text().splitlines()
+        if json.loads(line).get("op") == "retrieve_document"
+    ]
+    assert [event["args"]["key"] for event in logged] == [f"{shipped.MOUNT_POINT}/readme"]
 
 
 def test_a_lent_store_is_closed_with_the_table(tmp_path):

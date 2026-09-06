@@ -164,7 +164,7 @@ class Live:
                     read_only=[prefix] if read_only or file is None else [],
                 )
                 replaced = prefix in {mount.prefix for mount in self._table}
-                notes = notes_for_mount(after, prefix, replaced=replaced)
+                notes = notes_for_mount(after, prefix, replaced=replaced, shipped=file is None)
             except Exception:
                 store.close()
                 raise
@@ -236,7 +236,9 @@ class Live:
         return Changed(table=after, notes=tuple(notes))
 
 
-def notes_for_mount(after: MountedStore, prefix: str, *, replaced: bool) -> list[Note]:
+def notes_for_mount(
+    after: MountedStore, prefix: str, *, replaced: bool, shipped: bool = False
+) -> list[Note]:
     """What a mount is worth remarking on, as codes and facts.
 
     Two of them are about what the caller can no longer see. A mount
@@ -247,13 +249,27 @@ def notes_for_mount(after: MountedStore, prefix: str, *, replaced: bool) -> list
     it. And a mount at a point something already held has *replaced* it, which
     is the rule a tool call makes unambiguous in a way two configuration
     sources do not.
+
+    ``shipped`` is whether this mounted the store outrage ships rather than a
+    file, and it changes the last note rather than adding one. A file mount is
+    made permanent by writing it into the mount configuration file; the shipped
+    tree cannot be written there at all -- having no ``KEY=FILE`` spelling is
+    the reason it can be mounted by name -- and needs no entry, because it is
+    mounted by default. Telling that caller to write it down named a file they
+    could not name.
     """
     notes: list[Note] = []
     if replaced:
         notes.append(Note("mount-replaced-another", mount=prefix))
     if any(mount.prefix == prefix for mount in after.shadowing()):
         notes.append(Note("mount-shadows-keys", mount=prefix))
-    notes.append(Note("remount-not-permanent", mount=prefix))
+    # Two appends rather than one with the code chosen inline: `test_notes.py`
+    # requires every emit site to name a literal, so that the set of codes a
+    # table has to word can be read off the source rather than guessed at.
+    if shipped:
+        notes.append(Note("remount-shipped-is-default", mount=prefix))
+    else:
+        notes.append(Note("remount-not-permanent", mount=prefix))
     return notes
 
 
@@ -264,11 +280,17 @@ def notes_for_unmount(after: MountedStore, prefix: str) -> list[Note]:
     anything is there now is a question about the store that answers for the
     key now, and the old table's mount is exactly what stopped that store being
     consulted.
+
+    The permanence note is **not** the one a mount gets. Both say the table
+    lasts only as long as the server, which is the fact; what follows from it
+    is the opposite instruction, and for a while this shared the mount's, so an
+    unmount ended by telling the caller to write the mount they had just
+    removed into the configuration file.
     """
     notes: list[Note] = []
     if after.exists(prefix) or after.descendant_count(prefix) > 0:
         notes.append(Note("unmount-revealed-keys", mount=prefix))
-    notes.append(Note("remount-not-permanent", mount=prefix))
+    notes.append(Note("unmount-not-permanent", mount=prefix))
     return notes
 
 

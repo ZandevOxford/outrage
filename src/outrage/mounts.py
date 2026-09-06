@@ -1177,6 +1177,27 @@ class MountedStore(Store):
         """
         return [mount.prefix for mount in self.below(key) if mount.read_only]
 
+    def read_only_at_or_below(self, key: str | None = None) -> list[str]:
+        """The mounts that refuse a write anywhere at or below ``key``, in key order.
+
+        :meth:`read_only_below` and, in front of it, the mount that owns ``key``
+        itself when that one refuses. The difference is the whole question for a
+        caller writing *into* a subtree rather than clearing one out: a delete
+        names the top of what it is removing, so every mount that can refuse it
+        is underneath, while a copy names where documents will land, and the
+        mount that refuses them is as often the one they are landing inside.
+
+        Asked by :func:`outrage.server.build_server`'s copy, which reported
+        twenty failures and named no mount at all while it asked the other
+        question -- each failure carrying the whole read-only refusal, so the
+        one fact arrived five times as a sample and never once as a sentence.
+        """
+        owner = self.resolve(key)
+        below = self.read_only_below(key)
+        if not owner.read_only:
+            return below
+        return sorted({owner.mount.prefix, *below}, key=keys.sort_form)
+
     def _replaced(self, found: Resolved, outer_key: str) -> Entry | None:
         """The entry a mount point displaces from the answering store's level.
 

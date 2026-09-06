@@ -377,6 +377,22 @@ that refused is not a key. This is what a front end needs in order to
 say *which* part of a subtree a delete will never reach -- which is a
 sentence, and a sentence is the front end's business.
 
+#### read_only_at_or_below(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+
+The mounts that refuse a write anywhere at or below `key`, in key order.
+
+[`read_only_below()`](#outrage.mounts.MountedStore.read_only_below) and, in front of it, the mount that owns `key`
+itself when that one refuses. The difference is the whole question for a
+caller writing *into* a subtree rather than clearing one out: a delete
+names the top of what it is removing, so every mount that can refuse it
+is underneath, while a copy names where documents will land, and the
+mount that refuses them is as often the one they are landing inside.
+
+Asked by [`outrage.server.build_server()`](server.md#outrage.server.build_server)'s copy, which reported
+twenty failures and named no mount at all while it asked the other
+question -- each failure carrying the whole read-only refusal, so the
+one fact arrived five times as a sample and never once as a sentence.
+
 #### store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 Store `content` at `key`, overwriting anything already there.

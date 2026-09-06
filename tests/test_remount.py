@@ -142,7 +142,40 @@ def test_every_change_says_it_lasts_only_as_long_as_this_server(server):
         call(server, "unmount", key="lib"),
     ]:
         assert "lasts as long as this server" in said["note"]
-        assert "mount configuration file" in said["note"]
+
+
+def test_a_mount_says_to_write_it_down_and_an_unmount_says_the_opposite(server):
+    """The fact is shared; the instruction that follows from it is not.
+
+    One template served both for a while, so an unmount ended by telling the
+    caller to write the mount they had just taken away into the configuration
+    file -- correct prose, and the reverse of what they wanted. Found by
+    reading a live unmount rather than by the suite, which asserted only that
+    both notes named the file.
+    """
+    mounted = call(server, "mount", key="lib", file="other.sqlite")["note"]
+    assert "To keep 'lib' across a restart, write it into the mount" in mounted
+
+    unmounted = call(server, "unmount", key="lib")["note"]
+    assert "a restart mounts 'lib' again" in unmounted
+    assert "taking its entry out of that file" in unmounted
+    # The instruction the mount gives, which is the one an unmount must not.
+    assert "To keep 'lib' across a restart, write it into" not in unmounted
+
+
+def test_an_unmount_names_the_startup_flag_as_an_operators_and_does_not_respell_it(server):
+    """`--unmount`, not the tool, and this is where the two part company.
+
+    `mount-unmount-unmatched` puts the same word through the speller and is
+    right to: there the flag and the tool are one argument spelled twice, and
+    either reader can act on their own spelling. Here the flag is the *startup*
+    one, which a tool caller cannot type -- and the tool they can type is the
+    one they just called, which is exactly what did not persist.
+    """
+    said = call(server, "unmount", key="ref")["note"]
+
+    assert "--unmount" in said
+    assert "an operator's to do" in said
 
 
 def test_a_second_note_is_capitalised_where_it_follows_the_first(server):
@@ -242,6 +275,25 @@ def test_the_shipped_manual_can_be_unmounted_and_put_back_by_name(base):
         # remount would be an invitation to lose the writing.
         assert [one["read_only"] for one in said["mounts"]] == [False, True]
         assert call(server, "read_document", key="outrage/readme")["content"]
+
+
+def test_mounting_the_manual_by_name_says_it_needs_nothing_written_down(base):
+    """The note the file mount gets would name a file this store does not have.
+
+    The shipped tree lives in ``site-packages``, is not relative to ``--dir``
+    and has no ``KEY=FILE`` spelling at all -- which is the entire reason it can
+    be mounted by name. So "write it into the mount configuration file", which
+    is right for every other mount, is here an instruction the reader cannot
+    carry out, and unnecessary besides: it is mounted by default.
+    """
+    root = SqliteStore(base, filename="outrage.sqlite")
+    with Live(MountedStore({keys.ROOT: root}), directory=base) as live:
+        server = build_server(live, directory=base)
+        said = call(server, "mount", key=shipped.MOUNT_POINT)["note"]
+
+    assert "lasts as long as this server" in said
+    assert "is mounted by default, so a restart puts it back" in said
+    assert "mount configuration file" not in said
 
 
 def test_a_key_outrage_ships_nothing_for_needs_a_file(server):

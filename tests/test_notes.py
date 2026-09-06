@@ -719,12 +719,20 @@ def _remounted(store, tmp_path) -> list[list[Note]]:
     A two-store table, because both notes here are about what one store hides
     from another: a mount shadows what the store beneath holds at its point,
     and unmounting reveals it again. One store can show neither.
+
+    A mount is asked for twice, and the second is the shipped tree. What a
+    change says about making it permanent is not one sentence but three: a file
+    mount is written into the configuration file, the shipped tree cannot be
+    and needs no entry, and an unmount has no spelling in that file at all.
+    Driving only the first left the other two reachable in principle and
+    unreachable here, which is exactly what this helper exists to deny.
     """
     store.store_document("ref/left", "Shadowed by the mount above it.")
     with SqliteStore(tmp_path / "inner") as inner:
         before = MountedStore({keys.ROOT: store, "ref": inner})
         return [
             remount.notes_for_mount(before, "ref", replaced=True),
+            remount.notes_for_mount(before, "ref", replaced=False, shipped=True),
             remount.notes_for_unmount(before.remounted(unmount=["ref"]), "ref"),
         ]
 

@@ -16,8 +16,8 @@
 ### outrage.shipped.available() → [bool](https://docs.python.org/3/library/functions.html#bool)
 4833 4835
 
-### outrage.shipped.open_documents(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)
+### outrage.shipped.open_documents(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) = MOUNT_POINT) → [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)
 5251 5255
 
 ### outrage.shipped.tree() → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
-6162 6168
+6687 6693

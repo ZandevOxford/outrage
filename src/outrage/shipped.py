@@ -99,7 +99,9 @@ def available() -> bool:
     return tree().is_dir()
 
 
-def open_documents(*, log: EventLog | None = None) -> FilesystemStore:
+def open_documents(
+    *, log: EventLog | None = None, mount_point: str = MOUNT_POINT
+) -> FilesystemStore:
     """Open the shipped tree, read-only, refusing if it is not there.
 
     ``create=False``, so this never writes into an installation: a missing tree
@@ -112,11 +114,19 @@ def open_documents(*, log: EventLog | None = None) -> FilesystemStore:
 
     ``hidden`` is left at its default: this is a tree outrage wrote, so a
     dotfile in it is a document rather than somebody's ``.DS_Store``.
+
+    ``mount_point`` defaults to :data:`MOUNT_POINT`, which is where this tree
+    goes, and is passed on so that :meth:`~outrage.store.Store._log_key`
+    renders an event in the namespace a reader of the log is in. Without it a
+    read of ``outrage/readme`` was logged as ``readme``, indistinguishable in
+    the log from the root store's own -- a store learns where it was mounted
+    for this one purpose and nothing else, and every other mount has always
+    said.
     """
     root = tree()
     if not root.is_dir():
         raise DocumentsError("documents-not-installed", path=str(root))
-    return FilesystemStore(root, log=log, create=False)
+    return FilesystemStore(root, log=log, create=False, mount_point=mount_point)
 
 
 def attached(*, log: EventLog | None = None) -> dict[str, FilesystemStore]:

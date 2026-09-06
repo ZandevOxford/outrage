@@ -88,7 +88,7 @@ without `src/outrage/skills/` and nothing said so. `test_packaging.py`
 is where that is guarded; this is what a front end asks before mounting
 something it was not explicitly told to mount.
 
-### outrage.shipped.open_documents(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)
+### outrage.shipped.open_documents(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) = MOUNT_POINT) → [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)
 
 Open the shipped tree, read-only, refusing if it is not there.
 
@@ -102,6 +102,14 @@ on.
 
 `hidden` is left at its default: this is a tree outrage wrote, so a
 dotfile in it is a document rather than somebody's `.DS_Store`.
+
+`mount_point` defaults to [`MOUNT_POINT`](#outrage.shipped.MOUNT_POINT), which is where this tree
+goes, and is passed on so that `_log_key()`
+renders an event in the namespace a reader of the log is in. Without it a
+read of `outrage/readme` was logged as `readme`, indistinguishable in
+the log from the root store's own -- a store learns where it was mounted
+for this one purpose and nothing else, and every other mount has always
+said.
 
 ### outrage.shipped.tree() → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
