@@ -94,10 +94,16 @@ Around the edges
 
 Configuration, installation, and the record of what happened.
 
+:mod:`outrage.info` is the answer to the question a session cannot ask any
+other way: which installation is serving it, where the stores are, and which
+configuration files they were read from. Both front ends report it and neither
+words it -- the tool returns the fields, ``outrage info`` prints them.
+
 .. toctree::
    :maxdepth: 1
 
    config
+   info
    install
    eventlog
    logread

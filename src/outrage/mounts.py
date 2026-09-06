@@ -135,6 +135,13 @@ MOUNT_KIND = "mount"
 #: costs nothing until somebody looks at the listing.
 READ_ONLY_MOUNT_KIND = "read-only mount"
 
+#: What a report calls the mount that answers for every key no other mount
+#: claims. Not a ``kind`` any listing uses -- the root is never an entry in one,
+#: since it is the level everything else is listed *below* -- so it is spelled
+#: here rather than on :attr:`Mount.kind`, and used by the reports that put the
+#: root in a table beside the mounts.
+ROOT_KIND = "root"
+
 
 class MountError(OutrageError, ValueError):
     """Raised when a mount table cannot be built as described."""
@@ -1805,6 +1812,7 @@ __all__ = [
     "OPTION_ASSIGNMENT",
     "OPTION_DELIMITER",
     "READ_ONLY_MOUNT_KIND",
+    "ROOT_KIND",
     "SPEC_DELIMITER",
     "TYPE_OPTION",
     "Mount",

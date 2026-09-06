@@ -462,3 +462,50 @@ safe as saving back - or pass `overwrite` to write it unchecked.
 - `previous` (integer or null; optional) — Previous document size, or null when it did not exist
 - `unchecked_code` (string or null; optional) — Why an import was not compared with what was exported, when 'overwrite' allowed it through uncompared: 'no-record' when there was no export record, 'other-key' when the file came from another key and no 'against' file was given
 - `note` (string or null; optional) — Important qualification of the result
+
+## `info`
+
+Report what this server is: its Python environment, its stores, and its log.
+
+Takes no arguments and reads no documents. Everything it names is a path on
+the machine the server runs on, absolute, so a caller elsewhere can act on it.
+
+`python`, `prefix` and `command` are the environment. Use `command` to run
+outrage's command line in the same installation this server is: an install is
+often editable, so the working tree is the build, and the `outrage` on a
+caller's PATH is a different one or none at all. `command` is empty when this
+installation has no console script.
+
+`mounts` is the table as it was **opened**, one entry per store, with the file
+each is kept in and whether writes are refused there. `directory` holds those
+files, the log and the backups; `mount_config` names the configuration files
+the table was read from, which is where a mount is changed.
+
+`log` and `log_content` say whether this server is recording what it does and
+how much document text it keeps. They describe this server and say nothing
+about any other process reading the same stores.
+
+The tool is on by default and a server can be started without it.
+
+### Parameters
+
+None.
+
+### Returns
+
+- `version` (string; required) — The outrage version this server is running
+- `python` (string; required) — The interpreter running it, for running the command line in the same environment
+- `prefix` (string; required) — The Python environment that interpreter belongs to
+- `command` (array[string]; required) — The `outrage` command line entry point in that environment, empty when it has none
+- `directory` (string or null; required) — The store directory holding the stores, the log and the backups
+- `mount_config` (array[string]; required) — The mount configuration files read, in the order they were read
+- `log` (string or null; required) — Where this server records what it does, or null when it does not
+- `log_content` (string or null; required) — How much document text that log keeps: 'none', 'excerpt' or 'full'
+- `mounts` (array[MountInfo]; required) — The stores behind the namespace, as they were opened
+
+#### `MountInfo` fields
+
+- `mount` (string; required) — The mount point, '/' for the root
+- `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
+- `kind` (string; required) — 'root', 'mount' or 'read-only mount'
+- `read_only` (boolean; required) — Whether this server refuses writes routed here

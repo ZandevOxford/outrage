@@ -669,6 +669,7 @@ def init(
     *,
     log: Any = None,
     log_content: str | None = None,
+    no_info: bool = False,
     root_mount: str | None = None,
     mounts: Sequence[str] = (),
     read_only_mounts: Sequence[str] = (),
@@ -683,8 +684,8 @@ def init(
     write would disagree with.
 
     ``outrage config`` writes the server entry alone and this calls it rather than
-    repeating it, which is also why ``log`` and ``log_content`` are passed
-    through. ``root_mount`` and the two mount lists no longer reach the entry
+    repeating it, which is also why ``log``, ``log_content`` and ``no_info``
+    are passed through. ``root_mount`` and the two mount lists no longer reach the entry
     at all: a mount table lives in ``mounts.toml`` in the store directory, and
     they seed it - see :func:`outrage.mountfile.plan_starter`, and note that a
     table already there is reported and left alone rather than rewritten.
@@ -708,7 +709,7 @@ def init(
 
     store_dir = directory if directory is not None else config.default_store_dir(project)
     server_path = config.config_path("project", project)
-    entry = config.server_entry(store_dir, log=log, log_content=log_content)
+    entry = config.server_entry(store_dir, log=log, log_content=log_content, no_info=no_info)
     server, servers, servers_text = config.plan(server_path, "project", entry)
     table = mountfile.plan_starter(
         store_dir,

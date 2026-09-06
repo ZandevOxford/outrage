@@ -83,6 +83,14 @@ mention mounts -- see `instructions` on why a mounted store's readme is
 not carried -- so, exactly like the existence of a mount, being read-only
 costs nothing until somebody looks at the listing.
 
+### outrage.mounts.ROOT_KIND *= 'root'*
+
+What a report calls the mount that answers for every key no other mount
+claims. Not a `kind` any listing uses -- the root is never an entry in one,
+since it is the level everything else is listed *below* -- so it is spelled
+here rather than on [`Mount.kind`](#outrage.mounts.Mount.kind), and used by the reports that put the
+root in a table beside the mounts.
+
 ### outrage.mounts.SPEC_DELIMITER *= '='*
 
 Separates a mount point from its store file in a `--mount` argument.

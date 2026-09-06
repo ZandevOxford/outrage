@@ -155,7 +155,7 @@ risk is accepted on the same terms as `extra="forbid"`: what a change
 would cost is logging silently ceasing to happen, and
 `test_the_middleware_is_reached` fails loudly rather than letting it.
 
-### outrage.server.build_server(store: [Store](store.md#outrage.store.Store), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → MCPServer
+### outrage.server.build_server(store: [Store](store.md#outrage.store.Store), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/library/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/library/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → MCPServer
 
 Build a server exposing `store`, which may be one store or a mount table.
 
@@ -186,6 +186,18 @@ shipped tool documentation describes the server rather than one
 installation of it, so it must not gain or lose a tool according to what
 happened to be installed where it was generated. It is the only caller that
 wants this: a real server passes nothing and offers what it can do.
+
+`info_tool` is the other tool that may be absent, and it is absent
+because somebody said so rather than because anything is missing. What it
+reports is a list of absolute paths into the machine the server runs on,
+which is worth having by default and worth being able to withhold; the
+server's `--no-info` is how it is withheld. `all_tools` overrides this
+too, for the same reason.
+
+`mount_config` is the one thing that tool needs and this server cannot
+work out: the configuration files the mount table was read from, which
+[`outrage.mountfile.sources()`](mountfile.md#outrage.mountfile.sources) knows and which are flattened away by the
+time there is a table.
 
 ### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
@@ -239,11 +251,12 @@ Returns rather than exits, for the same reason [`outrage.cli.main()`](cli.md#out
 
 The server's command line: which stores to serve, and what to record.
 
-Three groups of arguments, and the first two are the interesting pair.
+Four groups of arguments, and the first two are the interesting pair.
 `--dir` says which *directory* holds the stores, `--root-mount` and the
 repeatable `--mount`/`--mount-ro` say which *files* inside it are
 mounted where. `--log` and
-`--log-content` say what is recorded about the calls that arrive.
+`--log-content` say what is recorded about the calls that arrive, and
+`--no-info` withholds the one tool that describes any of it.
 
 The mount options may also be written in a file rather than typed --
 [`outrage.mountfile`](mountfile.md#module-outrage.mountfile), and the whole point of it here: with a table in

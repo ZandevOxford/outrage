@@ -653,3 +653,34 @@ def test_a_carried_mount_says_where_it_came_from(tmp_path):
     }
 
     assert found[mountfile.DOCS_MOUNT] == mountfile.BUILTIN_SOURCE
+
+
+def test_sources_names_the_files_a_run_reads_in_order(tmp_path):
+    """Which files were read, which is where a mount is edited."""
+    (tmp_path / "mounts.toml").write_text('[mount]\nteam = "team.sqlite"\n', encoding="utf-8")
+    extra = tmp_path / "extra.toml"
+    extra.write_text('[mount]\nref = "ref.sqlite"\n', encoding="utf-8")
+
+    found = mountfile.sources(
+        ["--dir", str(tmp_path), mountfile.CONFIG_FLAG, str(extra)], directory=tmp_path
+    )
+
+    assert found == [str(tmp_path / "mounts.toml"), str(extra)]
+
+
+def test_sources_is_empty_when_nothing_was_read(tmp_path):
+    assert mountfile.sources(["--dir", str(tmp_path)], directory=tmp_path) == []
+
+
+def test_a_file_named_twice_is_one_source(tmp_path):
+    """These are sources: naming one again is reading the same file again."""
+    extra = tmp_path / "extra.toml"
+    extra.write_text('[mount]\nref = "ref.sqlite"\n', encoding="utf-8")
+    argv = [mountfile.CONFIG_FLAG, str(extra), mountfile.CONFIG_FLAG, str(extra)]
+
+    assert mountfile.sources(argv, directory=tmp_path) == [str(extra)]
+
+
+def test_the_carried_documentation_is_not_a_file_anybody_read(tmp_path):
+    """It arrives with the front end, so no file accounts for it."""
+    assert mountfile.sources([], directory=tmp_path, builtin=True) == []

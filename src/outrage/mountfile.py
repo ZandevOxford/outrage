@@ -723,6 +723,34 @@ def origins(
     return found
 
 
+def sources(
+    argv: Sequence[str],
+    *,
+    directory: str | os.PathLike[str] | None = None,
+    front: int = 0,
+    builtin: bool = False,
+) -> list[str]:
+    """The configuration files a splice read, in the order it read them.
+
+    The default file in the store directory first, when there is one and
+    nothing suppressed it, then each :data:`CONFIG_FLAG` as it was written.
+    The same pass :func:`spliced` and :func:`origins` make, answering the third
+    question the splice created: *which files does this run read*, as against
+    which mounts came out of them.
+
+    What wants it is a front end reporting itself, since a file that was read
+    is where a mount is edited -- and a table flattened into one argument list
+    can no longer say which files it came from, which is exactly what the
+    splice is for.
+
+    A file named twice appears once: these are sources, and the second naming
+    of one is the same source read again.
+    """
+    _, labels = _resolved(argv, directory, front, builtin)
+    named = [labels[source] for source in sorted(labels)]
+    return list(dict.fromkeys(named))
+
+
 def _unnamed(source: int) -> str:
     """What a source with no file is called."""
     return BUILTIN_SOURCE if source == _BUILTIN else TYPED_SOURCE
@@ -925,6 +953,7 @@ __all__ = [
     "origins",
     "plan_starter",
     "read",
+    "sources",
     "spliced",
     "starter_text",
     "write_starter",

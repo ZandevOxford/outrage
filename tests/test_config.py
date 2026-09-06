@@ -119,6 +119,26 @@ def test_the_content_policy_travels_with_the_flag(tmp_path):
     assert entry["args"][-2:] == ["--log-content", "none"]
 
 
+def test_an_entry_offers_the_info_tool_unless_told_not_to(tmp_path):
+    assert "--no-info" not in server_entry(tmp_path, command=["outrage-server"])["args"]
+    entry = server_entry(tmp_path, command=["outrage-server"], no_info=True)
+    assert entry["args"][-1] == "--no-info"
+
+
+def test_a_valueless_flag_survives_a_re_run_that_does_not_mention_it(tmp_path):
+    """`--no-info` takes no value, and inheritance is by flag rather than by pair.
+
+    The failure this guards is the one `merge_entry` exists for: a re-run of
+    `outrage config` meant to repair a path must not quietly hand back a tool
+    somebody chose to withhold.
+    """
+    previous = server_entry(tmp_path, command=["outrage-server"], no_info=True)
+
+    merged = config_module.merge_entry(previous, server_entry(tmp_path, command=["outrage-server"]))
+
+    assert "--no-info" in merged["args"]
+
+
 # -- scopes --------------------------------------------------------------
 
 

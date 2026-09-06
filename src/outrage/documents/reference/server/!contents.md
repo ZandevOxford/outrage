@@ -46,23 +46,23 @@
 ### *class* outrage.server.RequestLog(log: [EventLog](eventlog.md#outrage.eventlog.EventLog))
 6646 6646
 
-### outrage.server.build_server(store: [Store](store.md#outrage.store.Store), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → MCPServer
+### outrage.server.build_server(store: [Store](store.md#outrage.store.Store), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/library/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/library/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → MCPServer
 7952 7952
 
 ### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
-10090 10092
+11006 11008
 
 ### outrage.server.main(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
-12215 12219
+13131 13135
 
 ### outrage.server.parse_args(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Namespace](https://docs.python.org/3/library/argparse.html#argparse.Namespace)
-13009 13015
+13925 13931
 
 ### outrage.server.skill(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
-14202 14210
+15182 15190
 
 ### outrage.server.static_instructions() → [str](https://docs.python.org/3/library/stdtypes.html#str)
-15293 15303
+16273 16283
 
 ### outrage.server.tool_description(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
-15742 15754
+16722 16734
