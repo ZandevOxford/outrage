@@ -309,6 +309,42 @@ def test_the_shipped_store_has_no_backend_to_choose(server):
     assert "opened by name and not from a file" in said
 
 
+def test_a_bundle_is_mounted_at_the_keys_its_own_links_name(server, base):
+    """The tool's half of ``extensions``, driven live rather than asserted flat.
+
+    A bundle's documents link to each other by file name, so the mount has to
+    be able to say that the file name *is* the key. The evidence is the link:
+    read the index through the server, follow what it says, and the document is
+    there.
+    """
+    bundle = base / "bundle"
+    (bundle / "guide").mkdir(parents=True)
+    (bundle / "index.md").write_text("see [the guide](guide/intro.md)")
+    (bundle / "guide" / "intro.md").write_text("# Intro")
+
+    said = call(server, "mount", key="docs", file="bundle", type="files", extensions="keep")
+    assert mounts(said) == ["/", "docs", "ref"]
+
+    index = call(server, "read_document", key="docs/index.md")["content"]
+    linked = index.split("(")[1].rstrip(")")
+    assert call(server, "read_document", key=f"docs/{linked}")["content"] == "# Intro"
+
+
+def test_the_shipped_store_is_read_the_way_this_package_wrote_it(server):
+    said = call_expecting_error(server, "mount", key=shipped.MOUNT_POINT, extensions="keep")
+
+    assert "read the way it was written" in said
+    assert "drop `extensions`" in said
+
+
+def test_a_database_mounted_with_a_mapping_says_which_stores_have_one(server):
+    """The refusal a caller reads, rather than a mount that quietly did nothing."""
+    said = call_expecting_error(server, "mount", key="lib", file="other.sqlite", extensions="keep")
+
+    assert "cannot be asked for 'keep' extensions" in said
+    assert "type=files" in said
+
+
 # -- the claim the design rests on ------------------------------------------
 
 

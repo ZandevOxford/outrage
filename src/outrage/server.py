@@ -1800,12 +1800,25 @@ def build_server(
                     )
                 ),
             ] = None,
+            extensions: Annotated[
+                str | None,
+                Field(
+                    description=(
+                        "For a directory of files, whether a known extension is "
+                        "part of the key: 'strip' takes it off, 'keep' makes the "
+                        "file name and the key one string, for a bundle whose "
+                        "documents link to each other by name"
+                    )
+                ),
+            ] = None,
             read_only: Annotated[
                 bool,
                 Field(description="Refuse every write routed here; the file itself is untouched"),
             ] = False,
         ) -> _MountsResult:
-            changed = live.mount(key, file=file, type=type, read_only=read_only)
+            changed = live.mount(
+                key, file=file, type=type, extensions=extensions, read_only=read_only
+            )
             return _mounts_result(changed)
 
         @server.tool(

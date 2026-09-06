@@ -17,6 +17,22 @@ is the backend a mount has to ask for, as `--mount export=tree,type=files` or
 the `type` of an entry in `mounts.toml`. That is what the option grammar in
 [`outrage.mounts.parse_spec()`](mounts.md#outrage.mounts.parse_spec) exists for.
 
+**The mapping has two settings**, and they are the mapping's rather than this
+class's: [`outrage.bulk.EXTENSION_MODES`](bulk.md#outrage.bulk.EXTENSION_MODES). `strip` is the paragraph above
+and what every tree this package wrote is in. `keep` makes a file name and a
+key segment the same string -- `a/b.md` is the key `a/b.md` -- which is what
+reading a documentation bundle somebody else wrote needs, since its documents
+link to each other *by file name* and stripping leaves every such link naming a
+key the store does not hold. It is asked for at the mount, as
+`--mount docs=bundle,type=files,extensions=keep`, because a plain directory
+has nowhere to record which of the two it is in and a marker file would be a
+file in the corpus that is not a document.
+
+That mode has one convention of its own, since identity alone cannot give a
+document the keys below it: [`outrage.bulk.CONTAINER_PREFIX`](bulk.md#outrage.bulk.CONTAINER_PREFIX). A file keeps
+its whole name and its keys live in `.!` beside it, so `document.md` can
+carry a title without giving up the name a link points at.
+
 Two ways in, because there are two kinds of caller.
 `__init__()` is overridden to take the tree
 itself: an export target is an absolute path somebody typed, and
@@ -49,7 +65,7 @@ disk. A walk that has to report either reads what it walks.
 
 ## Where it diverges from the contract, deliberately
 
-Three, each covered by a test that says so:
+Four, each covered by a test that says so:
 
 * **\`\`.\`\` and \`\`..\`\` as whole segments are legal keys and impossible paths.**
   They are refused on write, with [`UnmappableError`](bulk.md#outrage.bulk.UnmappableError), and
@@ -59,6 +75,13 @@ Three, each covered by a test that says so:
 * **A file holding bytes that are not UTF-8 text is not a document.** The walk
   passes over it and [`FilesystemStore.check_file()`](#outrage.store_files.FilesystemStore.check_file) reports it; reading it
   by name says so rather than returning something mangled.
+* **A listing reports the format the file name declares, and a read detects
+  one.** A listing does not open what it lists -- an unmeasured walk cannot --
+  so a name saying nothing lists as `None` where a database says what it
+  detected when the document was stored. Under `strip` only a foreign
+  `myfile.py` has such a name; under `keep` so does any document a bundle
+  named without an extension. Not metadata, in either mode: it carries the
+  extension its format names, which is half of why it does.
 
 Everything else is the contract as `tests/test_store.py` states it, including
 the root document, which is the file named by its extension alone at the top of
@@ -80,7 +103,7 @@ marker in the tree recording it and [`FilesystemStore.stored_format_version`](#o
 answers with this rather than reading one. See
 [`FilesystemStore.stored_format_version()`](#outrage.store_files.FilesystemStore.stored_format_version).
 
-### *class* outrage.store_files.FilesystemStore(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = True, create: [bool](https://docs.python.org/3/library/functions.html#bool) = True, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store_files.FilesystemStore(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = True, create: [bool](https://docs.python.org/3/library/functions.html#bool) = True, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = bulk.DEFAULT_EXTENSIONS, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`FileStore`](store.md#outrage.store.FileStore)
 
@@ -139,6 +162,11 @@ The path a write *would* take, whether or not anything is there yet: a
 report of a copy is about where each document lands. None where that
 path would leave the tree, which is `_readable()`'s answer rather
 than a refusal, since a report is not the place to raise.
+
+Under `keep` the format has no say in the path, so it is not passed
+on: a report is not the place to raise, and asking with a format the
+key's own extension contradicts would answer None for a key whose file
+is perfectly well known.
 
 #### store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
@@ -257,7 +285,7 @@ share theirs: the survey, its count and the list of what it could not
 see have to agree about what was in range, and two expressions of one
 predicate are two chances to disagree.
 
-#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
+#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
 The tree `filename` names inside a store directory.
 
@@ -271,16 +299,24 @@ the directory -- is made for a tree as it is for a database.
 `filename` of None is [`DEFAULT_TREE_NAME`](#outrage.store_files.DEFAULT_TREE_NAME), so a tree mounted
 without a name sits beside the store files rather than being one.
 
+This is the backend `extensions` is *for*, and the only one that
+takes it: it names how a file name and a key segment line up, which is
+a question a store kept in one file does not have. None is the
+constructor's default rather than a third mode.
+
 #### opened_at(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
-The tree at `path`, reading dotfiles the way this store does.
+The tree at `path`, reading dotfiles and naming keys the way this store does.
 
 The base splits a path into a directory and a name within it, which is
 what every other backend's constructor takes; this one's takes the
 directory itself. `hidden` travels with it because the root document
 *is* a dotfile: a copy opened without it would not see the key the
 store it was copied from holds at the root, and would compare short
-for a reason that is not a fault.
+for a reason that is not a fault. `extensions` travels for the
+stronger version of the same reason: it decides what every key in the
+tree is *called*, so a copy opened under the other mode would hold not
+one key of the store it was copied from.
 
 **A backup of a tree is a copy of its documents, not of its
 directory.** Whatever the tree holds that is not a document -- a

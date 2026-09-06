@@ -636,6 +636,7 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     export.add_argument("key", nargs="?", default=None, help="Key whose subtree to export.")
     _conflict_option(export, "A file already there is")
+    _extensions_option(export, "on the way out")
     export.add_argument(
         "--dry-run",
         action="store_true",
@@ -668,6 +669,7 @@ def argument_parser() -> argparse.ArgumentParser:
         help="Key prefix to store beneath. The top level by default.",
     )
     _conflict_option(import_, "A key already holding a document is")
+    _extensions_option(import_, "on the way in")
     import_.add_argument(
         "--hidden",
         action="store_true",
@@ -737,6 +739,7 @@ def argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include files and directories whose name begins with a dot.",
     )
+    _extensions_option(pack, "when packing a directory")
     pack.add_argument(
         "--no-byte-lengths",
         dest="byte_lengths",
@@ -1135,6 +1138,31 @@ def _store_option(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _extensions_option(parser: argparse.ArgumentParser, about: str) -> None:
+    """How file names line up with keys, for a command that walks a tree.
+
+    The same two modes the ``extensions`` mount option names and the same word
+    for each, so a bundle read one way by ``--mount`` is read the same way by
+    an import of it. Spelled as a value rather than as a ``--keep-extensions``
+    switch for that reason: one vocabulary, and a mode the reader can see
+    written out in the help of either front end.
+    """
+    parser.add_argument(
+        f"--{mounts.EXTENSIONS_OPTION}",
+        choices=list(bulk.EXTENSION_MODES),
+        default=bulk.DEFAULT_EXTENSIONS,
+        help=(
+            f"How a file name and a key segment line up {about} (default: "
+            f"{bulk.DEFAULT_EXTENSIONS}). `strip` takes a known extension off "
+            f"to make the key and puts it back to make the file, which is how "
+            f"this package writes a tree. `keep` makes the whole file name the "
+            f"key, so notes.md is the key notes.md -- for a documentation "
+            f"bundle whose documents link to each other by file name, where "
+            f"stripping leaves every link naming a key that is not there."
+        ),
+    )
+
+
 def _table_options(parser: argparse.ArgumentParser) -> None:
     """The mounts a command acts *across*, spelled once for every command that can.
 
@@ -1162,8 +1190,11 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
             f"docs,{mounts.TYPE_OPTION}=files says which backend keeps the "
             "store, for one whose name cannot -- a directory of files has no "
             f"extension to read. Types: {', '.join(store.backend_names())}. "
-            "Repeatable. Reads, writes, surveys and recursive deletes cross "
-            "mount boundaries."
+            f"A tree also takes {mounts.EXTENSIONS_OPTION}=, one of "
+            f"{', '.join(bulk.EXTENSION_MODES)}: `keep` makes a file name and "
+            "a key the same string, for a bundle whose documents link to each "
+            "other by name. Repeatable. Reads, writes, surveys and recursive "
+            "deletes cross mount boundaries."
         ),
     )
     parser.add_argument(
@@ -1372,7 +1403,7 @@ def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
         # had is a success that answers the wrong question.
         raise store.BackupError("check-no-store", path=str(database))
 
-    with store.open_store(directory, filename=root.path, backend=root.type) as opened:
+    with contextlib.closing(root.opened(directory)) as opened:
         if args.dry_run:
             target = opened.backup_path(args.destination, overwrite=args.overwrite)
             print(f"would back up {opened.path} to {target}", file=out)
@@ -1767,6 +1798,7 @@ def _export_command(args: argparse.Namespace, out: TextIO) -> int:
             args.target,
             on_conflict=args.on_conflict,
             dry_run=args.dry_run,
+            extensions=args.extensions,
         )
         return _report_transfers(transfers, args, out, source_first=False)
 
@@ -1787,6 +1819,7 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
             on_conflict=args.on_conflict,
             dry_run=args.dry_run,
             hidden=args.hidden,
+            extensions=args.extensions,
         )
         status = _report_transfers(transfers, args, out, source_first=True)
         where = _file_holding(opened, keys.ROOT)
@@ -1975,7 +2008,9 @@ def _pack_command(args: argparse.Namespace, out: TextIO) -> int:
         status = _report_transfers(
             bulk.pack(
                 target,
-                bulk.documents_from_tree(args.from_dir, args.key, hidden=args.hidden),
+                bulk.documents_from_tree(
+                    args.from_dir, args.key, hidden=args.hidden, extensions=args.extensions
+                ),
                 overwrite=args.overwrite,
                 dry_run=args.dry_run,
                 byte_lengths=args.byte_lengths,
@@ -2362,7 +2397,7 @@ def _open_existing(args: argparse.Namespace):
     """
     root = _root(args)
     directory = maintenance.require_store(store.resolve_directory(args.directory), root.path)
-    return store.open_store(directory, filename=root.path, backend=root.type)
+    return contextlib.closing(root.opened(directory))
 
 
 @contextlib.contextmanager
@@ -2390,7 +2425,7 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
     if not create:
         maintenance.require_store(directory, root.path)
     if not (args.mounts or args.read_only_mounts or args.mount_docs):
-        with store.open_store(directory, filename=root.path, backend=root.type) as opened:
+        with contextlib.closing(root.opened(directory)) as opened:
             yield opened
         return
     with mounts.open_mounts(

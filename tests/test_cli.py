@@ -1412,6 +1412,119 @@ def test_import_stores_a_directory_and_says_where(tmp_path, capsys):
     assert "project/reference/env" in listed
 
 
+def test_import_keeping_extensions_stores_the_keys_a_bundle_links_to(tmp_path):
+    """The flag and the mount option are one vocabulary and one mapping.
+
+    A bundle imported with the extensions kept holds the keys its own documents
+    name, so a link that was correct in the directory is still correct in the
+    store. The same bundle imported the default way holds neither.
+    """
+    bundle = tmp_path / "bundle"
+    (bundle / "guide").mkdir(parents=True)
+    (bundle / "index.md").write_text("see [the guide](guide/intro.md)")
+    (bundle / "guide" / "intro.md").write_text("# Intro")
+
+    status, _ = run("import", "--dir", str(tmp_path / "kept"), str(bundle), "--extensions", "keep")
+    assert status == 0
+    _, listed = run("ls", "--dir", str(tmp_path / "kept"), "--recursive")
+    assert "guide/intro.md" in listed
+    _, read = run("get", "--dir", str(tmp_path / "kept"), "guide/intro.md")
+    assert read.strip() == "# Intro"
+
+    run("import", "--dir", str(tmp_path / "stripped"), str(bundle))
+    _, plain = run("ls", "--dir", str(tmp_path / "stripped"), "--recursive")
+    assert "guide/intro.md" not in plain
+    assert "guide/intro" in plain
+
+
+def test_export_keeping_extensions_writes_the_key_as_the_file_name(tmp_path):
+    """And the round trip through the same mapping is the store it started as."""
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    (bundle / "notes.md").write_text("# Notes")
+    run("import", "--dir", str(tmp_path / "kept"), str(bundle), "--extensions", "keep")
+
+    status, output = run(
+        "export", "--dir", str(tmp_path / "kept"), str(tmp_path / "out"), "--extensions", "keep"
+    )
+
+    assert status == 0
+    assert "wrote" in output
+    assert (tmp_path / "out" / "notes.md").read_text() == "# Notes"
+    assert not (tmp_path / "out" / "notes.md.md").exists()
+
+
+def test_the_root_store_is_opened_the_way_the_spec_says_with_nothing_mounted(tmp_path):
+    """The path a bare ``--store`` takes, which is not the mount table's.
+
+    With nothing mounted the command opens the root store directly rather than
+    building a table, and that shortcut took a spec apart field by field -- so
+    the option parsed, the store opened, and the mapping nobody asked for was
+    used. Found by running it. The assertion is the *key*, because a mapping
+    that did not arrive shows up as different keys and nothing else.
+    """
+    bundle = tmp_path / "store" / "bundle"
+    bundle.mkdir(parents=True)
+    (bundle / "notes.md").write_text("# Notes")
+
+    for command in (["ls", "--recursive"], ["check"]):
+        _, output = run(*command, "--dir", str(tmp_path / "store"), "--store", "bundle,type=files")
+        assert "notes.md" not in output
+
+    _, listed = run(
+        "ls",
+        "--recursive",
+        "--dir",
+        str(tmp_path / "store"),
+        "--store",
+        "bundle,type=files,extensions=keep",
+    )
+    assert "notes.md" in listed
+
+    _, read = run(
+        "get",
+        "--dir",
+        str(tmp_path / "store"),
+        "--store",
+        "bundle,type=files,extensions=keep",
+        "notes.md",
+    )
+    assert read.strip() == "# Notes"
+
+
+def test_a_backup_of_a_tree_is_read_back_under_the_mapping_it_was_opened_with(tmp_path):
+    """A backup verifies by reading its copy, so the copy has to agree.
+
+    Opened the other way it would hold not one of the keys it was copied from
+    and come up short -- a failure with nothing wrong behind it, which is the
+    same reason ``hidden`` travels with a copy.
+    """
+    bundle = tmp_path / "store" / "bundle"
+    bundle.mkdir(parents=True)
+    (bundle / "notes.md").write_text("# Notes")
+
+    status, output = run(
+        "backup",
+        "--dir",
+        str(tmp_path / "store"),
+        "--store",
+        "bundle,type=files,extensions=keep",
+        "--to",
+        str(tmp_path / "copy"),
+    )
+
+    assert status == 0, output
+    assert (tmp_path / "copy" / "notes.md").read_text() == "# Notes"
+
+
+def test_a_mapping_the_flag_does_not_know_is_refused_by_the_parser(tmp_path, capsys):
+    # `choices` rather than a refusal further in: the front end can check a
+    # word against a list, and this is the front end.
+    with pytest.raises(SystemExit):
+        run("import", "--dir", str(tmp_path / "s"), str(tmp_path), "--extensions", "strop")
+    assert "invalid choice" in capsys.readouterr().err
+
+
 def test_import_leaves_what_is_already_stored(tmp_path):
     an_exportable_store(tmp_path / ".outrage")
     run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))

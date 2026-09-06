@@ -15,6 +15,22 @@ is the backend a mount has to ask for, as ``--mount export=tree,type=files`` or
 the ``type`` of an entry in ``mounts.toml``. That is what the option grammar in
 :func:`outrage.mounts.parse_spec` exists for.
 
+**The mapping has two settings**, and they are the mapping's rather than this
+class's: :data:`outrage.bulk.EXTENSION_MODES`. ``strip`` is the paragraph above
+and what every tree this package wrote is in. ``keep`` makes a file name and a
+key segment the same string -- ``a/b.md`` is the key ``a/b.md`` -- which is what
+reading a documentation bundle somebody else wrote needs, since its documents
+link to each other *by file name* and stripping leaves every such link naming a
+key the store does not hold. It is asked for at the mount, as
+``--mount docs=bundle,type=files,extensions=keep``, because a plain directory
+has nowhere to record which of the two it is in and a marker file would be a
+file in the corpus that is not a document.
+
+That mode has one convention of its own, since identity alone cannot give a
+document the keys below it: :data:`outrage.bulk.CONTAINER_PREFIX`. A file keeps
+its whole name and its keys live in ``.!`` beside it, so ``document.md`` can
+carry a title without giving up the name a link points at.
+
 Two ways in, because there are two kinds of caller.
 :meth:`~outrage.store.FileStore.__init__` is overridden to take the tree
 itself: an export target is an absolute path somebody typed, and
@@ -47,7 +63,7 @@ disk. A walk that has to report either reads what it walks.
 
 ## Where it diverges from the contract, deliberately
 
-Three, each covered by a test that says so:
+Four, each covered by a test that says so:
 
 * **``.`` and ``..`` as whole segments are legal keys and impossible paths.**
   They are refused on write, with :class:`~outrage.bulk.UnmappableError`, and
@@ -57,6 +73,13 @@ Three, each covered by a test that says so:
 * **A file holding bytes that are not UTF-8 text is not a document.** The walk
   passes over it and :meth:`FilesystemStore.check_file` reports it; reading it
   by name says so rather than returning something mangled.
+* **A listing reports the format the file name declares, and a read detects
+  one.** A listing does not open what it lists -- an unmeasured walk cannot --
+  so a name saying nothing lists as ``None`` where a database says what it
+  detected when the document was stored. Under ``strip`` only a foreign
+  ``myfile.py`` has such a name; under ``keep`` so does any document a bundle
+  named without an extension. Not metadata, in either mode: it carries the
+  extension its format names, which is half of why it does.
 
 Everything else is the contract as ``tests/test_store.py`` states it, including
 the root document, which is the file named by its extension alone at the top of
@@ -71,7 +94,7 @@ import threading
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Self
 
 from . import bulk, keys
@@ -183,6 +206,7 @@ class FilesystemStore(FileStore):
         log: EventLog | None = None,
         hidden: bool = True,
         create: bool = True,
+        extensions: str = bulk.DEFAULT_EXTENSIONS,
         mount_point: str | None = None,
     ) -> None:
         """Open the tree at ``root``, creating it if it is not there.
@@ -209,6 +233,17 @@ class FilesystemStore(FileStore):
         importing it as one is a surprise. The root document is not affected by
         it either way: it is named by its extension alone, which is the
         mapping's doing rather than an attempt to hide anything.
+
+        ``extensions`` is whether a known extension is part of the key or the
+        format's spelling of it -- :data:`outrage.bulk.EXTENSION_MODES`, and
+        the same two answers wherever the mapping is used. ``strip``, the
+        default, is the mapping this package writes and reads back. ``keep``
+        is for a tree somebody else wrote whose documents **link to each other
+        by file name**: it makes the key and the file name the same string, so
+        a link already in the corpus names the key that holds it. What it costs
+        is a format the key does not spell, which does not round-trip; the keys
+        *below* a document are kept in a container beside it, which is
+        :data:`outrage.bulk.CONTAINER_PREFIX`.
         """
         Store.__init__(self, log=log, mount_point=mount_point)
         self.root = (
@@ -220,6 +255,10 @@ class FilesystemStore(FileStore):
         self.path = self.root
         self.directory = self.root.parent
         self._hidden = hidden
+        # Checked on the way in rather than where it is used, so that a mount
+        # naming a mode nobody recognises is refused as the store is opened
+        # and not by reading as a tree whose keys are not the ones asked for.
+        self._extensions = bulk.check_extensions(extensions)
         # Held only while a `?` is allocated. Allocating reads the level and
         # then writes past its highest number, and two threads reading before
         # either writes pick the same one -- which the SQLite backend keeps off
@@ -250,7 +289,26 @@ class FilesystemStore(FileStore):
         mapping lives: a segment that is not a path component, and a joined
         path that leaves the tree.
         """
-        return bulk.contained_path(self.root, bulk.path_for_key(key, format), key)
+        return bulk.contained_path(self.root, self._relative(key, format), key)
+
+    def _relative(self, key: str, format: str | None) -> PurePosixPath:
+        """Where ``key``'s own file sits, relative to the tree.
+
+        :func:`outrage.bulk.path_for_key` for everything it can answer, and
+        under ``keep`` the parent resolved through :meth:`_dir_for` instead --
+        because which spelling a container has is a question about the tree,
+        and the mapping is a pure function. The file's own name is still the
+        mapping's, refusals included.
+        """
+        parsed = keys.parse(key).key
+        mapped = bulk.path_for_key(key, format, extensions=self._extensions)
+        if self._extensions != "keep" or parsed == keys.ROOT:
+            return mapped
+        parent = parsed.rpartition(keys.DELIMITER)[0]
+        if not parent:
+            return mapped
+        below = self._dir_for(parent).relative_to(self.root)
+        return PurePosixPath(below.as_posix()) / mapped.name
 
     def _readable(self, key: str, format: str | None) -> Path | None:
         """Where ``key`` would be read from, or None if that is outside the tree.
@@ -263,7 +321,7 @@ class FilesystemStore(FileStore):
         ``exists`` that blew up on it.
         """
         try:
-            return bulk.contained_path(self.root, bulk.path_for_key(key, format), key)
+            return bulk.contained_path(self.root, self._relative(key, format), key)
         except bulk.UnmappableError:
             return None
 
@@ -274,16 +332,28 @@ class FilesystemStore(FileStore):
         writing cannot produce -- a write unlinks the others -- and a hand
         edited tree can. The first is what reads, and :meth:`check_file`
         reports the rest.
+
+        **Under ``keep`` a document has at most one**, and that is the mapping
+        rather than a shortcut: its key is a file name whole, so it names one
+        path and the several spellings a format could give it do not arise.
+        Metadata there is written the ordinary way, extension and all, so it
+        has the ordinary several -- see :data:`outrage.bulk.CONTAINER_PREFIX`.
         """
-        candidates = [self._readable(key, format) for format in bulk.EXTENSION_BY_FORMAT]
-        candidates.append(self._readable(key, None))
-        held = {
-            path if path.suffix in bulk.FORMAT_BY_EXTENSION else path.with_suffix("")
-            for path in candidates
-            if path is not None
-        }
+        parsed = keys.parse(key)
+        last = parsed.key.rpartition(keys.DELIMITER)[2]
+        if self._extensions == "keep" and not last.startswith(keys.META_PREFIX):
+            path = self._readable(key, None)
+            found = [] if path is None else [path]
+        else:
+            candidates = [self._readable(key, format) for format in bulk.EXTENSION_BY_FORMAT]
+            candidates.append(self._readable(key, None))
+            found = [
+                path if path.suffix in bulk.FORMAT_BY_EXTENSION else path.with_suffix("")
+                for path in candidates
+                if path is not None
+            ]
         return sorted(
-            (path for path in held if path.is_file() and not path.is_symlink()),
+            (path for path in set(found) if path.is_file() and not path.is_symlink()),
             key=lambda path: path.name,
         )
 
@@ -305,15 +375,55 @@ class FilesystemStore(FileStore):
         report of a copy is about where each document lands. None where that
         path would leave the tree, which is :meth:`_readable`'s answer rather
         than a refusal, since a report is not the place to raise.
+
+        Under ``keep`` the format has no say in the path, so it is not passed
+        on: a report is not the place to raise, and asking with a format the
+        key's own extension contradicts would answer None for a key whose file
+        is perfectly well known.
         """
-        return self._readable(key, format)
+        return self._readable(key, None if self._extensions == "keep" else format)
 
     def _dir_for(self, key: str) -> Path:
-        """The directory holding the keys immediately below ``key``."""
+        """The directory holding the keys immediately below ``key``.
+
+        Under ``keep`` a document keeps its whole name, so the keys below it
+        need a container of their own -- :data:`outrage.bulk.CONTAINER_PREFIX`
+        -- and **which names need one the tree has to answer**. ``notes`` the
+        document and ``notes/`` a bundle's own directory are the same string,
+        so this walks the segments and asks, in this order:
+
+        * a container is already there, and is what it is for;
+        * a plain directory is already there, so it is the bundle's own
+          structure and is read exactly as its documents mean it;
+        * a **file** is there, so that segment is a document and its keys need
+          the container;
+        * nothing is there, and :func:`outrage.bulk.container_name` decides,
+          which is every write into empty space.
+
+        The one order this cannot serve is a child written before its parent's
+        document: the plain directory is taken by then, and the document is
+        refused by :meth:`_write` rather than a bundle's own directory being
+        renamed under the links that point into it. Every write through
+        ``store_document`` or a copy takes the parent first.
+        """
         parsed = keys.parse(key).key
         if parsed == keys.ROOT:
             return self.root
-        return self.root / Path(*parsed.split(keys.DELIMITER))
+        if self._extensions != "keep":
+            return self.root / Path(*parsed.split(keys.DELIMITER))
+        directory = self.root
+        for segment in parsed.split(keys.DELIMITER):
+            held = directory / (bulk.CONTAINER_PREFIX + segment)
+            plain = directory / segment
+            if held.is_dir():
+                directory = held
+            elif plain.is_dir():
+                directory = plain
+            elif plain.is_file():
+                directory = held
+            else:
+                directory = directory / bulk.container_name(segment)
+        return directory
 
     # -- writing ---------------------------------------------------------
 
@@ -376,7 +486,32 @@ class FilesystemStore(FileStore):
             # directory that quietly replaced a link would be a way to lose
             # work that was never in a store to begin with.
             raise bulk.UnmappableError("key-is-a-symlink", key=key, path=str(path))
-        bulk._write_file(path, content)
+        # A name in a directory is a file or a directory and not both, so a
+        # key cannot hold a document and the keys below it at once. Under
+        # `strip` the extension keeps those apart, and a collision means a file
+        # somebody else put in the way -- not the store's to explain, so the
+        # system speaks for itself, which is the rule `tests/test_bulk.py`
+        # states. Under `keep` a document's keys go to a container of their own
+        # (`bulk.CONTAINER_PREFIX`), so what is left is an *order* rather than
+        # a shape: a child written before its parent's document has taken the
+        # plain directory by then, and `_dir_for` will not rename it out from
+        # under the links pointing into it. That is a property of the mapping
+        # the caller asked for, this layer knows precisely what happened, and
+        # an errno reaching whoever is watching would be it declining to say.
+        if self._extensions == "keep":
+            if path.is_dir():
+                raise bulk.UnmappableError("key-is-a-directory", key=key, path=str(path))
+            try:
+                bulk._write_file(path, content)
+            except (FileExistsError, NotADirectoryError, IsADirectoryError) as exc:
+                raise bulk.UnmappableError(
+                    "key-below-a-document",
+                    key=key,
+                    path=str(path),
+                    holder=exc.filename or str(path.parent),
+                ) from exc
+        else:
+            bulk._write_file(path, content)
         if updated_at is not None:
             # The mtime *is* this backend's ``updated_at`` -- there is nowhere
             # else to put one, and a sidecar recording it would be a file in
@@ -737,7 +872,7 @@ class FilesystemStore(FileStore):
     def _children(self, key: str) -> list[tuple[str, Path | None, Path | None]]:
         """:func:`_children` over the directory ``key`` names, with this store's
         answer to whether a dotfile is a document."""
-        return _children(self._dir_for(key), key, hidden=self._hidden)
+        return _children(self._dir_for(key), key, hidden=self._hidden, extensions=self._extensions)
 
     def _holds_anything(self, key: str) -> bool:
         """Whether anything at all lies below ``key``.
@@ -956,7 +1091,9 @@ class FilesystemStore(FileStore):
         document marker, which puts ``a/!title`` in front of ``a/b`` without
         this having to know that it should.
         """
-        for child, path, directory in _children(self._dir_for(key), key, hidden=self._hidden):
+        for child, path, directory in _children(
+            self._dir_for(key), key, hidden=self._hidden, extensions=self._extensions
+        ):
             if path is not None:
                 row = self._row(child, path, measure=measure)
                 if row is not None:
@@ -1002,6 +1139,7 @@ class FilesystemStore(FileStore):
         directory: str | os.PathLike[str] | None = None,
         *,
         filename: str | os.PathLike[str] | None = None,
+        extensions: str | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
     ) -> Self:
@@ -1016,6 +1154,11 @@ class FilesystemStore(FileStore):
 
         ``filename`` of None is :data:`DEFAULT_TREE_NAME`, so a tree mounted
         without a name sits beside the store files rather than being one.
+
+        This is the backend ``extensions`` is *for*, and the only one that
+        takes it: it names how a file name and a key segment line up, which is
+        a question a store kept in one file does not have. None is the
+        constructor's default rather than a third mode.
         """
         return cls(
             store_file(
@@ -1024,17 +1167,21 @@ class FilesystemStore(FileStore):
             ),
             log=log,
             mount_point=mount_point,
+            **({} if extensions is None else {"extensions": extensions}),
         )
 
     def opened_at(self, path: Path) -> Self:
-        """The tree at ``path``, reading dotfiles the way this store does.
+        """The tree at ``path``, reading dotfiles and naming keys the way this store does.
 
         The base splits a path into a directory and a name within it, which is
         what every other backend's constructor takes; this one's takes the
         directory itself. ``hidden`` travels with it because the root document
         *is* a dotfile: a copy opened without it would not see the key the
         store it was copied from holds at the root, and would compare short
-        for a reason that is not a fault.
+        for a reason that is not a fault. ``extensions`` travels for the
+        stronger version of the same reason: it decides what every key in the
+        tree is *called*, so a copy opened under the other mode would hold not
+        one key of the store it was copied from.
 
         **A backup of a tree is a copy of its documents, not of its
         directory.** Whatever the tree holds that is not a document -- a
@@ -1043,7 +1190,7 @@ class FilesystemStore(FileStore):
         over. :meth:`check_file` is what names those, and it is worth running
         before trusting a backup of a tree somebody has been editing by hand.
         """
-        return type(self)(path, hidden=self._hidden)
+        return type(self)(path, hidden=self._hidden, extensions=self._extensions)
 
     @property
     def stored_format_version(self) -> int:
@@ -1100,7 +1247,7 @@ class FilesystemStore(FileStore):
             size += path.stat().st_size
             relative = path.relative_to(self.root)
             try:
-                key, _ = bulk.key_for_path(relative.as_posix())
+                key, _ = bulk.key_for_path(relative.as_posix(), extensions=self._extensions)
                 key = keys.parse(key).key
             except (keys.InvalidKeyError, ValueError):
                 unnamed.append(str(relative))
@@ -1148,7 +1295,7 @@ _NOTHING: frozenset[str] = frozenset()
 
 
 def _children(
-    directory: Path, prefix: str, *, hidden: bool
+    directory: Path, prefix: str, *, hidden: bool, extensions: str = bulk.DEFAULT_EXTENSIONS
 ) -> list[tuple[str, Path | None, Path | None]]:
     """The keys immediately below ``prefix``, in key order, with what holds each.
 
@@ -1156,6 +1303,12 @@ def _children(
     -- ``a.md`` beside ``a/`` is a key that is a document *and* a container,
     which is the whole reason the mapping gives documents an extension. So a
     child is a name and up to two paths rather than one entry per file.
+
+    Under ``keep`` the pair is a name beside its container spelling:
+    ``a.md`` the file and ``.!a.md`` the directory are one key that is a
+    document and a container, which is what :data:`outrage.bulk.CONTAINER_PREFIX`
+    exists to allow. A plain ``a/`` beside ``a.md`` is two keys there rather
+    than one, since the file name is the whole segment.
 
     What is passed over, and each is a decision rather than an omission:
     a **symlink**, in either direction, for the reason an import does not
@@ -1174,19 +1327,33 @@ def _children(
         name = entry.name
         if name.startswith(bulk.TEMP_PREFIX) or entry.is_symlink():
             continue
-        if not hidden and name.startswith("."):
+        held = extensions == "keep" and name.startswith(bulk.CONTAINER_PREFIX)
+        # A container is dotted so that it stays out of a bundle's own
+        # listing, which is not a reason to pass over it: it holds keys this
+        # package wrote, exactly as the root document is a dotfile it wrote.
+        if not hidden and name.startswith(".") and not held:
             continue
         if entry.is_dir():
-            directories.setdefault(name, entry)
+            directories.setdefault(name[len(bulk.CONTAINER_PREFIX) :] if held else name, entry)
         elif entry.is_file():
+            if held:
+                # The prefix names a container, so a file wearing it spells no
+                # key. Passed over here and reported by `check_file`, rather
+                # than one name meaning two things by what sits beside it.
+                continue
             # The root document is the one file named by an extension alone,
             # and it belongs to the key *holding* this directory rather than to
             # a child of it -- so it is not a child here. Only at the top of
             # the tree, which is the only place a key with no segments is.
             if prefix == keys.ROOT and name in bulk.FORMAT_BY_EXTENSION:
                 continue
+            # An extension comes off to make the segment under `strip`, and
+            # under `keep` only for metadata, which is written the ordinary way
+            # because nothing in a bundle links to it.
             stem, extension = os.path.splitext(name)
-            files.setdefault(stem if extension in bulk.FORMAT_BY_EXTENSION else name, entry)
+            stripped = extensions != "keep" or name.startswith(keys.META_PREFIX)
+            segment = stem if stripped and extension in bulk.FORMAT_BY_EXTENSION else name
+            files.setdefault(segment, entry)
 
     found = []
     for segment in files.keys() | directories.keys():

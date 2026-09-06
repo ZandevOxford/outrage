@@ -871,6 +871,18 @@ def _files_not_text(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
 # -- bulk import and export ------------------------------------------------
 
 
+@template("extensions-unknown")
+def _extensions_unknown(name: Namer, /, *, extensions: str, known: Any, **_: Any) -> str:
+    listed = ", ".join(str(one) for one in known)
+    return (
+        f"there is no {extensions!r} way of naming a tree's files. There is: "
+        f"{listed}. `strip` takes a known extension off a file name to make the "
+        f"key, which is how this package writes a tree; `keep` makes the whole "
+        f"file name the key, for a bundle whose documents link to each other by "
+        f"name."
+    )
+
+
 @template("key-escapes-tree")
 def _key_escapes_tree(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
     return (
@@ -885,6 +897,48 @@ def _key_is_a_symlink(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
         f"key {name(key)!r} would be written to {path!r}, which is a symbolic "
         f"link: a link is not a document here, so writing through it would "
         f"replace something this store never held"
+    )
+
+
+@template("key-extension-contradicts-format")
+def _key_extension_contradicts_format(
+    name: Namer, /, *, key: str, extension: str, format: str, declared: str, **_: Any
+) -> str:
+    return (
+        f"key {name(key)!r} would be stored as {format} in a file its own name "
+        f"calls {declared}: this tree keeps extensions, so {extension!r} is "
+        f"part of the key and is what any reader of the file will believe. "
+        f"Spell the key with the extension the format wants, or store it as "
+        f"{declared}."
+    )
+
+
+@template("path-name-is-reserved")
+def _path_name_is_reserved(name: Namer, /, *, path: str, prefix: str = ".!", **_: Any) -> str:
+    return (
+        f"the file {path!r} spells no key: this tree keeps extensions, where a "
+        f"name beginning with {prefix!r} is the directory holding the keys "
+        f"below a document. Reserved so that one name means one thing rather "
+        f"than two depending on what sits beside it."
+    )
+
+
+@template("key-is-a-directory")
+def _key_is_a_directory(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
+    return (
+        f"key {name(key)!r} is the directory {path!r} in this tree, which is "
+        f"where the keys below it are kept: a name is a file or a directory and "
+        f"not both, so this key can hold children or a document and not the two "
+        f"at once"
+    )
+
+
+@template("key-below-a-document")
+def _key_below_a_document(name: Namer, /, *, key: str, path: str, holder: str, **_: Any) -> str:
+    return (
+        f"key {name(key)!r} would be written to {path!r}, and {holder!r} in the "
+        f"way is a file rather than a directory: the key holding it cannot hold "
+        f"children as well, since a name is a file or a directory and not both"
     )
 
 
@@ -1215,6 +1269,15 @@ def _mount_shipped_takes_no_type(name: Namer, /, *, mount: str, **_: Any) -> str
     )
 
 
+@template("mount-shipped-takes-no-extensions")
+def _mount_shipped_takes_no_extensions(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"the store outrage ships for {keys.displayed(mount)!r} is a tree this "
+        f"package wrote, and it is read the way it was written: drop "
+        f"`extensions`, or name a file to mount something else there."
+    )
+
+
 @template("mount-remount-at-root")
 def _mount_remount_at_root(name: Namer, /, **_: Any) -> str:
     return (
@@ -1457,6 +1520,19 @@ def _backend_unknown(name: Namer, /, *, backend: str, filename: str, known: Any,
         f"for are: {listed}. Asked for rather than guessed at, so a name "
         f"nobody recognises is refused instead of quietly opening an empty "
         f"store of some other kind."
+    )
+
+
+@template("backend-takes-no-extensions")
+def _backend_takes_no_extensions(
+    name: Namer, /, *, backend: str, filename: str, extensions: str, **_: Any
+) -> str:
+    about = f" {filename!r}" if filename else ""
+    return (
+        f"the {backend} store{about} cannot be asked for {extensions!r} "
+        f"extensions: how a file name lines up with a key is a question only a "
+        f"directory of files has, and this store is kept in one file. Mount it "
+        f"with `type=files` if it is a tree, or drop the option."
     )
 
 

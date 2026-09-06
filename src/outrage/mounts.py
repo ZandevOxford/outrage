@@ -113,11 +113,28 @@ OPTION_ASSIGNMENT = "="
 #: cannot describe one. See :data:`outrage.store._BY_EXTENSION`.
 TYPE_OPTION = "type"
 
+#: The option that says how a tree's file names line up with keys, for the one
+#: backend that keeps its store as a directory. The value is a mode from
+#: :data:`outrage.bulk.EXTENSION_MODES` -- ``strip``, which is the mapping this
+#: package writes, or ``keep``, which makes a file name and a key segment the
+#: same string.
+#:
+#: **Why a mount says it rather than the tree.** How to read a corpus is a
+#: property of the corpus and there is nowhere in a plain directory to record
+#: one: a marker file would be a file in the tree that is not a document, in
+#: the one backend whose contents somebody else is expected to be editing. So
+#: it is said where the store is named, beside the ``type`` that had to be said
+#: for the same kind of reason.
+#:
+#: A backend that keeps its store in a file has no such question, and refuses
+#: this rather than ignoring it -- :meth:`outrage.store.FileStore.in_directory`.
+EXTENSIONS_OPTION = "extensions"
+
 #: Every option a spec may carry. Anything else is refused rather than ignored,
 #: which is the rule ``mounts.toml`` already follows for a field it does not
 #: know: a mount that quietly did something other than what it says is the
 #: failure a mount configuration is least able to notice.
-OPTIONS = (TYPE_OPTION,)
+OPTIONS = (TYPE_OPTION, EXTENSIONS_OPTION)
 
 #: The ``kind`` a listing reports for a key that is a mount point. A fourth
 #: kind beside 'document', 'metadata' and 'implicit', because a mount point is
@@ -1670,6 +1687,37 @@ class Spec:
     path: Path
     type: str | None = None
     """The backend, when the argument named one, else None for the file to say."""
+    extensions: str | None = None
+    """How file names line up with keys, when the argument said; else the
+    backend's own default. Only a tree has an answer -- see
+    :data:`EXTENSIONS_OPTION`."""
+
+    def opened(
+        self,
+        directory: str | os.PathLike[str] | None = None,
+        *,
+        log: EventLog | None = None,
+        mount_point: str | None = None,
+    ) -> store_module.FileStore:
+        """The store this spec names, opened in ``directory``.
+
+        **The one place a spec becomes a store**, and a method rather than a
+        line repeated wherever one is opened. Every field here is something an
+        argument said about *how to open it*, so a caller taking them apart by
+        hand has to be revisited each time the grammar grows one -- and the
+        failure when it is not is silent in the worst way: the option parses,
+        the mount succeeds, and the store opens under something nobody asked
+        for. Nothing raises and no suite goes red, so the only thing that finds
+        it is somebody reading the keys.
+        """
+        return store_module.default_store(
+            directory,
+            filename=self.path,
+            backend=self.type,
+            extensions=self.extensions,
+            log=log,
+            mount_point=mount_point,
+        )
 
 
 def parse_options(value: str, *, spec: str | None = None) -> Spec:
@@ -1713,7 +1761,7 @@ def parse_options(value: str, *, spec: str | None = None) -> Spec:
         if name in options:
             raise MountError("mount-option-repeated", spec=quoted, option=name)
         options[name] = setting
-    return Spec(Path(file), options.get(TYPE_OPTION))
+    return Spec(Path(file), options.get(TYPE_OPTION), options.get(EXTENSIONS_OPTION))
 
 
 def unparse(spec: Spec) -> str:
@@ -1733,9 +1781,16 @@ def unparse(spec: Spec) -> str:
     file = str(spec.path)
     if OPTION_DELIMITER in file:
         raise MountError("mount-file-unspellable", file=file, delimiter=OPTION_DELIMITER)
-    if spec.type is None:
-        return file
-    return f"{file}{OPTION_DELIMITER}{TYPE_OPTION}{OPTION_ASSIGNMENT}{spec.type}"
+    # In :data:`OPTIONS` order rather than in the order they were written,
+    # which a parsed spec no longer knows: what has to round-trip is what the
+    # options *say*, and one settled order is what makes two specs meaning the
+    # same thing render the same way.
+    written = [(TYPE_OPTION, spec.type), (EXTENSIONS_OPTION, spec.extensions)]
+    return file + "".join(
+        f"{OPTION_DELIMITER}{name}{OPTION_ASSIGNMENT}{value}"
+        for name, value in written
+        if value is not None
+    )
 
 
 def _root_spec(root_mount: str | os.PathLike[str] | Spec | None) -> Spec | None:
@@ -1881,23 +1936,18 @@ def open_mounts(
     try:
         # The root is never among the lent stores: ``mount_point`` refuses it
         # above, as it does for a spec, so this cannot overwrite one.
-        opened[keys.ROOT] = store_module.default_store(
-            base,
-            filename=None if root is None else root.path,
-            backend=None if root is None else root.type,
-            log=log,
-            mount_point=keys.ROOT,
+        # A root nobody named is the default store file under the default
+        # backend, which is what a bare `Spec(Path(...))` would not say: the
+        # filename has to stay None for `default_store` to answer it.
+        opened[keys.ROOT] = (
+            store_module.default_store(base, log=log, mount_point=keys.ROOT)
+            if root is None
+            else root.opened(base, log=log, mount_point=keys.ROOT)
         )
         for prefix, spec in [*writable, *refusing]:
             if prefix in opened:
                 raise MountError("mount-duplicate", mount=prefix)
-            opened[prefix] = store_module.default_store(
-                base,
-                filename=spec.path,
-                backend=spec.type,
-                log=log,
-                mount_point=prefix,
-            )
+            opened[prefix] = spec.opened(base, log=log, mount_point=prefix)
         return MountedStore(opened, read_only=[prefix for prefix, _ in refusing] + list(lent))
     except Exception:
         for store in opened.values():
@@ -1906,6 +1956,7 @@ def open_mounts(
 
 
 __all__ = [
+    "EXTENSIONS_OPTION",
     "MOUNT_KIND",
     "OPTIONS",
     "OPTION_ASSIGNMENT",

@@ -84,6 +84,12 @@ and nothing holds one for longer than that.
 
 alias of [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None)]
 
+### outrage.bulk.DEFAULT_EXTENSIONS *= 'strip'*
+
+The mode nothing else names, and the one every tree this package wrote is
+in. A default rather than an argument each caller passes, because it is the
+mapping as it has always been: `keep` is the thing somebody asks for.
+
 ### outrage.bulk.EXPORT_DIR_PREFIX *= 'outrage-export'*
 
 The per-user directory exports live in, below [`tempfile.gettempdir()`](https://docs.python.org/3/library/tempfile.html#tempfile.gettempdir).
@@ -104,6 +110,49 @@ another, so nothing else removes them: a sweep by age is what a name of its
 own for every export costs. Seven days is John's call, 2026-09-02 - long
 enough that an edit picked up after a weekend still has its record.
 
+### outrage.bulk.CONTAINER_PREFIX *= '.!'*
+
+What a directory holding the keys below a **document** is called under
+`keep`, and the one thing in that mapping which is a convention rather
+than the identity it otherwise is.
+
+**The problem it solves.** A name in a directory is a file or a directory
+and not both. Under `strip` the extension keeps a document and its
+container apart -- `a.md` the file beside `a/` the directory -- and
+under `keep` there is one name for the two, so a document could not carry
+so much as a title. `document.md` keeps its own name and its keys live in
+`.!document.md`, John's call of 2026-09-06.
+
+**Which names get one cannot be decided by the name alone**, and that is the
+one place this mapping consults the tree. `notes` the document and
+`notes/` the bundle directory are the same string, so only what is there
+says which: a segment whose *file* exists needs a container, and a segment
+that is already a plain directory is a bundle's own structure and is left
+alone. [`container_name()`](#outrage.bulk.container_name) is the answer where neither is there, which is
+every write into empty space, and
+`outrage.store_files.FilesystemStore._dir_for()` is where the tree gets
+its say. What that buys is a bundle untouched -- `guide/intro.md` is still
+`guide/intro.md`, and an export under `keep` is a tree somebody can
+browse -- with no key left unwritable.
+
+**Inside a container it is the ordinary mapping again**, John's call:
+metadata keeps the extension its format names, so a title is
+`.!document.md/!title.md` and the container's contents are what `strip`
+would have written. Apart from the directory's own name the two
+representations are the same, which is worth more than the identity would
+have been -- an unextended `!title` is a file whose format nothing on disk
+declares, and a listing, which does not open what it lists, would have to
+answer that it does not know. It also means metadata with children needs no
+container of its own: `!changelog.md` the file and `!changelog/` the
+directory are two names, exactly as under `strip`.
+
+**The prefix is reserved**, and that is the price. A *file* whose name
+begins with it spells no key and [`outrage.store_files.FilesystemStore.check_file()`](store_files.md#outrage.store_files.FilesystemStore.check_file)
+reports it, rather than one name meaning two things depending on what sits
+beside it. The leading dot keeps these out of a bundle's ordinary listing;
+they are exempt from the dotfile skip for the reason the root document is,
+since they are this package's own structure rather than somebody else's.
+
 ### outrage.bulk.EXTENSION_BY_FORMAT *= {'html': '.html', 'json': '.json', 'markdown': '.md', 'text': '.txt'}*
 
 The extension a document is written with, by stored format. Named for the
@@ -111,6 +160,28 @@ direction it maps in, because the inverse is right below it and a reader
 reaching for one of the two should not have to check which is which. One
 entry per member of [`outrage.store.FORMATS`](store.md#outrage.store.FORMATS), so nothing can be stored
 that an export cannot name.
+
+### outrage.bulk.EXTENSION_MODES *= ('strip', 'keep')*
+
+How a file name and a key segment line up. `strip` is the mapping this
+package writes: a document's format names its extension and an import takes
+that extension off again, so `a/b` stored as markdown is the file
+`a/b.md`. `keep` is identity -- a file name **is** a key segment,
+extension included, so the same file is the key `a/b.md`.
+
+**Why there is a choice.** Stripping is right for a tree this package wrote,
+where the extension is its own doing and is how a format survives the round
+trip. It is wrong for a documentation bundle somebody else wrote, where the
+names are given and the documents *link to them*: strip them and every
+relative link in the corpus names a key that is not there.
+
+**What \`\`keep\`\` costs is what the extension was buying.** A key with no
+extension is written to a file with none, so a format the key does not spell
+does not round-trip -- `notes` stored as text reads back as markdown, which
+is what `outrage.store._detect_format()` answers for prose -- and a key
+that *does* spell one may not contradict the format being stored. The other
+half, a key holding a document *and* the keys below it, is what
+[`CONTAINER_PREFIX`](#outrage.bulk.CONTAINER_PREFIX) answers.
 
 ### *class* outrage.bulk.ExportRecord(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content_sha256: [str](https://docs.python.org/3/library/stdtypes.html#str), exported_at: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, store: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
@@ -393,6 +464,17 @@ Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](h
 
 Raised when a key has no file it can be written to, or a file no key.
 
+### outrage.bulk.check_extensions(extensions: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+`extensions` back, or say that it names no mapping.
+
+Here rather than in the store that takes it, because the modes are the
+mapping's and this is where the mapping lives. Checked at all for the
+reason `outrage.store._backend_for()` refuses a `type` nobody
+recognises: a mode is *asked for* rather than guessed at, and one that fell
+back to the default would mount a tree whose keys are not the keys the
+caller asked for and read as simply the wrong store.
+
 ### outrage.bulk.check_write(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, storing: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Check](#outrage.bulk.Check)
 
 Refuse a write to `key` unless `path` says what it was made against.
@@ -450,6 +532,28 @@ without enumerating what a component may look like on any platform.
 reading of a path that does not exist yet: the file being written is
 usually the part that is missing, and it is the *directories* above it that
 a link can redirect.
+
+### outrage.bulk.container_name(segment: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+What holds the keys below `segment` under `keep`, where nothing is there yet.
+
+The default rather than the rule: a name carrying an extension is a
+document in every bundle worth reading, so its keys are given a container
+at once; anything else is assumed to be structure and keeps a plain
+directory. A tree that already answers the question overrides this -- see
+[`CONTAINER_PREFIX`](#outrage.bulk.CONTAINER_PREFIX) and
+`outrage.store_files.FilesystemStore._dir_for()`.
+
+Metadata is not special here. It carries the extension its format names, so
+`!changelog.md` the file and `!changelog/` the directory are two names
+and need no third.
+
+```pycon
+>>> container_name("guide.md"), container_name("!changelog.md")
+('.!guide.md', '.!!changelog.md')
+>>> container_name("guide"), container_name("!changelog"), container_name("22")
+('guide', '!changelog', '22')
+```
 
 ### outrage.bulk.content_hash(content: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
@@ -527,6 +631,15 @@ opposite call to the first: a mid-run refusal leaves the copy half done and
 the caller reasoning about a cursor, where skipping completes the copy,
 loses nothing, and hands the awkward case back.
 
+### outrage.bulk.declared_format(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+
+The format a file name's extension declares, or None for one that does not.
+
+```pycon
+>>> declared_format("a.md"), declared_format("a.py"), declared_format("a")
+('markdown', None, None)
+```
+
 ### outrage.bulk.documents_from_store(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)] | [None](https://docs.python.org/3/library/constants.html#None)]]
 
 Every document at and below `key` in `opened`, beside the report.
@@ -541,7 +654,7 @@ make the survey worthless, and so would a pack.
 Timestamps come across too, which is what makes this a compaction rather
 than a copy that quietly restamps the corpus.
 
-### outrage.bulk.documents_from_tree(source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)] | [None](https://docs.python.org/3/library/constants.html#None)]]
+### outrage.bulk.documents_from_tree(source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)] | [None](https://docs.python.org/3/library/constants.html#None)]]
 
 Every file below `source` as a document, beside the report of it.
 
@@ -586,7 +699,7 @@ into otherwise. `gettempdir()` is shared between users on a POSIX
 machine, so a directory at a name another user could have pre-created is
 the one new risk moving out of the project took on.
 
-### outrage.bulk.export_tree(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), target: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
+### outrage.bulk.export_tree(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), target: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
 
 Write every document at and below `key` into `target`, one per file.
 
@@ -602,9 +715,31 @@ never in the store to begin with. What is already there is decided **by
 key** rather than by one spelling of its file, so a document held as
 `a.md` collides with one arriving as json.
 
+`extensions` is how a key becomes a file name -- see
+[`EXTENSION_MODES`](#outrage.bulk.EXTENSION_MODES). An export under `keep` writes each document's
+key as it is spelled, which is what a tree meant to be *linked into* wants:
+the cost is that a **document** whose key spells no extension is written to
+a file with none, and so comes back as markdown. Metadata is unaffected --
+it is written the ordinary way inside [`CONTAINER_PREFIX`](#outrage.bulk.CONTAINER_PREFIX).
+
 `FilesystemStore` is imported here rather than at the top of the module
 because it is written in terms of this one -- the mapping lives here and
 the store is expressed in it, not the other way round.
+
+### outrage.bulk.file_name(segment: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+What the file holding `segment`'s own document is called, under `keep`.
+
+The segment itself, which is the whole of the mode -- except for metadata,
+which takes the extension its format names because nothing in a bundle
+links to it and a format nothing declares is a format lost.
+
+```pycon
+>>> file_name("guide.md"), file_name("notes"), file_name("!title")
+('guide.md', 'notes', '!title.md')
+>>> file_name("!contents", "json")
+'!contents.json'
+```
 
 ### outrage.bulk.import_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, against: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Imported](#outrage.bulk.Imported)
 
@@ -640,7 +775,7 @@ thing a person may legitimately mean. What guards the accident is the
 report: both sizes come back, so an edit script that truncated is visible
 to whoever asked.
 
-### outrage.bulk.import_tree(opened: [Store](store.md#outrage.store.Store), source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
+### outrage.bulk.import_tree(opened: [Store](store.md#outrage.store.Store), source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
 
 Store every file below `source`, keyed by its path under `key`.
 
@@ -653,6 +788,11 @@ the policy for a **foreign** tree -- one this package did not write, where
 a `.git` or a `.DS_Store` is not a document and importing it as one is
 a surprise. The root document is exempt either way, since it is named by
 its extension alone.
+
+`extensions` is the other half of that policy and the same argument --
+see [`EXTENSION_MODES`](#outrage.bulk.EXTENSION_MODES). A foreign bundle whose documents link to each
+other by file name imports under `keep`, so that a link already in the
+corpus names the key that holds it.
 
 What the tree does not hold as a document does not cross and is not
 reported: a symlink, a half-written file, a name that is not a key, and the
@@ -669,24 +809,7 @@ and a guarantee that quietly weakens when the source changes is worse than
 one never offered. `--dry-run` is what answers the question that mode was
 reaching for.
 
-### outrage.bulk.pack(target: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], documents: [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)] | [None](https://docs.python.org/3/library/constants.html#None)]], \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, byte_lengths: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
-
-Report each document as it is read, then write them all as one file.
-
-**The write is at the end, and that is the shape of the format rather than
-a choice.** A parquet store is sorted by key on the way in and its
-statistics describe the whole of it, so there is no point at which half a
-file is a usable store. So this reports `read` per document, not
-`wrote`: an interrupted pack has written nothing, and a report claiming
-otherwise would be the kind of half-truth `import_tree` streams
-specifically to avoid.
-
-Nothing is skipped for collisions the way an import is. There is nothing to
-collide with -- the target is a new file, refused outright if it is already
-there unless `overwrite` -- and two source documents claiming one key is
-resolved by the last one, which is what overwriting means everywhere else.
-
-### outrage.bulk.key_for_path(relative: [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath) | [str](https://docs.python.org/3/library/stdtypes.html#str), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+### outrage.bulk.key_for_path(relative: [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath) | [str](https://docs.python.org/3/library/stdtypes.html#str), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
 
 The key a file at `relative` imports to, and the format it declares.
 
@@ -704,6 +827,27 @@ it whole and has its format detected from the content instead.
 >>> key_for_path("src/myfile.py")
 ('src/myfile.py', None)
 ```
+
+Under `extensions="keep"` the name is the key segment, whole. The
+**format is still read off the extension** -- what changes is the key, not
+what the file says it holds -- and a directory named for
+[`CONTAINER_PREFIX`](#outrage.bulk.CONTAINER_PREFIX) gives back the segment it holds the keys below.
+Metadata is the exception in both directions: it is written with an
+extension and so has one taken off again, which is what makes a container's
+contents read exactly as `strip` wrote them.
+
+```pycon
+>>> key_for_path("a/b.md", extensions="keep")
+('a/b.md', 'markdown')
+>>> key_for_path("a/.!b.md/!title.md", extensions="keep")
+('a/b.md/!title', 'markdown')
+>>> key_for_path("a/.!b.md/chapter", extensions="keep")
+('a/b.md/chapter', None)
+```
+
+A *file* named for that prefix spells no key at all, which is the price of
+reserving it: one name means one thing, rather than two depending on what
+sits beside it.
 
 ### outrage.bulk.levels(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
 
@@ -859,7 +1003,24 @@ through. Both front ends call this one, because the command line and the
 server disagreeing about which copies are allowed is exactly the split
 `mounts.toml` was made to avoid.
 
-### outrage.bulk.path_for_key(key: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath)
+### outrage.bulk.pack(target: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], documents: [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)] | [None](https://docs.python.org/3/library/constants.html#None)]], \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, byte_lengths: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
+
+Report each document as it is read, then write them all as one file.
+
+**The write is at the end, and that is the shape of the format rather than
+a choice.** A parquet store is sorted by key on the way in and its
+statistics describe the whole of it, so there is no point at which half a
+file is a usable store. So this reports `read` per document, not
+`wrote`: an interrupted pack has written nothing, and a report claiming
+otherwise would be the kind of half-truth `import_tree` streams
+specifically to avoid.
+
+Nothing is skipped for collisions the way an import is. There is nothing to
+collide with -- the target is a new file, refused outright if it is already
+there unless `overwrite` -- and two source documents claiming one key is
+resolved by the last one, which is what overwriting means everywhere else.
+
+### outrage.bulk.path_for_key(key: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath)
 
 The relative path `key` is written to, extension included.
 
@@ -871,6 +1032,36 @@ The relative path `key` is written to, extension included.
 >>> path_for_key("a/b/!title")
 PurePosixPath('a/b/!title.md')
 ```
+
+Under `extensions="keep"` the last segment is the file name, so nothing
+is appended and a key already carrying an extension keeps exactly the one
+it has -- except metadata, which takes its format's extension because
+nothing links to it. Segments above it name directories, by
+[`container_name()`](#outrage.bulk.container_name):
+
+```pycon
+>>> path_for_key("a/b.md", "markdown", extensions="keep")
+PurePosixPath('a/b.md')
+>>> path_for_key("a/b", "text", extensions="keep")
+PurePosixPath('a/b')
+>>> path_for_key("a/b.md/!title", None, extensions="keep")
+PurePosixPath('a/.!b.md/!title.md')
+>>> path_for_key("a/b.md/!changelog/22", None, extensions="keep")
+PurePosixPath('a/.!b.md/!changelog/22')
+```
+
+**This is the answer for a tree that says nothing else.** Whether an
+extensionless segment holds a document -- and so needs a container rather
+than a plain directory -- only the tree can answer, and
+`outrage.store_files.FilesystemStore._dir_for()` is what asks it. A
+store resolves a path through that and falls back to this.
+
+A key whose extension **contradicts** the format being stored is refused
+there, rather than writing a file whose name says one thing and whose
+content is another -- which would read back as what the name said.
+
+The root is the exception in both modes, and has to be: it has no segments
+to be a path, so its file is named by the extension alone.
 
 ### outrage.bulk.renew(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), check: [Check](#outrage.bulk.Check), content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [None](https://docs.python.org/3/library/constants.html#None)
 

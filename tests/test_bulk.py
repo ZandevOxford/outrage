@@ -20,6 +20,7 @@ from pathlib import Path, PurePosixPath
 
 import pytest
 
+from conftest import raises_rendered
 from outrage import bulk, contents, messages
 from outrage import store as store_module
 from outrage.keys import InvalidKeyError
@@ -102,6 +103,132 @@ def test_a_traversing_segment_has_no_path():
     for key in ("a/../b", "a/./b", ".."):
         with pytest.raises(bulk.UnmappableError):
             bulk.path_for_key(key, "markdown")
+
+
+@pytest.mark.parametrize(
+    ("key", "format", "path"),
+    [
+        ("a.md", "markdown", "a.md"),
+        ("a/b.md", "markdown", "a/b.md"),
+        ("a/b.json", "json", "a/b.json"),
+        ("guide", None, "guide"),
+        ("src/myfile.py", None, "src/myfile.py"),
+        # Metadata is the exception: written the ordinary way, extension and
+        # all, so a container's contents are what `strip` would have written.
+        ("a/b/!title", "markdown", "a/b/!title.md"),
+        ("a/b/!contents", "json", "a/b/!contents.json"),
+        # And a document's own keys go to a container beside it.
+        ("a/b.md/!title", "markdown", "a/.!b.md/!title.md"),
+        ("a/b.md/chapter", None, "a/.!b.md/chapter"),
+        ("a/b.md/!changelog/22", None, "a/.!b.md/!changelog/22"),
+    ],
+)
+def test_keeping_extensions_makes_the_key_the_path(key, format, path):
+    # The whole of `keep`: a file name *is* a key segment, so the two round
+    # trip as the same string and a link a bundle already holds to `a/b.md`
+    # names the key that holds it.
+    assert bulk.path_for_key(key, format, extensions="keep") == PurePosixPath(path)
+    assert bulk.key_for_path(path, extensions="keep") == (key, format)
+
+
+def test_keeping_extensions_still_reads_the_format_off_the_name():
+    # What changes is the key, not what the file says it holds: `a.md` is the
+    # key `a.md` and is still markdown, so a copy out of a kept tree carries
+    # the format the extension declares rather than detecting one.
+    assert bulk.key_for_path("a.md", extensions="keep") == ("a.md", "markdown")
+    assert bulk.key_for_path("a.json", extensions="keep") == ("a.json", "json")
+    assert bulk.key_for_path("a.py", extensions="keep") == ("a.py", None)
+
+
+def test_a_kept_key_may_not_contradict_the_format_being_stored():
+    # The file would hold JSON under a name every reader of the tree will
+    # believe says markdown, and would read back as markdown -- the write and
+    # the sentence beside it disagreeing, on disk.
+    with raises_rendered(bulk.UnmappableError, "json.*calls markdown") as raised:
+        bulk.path_for_key("guide.md", "json", extensions="keep")
+    assert raised.value.code == "key-extension-contradicts-format"
+    # A key that declares nothing is not a contradiction, it is the cost of the
+    # mode: the file has no extension and the format is detected on the way
+    # back, which for text means it reads as markdown.
+    assert bulk.path_for_key("notes", "text", extensions="keep") == PurePosixPath("notes")
+
+
+def test_the_root_is_named_by_its_extension_under_either_mapping():
+    # It has no segments to be a path, so there is nothing for `keep` to keep.
+    assert bulk.path_for_key("", "markdown", extensions="keep") == PurePosixPath(".md")
+    assert bulk.key_for_path(".md", extensions="keep") == ("", "markdown")
+
+
+def test_a_container_is_named_for_the_segment_it_holds_the_keys_below():
+    # Syntactic, so a path stays a pure function of a key: a segment that could
+    # name a file this mapping writes needs a container of its own, and a plain
+    # one -- which is a bundle's own structure -- is left alone.
+    assert bulk.container_name("guide.md") == ".!guide.md"
+    assert bulk.container_name("guide") == "guide"
+    assert bulk.container_name("22") == "22"
+    # Metadata needs none: it carries its format's extension, so the file and
+    # the directory are two names already, exactly as under `strip`.
+    assert bulk.container_name("!changelog") == "!changelog"
+    assert bulk.file_name("!changelog") == "!changelog.md"
+    assert bulk.file_name("guide.md") == "guide.md"
+
+
+def test_a_kept_tree_round_trips_through_an_export_with_its_metadata():
+    """The convention's real assertion: out, back in, and the same store.
+
+    It exercises every half at once -- the container on the way out, the
+    dotfile exemption that stops an import passing it over, and the prefix
+    coming back off to give the key it stood for. A title that did not survive
+    would be the whole point of the mode lost quietly.
+    """
+    with tempfile.TemporaryDirectory() as where:
+        root = pathlib.Path(where)
+        with SqliteStore(root / "a.sqlite") as source:
+            source.store_document("guide.md", "# Guide", title="The guide")
+            source.store_document("guide/intro.md", "# Intro")
+            source.store_document("guide.md/!changelog", "what changed")
+            source.store_document("guide.md/!changelog/22", "note twenty-two")
+
+            list(bulk.export_tree(source, None, root / "tree", extensions="keep"))
+
+            # The document keeps the name a link would spell, and nothing the
+            # store invented sits beside it in the bundle's own listing.
+            assert (root / "tree" / "guide.md").read_text() == "# Guide"
+            assert (root / "tree" / "guide" / "intro.md").read_text() == "# Intro"
+            assert (root / "tree" / ".!guide.md" / "!title.md").read_text() == "The guide"
+            # Metadata with children needs no container: `!changelog.md` the
+            # file and `!changelog/` the directory are two names.
+            assert (root / "tree" / ".!guide.md" / "!changelog.md").exists()
+            assert (root / "tree" / ".!guide.md" / "!changelog" / "22").exists()
+
+            with SqliteStore(root / "b.sqlite") as back:
+                # `hidden` false: the foreign-tree policy, which is exactly
+                # where a dotted container would have been passed over.
+                list(bulk.import_tree(back, root / "tree", extensions="keep"))
+                assert back.retrieve_document("guide.md").content == "# Guide"
+                assert back.retrieve_document("guide.md/!title").content == "The guide"
+                assert back.retrieve_document("guide.md/!changelog/22").content == (
+                    "note twenty-two"
+                )
+                assert back.retrieve_document("guide/intro.md").content == "# Intro"
+
+            # And the pack walk, which is the other reader of the same tree.
+            packed = dict(
+                (transfer.key, row)
+                for transfer, row in bulk.documents_from_tree(root / "tree", extensions="keep")
+                if row is not None
+            )
+            assert "guide.md/!title" in packed
+            assert "guide.md/!changelog/22" in packed
+
+
+def test_a_mapping_nobody_recognises_is_refused_rather_than_assumed():
+    # Asked for rather than guessed at, the argument `type=` makes: a mode that
+    # fell back would read as a store with different keys in it.
+    with raises_rendered(store_module.BackendError, "no 'strop' way of naming") as raised:
+        bulk.check_extensions("strop")
+    assert raised.value.code == "extensions-unknown"
+    assert bulk.check_extensions("keep") == "keep"
 
 
 def test_a_file_named_for_the_wildcard_is_refused():

@@ -95,7 +95,7 @@ The table as it is now. Read it once, at the start of a call.
 
 The store directory a mounted file is named relative to.
 
-#### mount(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Changed](#outrage.remount.Changed)
+#### mount(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Changed](#outrage.remount.Changed)
 
 Open a store and mount it at `key`, replacing whatever is there.
 
@@ -106,6 +106,14 @@ back for a caller that unmounted the manual, since a tree in
 `site-packages` has no spelling as a mount file. A shipped store is
 always mounted read-only: the next upgrade replaces it, so anything
 written there would be lost, and the table the call returns says so.
+
+`extensions` is the mount option of the same name, and only a tree
+has an answer to it -- [`EXTENSIONS_OPTION`](mounts.md#outrage.mounts.EXTENSIONS_OPTION). It is
+what mounts a documentation bundle whose documents link to each other
+by file name, since `keep` makes the key and the file name one
+string. A backend that keeps its store in a file refuses it, as does a
+shipped store, whose tree this package wrote and already reads its own
+way.
 
 A read-only mount must already exist, the same refusal
 [`open_mounts()`](mounts.md#outrage.mounts.open_mounts) makes and for the same reason: a

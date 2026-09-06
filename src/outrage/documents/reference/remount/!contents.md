@@ -22,17 +22,17 @@
 #### *property* directory *: [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
 5805 5805
 
-#### mount(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Changed](#outrage.remount.Changed)
+#### mount(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Changed](#outrage.remount.Changed)
 6020 6020
 
 #### unmount(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Changed](#outrage.remount.Changed)
-7518 7520
+8105 8107
 
 #### close() → [None](https://docs.python.org/3/library/constants.html#None)
-7957 7961
+8544 8548
 
 ### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/library/functions.html#bool), shipped: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
-8076 8082
+8663 8669
 
 ### outrage.remount.notes_for_unmount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
-9527 9535
+10114 10122

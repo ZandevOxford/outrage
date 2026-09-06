@@ -88,6 +88,74 @@ EXTENSION_BY_FORMAT = {
 #: a document may be *stored* as; this is what a file name says it is.
 FORMAT_BY_EXTENSION = {extension: format for format, extension in EXTENSION_BY_FORMAT.items()}
 
+#: How a file name and a key segment line up. ``strip`` is the mapping this
+#: package writes: a document's format names its extension and an import takes
+#: that extension off again, so ``a/b`` stored as markdown is the file
+#: ``a/b.md``. ``keep`` is identity -- a file name **is** a key segment,
+#: extension included, so the same file is the key ``a/b.md``.
+#:
+#: **Why there is a choice.** Stripping is right for a tree this package wrote,
+#: where the extension is its own doing and is how a format survives the round
+#: trip. It is wrong for a documentation bundle somebody else wrote, where the
+#: names are given and the documents *link to them*: strip them and every
+#: relative link in the corpus names a key that is not there.
+#:
+#: **What ``keep`` costs is what the extension was buying.** A key with no
+#: extension is written to a file with none, so a format the key does not spell
+#: does not round-trip -- ``notes`` stored as text reads back as markdown, which
+#: is what :func:`outrage.store._detect_format` answers for prose -- and a key
+#: that *does* spell one may not contradict the format being stored. The other
+#: half, a key holding a document *and* the keys below it, is what
+#: :data:`CONTAINER_PREFIX` answers.
+EXTENSION_MODES = ("strip", "keep")
+
+#: What a directory holding the keys below a **document** is called under
+#: ``keep``, and the one thing in that mapping which is a convention rather
+#: than the identity it otherwise is.
+#:
+#: **The problem it solves.** A name in a directory is a file or a directory
+#: and not both. Under ``strip`` the extension keeps a document and its
+#: container apart -- ``a.md`` the file beside ``a/`` the directory -- and
+#: under ``keep`` there is one name for the two, so a document could not carry
+#: so much as a title. ``document.md`` keeps its own name and its keys live in
+#: ``.!document.md``, John's call of 2026-09-06.
+#:
+#: **Which names get one cannot be decided by the name alone**, and that is the
+#: one place this mapping consults the tree. ``notes`` the document and
+#: ``notes/`` the bundle directory are the same string, so only what is there
+#: says which: a segment whose *file* exists needs a container, and a segment
+#: that is already a plain directory is a bundle's own structure and is left
+#: alone. :func:`container_name` is the answer where neither is there, which is
+#: every write into empty space, and
+#: :meth:`outrage.store_files.FilesystemStore._dir_for` is where the tree gets
+#: its say. What that buys is a bundle untouched -- ``guide/intro.md`` is still
+#: ``guide/intro.md``, and an export under ``keep`` is a tree somebody can
+#: browse -- with no key left unwritable.
+#:
+#: **Inside a container it is the ordinary mapping again**, John's call:
+#: metadata keeps the extension its format names, so a title is
+#: ``.!document.md/!title.md`` and the container's contents are what ``strip``
+#: would have written. Apart from the directory's own name the two
+#: representations are the same, which is worth more than the identity would
+#: have been -- an unextended ``!title`` is a file whose format nothing on disk
+#: declares, and a listing, which does not open what it lists, would have to
+#: answer that it does not know. It also means metadata with children needs no
+#: container of its own: ``!changelog.md`` the file and ``!changelog/`` the
+#: directory are two names, exactly as under ``strip``.
+#:
+#: **The prefix is reserved**, and that is the price. A *file* whose name
+#: begins with it spells no key and :meth:`outrage.store_files.FilesystemStore.check_file`
+#: reports it, rather than one name meaning two things depending on what sits
+#: beside it. The leading dot keeps these out of a bundle's ordinary listing;
+#: they are exempt from the dotfile skip for the reason the root document is,
+#: since they are this package's own structure rather than somebody else's.
+CONTAINER_PREFIX = ".!"
+
+#: The mode nothing else names, and the one every tree this package wrote is
+#: in. A default rather than an argument each caller passes, because it is the
+#: mapping as it has always been: ``keep`` is the thing somebody asks for.
+DEFAULT_EXTENSIONS = "strip"
+
 #: What a half-written file is called while it is being written. Named rather
 #: than spelled inline because a store that *reads* a tree has to skip one:
 #: :func:`_write_file` finishes with ``os.replace``, so the temporary is only
@@ -166,7 +234,76 @@ def walk(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
 # -- the mapping ---------------------------------------------------------
 
 
-def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
+def check_extensions(extensions: str) -> str:
+    """``extensions`` back, or say that it names no mapping.
+
+    Here rather than in the store that takes it, because the modes are the
+    mapping's and this is where the mapping lives. Checked at all for the
+    reason :func:`outrage.store._backend_for` refuses a ``type`` nobody
+    recognises: a mode is *asked for* rather than guessed at, and one that fell
+    back to the default would mount a tree whose keys are not the keys the
+    caller asked for and read as simply the wrong store.
+    """
+    if extensions not in EXTENSION_MODES:
+        raise store.BackendError(
+            "extensions-unknown", extensions=extensions, known=list(EXTENSION_MODES)
+        )
+    return extensions
+
+
+def container_name(segment: str) -> str:
+    """What holds the keys below ``segment`` under ``keep``, where nothing is there yet.
+
+    The default rather than the rule: a name carrying an extension is a
+    document in every bundle worth reading, so its keys are given a container
+    at once; anything else is assumed to be structure and keeps a plain
+    directory. A tree that already answers the question overrides this -- see
+    :data:`CONTAINER_PREFIX` and
+    :meth:`outrage.store_files.FilesystemStore._dir_for`.
+
+    Metadata is not special here. It carries the extension its format names, so
+    ``!changelog.md`` the file and ``!changelog/`` the directory are two names
+    and need no third.
+
+    >>> container_name("guide.md"), container_name("!changelog.md")
+    ('.!guide.md', '.!!changelog.md')
+    >>> container_name("guide"), container_name("!changelog"), container_name("22")
+    ('guide', '!changelog', '22')
+    """
+    if declared_format(segment) is not None:
+        return CONTAINER_PREFIX + segment
+    return segment
+
+
+def file_name(segment: str, format: str | None = None) -> str:
+    """What the file holding ``segment``'s own document is called, under ``keep``.
+
+    The segment itself, which is the whole of the mode -- except for metadata,
+    which takes the extension its format names because nothing in a bundle
+    links to it and a format nothing declares is a format lost.
+
+    >>> file_name("guide.md"), file_name("notes"), file_name("!title")
+    ('guide.md', 'notes', '!title.md')
+    >>> file_name("!contents", "json")
+    '!contents.json'
+    """
+    if not segment.startswith(keys.META_PREFIX):
+        return segment
+    return segment + EXTENSION_BY_FORMAT.get(format or "markdown", EXTENSION_BY_FORMAT["markdown"])
+
+
+def declared_format(name: str) -> str | None:
+    """The format a file name's extension declares, or None for one that does not.
+
+    >>> declared_format("a.md"), declared_format("a.py"), declared_format("a")
+    ('markdown', None, None)
+    """
+    return FORMAT_BY_EXTENSION.get(os.path.splitext(name)[1])
+
+
+def path_for_key(
+    key: str, format: str | None = None, *, extensions: str = DEFAULT_EXTENSIONS
+) -> PurePosixPath:
     """The relative path ``key`` is written to, extension included.
 
     >>> path_for_key("a/b", "markdown"), path_for_key("a/b", "json")
@@ -175,6 +312,34 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
     (PurePosixPath('a/b.txt'), PurePosixPath('a/b.html'))
     >>> path_for_key("a/b/!title")
     PurePosixPath('a/b/!title.md')
+
+    Under ``extensions="keep"`` the last segment is the file name, so nothing
+    is appended and a key already carrying an extension keeps exactly the one
+    it has -- except metadata, which takes its format's extension because
+    nothing links to it. Segments above it name directories, by
+    :func:`container_name`:
+
+    >>> path_for_key("a/b.md", "markdown", extensions="keep")
+    PurePosixPath('a/b.md')
+    >>> path_for_key("a/b", "text", extensions="keep")
+    PurePosixPath('a/b')
+    >>> path_for_key("a/b.md/!title", None, extensions="keep")
+    PurePosixPath('a/.!b.md/!title.md')
+    >>> path_for_key("a/b.md/!changelog/22", None, extensions="keep")
+    PurePosixPath('a/.!b.md/!changelog/22')
+
+    **This is the answer for a tree that says nothing else.** Whether an
+    extensionless segment holds a document -- and so needs a container rather
+    than a plain directory -- only the tree can answer, and
+    :meth:`outrage.store_files.FilesystemStore._dir_for` is what asks it. A
+    store resolves a path through that and falls back to this.
+
+    A key whose extension **contradicts** the format being stored is refused
+    there, rather than writing a file whose name says one thing and whose
+    content is another -- which would read back as what the name said.
+
+    The root is the exception in both modes, and has to be: it has no segments
+    to be a path, so its file is named by the extension alone.
     """
     parsed = keys.parse(key).key
     extension = EXTENSION_BY_FORMAT.get(format or "markdown", EXTENSION_BY_FORMAT["markdown"])
@@ -191,6 +356,19 @@ def path_for_key(key: str, format: str | None = None) -> PurePosixPath:
     for segment in segments:
         if segment in TRAVERSAL:
             raise UnmappableError("key-segment-is-traversal", key=key, segment=segment)
+    if extensions == "keep":
+        declared = declared_format(segments[-1])
+        if format is not None and declared is not None and declared != format:
+            raise UnmappableError(
+                "key-extension-contradicts-format",
+                key=key,
+                extension=os.path.splitext(segments[-1])[1],
+                format=format,
+                declared=declared,
+            )
+        return PurePosixPath(
+            *(container_name(one) for one in segments[:-1]), file_name(segments[-1], format)
+        )
     return PurePosixPath(*segments[:-1], segments[-1] + extension)
 
 
@@ -222,7 +400,10 @@ def contained_path(root: str | os.PathLike[str], relative: PurePosixPath, key: s
 
 
 def key_for_path(
-    relative: PurePosixPath | str, prefix: str | None = None
+    relative: PurePosixPath | str,
+    prefix: str | None = None,
+    *,
+    extensions: str = DEFAULT_EXTENSIONS,
 ) -> tuple[str, str | None]:
     """The key a file at ``relative`` imports to, and the format it declares.
 
@@ -238,6 +419,25 @@ def key_for_path(
     (('notes', 'text'), ('page', 'html'))
     >>> key_for_path("src/myfile.py")
     ('src/myfile.py', None)
+
+    Under ``extensions="keep"`` the name is the key segment, whole. The
+    **format is still read off the extension** -- what changes is the key, not
+    what the file says it holds -- and a directory named for
+    :data:`CONTAINER_PREFIX` gives back the segment it holds the keys below.
+    Metadata is the exception in both directions: it is written with an
+    extension and so has one taken off again, which is what makes a container's
+    contents read exactly as ``strip`` wrote them.
+
+    >>> key_for_path("a/b.md", extensions="keep")
+    ('a/b.md', 'markdown')
+    >>> key_for_path("a/.!b.md/!title.md", extensions="keep")
+    ('a/b.md/!title', 'markdown')
+    >>> key_for_path("a/.!b.md/chapter", extensions="keep")
+    ('a/b.md/chapter', None)
+
+    A *file* named for that prefix spells no key at all, which is the price of
+    reserving it: one name means one thing, rather than two depending on what
+    sits beside it.
     """
     relative = PurePosixPath(relative)
     if len(relative.parts) == 1 and relative.name in FORMAT_BY_EXTENSION:
@@ -249,9 +449,25 @@ def key_for_path(
         return (prefix or keys.ROOT), FORMAT_BY_EXTENSION[relative.name]
     stem, extension = os.path.splitext(relative.name)
     format = FORMAT_BY_EXTENSION.get(extension)
-    name = stem if format is not None else relative.name
+    # Under `keep` the name is the segment, whole -- except metadata, which is
+    # written with its format's extension and so gives one up again.
+    kept = extensions == "keep" and not relative.name.startswith(keys.META_PREFIX)
+    name = stem if format is not None and not kept else relative.name
 
-    parts = [*relative.parts[:-1], name]
+    above = list(relative.parts[:-1])
+    if extensions == "keep":
+        if relative.name.startswith(CONTAINER_PREFIX):
+            raise UnmappableError(
+                "path-name-is-reserved", path=str(relative), prefix=CONTAINER_PREFIX
+            )
+        # A directory carrying the prefix is not a key of its own: it holds the
+        # keys below the one it is named for, so it gives that name back.
+        above = [
+            part[len(CONTAINER_PREFIX) :] if part.startswith(CONTAINER_PREFIX) else part
+            for part in above
+        ]
+
+    parts = [*above, name]
     # An empty prefix is the root, which prefixes nothing. Tested rather than
     # left to normalisation, which would tidy `/a` back to `a` and reach the
     # same answer by accident.
@@ -576,6 +792,7 @@ def export_tree(
     *,
     on_conflict: str = SKIP,
     dry_run: bool = False,
+    extensions: str = DEFAULT_EXTENSIONS,
 ) -> Iterator[Transfer]:
     """Write every document at and below ``key`` into ``target``, one per file.
 
@@ -591,6 +808,13 @@ def export_tree(
     key** rather than by one spelling of its file, so a document held as
     ``a.md`` collides with one arriving as json.
 
+    ``extensions`` is how a key becomes a file name -- see
+    :data:`EXTENSION_MODES`. An export under ``keep`` writes each document's
+    key as it is spelled, which is what a tree meant to be *linked into* wants:
+    the cost is that a **document** whose key spells no extension is written to
+    a file with none, and so comes back as markdown. Metadata is unaffected --
+    it is written the ordinary way inside :data:`CONTAINER_PREFIX`.
+
     ``FilesystemStore`` is imported here rather than at the top of the module
     because it is written in terms of this one -- the mapping lives here and
     the store is expressed in it, not the other way round.
@@ -599,7 +823,9 @@ def export_tree(
 
     # A dry run must leave no directory behind: it reports what an export
     # *would* do, and creating the target is doing some of it.
-    with FilesystemStore(Path(target).expanduser(), create=not dry_run) as tree:
+    with FilesystemStore(
+        Path(target).expanduser(), create=not dry_run, extensions=extensions
+    ) as tree:
         yield from tree.copy_from(
             opened,
             store.BoundedSubtree(key),
@@ -704,6 +930,7 @@ def import_tree(
     on_conflict: str = SKIP,
     dry_run: bool = False,
     hidden: bool = False,
+    extensions: str = DEFAULT_EXTENSIONS,
 ) -> Iterator[Transfer]:
     """Store every file below ``source``, keyed by its path under ``key``.
 
@@ -716,6 +943,11 @@ def import_tree(
     a ``.git`` or a ``.DS_Store`` is not a document and importing it as one is
     a surprise. The root document is exempt either way, since it is named by
     its extension alone.
+
+    ``extensions`` is the other half of that policy and the same argument --
+    see :data:`EXTENSION_MODES`. A foreign bundle whose documents link to each
+    other by file name imports under ``keep``, so that a link already in the
+    corpus names the key that holds it.
 
     What the tree does not hold as a document does not cross and is not
     reported: a symlink, a half-written file, a name that is not a key, and the
@@ -741,11 +973,17 @@ def import_tree(
         # importing nothing and leave the mistake behind as a new empty tree.
         raise SourceMissingError("import-source-missing", source=str(source))
 
-    with FilesystemStore(source, hidden=hidden, create=False) as tree:
+    with FilesystemStore(source, hidden=hidden, create=False, extensions=extensions) as tree:
         yield from opened.copy_from(tree, prefix=key, on_conflict=on_conflict, dry_run=dry_run)
 
 
-def _entries(root: Path, *, hidden: bool, top: bool = True) -> Iterator[tuple[Path, str]]:
+def _entries(
+    root: Path,
+    *,
+    hidden: bool,
+    top: bool = True,
+    extensions: str = DEFAULT_EXTENSIONS,
+) -> Iterator[tuple[Path, str]]:
     """Every file below ``root``, in name order, with symlinks named not followed.
 
     Sorted so that two runs over the same tree report in the same order and a
@@ -753,22 +991,30 @@ def _entries(root: Path, *, hidden: bool, top: bool = True) -> Iterator[tuple[Pa
     the filesystem happened to hand back. Directories are descended where their
     name falls.
 
-    **The dotfile skip makes one exception**, and it is the root document. The
-    mapping names it by its extension alone -- `.md` at the top of the tree --
-    so skipping it would drop a document this package's own export wrote, which
-    is not a policy about foreign trees but a hole in the round trip. Only at
-    the top, where that file is, and only for a name that is exactly an
-    extension, which is why ``top`` is tracked rather than inferred from the
-    name.
+    **The dotfile skip makes two exceptions**, and neither is a policy about
+    foreign trees: both are names this mapping writes, so skipping one is a
+    hole in the round trip rather than a courtesy.
+
+    The first is the root document, named by its extension alone -- `.md` at
+    the top of the tree. Only at the top, where that file is, and only for a
+    name that is exactly an extension, which is why ``top`` is tracked rather
+    than inferred from the name.
+
+    The second is a :data:`CONTAINER_PREFIX` directory under ``keep``, which
+    holds the keys below a document and is dotted precisely so that it stays
+    out of a bundle's ordinary listing. Skipping those would drop every title
+    an import had just written.
     """
     for entry in sorted(root.iterdir(), key=lambda path: path.name):
-        skipped = entry.name.startswith(".") and not (top and entry.name in FORMAT_BY_EXTENSION)
-        if not hidden and skipped:
+        ours = (top and entry.name in FORMAT_BY_EXTENSION) or (
+            extensions == "keep" and entry.name.startswith(CONTAINER_PREFIX)
+        )
+        if not hidden and entry.name.startswith(".") and not ours:
             continue
         if entry.is_symlink():
             yield entry, "symlink"
         elif entry.is_dir():
-            yield from _entries(entry, hidden=hidden, top=False)
+            yield from _entries(entry, hidden=hidden, top=False, extensions=extensions)
         elif entry.is_file():
             yield entry, "file"
 
@@ -781,6 +1027,7 @@ def documents_from_tree(
     key: str | None = None,
     *,
     hidden: bool = False,
+    extensions: str = DEFAULT_EXTENSIONS,
 ) -> Iterator[Packable]:
     """Every file below ``source`` as a document, beside the report of it.
 
@@ -800,13 +1047,13 @@ def documents_from_tree(
     if not source.is_dir():
         raise SourceMissingError("import-source-missing", source=str(source))
 
-    for path, kind in _entries(source, hidden=hidden):
+    for path, kind in _entries(source, hidden=hidden, extensions=extensions):
         relative = PurePosixPath(path.relative_to(source).as_posix())
         if kind == "symlink":
             yield Transfer(SKIPPED, None, path, "symlink"), None
             continue
         try:
-            stored, format = key_for_path(relative, key)
+            stored, format = key_for_path(relative, key, extensions=extensions)
         except keys.InvalidKeyError as exc:
             yield _failed(None, path, exc), None
             continue
@@ -1888,9 +2135,12 @@ def _landing(subtree: store.BoundedSubtree, prefix: str | None, *, inner: str = 
 __all__ = [
     "Check",
     "Document",
+    "DEFAULT_EXTENSIONS",
     "EXPORT_DIR_PREFIX",
     "EXPORT_MAX_AGE",
+    "CONTAINER_PREFIX",
     "EXTENSION_BY_FORMAT",
+    "EXTENSION_MODES",
     "ExportRecord",
     "Exported",
     "FALLBACK_PREFIX",
@@ -1908,19 +2158,22 @@ __all__ = [
     "StaleImportError",
     "UncheckedWriteError",
     "UnmappableError",
+    "check_extensions",
     "check_write",
     "contained_file",
     "contained_path",
+    "container_name",
     "content_hash",
     "copied",
+    "declared_format",
     "documents_from_store",
     "documents_from_tree",
     "export_document",
     "export_root",
     "export_tree",
+    "file_name",
     "import_document",
     "import_tree",
-    "pack",
     "key_for_path",
     "levels",
     "new_export_file",
@@ -1931,6 +2184,7 @@ __all__ = [
     "notes_for_export",
     "notes_for_write",
     "overlapping",
+    "pack",
     "path_for_key",
     "renew",
     "size_of",

@@ -1027,6 +1027,52 @@ def test_a_mount_may_name_the_backend_that_keeps_it(tmp_path):
     )
 
 
+def test_a_spec_carries_every_option_and_renders_them_back_in_one_order():
+    """Two options now, so the round trip is about more than one word.
+
+    A parsed spec no longer knows the order they were written in, so
+    ``unparse`` settles one -- what has to survive is what the options *say*,
+    and two specs meaning the same thing rendering the same way is what a mount
+    table's override comparison rests on.
+    """
+    spec = Spec(Path("bundle"), "files", "keep")
+    assert parse_options("bundle,type=files,extensions=keep") == spec
+    assert parse_options("bundle,extensions=keep,type=files") == spec
+    assert unparse(spec) == "bundle,type=files,extensions=keep"
+    assert unparse(Spec(Path("bundle"), None, "keep")) == "bundle,extensions=keep"
+    assert parse_spec("docs=bundle,extensions=keep") == ("docs", Spec(Path("bundle"), None, "keep"))
+
+
+def test_a_mount_may_name_how_its_file_names_line_up_with_keys(tmp_path):
+    """``extensions=keep`` is what mounts a bundle whose documents link by name.
+
+    The evidence is the link: the document says ``guide/intro.md``, so under
+    this mapping that string is a key. Mounted the other way it is not, and
+    every such link in the corpus names a key the store does not hold.
+    """
+    bundle = tmp_path / "root" / "bundle"
+    (bundle / "guide").mkdir(parents=True)
+    (bundle / "index.md").write_text("see [the guide](guide/intro.md)")
+    (bundle / "guide" / "intro.md").write_text("# Intro")
+
+    with open_mounts(tmp_path / "root", ["docs=bundle,type=files,extensions=keep"]) as table:
+        assert table.retrieve_document("docs/guide/intro.md").content == "# Intro"
+    with open_mounts(tmp_path / "root", ["docs=bundle,type=files"]) as table:
+        assert table.retrieve_document("docs/guide/intro").content == "# Intro"
+
+
+def test_a_backend_kept_in_a_file_refuses_a_mapping_it_has_no_question_about(tmp_path):
+    """Refused rather than ignored, for the reason an unknown option is.
+
+    How a file name lines up with a key is a question only a directory of files
+    has. A database mounted with an answer to it read as though the option had
+    worked would be the failure a mount configuration is least able to notice.
+    """
+    with raises_rendered(BackendError, "cannot be asked for 'keep' extensions"):
+        with open_mounts(tmp_path / "root", ["ref=r.sqlite,extensions=keep"]):
+            pass
+
+
 def test_a_named_backend_that_does_not_exist_is_refused(tmp_path):
     """Unlike an unrecognised extension, which falls back to the default.
 

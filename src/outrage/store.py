@@ -1561,6 +1561,7 @@ class FileStore(Store):
         directory: str | os.PathLike[str] | None = None,
         *,
         filename: str | os.PathLike[str] | None = None,
+        extensions: str | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
     ) -> Self:
@@ -1578,7 +1579,24 @@ class FileStore(Store):
         :func:`default_store` opens every store through here, so which of the
         two shapes a backend has stays the backend's business rather than
         something a mount table has to know.
+
+        ``extensions`` is one backend's option reaching the one place every
+        backend is opened through. It says how a file name and a key segment
+        line up, which is a question only a store kept as a *tree* has --
+        :class:`~outrage.store_files.FilesystemStore` overrides this and takes
+        it, and every other backend arrives here and **refuses** it. Refused
+        rather than ignored, because that is the rule the option grammar it
+        comes from already follows: an option that silently did nothing is the
+        failure a mount configuration is least able to notice, and a caller who
+        wrote ``extensions=keep`` on a database meant something by it.
         """
+        if extensions is not None:
+            raise BackendError(
+                "backend-takes-no-extensions",
+                backend=cls.backend_name,
+                filename="" if filename is None else str(filename),
+                extensions=extensions,
+            )
         return cls(directory, filename=filename, log=log, mount_point=mount_point)
 
     def opened_at(self, path: Path) -> Self:
@@ -1907,6 +1925,7 @@ def default_store(
     *,
     filename: str | os.PathLike[str] | None = None,
     backend: str | None = None,
+    extensions: str | None = None,
     log: EventLog | None = None,
     mount_point: str | None = None,
 ) -> FileStore:
@@ -1923,10 +1942,16 @@ def default_store(
     say ``files`` is to say it. Opening goes through
     :meth:`FileStore.in_directory` rather than the constructor, because that is
     the one thing a backend whose store is a directory spells differently.
+
+    ``extensions`` is the mount option of the same name, and is carried here
+    for the same reason ``backend`` is: it is what an argument said, and the
+    backend it reaches either takes it or refuses it --
+    :meth:`FileStore.in_directory` is where that happens.
     """
     return _backend_for(filename, backend).in_directory(
         directory,
         filename=filename,
+        extensions=extensions,
         log=log,
         mount_point=mount_point,
     )
@@ -1938,6 +1963,7 @@ def open_store(
     *,
     filename: str | os.PathLike[str] | None = None,
     backend: str | None = None,
+    extensions: str | None = None,
     log: EventLog | None = None,
     mount_point: str | None = None,
 ) -> Iterator[FileStore]:
@@ -1946,6 +1972,7 @@ def open_store(
         directory,
         filename=filename,
         backend=backend,
+        extensions=extensions,
         log=log,
         mount_point=mount_point,
     )

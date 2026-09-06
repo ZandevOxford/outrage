@@ -51,6 +51,7 @@ from . import keys, shipped
 from . import store as store_module
 from .errors import OutrageError
 from .mounts import (
+    EXTENSIONS_OPTION,
     OPTION_DELIMITER,
     OPTIONS,
     SPEC_DELIMITER,
@@ -623,7 +624,7 @@ def _spec(value: object, *, field: str, path: Path) -> Spec | None:
         # spelling that reads back as itself. Refused where it is written
         # rather than where it is rendered, which is a splice away from here.
         raise MountError("mount-file-unspellable", file=file, delimiter=OPTION_DELIMITER)
-    return Spec(Path(file), value.get(TYPE_OPTION))
+    return Spec(Path(file), value.get(TYPE_OPTION), value.get(EXTENSIONS_OPTION))
 
 
 def directory_in(argv: Sequence[str]) -> str | None:

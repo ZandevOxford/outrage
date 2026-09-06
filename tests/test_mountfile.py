@@ -123,6 +123,36 @@ def test_a_string_entry_is_the_argument_unchanged(tmp_path):
     assert mountfile.read(path).mounts == (("docs", mounts.Spec(Path("documents"), "files")),)
 
 
+def test_an_entry_field_exists_for_every_option_a_spec_carries(tmp_path):
+    """One vocabulary, in one place: an option is a field without another edit.
+
+    ``extensions`` is the second option the grammar has, and it reached a
+    ``mounts.toml`` entry by being added to ``OPTIONS`` -- which is what
+    ``_ENTRY_FIELDS`` is derived from. Asserted rather than assumed, because
+    the derivation is the thing that keeps the two spellings from drifting.
+    """
+    path = write(
+        tmp_path / "mounts.toml",
+        """
+        [mount]
+        docs = { path = "bundle", type = "files", extensions = "keep" }
+        typed = "bundle,type=files,extensions=keep"
+        """,
+    )
+
+    table = mountfile.read(path)
+    entry = mounts.Spec(Path("bundle"), "files", "keep")
+    assert dict(table.mounts) == {"docs": entry, "typed": entry}
+    # Both spellings stand for the same argument, which is the file's fiction.
+    assert table.options() == [
+        "--mount",
+        "docs=bundle,type=files,extensions=keep",
+        "--mount",
+        "typed=bundle,type=files,extensions=keep",
+    ]
+    assert set(mounts.OPTIONS) <= set(mountfile._ENTRY_FIELDS)
+
+
 def test_an_entry_that_says_something_no_mount_can_say_is_refused(tmp_path):
     """Refused rather than ignored, and naming the file, like every field here.
 

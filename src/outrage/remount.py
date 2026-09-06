@@ -131,6 +131,7 @@ class Live:
         *,
         file: str | os.PathLike[str] | None = None,
         type: str | None = None,
+        extensions: str | None = None,
         read_only: bool = False,
     ) -> Changed:
         """Open a store and mount it at ``key``, replacing whatever is there.
@@ -143,6 +144,14 @@ class Live:
         always mounted read-only: the next upgrade replaces it, so anything
         written there would be lost, and the table the call returns says so.
 
+        ``extensions`` is the mount option of the same name, and only a tree
+        has an answer to it -- :data:`~outrage.mounts.EXTENSIONS_OPTION`. It is
+        what mounts a documentation bundle whose documents link to each other
+        by file name, since ``keep`` makes the key and the file name one
+        string. A backend that keeps its store in a file refuses it, as does a
+        shipped store, whose tree this package wrote and already reads its own
+        way.
+
         A read-only mount must already exist, the same refusal
         :func:`~outrage.mounts.open_mounts` makes and for the same reason: a
         mistyped name would be *created*, mount as an empty store, and read as
@@ -151,7 +160,7 @@ class Live:
         """
         prefix = keys.parse(key).key
         with self._lock:
-            store = self._opened(prefix, file, type, read_only)
+            store = self._opened(prefix, file, type, extensions, read_only)
             # Everything up to the swap is inside this, `open_mounts`'s own
             # shape: a failure anywhere closes what was opened and leaves the
             # live table exactly as it was. Deriving the notes is in here for
@@ -198,6 +207,7 @@ class Live:
         prefix: str,
         file: str | os.PathLike[str] | None,
         type: str | None,
+        extensions: str | None,
         read_only: bool,
     ) -> Store:
         """The store to mount at ``prefix``: a file under the directory, or a shipped one."""
@@ -207,6 +217,8 @@ class Live:
                 raise MountError("mount-nothing-shipped", mount=prefix, shipped=sorted(SHIPPED))
             if type is not None:
                 raise MountError("mount-shipped-takes-no-type", mount=prefix)
+            if extensions is not None:
+                raise MountError("mount-shipped-takes-no-extensions", mount=prefix)
             return opener(log=self._log)
         if read_only:
             database = store_file(self._directory, file)
@@ -216,6 +228,7 @@ class Live:
             self._directory,
             filename=file,
             backend=type,
+            extensions=extensions,
             log=self._log,
             mount_point=prefix,
         )

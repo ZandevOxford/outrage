@@ -38,6 +38,24 @@ owning the stores that fall out of it lives in [`outrage.remount`](remount.md#mo
 Some questions are deliberately still open, chief among them where a write to a
 new key goes.
 
+### outrage.mounts.EXTENSIONS_OPTION *= 'extensions'*
+
+The option that says how a tree's file names line up with keys, for the one
+backend that keeps its store as a directory. The value is a mode from
+[`outrage.bulk.EXTENSION_MODES`](bulk.md#outrage.bulk.EXTENSION_MODES) -- `strip`, which is the mapping this
+package writes, or `keep`, which makes a file name and a key segment the
+same string.
+
+**Why a mount says it rather than the tree.** How to read a corpus is a
+property of the corpus and there is nowhere in a plain directory to record
+one: a marker file would be a file in the tree that is not a document, in
+the one backend whose contents somebody else is expected to be editing. So
+it is said where the store is named, beside the `type` that had to be said
+for the same kind of reason.
+
+A backend that keeps its store in a file has no such question, and refuses
+this rather than ignoring it -- [`outrage.store.FileStore.in_directory()`](store.md#outrage.store.FileStore.in_directory).
+
 ### outrage.mounts.MOUNT_KIND *= 'mount'*
 
 The `kind` a listing reports for a key that is a mount point. A fourth
@@ -46,7 +64,7 @@ none of the three: it may hold content, and it always has a store behind it.
 A caller that does not know the word still learns that the key exists, which
 is the part that matters for navigating to it.
 
-### outrage.mounts.OPTIONS *= ('type',)*
+### outrage.mounts.OPTIONS *= ('type', 'extensions')*
 
 Every option a spec may carry. Anything else is refused rather than ignored,
 which is the rule `mounts.toml` already follows for a field it does not
@@ -742,7 +760,7 @@ an answer rather than an empty result. Such a segment is still
 *counted* -- totals describe the whole collection and have never
 depended on where the reader had got to.
 
-### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -762,6 +780,25 @@ this stays a parse of the argument and touches nothing.
 #### type *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
 
 The backend, when the argument named one, else None for the file to say.
+
+#### extensions *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+How file names line up with keys, when the argument said; else the
+backend's own default. Only a tree has an answer -- see
+[`EXTENSIONS_OPTION`](#outrage.mounts.EXTENSIONS_OPTION).
+
+#### opened(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [FileStore](store.md#outrage.store.FileStore)
+
+The store this spec names, opened in `directory`.
+
+**The one place a spec becomes a store**, and a method rather than a
+line repeated wherever one is opened. Every field here is something an
+argument said about *how to open it*, so a caller taking them apart by
+hand has to be revisited each time the grammar grows one -- and the
+failure when it is not is silent in the worst way: the option parses,
+the mount succeeds, and the store opens under something nobody asked
+for. Nothing raises and no suite goes red, so the only thing that finds
+it is somebody reading the keys.
 
 ### outrage.mounts.mount_point(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 

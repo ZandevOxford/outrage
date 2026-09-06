@@ -580,3 +580,400 @@ def test_a_repair_does_nothing_and_says_so(files):
     # somebody's file, and a store that renamed or removed one would be losing
     # what it was asked to keep.
     assert files.stored_format_version == files.format_version
+
+
+# -- a tree whose file names are the keys ---------------------------------
+#
+# The second mapping, `extensions="keep"`. What it is for is a documentation
+# bundle this package did not write, whose documents link to each other by file
+# name: under `strip` every one of those links names a key the store does not
+# hold. So the tests below are mostly about the *names*, and the two that are
+# not are about what the extension had been buying.
+
+
+@pytest.fixture
+def bundle(tmp_path):
+    """A documentation bundle as somebody else would have written it."""
+    root = tmp_path / "bundle"
+    (root / "guide").mkdir(parents=True)
+    (root / "index.md").write_text("see [the guide](guide/intro.md)\n")
+    (root / "guide" / "intro.md").write_text("# Intro\n")
+    (root / "guide" / "data.json").write_text('{"a": 1}\n')
+    (root / "Makefile").write_text("all:\n")
+    return root
+
+
+def test_a_bundle_read_with_extensions_kept_holds_the_keys_its_links_name(bundle):
+    """The point of the mode, asserted as the link in the corpus.
+
+    The document says `guide/intro.md`, so that has to be a key. Read the same
+    tree the other way and it is not -- which is the defect the mode exists to
+    answer rather than a preference about naming.
+    """
+    with FilesystemStore(bundle, extensions="keep") as kept:
+        linked = kept.retrieve_document("index.md").content.split("(")[1].rstrip(")\n")
+        assert linked == "guide/intro.md"
+        assert kept.retrieve_document(linked).content == "# Intro\n"
+        listed, _ = walk_level(kept, None)
+        assert [key for key, *_ in listed] == ["Makefile", "guide", "index.md"]
+
+    with FilesystemStore(bundle) as stripped:
+        with pytest.raises(KeyNotFoundError):
+            stripped.retrieve_document("guide/intro.md")
+        assert stripped.retrieve_document("guide/intro").content == "# Intro\n"
+
+
+def test_a_kept_name_still_declares_its_format(bundle):
+    # The key changes and what the file says it holds does not.
+    with FilesystemStore(bundle, extensions="keep") as kept:
+        assert kept.retrieve_document("guide/data.json").format == "json"
+        assert kept.retrieve_document("index.md").format == "markdown"
+        # A name declaring nothing is detected on the way out, exactly as it
+        # is under `strip`: the mapping decides the key, not the reading.
+        assert kept.retrieve_document("Makefile").format == "markdown"
+
+
+def test_a_write_to_a_kept_tree_reads_back_at_the_key_it_was_given(tmp_path):
+    with FilesystemStore(tmp_path / "kept", extensions="keep") as kept:
+        kept.store_document("notes.md", "# Notes\n")
+        kept.store_document("plain", "no extension here")
+
+        assert (kept.root / "notes.md").read_text() == "# Notes\n"
+        # Nothing appended: the key is the path, so a key spelling no
+        # extension is written to a file with none.
+        assert (kept.root / "plain").is_file()
+        assert not (kept.root / "plain.md").exists()
+        assert kept.retrieve_document("notes.md").content == "# Notes\n"
+        assert kept.retrieve_document("plain").content == "no extension here"
+
+
+def test_a_format_a_kept_key_contradicts_is_refused_at_the_write(tmp_path):
+    """The file would say markdown and hold JSON, and would read back markdown.
+
+    Refused rather than written, because the name is part of the key here and
+    is what every reader of the tree -- this store included -- will believe.
+    """
+    with FilesystemStore(tmp_path / "kept", extensions="keep") as kept:
+        with raises_rendered(bulk.UnmappableError, "Spell the key with the extension"):
+            kept.store_document("guide.md", '{"a": 1}', "json")
+        assert not (kept.root / "guide.md").exists()
+        # Said differently, or spelled differently, and it lands.
+        kept.store_document("guide.json", '{"a": 1}', "json")
+        kept.store_document("guide.md", '{"a": 1}', "markdown")
+        assert kept.retrieve_document("guide.json").format == "json"
+
+
+def test_a_document_that_keeps_its_name_still_carries_the_keys_below_it(tmp_path):
+    """The container convention, which is what makes `keep` writable.
+
+    A name in a directory is a file or a directory and not both, so a document
+    keeping its whole name had nowhere to put so much as a title. `.!name` is
+    where they go, and the file keeps the name a link in the bundle points at.
+    """
+    with FilesystemStore(tmp_path / "kept", extensions="keep") as kept:
+        kept.store_document("guide.md", "# Guide\n", title="Guide")
+        kept.store_document("guide.md/chapter", "the first")
+        kept.store_document("guide.md/!changelog", "what changed")
+        kept.store_document("guide.md/!changelog/22", "note twenty-two")
+
+        # The document is untouched -- which is the whole point, since that is
+        # the name the bundle's own links spell.
+        assert (kept.root / "guide.md").read_text() == "# Guide\n"
+        assert (kept.root / ".!guide.md" / "!title.md").read_text() == "Guide"
+        assert (kept.root / ".!guide.md" / "chapter").read_text() == "the first"
+        # Inside the container it is the ordinary mapping again, so metadata
+        # carries its extension and needs no container of its own: the file
+        # `!changelog.md` and the directory `!changelog/` are two names.
+        assert (kept.root / ".!guide.md" / "!changelog.md").exists()
+        assert (kept.root / ".!guide.md" / "!changelog" / "22").exists()
+
+        assert kept.retrieve_document("guide.md/!title").content == "Guide"
+        assert kept.retrieve_document("guide.md/!changelog/22").content == "note twenty-two"
+        assert [key for key, *_ in walk_level(kept, "guide.md")[0]] == [
+            "guide.md/!changelog",
+            "guide.md/!title",
+            "guide.md/chapter",
+        ]
+
+
+def test_a_bundles_own_directories_are_left_plain(tmp_path):
+    """Only a segment that could name a file takes the prefix.
+
+    A container that is a plain name stays a plain directory, which is what
+    keeps a bundle browsable and an export of one a bundle.
+    """
+    with FilesystemStore(tmp_path / "kept", extensions="keep") as kept:
+        kept.store_document("guide/intro.md", "# Intro\n")
+
+        assert (kept.root / "guide" / "intro.md").exists()
+        assert not (kept.root / ".!guide").exists()
+        assert kept.retrieve_document("guide/intro.md").content == "# Intro\n"
+
+
+def test_a_file_wearing_the_container_prefix_spells_no_key(tmp_path):
+    """Reserved, so that one name means one thing.
+
+    The alternative was for `.!notes` to be a container when a `notes` sat
+    beside it and a key otherwise, which is the reading that depends on what is
+    next to it. A file is reported by a check instead.
+    """
+    root = tmp_path / "kept"
+    root.mkdir()
+    (root / ".!notes").write_text("not a key")
+    (root / "ordinary.md").write_text("a document")
+
+    with FilesystemStore(root, extensions="keep") as kept:
+        assert [key for key, *_ in walk_level(kept, None)[0]] == ["ordinary.md"]
+        report = maintenance.check(kept)
+        assert not report.sound
+        assert any(".!notes" in problem.detail for problem in report.problems)
+
+    with raises_rendered(bulk.UnmappableError, "spells no key"):
+        bulk.key_for_path(".!notes", extensions="keep")
+
+
+def test_a_document_with_no_extension_gets_a_container_too(tmp_path):
+    """`notes` and `notes/` are one name, so the tree is what says which.
+
+    Nothing in the segment distinguishes a document from a bundle's own
+    directory, so the container cannot be chosen by the name: a file being
+    there is what says one is needed. Which means a key with no extension is
+    as writable as any other.
+    """
+    with FilesystemStore(tmp_path / "kept", extensions="keep") as kept:
+        kept.store_document("notes", "a body", title="Notes")
+        kept.store_document("notes/x", "below")
+
+        assert (kept.root / "notes").read_text() == "a body"
+        assert (kept.root / ".!notes" / "!title.md").read_text() == "Notes"
+        assert (kept.root / ".!notes" / "x").read_text() == "below"
+        assert kept.retrieve_document("notes/!title").content == "Notes"
+        assert kept.retrieve_document("notes/x").content == "below"
+
+        # And a plain directory nobody wrote a document at stays plain, which
+        # is the other half of the same question.
+        kept.store_document("chapter/one", "first")
+        assert (kept.root / "chapter" / "one").exists()
+        assert not (kept.root / ".!chapter").exists()
+
+
+def test_the_one_order_a_kept_tree_cannot_serve(tmp_path):
+    """A child written before its parent's document takes the plain directory.
+
+    Nothing then distinguishes it from a bundle's own, and renaming it would
+    break the links pointing into it -- so the document is refused instead.
+    Every write through `store_document` or a copy takes the parent first, so
+    this is reachable only by asking for it in that order.
+    """
+    with FilesystemStore(tmp_path / "kept", extensions="keep") as kept:
+        kept.store_document("chapter/one", "first")
+        with raises_rendered(bulk.UnmappableError, "is the directory") as raised:
+            kept.store_document("chapter", "a body")
+        assert raised.value.code == "key-is-a-directory"
+
+    # Under `strip` it is ordinary, which says the limit belongs to the
+    # mapping rather than to the backend.
+    with FilesystemStore(tmp_path / "stripped") as stripped:
+        stripped.store_document("chapter/one", "first")
+        stripped.store_document("chapter", "a body")
+        assert stripped.retrieve_document("chapter").content == "a body"
+
+
+def test_a_kept_tree_cannot_double_a_key(tmp_path):
+    """`a.md` beside `a.json` is two keys here, where stripping made it one.
+
+    The doubling `check_file` reports is a corpus saying two things about one
+    key. A kept tree cannot produce one: a key is a file name whole, so two
+    names are two keys, and the check has nothing to find.
+    """
+    root = tmp_path / "kept"
+    root.mkdir()
+    (root / "a.md").write_text("markdown")
+    (root / "a.json").write_text('{"a": 1}')
+
+    with FilesystemStore(root, extensions="keep") as kept:
+        assert kept.retrieve_document("a.md").content == "markdown"
+        assert kept.retrieve_document("a.json").content == '{"a": 1}'
+        assert maintenance.check(kept).sound
+
+    with FilesystemStore(root) as stripped:
+        report = maintenance.check(stripped)
+        assert not report.sound
+
+
+def test_a_backup_of_a_kept_tree_is_read_the_way_it_was_written(bundle, tmp_path):
+    """``opened_at`` carries the mapping, for the reason it carries ``hidden``.
+
+    A copy opened under the other mode holds not one key of the store it came
+    from, so a verified backup would come up short with nothing wrong behind
+    it -- the same failure with nothing behind it, one step further along.
+    """
+    with FilesystemStore(bundle, extensions="keep") as kept:
+        copy = kept.backup(tmp_path / "copy")
+
+    assert copy.documents == 4
+    with FilesystemStore(copy.path, extensions="keep") as restored:
+        assert restored.retrieve_document("guide/intro.md").content == "# Intro\n"
+
+
+def test_a_mount_names_the_mapping_and_a_bad_one_is_refused(tmp_path):
+    """``in_directory`` is the mount's way in, and it takes the option too."""
+    (tmp_path / "bundle").mkdir()
+    (tmp_path / "bundle" / "page.md").write_text("a page")
+
+    with FilesystemStore.in_directory(tmp_path, filename="bundle", extensions="keep") as kept:
+        assert kept.retrieve_document("page.md").content == "a page"
+
+    with raises_rendered(store_module.BackendError, "no 'kept' way of naming"):
+        FilesystemStore.in_directory(tmp_path, filename="bundle", extensions="kept")
+
+
+def test_a_backend_kept_in_one_file_refuses_the_option_rather_than_ignoring_it(tmp_path):
+    """The rule the option grammar already follows, one layer down.
+
+    A caller who wrote `extensions=keep` on a database meant something by it,
+    and an option that silently did nothing is the failure a mount
+    configuration is least able to notice.
+    """
+    with raises_rendered(store_module.BackendError, "kept in one file") as raised:
+        store_module.default_store(tmp_path, filename="s.sqlite", extensions="keep")
+    assert raised.value.code == "backend-takes-no-extensions"
+
+
+#: A bundle-shaped corpus: every document carries an extension, which is what a
+#: tree somebody else wrote looks like, and every shape the container convention
+#: has to hold -- a document with metadata, with an ordinary child, with
+#: metadata that itself has children, and a plain directory beside a document of
+#: the same stem (`guide/` beside `guide.md`), which under `keep` are two keys.
+#:
+#: `guide` holds no document of its own, and cannot: a file named `guide` and
+#: the directory `guide/` are one name, so a bundle never has both and neither
+#: can a tree. That is the one shape the container convention does not reach,
+#: and `test_an_extensionless_key_is_the_one_shape_keep_still_cannot_hold` is
+#: where it is asserted rather than quietly avoided here.
+_KEPT_CORPUS = [
+    ("", "root document"),
+    ("!title", "The bundle"),
+    ("guide.md", "# Guide"),
+    ("guide.md/!title", "The guide"),
+    ("guide.md/!summary", "what it covers"),
+    ("guide.md/chapter", "an ordinary child"),
+    ("guide.md/!changelog", "what changed"),
+    ("guide.md/!changelog/22", "note twenty-two"),
+    ("guide/intro.md", "# Intro"),
+    ("guide/data.json", '{"a": 1}'),
+    ("index.md", "see [the guide](guide/intro.md)"),
+    ("Makefile", "all:\n"),
+]
+
+_KEPT_KEYS = ["", *(key for key, _ in _KEPT_CORPUS), "guide.md/nope", "nope.md"]
+
+_KEPT_SUBTREES = [
+    EVERYTHING,
+    BoundedSubtree(key="guide.md"),
+    BoundedSubtree(key="guide.md", depth=0),
+    BoundedSubtree(key="guide.md", depth=1),
+    BoundedSubtree(key="guide.md/!changelog"),
+    BoundedSubtree(key="guide"),
+    BoundedSubtree(key=None, depth=1),
+]
+
+
+@pytest.fixture
+def kept_pair(tmp_path):
+    """One bundle-shaped corpus in SQLite and in a tree that keeps extensions."""
+    with (
+        SqliteStore(tmp_path / "s") as sqlite,
+        FilesystemStore(tmp_path / "kept", extensions="keep") as kept,
+    ):
+        for key, content in _KEPT_CORPUS:
+            sqlite.store_document(key, content)
+            kept.store_document(key, content)
+        for key, _ in _KEPT_CORPUS:
+            when = datetime.fromisoformat(sqlite.retrieve_document(key).updated_at).timestamp()
+            os.utime(kept._file_for(key), (when, when))
+        yield sqlite, kept
+
+
+def _listed(page):
+    """A level as its keys, kinds and sizes: everything but the format.
+
+    Which is left out because it is the one thing the two really do disagree
+    about, and it has a test of its own below. A listing does not open a file --
+    an unmeasured walk cannot -- so a tree answers `format` from the *name*, and
+    under `keep` a *document* whose name declares none answers None where a
+    database answers what it detected when it was stored. Metadata is not
+    affected: it carries its extension there, as it does under `strip`.
+    """
+    return [(entry.key, entry.kind, entry.size) for entry in page.items]
+
+
+def test_a_kept_tree_is_the_same_namespace_as_a_store(kept_pair):
+    """The contract under the second mapping, against a live oracle.
+
+    The same claim `test_a_store_and_a_tree_answer_every_read_identically`
+    makes for `strip`, and it is the one that says the container convention is
+    a *spelling* rather than a different namespace: a caller reading through a
+    kept tree cannot tell it from a database holding the same keys.
+    """
+    sqlite, kept = kept_pair
+    for key in _KEPT_KEYS:
+        answers_alike(sqlite, kept, lambda s, k=key: s.exists(k))
+        answers_alike(sqlite, kept, lambda s, k=key: s.descendant_count(k))
+        answers_alike(sqlite, kept, lambda s, k=key: s.retrieve_document(k))
+        for limit in (None, 1, 2, 100):
+            answers_alike(sqlite, kept, lambda s, k=key, n=limit: _listed(s.list_keys(k, limit=n)))
+
+    for subtree, meta in itertools.product(_KEPT_SUBTREES, _METAS):
+        answers_alike(
+            sqlite,
+            kept,
+            lambda s, t=subtree, m=meta: page_facts(s.get_documents(t, meta_name=m)),
+        )
+        answers_alike(sqlite, kept, lambda s, t=subtree, m=meta: walk_documents(s, t, UNBOUNDED, m))
+
+
+def test_a_kept_listing_reports_the_format_the_name_declares(kept_pair):
+    """The one place the two disagree, asserted rather than left out.
+
+    A listing does not open the file it lists, so a tree can only report the
+    format its *name* declares -- and under `keep` a key with no extension is a
+    file with none. Reading it detects markdown, as it does for any file whose
+    name says nothing, so this is a disagreement between a listing and a read
+    rather than a document stored wrong.
+
+    Not new, and not the container convention's doing: a strip tree holding a
+    foreign `myfile.py` answers the same way. `keep` reaches it wherever a
+    bundle holds a document with no extension -- a `Makefile`, a `LICENSE`.
+    Metadata was the case that made it ordinary, and metadata carrying its
+    extension is what took that away.
+    """
+    sqlite, kept = kept_pair
+
+    assert sqlite.level_entry("Makefile").format == "markdown"
+    assert kept.level_entry("Makefile").format is None
+    assert kept.level_entry("guide.md").format == "markdown"
+
+    # Metadata is the case this *used* to cover and no longer does: it carries
+    # its format's extension now, so a listing knows what it holds without
+    # opening it, and the two agree.
+    answers_alike(sqlite, kept, lambda s: s.level_entry("guide.md/!title"))
+    assert kept.level_entry("guide.md/!title").format == "markdown"
+
+    # And a read agrees with the database either way, because it has the
+    # content in front of it.
+    assert kept.retrieve_document("Makefile").format == "markdown"
+    answers_alike(sqlite, kept, lambda s: s.retrieve_document("Makefile"))
+
+
+def test_a_delete_takes_the_container_it_emptied(kept_pair):
+    """The prune walks up from the file, so a container goes when its last key does."""
+    _, kept = kept_pair
+    assert (kept.root / ".!guide.md").is_dir()
+
+    kept.delete("guide.md", recursive=True)
+
+    assert not (kept.root / ".!guide.md").exists()
+    assert not (kept.root / "guide.md").exists()
+    # The plain directory of the same stem is a different key and survives.
+    assert kept.retrieve_document("guide/intro.md").content == "# Intro"
