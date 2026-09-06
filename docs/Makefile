@@ -66,18 +66,33 @@ markdown: check-env
 
 # The whole pipeline that produces `src/outrage/documents`, which is what a
 # person actually wants: `markdown` alone leaves the pages in `_build` and the
-# shipped tree untouched, and the steps after it were three commands nobody had
+# shipped tree untouched, and the steps after it were commands nobody had
 # written down anywhere but a test docstring.
 #
-# The last two sweep the **whole tree**, not the section the render wrote. That
-# is deliberate for the indexes: `design` and `cli` are hand-written and their
-# `!contents` goes stale on an ordinary edit rather than at a render, so the
-# only run that could refresh them is one that does not care which half a
-# document is in. `tests/test_shipped.py` is what fails when this has not been
-# run; `tools/document_titles.py` skips a title that is already there, and
+# **Three generators, not one.** Sphinx renders the API reference from the
+# docstrings; `render_cli.py` renders `cli.md` from the argument parser and
+# `render_tools.py` renders `tools.md` from the built MCP server. All three
+# write committed files from the code, so all three belong to the one command
+# that rebuilds the tree - a pipeline that covered only the first left the
+# other two to be remembered, and they were not. `tests/test_cli_docs.py` and
+# `tests/test_tool_docs.py` are what fail when a parser or a tool schema
+# changed without them.
+#
+# They run before the sweeps below rather than after, because the sweeps index
+# what is on disk: a page rewritten afterwards would carry the offsets of the
+# page it replaced.
+#
+# The last two sweep the **whole tree**, not the section a render wrote. That
+# is deliberate for the indexes: `design` and `implementation` are hand-written
+# and their `!contents` goes stale on an ordinary edit rather than at a render,
+# so the only run that could refresh them is one that does not care which half
+# a document is in. `tests/test_shipped.py` is what fails when this has not
+# been run; `tools/document_titles.py` skips a title that is already there, and
 # `tools/document_contents.py` rewrites an index that has moved.
 documents: check-env markdown
 	@$(PYTHON) ../tools/render_reference.py "$(BUILDDIR)/markdown" ../src/outrage/documents
+	@$(PYTHON) ../tools/render_cli.py ../src/outrage/documents/cli.md
+	@$(PYTHON) ../tools/render_tools.py ../src/outrage/documents/tools.md
 	@$(PYTHON) ../tools/document_titles.py ../src/outrage/documents
 	@$(PYTHON) ../tools/document_contents.py ../src/outrage/documents
 
