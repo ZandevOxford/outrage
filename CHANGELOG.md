@@ -4,6 +4,12 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+The new library-level `outrage.titles` utility extracts a document title from
+Markdown or HTML without reading or writing a store. Markdown uses the first
+level-one ATX heading; HTML prefers `<title>` and falls back to the first `<h1>`.
+HTML markup and link targets are removed while readable text remains. It is not
+yet exposed as a command or MCP tool and adds no dependency.
+
 `make_contents` now indexes stored HTML as well as Markdown. HTML `h1` through
 `h6` elements become plain Markdown headings with their character and UTF-8
 byte offsets into the original source; nested markup and link targets are

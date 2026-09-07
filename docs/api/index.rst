@@ -79,6 +79,7 @@ read-only at ``outrage``. A store file is relative to ``--dir`` and a tree in
    mountfile
    shipped
    contents
+   titles
    ingest
 
 Front ends

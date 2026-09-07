@@ -33,6 +33,8 @@ import argparse
 import sys
 from pathlib import Path
 
+from outrage.titles import markdown_title
+
 #: The metadata segment this writes. A leading `!` opens a metadata namespace on
 #: the key above it, which is what makes this a title rather than a document
 #: called "!title".
@@ -56,21 +58,6 @@ def title_file(directory: Path) -> Path:
     """
     claimed = sorted(directory.glob(f"{TITLE_KEY}.*")) if directory.is_dir() else []
     return claimed[0] if claimed else directory / (TITLE_KEY + TITLE_FORMAT)
-
-
-def heading(text: str) -> str | None:
-    """The first ATX heading in `text`, or None if it has none.
-
-    Only `#` at the start of a line counts, so a `#` inside a fenced code block
-    is not mistaken for one -- the fence is tracked rather than assumed absent.
-    """
-    fenced = False
-    for line in text.splitlines():
-        if line.lstrip().startswith("```"):
-            fenced = not fenced
-        elif not fenced and line.startswith("#"):
-            return line.lstrip("#").strip() or None
-    return None
 
 
 def documents(tree: Path):
@@ -101,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
 
     written = skipped = untitled = 0
     for path in documents(args.tree):
-        title = heading(path.read_text())
+        title = markdown_title(path.read_text())
         if title is None:
             print(f"  no heading: {path.relative_to(args.tree)}", file=sys.stderr)
             untitled += 1
