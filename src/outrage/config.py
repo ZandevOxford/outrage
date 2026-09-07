@@ -62,6 +62,17 @@ CLI_SCRIPT_NAME = "outrage"
 _DEFAULT_INDENT = 2
 
 
+def _path_text(path: str | os.PathLike[str]) -> str:
+    """A path as JSON should carry it on this platform.
+
+    Windows accepts forward slashes, and using them avoids making every path
+    in a JSON file pay a second layer of backslash escaping. Other platforms
+    pass through unchanged.
+    """
+    text = str(path)
+    return text.replace("\\", "/") if sys.platform == "win32" else text
+
+
 class ConfigError(OutrageError, RuntimeError):
     """Raised when existing configuration cannot be safely updated."""
 
@@ -102,7 +113,7 @@ def script_command(
     python = Path(executable or sys.executable)
     for candidate in (python.parent / script, python.parent / f"{script}.exe"):
         if candidate.is_file() and os.access(candidate, os.X_OK):
-            return [str(candidate)]
+            return [_path_text(candidate)]
     return None
 
 
@@ -116,7 +127,7 @@ def launch_command(executable: str | os.PathLike[str] | None = None) -> list[str
     already imported.
     """
     python = Path(executable or sys.executable)
-    return script_command(SCRIPT_NAME, python) or [str(python), "-m", "outrage"]
+    return script_command(SCRIPT_NAME, python) or [_path_text(python), "-m", "outrage"]
 
 
 def server_entry(
@@ -166,19 +177,20 @@ def server_entry(
     is no command line run to pass a flag to.
     """
     argv = list(command) if command is not None else launch_command()
-    args = [*argv[1:], "--dir", str(Path(directory).expanduser().resolve())]
+    command_name = _path_text(argv[0])
+    args = [*argv[1:], "--dir", _path_text(Path(directory).expanduser().resolve())]
     if log is not None:
         args.append("--log")
         # Absolute for the same reason the store directory is.
         if log is not LOG_BESIDE_STORE:
-            args.append(str(Path(log).expanduser().resolve()))
+            args.append(_path_text(Path(log).expanduser().resolve()))
         if log_content is not None:
             args += ["--log-content", log_content]
     if no_info:
         args.append("--no-info")
     if no_remount:
         args.append("--no-remount")
-    return {"command": argv[0], "args": args}
+    return {"command": command_name, "args": args}
 
 
 def mounts_in(args: Sequence[str]) -> list[str]:

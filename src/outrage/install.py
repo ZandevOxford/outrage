@@ -308,12 +308,27 @@ def sessionstart_command(
     The absolute interpreter is the one running ``outrage init``. ``shlex``
     quotes it for POSIX shells and ``list2cmdline`` for Windows; neither has to
     quote JSON because :func:`sessionstart_payload` creates that at runtime.
+    Windows paths use forward slashes, which Windows accepts and JSON can carry
+    without another layer of backslash escaping.
     The marker is a real argument understood by the private CLI wiring, not a
     shell comment, so it survives either command language without reaching
     stdout.
     """
+    return _sessionstart_command(executable, copilot=copilot)
+
+
+def _sessionstart_command(
+    executable: str | os.PathLike[str] | None = None,
+    *,
+    copilot: bool = False,
+    shell: str | None = None,
+) -> str:
+    """The shared hook command, quoted for one harness's actual shell."""
+    interpreter = str(Path(executable or sys.executable).resolve())
+    if sys.platform == "win32":
+        interpreter = interpreter.replace("\\", "/")
     argv = [
-        str(Path(executable or sys.executable).resolve()),
+        interpreter,
         "-m",
         "outrage",
         "sessionstart",
@@ -321,7 +336,12 @@ def sessionstart_command(
     if copilot:
         argv.append("--copilot")
     argv.append(SESSIONSTART_MARKER)
-    return subprocess.list2cmdline(argv) if os.name == "nt" else shlex.join(argv)
+    if shell == "powershell":
+        quoted = ("'" + argument.replace("'", "''") + "'" for argument in argv)
+        return "& " + " ".join(quoted)
+    if shell == "bash" or sys.platform != "win32":
+        return shlex.join(argv)
+    return subprocess.list2cmdline(argv)
 
 
 def sessionstart_payload(*, copilot: bool = False) -> dict[str, Any]:
@@ -337,16 +357,30 @@ def sessionstart_payload(*, copilot: bool = False) -> dict[str, Any]:
     }
 
 
-def _render_sessionstart_command(value: Any, *, target: HookTarget) -> Any:
+def _render_sessionstart_command(
+    value: Any, *, target: HookTarget, shell: str | None = None
+) -> Any:
     """Replace the packaged placeholder without knowing a harness's shape."""
     if isinstance(value, str):
-        command = sessionstart_command(copilot=target is COPILOT_HOOK)
+        command = _sessionstart_command(
+            copilot=target is COPILOT_HOOK,
+            shell=(
+                "powershell"
+                if shell is None and target is CLAUDE_HOOK and sys.platform == "win32"
+                else shell
+            ),
+        )
         return value.replace(_SESSIONSTART_COMMAND, command)
     if isinstance(value, list):
-        return [_render_sessionstart_command(item, target=target) for item in value]
+        return [_render_sessionstart_command(item, target=target, shell=shell) for item in value]
     if isinstance(value, dict):
         return {
-            key: _render_sessionstart_command(item, target=target) for key, item in value.items()
+            key: _render_sessionstart_command(
+                item,
+                target=target,
+                shell=key if target is COPILOT_HOOK and key in ("bash", "powershell") else shell,
+            )
+            for key, item in value.items()
         }
     return value
 
@@ -372,6 +406,13 @@ def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     if not isinstance(entries, list) or len(entries) != 1:
         raise InstallError("template-hook-count", event=target.event)
     entry = entries[0]
+    if target is CLAUDE_HOOK and sys.platform == "win32":
+        handlers = entry.get("hooks") if isinstance(entry, dict) else None
+        if isinstance(handlers, list) and len(handlers) == 1 and isinstance(handlers[0], dict):
+            # Claude Code otherwise prefers Git Bash when it is installed.
+            # A Windows-native absolute interpreter path is not a Bash path;
+            # choosing PowerShell makes the command and the shell agree.
+            handlers[0]["shell"] = "powershell"
     if not is_ours(entry):
         raise InstallError("template-unmarked", marker=MARKER)
     return entry

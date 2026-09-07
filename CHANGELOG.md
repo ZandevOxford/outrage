@@ -4,6 +4,11 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+On Windows, the managed Claude Code `SessionStart` hook now selects PowerShell
+explicitly instead of being routed through Git Bash, and paths written into
+hook commands and `.mcp.json` use forward slashes. Windows accepts that spelling
+directly, while JSON no longer has to escape every directory separator.
+
 Generated heading indexes now omit inline link destinations by default while
 keeping their visible text. Pass `strip_links=false` to the `make_contents`
 tool, `--no-strip-links` to either contents command, or `strip_links=False` to

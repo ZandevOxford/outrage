@@ -1116,9 +1116,7 @@ def test_a_copy_failure_uses_the_transfer_key_as_its_outer_name():
     error = store_module.InvalidArgumentError(
         "key-is-a-directory", key="inside", path="/tmp/tree/inside"
     )
-    transfers = iter(
-        [store_module.Transfer(store_module.FAILED, "ref/inside", None, error=error)]
-    )
+    transfers = iter([store_module.Transfer(store_module.FAILED, "ref/inside", None, error=error)])
 
     result = server_module._copied_result(transfers)
 

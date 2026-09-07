@@ -74,6 +74,23 @@ def test_the_real_interpreter_yields_an_absolute_command():
     assert command[0] != "outrage-server", "a bare name would resolve against the client's PATH"
 
 
+def test_windows_paths_written_to_json_use_forward_slashes(monkeypatch):
+    monkeypatch.setattr(config_module.sys, "platform", "win32")
+
+    assert config_module._path_text(r"C:\Users\John\env\outrage-server.exe") == (
+        "C:/Users/John/env/outrage-server.exe"
+    )
+    entry = server_entry(
+        r"C:\Users\John\project",
+        command=[r"C:\Users\John\env\outrage-server.exe"],
+        log=r"C:\Users\John\logs\outrage.log",
+    )
+    assert entry["command"] == "C:/Users/John/env/outrage-server.exe"
+    assert "C:/Users/John/project" in entry["args"][-3]
+    assert "C:/Users/John/logs/outrage.log" in entry["args"][-1]
+    assert "\\" not in json.dumps(entry)
+
+
 # -- the entry -----------------------------------------------------------
 
 

@@ -59,8 +59,7 @@ def test_each_heading_carries_its_character_offset_and_its_byte_offset():
 
 def test_link_targets_are_stripped_by_default_and_can_be_kept():
     markdown = (
-        "# A [string](https://example.test/types_(one)) and "
-        "[*display text*](target \"title\")\n"
+        '# A [string](https://example.test/types_(one)) and [*display text*](target "title")\n'
     )
 
     assert contents.render_contents(markdown) == "# A string and *display text*\n0 0\n"

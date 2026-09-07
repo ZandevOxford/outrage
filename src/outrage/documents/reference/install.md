@@ -413,6 +413,8 @@ Build the shell command installed for the shared SessionStart payload.
 The absolute interpreter is the one running `outrage init`. `shlex`
 quotes it for POSIX shells and `list2cmdline` for Windows; neither has to
 quote JSON because [`sessionstart_payload()`](#outrage.install.sessionstart_payload) creates that at runtime.
+Windows paths use forward slashes, which Windows accepts and JSON can carry
+without another layer of backslash escaping.
 The marker is a real argument understood by the private CLI wiring, not a
 shell comment, so it survives either command language without reaching
 stdout.

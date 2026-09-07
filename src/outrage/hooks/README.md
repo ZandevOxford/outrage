@@ -30,9 +30,12 @@ ran `outrage init`:
 `outrage sessionstart` reads `documents/hooks/sessionstart.md` from the
 installed package. Claude Code and Codex receive their nested JSON payload;
 Copilot's command adds `--copilot` for its flat payload and remains duplicated
-under the required `bash` and `powershell` fields. The prompt therefore follows
-package upgrades, and neither JSON nor a shell comment has to survive
-command-line quoting.
+under the required `bash` and `powershell` fields, with quoting appropriate to
+each shell. On Windows, Claude's handler selects PowerShell explicitly so it is
+not routed through Git Bash. Windows paths use forward slashes in every hook
+command, as they do in `.mcp.json`, to avoid JSON backslash escaping. The prompt
+therefore follows package upgrades, and neither JSON nor a shell comment has to
+survive command-line quoting.
 
 A re-run recognises its own entry by the managed marker, matched on its stable
 prefix so a version bump still identifies it. Every harness carries it as the
@@ -42,7 +45,6 @@ recognisable for migration.
 place. `hooks.SessionStart` is a list with no name to key on the way
 `mcpServers` has one.
 
-The generated command line uses POSIX quoting on POSIX and Python's Windows
-command-line quoting on Windows. It remains to be observed on Windows through
-a real client, but the inlined JSON and `#` comment that were known portability
-risks are gone.
+The generated command line uses POSIX quoting for Bash, PowerShell quoting for
+PowerShell, and Python's Windows command-line quoting where a hook format does
+not choose a shell.

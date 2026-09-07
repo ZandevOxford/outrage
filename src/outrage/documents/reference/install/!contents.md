@@ -188,10 +188,10 @@
 25993 26023
 
 ### outrage.install.sessionstart_payload(\*, copilot: bool = False) → dict[str, Any]
-26929 26961
+27050 27082
 
 ### outrage.install.template_entry(target: HookTarget = CLAUDE_HOOK) → dict[str, Any]
-27311 27345
+27432 27466
 
 ### outrage.install.write_assets(changes: list[FileChange]) → None
-27971 28007
+28092 28128

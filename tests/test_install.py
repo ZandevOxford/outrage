@@ -159,6 +159,30 @@ def test_the_copilot_hook_command_selects_its_flat_payload():
         assert shlex.split(command) == expected
 
 
+def test_claude_uses_powershell_and_forward_slashes_on_windows(monkeypatch):
+    monkeypatch.setattr(install_module.sys, "platform", "win32")
+    monkeypatch.setattr(install_module.sys, "executable", r"C:\Users\John\env\python.exe")
+
+    handler = template_entry()["hooks"][0]
+
+    assert handler["shell"] == "powershell"
+    assert handler["command"].startswith("& '")
+    assert "C:/Users/John/env/python.exe" in handler["command"]
+    assert "\\" not in handler["command"]
+
+
+def test_copilot_keeps_one_command_for_each_windows_shell(monkeypatch):
+    monkeypatch.setattr(install_module.sys, "platform", "win32")
+    monkeypatch.setattr(install_module.sys, "executable", r"C:\env\python.exe")
+
+    entry = template_entry(COPILOT_HOOK)
+
+    assert "C:/env/python.exe" in entry["bash"]
+    assert entry["powershell"].startswith("& '")
+    assert "C:/env/python.exe" in entry["powershell"]
+    assert "\\" not in entry["bash"] + entry["powershell"]
+
+
 def test_the_sessionstart_payload_is_read_from_the_shipped_document():
     payload = sessionstart_payload()
     prompt = Path(install_module.__file__).parent / "documents" / "hooks" / "sessionstart.md"
@@ -720,11 +744,12 @@ def test_the_copilot_template_is_a_whole_file_with_its_version_stamp():
 def test_the_copilot_entry_carries_both_shells():
     entry = template_entry(COPILOT_HOOK)
     assert entry["type"] == "command"
-    # Both, because the docs ask for both and a Windows session would otherwise
-    # get no context at all. The powershell form is unverified - no PowerShell
-    # on the machine this was written on.
-    assert entry["bash"] == sessionstart_command(copilot=True)
-    assert entry["powershell"] == sessionstart_command(copilot=True)
+    # The same argv is rendered for both shells because their executable
+    # invocation and quoting syntax differ.
+    assert entry["bash"] == install_module._sessionstart_command(copilot=True, shell="bash")
+    assert entry["powershell"] == install_module._sessionstart_command(
+        copilot=True, shell="powershell"
+    )
 
 
 def test_the_copilot_marker_is_an_argument_and_the_old_field_is_gone():
