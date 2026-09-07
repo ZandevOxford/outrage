@@ -29,13 +29,13 @@ ran `outrage init`:
 
 `outrage sessionstart` reads `documents/hooks/sessionstart.md` from the
 installed package. Claude Code and Codex receive their nested JSON payload;
-Copilot's command adds `--copilot` for its flat payload and remains duplicated
-under the required `bash` and `powershell` fields, with quoting appropriate to
-each shell. On Windows, Claude's handler selects PowerShell explicitly so it is
-not routed through Git Bash. Windows paths use forward slashes in every hook
-command, as they do in `.mcp.json`, to avoid JSON backslash escaping. The prompt
-therefore follows package upgrades, and neither JSON nor a shell comment has to
-survive command-line quoting.
+Copilot's command adds `--copilot` for its flat payload. Its packaged template
+carries both shell forms, but the installed entry keeps only `powershell` on
+Windows and only `bash` elsewhere. On Windows, Claude's handler selects
+PowerShell explicitly so it is not routed through Git Bash. Windows paths use
+forward slashes in every hook command, as they do in `.mcp.json`, to avoid JSON
+backslash escaping. The prompt therefore follows package upgrades, and neither
+JSON nor a shell comment has to survive command-line quoting.
 
 A re-run recognises its own entry by the managed marker, matched on its stable
 prefix so a version bump still identifies it. Every harness carries it as the

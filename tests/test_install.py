@@ -171,16 +171,17 @@ def test_claude_uses_powershell_and_forward_slashes_on_windows(monkeypatch):
     assert "\\" not in handler["command"]
 
 
-def test_copilot_keeps_one_command_for_each_windows_shell(monkeypatch):
+def test_copilot_keeps_only_powershell_on_windows(monkeypatch):
     monkeypatch.setattr(install_module.sys, "platform", "win32")
     monkeypatch.setattr(install_module.sys, "executable", r"C:\env\python.exe")
 
     entry = template_entry(COPILOT_HOOK)
 
-    assert "C:/env/python.exe" in entry["bash"]
+    assert "bash" not in entry
     assert entry["powershell"].startswith("& '")
     assert "C:/env/python.exe" in entry["powershell"]
-    assert "\\" not in entry["bash"] + entry["powershell"]
+    assert "\\" not in entry["powershell"]
+    assert shlex.split(entry["powershell"])[-1] == SESSIONSTART_MARKER
 
 
 def test_the_sessionstart_payload_is_read_from_the_shipped_document():
@@ -717,7 +718,7 @@ def test_a_refusal_stops_the_whole_run(tmp_path):
 # agents live in `.github/agents`. Its hook is also a different shape:
 # its own file rather than a merge into the user's, `sessionStart` rather than
 # `SessionStart`, a `version` stamp the file is ignored without, and the command
-# carried twice for the two shells.
+# selected for the current platform.
 
 
 def copilot_path(project: Path) -> Path:
@@ -736,20 +737,17 @@ def test_the_copilot_template_ships_and_carries_the_marker():
 def test_the_copilot_template_is_a_whole_file_with_its_version_stamp():
     loaded = json.loads(COPILOT_HOOK.fragment.read_text(encoding="utf-8"))
     # Unlike the Claude fragment this is a complete file, so it carries the
-    # version: without it Copilot CLI does not read the hooks at all.
+    # version. The source carries both platform forms; rendering selects one.
     assert loaded["version"] == 1
     assert len(loaded["hooks"][COPILOT_HOOK.event]) == 1
+    assert {"bash", "powershell"} <= set(loaded["hooks"][COPILOT_HOOK.event][0])
 
 
-def test_the_copilot_entry_carries_both_shells():
+def test_the_copilot_entry_keeps_only_bash_off_windows():
     entry = template_entry(COPILOT_HOOK)
     assert entry["type"] == "command"
-    # The same argv is rendered for both shells because their executable
-    # invocation and quoting syntax differ.
+    assert "powershell" not in entry
     assert entry["bash"] == install_module._sessionstart_command(copilot=True, shell="bash")
-    assert entry["powershell"] == install_module._sessionstart_command(
-        copilot=True, shell="powershell"
-    )
 
 
 def test_the_copilot_marker_is_an_argument_and_the_old_field_is_gone():
@@ -757,7 +755,6 @@ def test_the_copilot_marker_is_an_argument_and_the_old_field_is_gone():
 
     assert "comment" not in entry
     assert shlex.split(entry["bash"])[-1] == SESSIONSTART_MARKER
-    assert shlex.split(entry["powershell"])[-1] == SESSIONSTART_MARKER
 
 
 @pytest.mark.parametrize("shell", ["sh", "bash", "zsh"])

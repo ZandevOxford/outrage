@@ -29,9 +29,10 @@ They differ in more than spelling:
   ``.github/hooks/outrage.json`` is outrage's own, and repository agents under
   ``.github/agents/``. ``.github`` is usually **committed**, so a re-run's diff
   lands in somebody's version control where the Claude one does not.
-* Copilot's entry carries the command twice, as ``bash`` and ``powershell``,
-  and the file needs ``"version": 1`` at its top. Hence
-  :attr:`HookTarget.base`: what to start from when the file does not exist.
+* Copilot's packaged template carries both ``bash`` and ``powershell`` forms,
+  but the installed entry keeps only the form for the current platform. The
+  file also needs ``"version": 1`` at its top. Hence :attr:`HookTarget.base`:
+  what to start from when the file does not exist.
 * **Codex** reads ``.codex/hooks.json``, its own file like Copilot's, but the
   entry inside is Claude Code's shape down to the ``hookSpecificOutput``
   payload - so the two templates differ only in the ``matcher`` below.
@@ -108,10 +109,10 @@ a hook does not inherit an activated environment. The managed marker is an
 ordinary final argument rather than a shell comment, so neither it nor the
 command depends on ``#`` meaning the same thing on every platform.
 
-Copilot CLI remains different only at the boundary: its hook contract provides
-separate ``bash`` and ``powershell`` commands and its output is the documented
-flat payload. The same command reads the same shipped prompt at invocation time
-and selects that shape with ``--copilot``.
+Copilot CLI remains different only at the boundary: its hook contract selects
+one of ``bash`` and ``powershell`` according to the platform, and its output is
+the documented flat payload. The command reads the same shipped prompt at
+invocation time and selects that shape with ``--copilot``.
 """
 
 from __future__ import annotations
@@ -406,6 +407,8 @@ def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     if not isinstance(entries, list) or len(entries) != 1:
         raise InstallError("template-hook-count", event=target.event)
     entry = entries[0]
+    if target is COPILOT_HOOK and isinstance(entry, dict):
+        entry.pop("bash" if sys.platform == "win32" else "powershell", None)
     if target is CLAUDE_HOOK and sys.platform == "win32":
         handlers = entry.get("hooks") if isinstance(entry, dict) else None
         if isinstance(handlers, list) and len(handlers) == 1 and isinstance(handlers[0], dict):
