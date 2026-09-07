@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.10.1 - 2026-09-07
 
 On Windows, the managed Claude Code `SessionStart` hook now selects PowerShell
 explicitly instead of being routed through Git Bash, and paths written into
