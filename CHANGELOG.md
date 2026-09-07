@@ -2,6 +2,14 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+`make_contents` now indexes stored HTML as well as Markdown. HTML `h1` through
+`h6` elements become plain Markdown headings with their character and UTF-8
+byte offsets into the original source; nested markup and link targets are
+removed while readable text remains. The implementation uses Python's standard
+library and adds no dependency.
+
 ## 0.10.1 - 2026-09-07
 
 On Windows, the managed Claude Code `SessionStart` hook now selects PowerShell

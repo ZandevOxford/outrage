@@ -1,4 +1,4 @@
-"""Build a small offset index from the headings in a Markdown document.
+"""Build a small offset index from the headings in a Markdown or HTML document.
 
 Each heading carries **two** numbers, character offset then byte offset. The
 character offset is a fact about the document as a Python string; the byte
@@ -12,12 +12,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from html.parser import HTMLParser
 
 from . import keys, store
 
 _ATX = re.compile(r"^ {0,3}#{1,6}(?:[ \t]+|$)")
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 _SETEXT = re.compile(r"^ {0,3}(?:=+|-+)[ \t]*$")
+_HTML_HEADING = re.compile(r"h([1-6])\Z")
+_HTML_SPACE = re.compile(r"[ \t\r\n\f]+")
+_HTML_HIDDEN = frozenset({"script", "style", "template"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,7 +29,7 @@ class ContentsResult:
     """The facts about one generated Markdown contents document."""
 
     source_key: str
-    """The normalized key of the Markdown document read."""
+    """The normalized key of the source document read."""
 
     metadata_key: str
     """The metadata key where the generated contents were stored."""
@@ -49,6 +53,75 @@ class _Heading:
     markdown: str
     offset: int
     byte_offset: int
+
+
+@dataclass(frozen=True, slots=True)
+class _LocatedHTMLHeading:
+    level: int
+    text: str
+    line: int
+    column: int
+
+
+class _HTMLHeadings(HTMLParser):
+    """Collect source headings without building or repairing a document tree."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.headings: list[_LocatedHTMLHeading] = []
+        self._current: tuple[int, int, int] | None = None
+        self._text: list[str] = []
+        self._hidden: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._hidden:
+            if tag in _HTML_HIDDEN:
+                self._hidden.append(tag)
+            return
+        if tag in _HTML_HIDDEN:
+            self._hidden.append(tag)
+            return
+
+        heading = _HTML_HEADING.fullmatch(tag)
+        if heading is not None:
+            self._finish_heading()
+            line, column = self.getpos()
+            self._current = (int(heading.group(1)), line, column)
+            return
+        if self._current is None:
+            return
+        if tag == "br":
+            self._text.append(" ")
+        elif tag == "img":
+            alt = next((value for name, value in attrs if name == "alt"), None)
+            if alt:
+                self._text.append(alt)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._hidden:
+            if tag == self._hidden[-1]:
+                self._hidden.pop()
+            return
+        if _HTML_HEADING.fullmatch(tag) is not None:
+            self._finish_heading()
+
+    def handle_data(self, data: str) -> None:
+        if self._current is not None and not self._hidden:
+            self._text.append(data)
+
+    def finish(self) -> list[_LocatedHTMLHeading]:
+        """Close an unterminated final heading and return what was found."""
+        self._finish_heading()
+        return self.headings
+
+    def _finish_heading(self) -> None:
+        if self._current is None:
+            return
+        level, line, column = self._current
+        text = _HTML_SPACE.sub(" ", "".join(self._text)).strip()
+        self.headings.append(_LocatedHTMLHeading(level, text, line, column))
+        self._current = None
+        self._text = []
 
 
 def _without_ending(line: str) -> str:
@@ -122,6 +195,31 @@ def _headings(markdown: str) -> list[_Heading]:
         offset += len(line)
         byte_offset += line_bytes
 
+    return found
+
+
+def _html_headings(html: str) -> list[_Heading]:
+    """Return HTML h1-h6 elements as plain Markdown headings with source offsets."""
+    parser = _HTMLHeadings()
+    parser.feed(html)
+    parser.close()
+    located = parser.finish()
+    if not located:
+        return []
+
+    line_starts = [0]
+    line_starts.extend(position + 1 for position, character in enumerate(html) if character == "\n")
+    found: list[_Heading] = []
+    previous_offset = 0
+    byte_offset = 0
+    for heading in located:
+        offset = line_starts[heading.line - 1] + heading.column
+        between = html[previous_offset:offset]
+        byte_offset += len(between) if between.isascii() else len(between.encode())
+        marker = "#" * heading.level
+        markdown = f"{marker} {heading.text}" if heading.text else marker
+        found.append(_Heading(markdown, offset, byte_offset))
+        previous_offset = offset
     return found
 
 
@@ -214,6 +312,19 @@ def render_contents(markdown: str, *, strip_links: bool = True) -> str:
     return _render(_headings(markdown), strip_links=strip_links)
 
 
+def render_html_contents(html: str) -> str:
+    """Render each HTML h1-h6 element as a plain Markdown heading and two offsets.
+
+    Nested markup and link targets are omitted while readable text, decoded
+    character references and image alternative text remain. The zero-based
+    character and UTF-8 byte offsets beneath each heading point to the opening
+    ``<`` of its source element.
+    """
+    if not isinstance(html, str):
+        raise TypeError(f"html must be a string, got {type(html).__name__}")
+    return _render(_html_headings(html), strip_links=False)
+
+
 def _render(headings: list[_Heading], *, strip_links: bool = True) -> str:
     """Render headings already parsed from one source document."""
     if not headings:
@@ -253,14 +364,15 @@ def make_contents(
     metadata_name: str = "contents",
     strip_links: bool = True,
 ) -> ContentsResult:
-    """Store an offset outline of one Markdown document as metadata.
+    """Store an offset outline of one Markdown or HTML document as metadata.
 
-    The source document is not changed. Its ATX and setext headings are copied
-    to direct metadata named by ``metadata_name``; all section bodies are
-    replaced by the heading's two zero-based offsets, character then byte.
-    Inline link destinations are stripped by default while their text remains;
-    ``strip_links=False`` keeps headings byte for byte. Regenerating the
-    contents overwrites that metadata value.
+    The source document is not changed. Markdown ATX and setext headings or
+    HTML h1-h6 elements are copied to direct metadata named by
+    ``metadata_name``; all section bodies are replaced by the heading's two
+    zero-based offsets, character then byte. HTML markup is flattened to plain
+    visible text. Markdown inline link destinations are stripped by default
+    while their text remains; ``strip_links=False`` keeps Markdown headings
+    byte for byte. Regenerating the contents overwrites that metadata value.
 
     The byte number is what makes this more than a table of contents: paired
     with a byte-addressed :meth:`~outrage.store.Store.retrieve_document` it is
@@ -270,13 +382,17 @@ def make_contents(
     source_key = keys.parse(key, max_segments=keys.MAX_JOINED_SEGMENTS).key
     destination = _metadata_key(source_key, metadata_name)
     source = store.read_all(opened, source_key)
-    if source.format != "markdown":
+    if source.format not in ("markdown", "html"):
         raise store.InvalidArgumentError(
             "contents-not-markdown", key=source_key, format=source.format
         )
 
-    headings = _headings(source.content)
-    generated = _render(headings, strip_links=strip_links)
+    if source.format == "html":
+        headings = _html_headings(source.content)
+        generated = _render(headings, strip_links=False)
+    else:
+        headings = _headings(source.content)
+        generated = _render(headings, strip_links=strip_links)
     metadata_key = opened.store_document(destination, generated, format="markdown")
     return ContentsResult(
         source_key=source_key,
@@ -288,4 +404,4 @@ def make_contents(
     )
 
 
-__all__ = ["ContentsResult", "make_contents", "render_contents"]
+__all__ = ["ContentsResult", "make_contents", "render_contents", "render_html_contents"]

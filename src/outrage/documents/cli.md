@@ -27,7 +27,7 @@ outrage [-h] [--version]
 - [`get`](#get) - print the document stored at a key
 - [`set`](#set) - store a document, from a file or from standard input
 - [`ingest`](#ingest) - convert one local file to Markdown and store it
-- [`make_contents`](#make_contents) - store a character-offset index of a Markdown document's headings
+- [`make_contents`](#make_contents) - store an offset index of a Markdown or HTML document's headings
 - [`ls`](#ls) - list the keys immediately below a key
 - [`dump`](#dump) - print every document at and below a key
 - [`copy`](#copy) - copy a range of documents within the mounted namespace
@@ -290,10 +290,10 @@ outrage ingest [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 
 ## `make_contents`
 
-Read one stored Markdown document and write an index containing its headings and their zero-based
-character offsets. Inline link targets are removed by default while their text remains. The source
-is unchanged. The generated index overwrites direct metadata named by --metadata-name, which
-defaults to contents.
+Read one stored Markdown or HTML document and write a Markdown index containing its headings and
+their zero-based character and byte offsets. HTML markup and link targets are removed while readable
+text remains; Markdown link targets are removed by default. The source is unchanged. The generated
+index overwrites direct metadata named by --metadata-name, which defaults to contents.
 
 ### Usage
 
@@ -318,9 +318,9 @@ outrage make_contents [-h] [--dir PATH] [--store FILE]
 - `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
-- `KEY` - Markdown document key to index.
+- `KEY` - Markdown or HTML document key to index.
 - `--metadata-name METADATA_NAME` - Direct metadata name to write, without the leading '!'. Default contents.
-- `--strip-links, --no-strip-links` - Remove inline link targets but keep their text (default: enabled).
+- `--strip-links, --no-strip-links` - Remove Markdown inline link targets but keep their text; HTML markup is always flattened (default: enabled).
 
 ## `ls`
 

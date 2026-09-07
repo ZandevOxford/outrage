@@ -318,12 +318,26 @@ def test_make_contents_can_keep_link_targets(server):
     assert call(server, "read_document", key="manual/!contents")["content"] == f"{heading}0 0\n"
 
 
-def test_make_contents_rejects_a_non_markdown_source_with_a_tool_message(server):
+def test_make_contents_indexes_html_as_plain_markdown(server):
+    html = "<!doctype html>\n<h2><a href='/detail'><em>Detail</em></a></h2>\n"
+    call(server, "store_document", key="manual", content=html, format="html")
+
+    result = call(server, "make_contents", key="manual")
+
+    offset = html.index("<h2>")
+    assert result["headings"] == 1
+    assert call(server, "read_document", key="manual/!contents")["content"] == (
+        f"## Detail\n{offset} {offset}\n"
+    )
+
+
+def test_make_contents_rejects_a_non_indexable_source_with_a_tool_message(server):
     call(server, "store_document", key="plain", content="# Plain", format="text")
 
     message = call_expecting_error(server, "make_contents", key="plain")
 
     assert "not 'markdown'" in message
+    assert "or 'html'" in message
     assert "plain" in message
 
 

@@ -350,6 +350,31 @@ def test_make_contents_can_keep_link_targets(tmp_path):
     assert run("get", "--dir", str(directory), "manual/!contents") == (0, f"{heading}0 0\n")
 
 
+def test_make_contents_indexes_html_without_an_extra_option(tmp_path):
+    directory = tmp_path / "store"
+    html = "<!doctype html>\n<h1><a href='/manual'>Manual</a></h1>\n"
+    run(
+        "set",
+        "--dir",
+        str(directory),
+        "manual",
+        "--content",
+        html,
+        "--format",
+        "html",
+    )
+
+    status, output = run("make_contents", "--dir", str(directory), "manual")
+
+    offset = html.index("<h1>")
+    assert status == 0
+    assert "stored 1 headings from manual" in output
+    assert run("get", "--dir", str(directory), "manual/!contents") == (
+        0,
+        f"# Manual\n{offset} {offset}\n",
+    )
+
+
 # -- backup --------------------------------------------------------------
 
 

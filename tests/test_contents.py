@@ -1,4 +1,4 @@
-"""Programmatic Markdown heading indexes."""
+"""Programmatic Markdown and HTML heading indexes."""
 
 from __future__ import annotations
 
@@ -148,6 +148,58 @@ def test_an_empty_or_heading_free_document_has_an_empty_index():
     assert contents.render_contents("Just prose.\n") == ""
 
 
+def test_html_headings_become_plain_markdown_with_readable_text():
+    html = (
+        '<H1 class="title"> Guide <small>for</small> '
+        '<a href="/agents">agents</a></H1>\n'
+        "<h2>Caf&eacute; <em>setup</em> <code>now</code> "
+        '<img src="map.png" alt="map &amp; key"><br>Next</h2>'
+    )
+    second = html.index("<h2>")
+
+    assert contents.render_html_contents(html) == (
+        f"# Guide for agents\n0 0\n\n## Café setup now map & key Next\n{second} {second}\n"
+    )
+
+
+@pytest.mark.parametrize("level", range(1, 7))
+def test_each_html_heading_level_maps_to_the_same_markdown_level(level):
+    html = f"<h{level}>Heading</h{level}>"
+
+    assert contents.render_html_contents(html) == f"{'#' * level} Heading\n0 0\n"
+
+
+def test_html_heading_offsets_address_the_original_non_ascii_crlf_source():
+    html = "π\r\n<p>body</p>\r\n<H2 data-x='1'>Über</H2>"
+    offset = html.index("<H2")
+    byte_offset = len(html[:offset].encode())
+
+    rendered = contents.render_html_contents(html)
+
+    assert rendered == f"## Über\n{offset} {byte_offset}\n"
+    assert html[offset:].startswith("<H2")
+    assert html.encode()[byte_offset:].startswith(b"<H2")
+
+
+def test_html_non_visible_content_does_not_enter_a_heading():
+    html = (
+        "<h1>A<!-- comment --><script>script</script>B"
+        "<style>style</style>C<template><b>template</b></template>D</h1>"
+    )
+
+    assert contents.render_html_contents(html) == "# ABCD\n0 0\n"
+
+
+def test_html_parser_bounds_recovery_for_unclosed_and_nested_headings():
+    html = "<h1>One<h2>Two</h3><h4></h4>"
+
+    assert contents.render_html_contents(html) == ("# One\n0 0\n\n## Two\n7 7\n\n####\n19 19\n")
+
+
+def test_html_without_headings_has_an_empty_index():
+    assert contents.render_html_contents("<p>Just prose.</p>") == ""
+
+
 def test_make_contents_writes_default_metadata_and_leaves_source_unchanged(store):
     markdown = "# One\nBody.\n\n## Two\nMore.\n"
     store.store_document("manual", markdown, format="markdown")
@@ -166,6 +218,27 @@ def test_make_contents_writes_default_metadata_and_leaves_source_unchanged(store
     assert store.retrieve_document("manual/!contents").content == expected
     assert store.retrieve_document("manual/!contents").format == "markdown"
     assert store.retrieve_document("manual").content == markdown
+
+
+def test_make_contents_writes_an_html_index_and_leaves_source_unchanged(store):
+    html = "<!doctype html>\n<h1><a href='/one'>One</a></h1>\n<p>Body.</p>\n"
+    store.store_document("manual", html, format="html")
+
+    result = contents.make_contents(store, "manual", strip_links=False)
+
+    offset = html.index("<h1>")
+    expected = f"# One\n{offset} {offset}\n"
+    assert result == contents.ContentsResult(
+        source_key="manual",
+        metadata_key="manual/!contents",
+        headings=1,
+        source_characters=len(html),
+        source_bytes=len(html.encode()),
+        characters=len(expected),
+    )
+    assert store.retrieve_document("manual/!contents").content == expected
+    assert store.retrieve_document("manual/!contents").format == "markdown"
+    assert store.retrieve_document("manual").content == html
 
 
 def test_custom_metadata_is_regenerated_in_place(store):
@@ -189,7 +262,7 @@ def test_metadata_name_must_be_one_direct_name(store, metadata_name):
     assert not store.exists("manual/!contents")
 
 
-def test_source_must_be_stored_as_markdown(store):
+def test_source_must_be_stored_as_markdown_or_html(store):
     store.store_document("manual", "# Looks like Markdown", format="text")
 
     with pytest.raises(InvalidArgumentError) as raised:
@@ -229,6 +302,18 @@ def test_source_and_generated_metadata_route_through_a_mount(store, tmp_path):
 
         assert result.metadata_key == "ref/manual/!contents"
         assert mounted.retrieve_document("manual/!contents").content == "# Mounted\n0 0\n"
+        assert not store.exists("ref/manual/!contents")
+
+
+def test_html_source_and_generated_metadata_route_through_a_mount(store, tmp_path):
+    with SqliteStore(tmp_path / "mounted") as mounted:
+        mounted.store_document("manual", "<h1>Mounted <em>HTML</em></h1>", format="html")
+        table = MountedStore({"": store, "ref": mounted})
+
+        result = contents.make_contents(table, "ref/manual")
+
+        assert result.metadata_key == "ref/manual/!contents"
+        assert mounted.retrieve_document("manual/!contents").content == "# Mounted HTML\n0 0\n"
         assert not store.exists("ref/manual/!contents")
 
 

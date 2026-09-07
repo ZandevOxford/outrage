@@ -476,18 +476,19 @@ def argument_parser() -> argparse.ArgumentParser:
 
     make_contents = subcommands.add_parser(
         "make_contents",
-        help="store a character-offset index of a Markdown document's headings",
+        help="store an offset index of a Markdown or HTML document's headings",
         description=(
-            "Read one stored Markdown document and write an index containing its "
-            "headings and their zero-based character offsets. Inline link targets "
-            "are removed by default while their text remains. The "
+            "Read one stored Markdown or HTML document and write a Markdown index "
+            "containing its headings and their zero-based character and byte offsets. "
+            "HTML markup and link targets are removed while readable text remains; "
+            "Markdown link targets are removed by default. The "
             "source is unchanged. The generated index overwrites direct metadata "
             "named by --metadata-name, which defaults to contents."
         ),
     )
     _store_option(make_contents)
     _table_options(make_contents)
-    make_contents.add_argument("key", metavar="KEY", help="Markdown document key to index.")
+    make_contents.add_argument("key", metavar="KEY", help="Markdown or HTML document key to index.")
     make_contents.add_argument(
         "--metadata-name",
         default="contents",
@@ -497,7 +498,10 @@ def argument_parser() -> argparse.ArgumentParser:
         "--strip-links",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Remove inline link targets but keep their text (default: enabled).",
+        help=(
+            "Remove Markdown inline link targets but keep their text; HTML markup "
+            "is always flattened (default: enabled)."
+        ),
     )
     make_contents.set_defaults(handler=_make_contents_command)
 
@@ -1656,7 +1660,7 @@ def _ingest_command(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def _make_contents_command(args: argparse.Namespace, out: TextIO) -> int:
-    """Build a Markdown heading index and report the metadata destination."""
+    """Build a heading index and report the metadata destination."""
     with _open_table(args, create=True) as opened:
         _resolved(opened, args)
         made = contents.make_contents(

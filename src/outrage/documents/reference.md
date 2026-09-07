@@ -69,7 +69,7 @@ read-only at `outrage`. A store file is relative to `--dir` and a tree in
 * [outrage.remount](reference/remount.md)
 * [outrage.mountfile](reference/mountfile.md)
 * [outrage.shipped](reference/shipped.md)
-* [Markdown contents](reference/contents.md)
+* [Document contents](reference/contents.md)
 * [outrage.ingest](reference/ingest.md)
 
 ## Front ends

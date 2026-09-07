@@ -111,27 +111,32 @@ reports its result without writing the document or its title.
 
 ## `make_contents`
 
-Create an offset index from the headings in one stored Markdown document.
+Create an offset index from the headings in one stored Markdown or HTML
+document.
 
-The source document is left unchanged. Its ATX and setext headings are copied
-in source order, with all intervening content replaced by the zero-based
-character offset of the corresponding heading. Headings inside fenced code
-blocks are ignored.
+The source document is left unchanged. Markdown ATX and setext headings, or
+HTML `h1` through `h6` elements, are copied in source order as Markdown, with
+all intervening content replaced by the zero-based character and UTF-8 byte
+offsets of the corresponding source heading. Headings inside Markdown fenced
+code blocks are ignored. HTML markup and link targets are removed while
+readable text remains.
+
+`strip_links` applies to Markdown sources. HTML markup is always flattened.
 
 The generated Markdown overwrites direct metadata named by `metadata_name`,
 which defaults to `contents`. Pass the name without its leading `!`.
 
 ### Parameters
 
-- `key` (string; required) — Markdown document key
+- `key` (string; required) — Markdown or HTML document key
 - `metadata_name` (string; default "contents"; minimum length 1) — Direct metadata name to write, without the leading '!'
-- `strip_links` (boolean; default true) — Remove inline link targets while keeping their text
+- `strip_links` (boolean; default true) — Remove Markdown inline link targets while keeping their text; HTML markup is always flattened
 
 ### Returns
 
-- `source_key` (string; required) — The normalized Markdown source key
+- `source_key` (string; required) — The normalized source document key
 - `metadata_key` (string; required) — The metadata key written
-- `headings` (integer; required) — Markdown headings found
+- `headings` (integer; required) — Headings found
 - `source_characters` (integer; required) — Source characters scanned
 - `source_bytes` (integer; required) — UTF-8 bytes those characters occupy, which the second number on each heading line is an offset into
 - `characters` (integer; required) — Contents characters stored

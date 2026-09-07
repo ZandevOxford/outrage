@@ -1,4 +1,4 @@
-Markdown contents
+Document contents
 =================
 
 .. automodule:: outrage.contents

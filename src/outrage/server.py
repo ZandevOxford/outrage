@@ -358,9 +358,9 @@ class _IngestDocumentResult(_ToolResult):
 
 
 class _MakeContentsResult(_ToolResult):
-    source_key: Annotated[str, Field(description="The normalized Markdown source key")]
+    source_key: Annotated[str, Field(description="The normalized source document key")]
     metadata_key: Annotated[str, Field(description="The metadata key written")]
-    headings: Annotated[int, Field(description="Markdown headings found")]
+    headings: Annotated[int, Field(description="Headings found")]
     source_characters: Annotated[int, Field(description="Source characters scanned")]
     source_bytes: Annotated[
         int,
@@ -1191,7 +1191,7 @@ def build_server(
     )
     @_reported
     def make_contents(
-        key: Annotated[str, Field(description="Markdown document key")],
+        key: Annotated[str, Field(description="Markdown or HTML document key")],
         metadata_name: Annotated[
             str,
             Field(
@@ -1201,7 +1201,12 @@ def build_server(
         ] = "contents",
         strip_links: Annotated[
             bool,
-            Field(description="Remove inline link targets while keeping their text"),
+            Field(
+                description=(
+                    "Remove Markdown inline link targets while keeping their text; "
+                    "HTML markup is always flattened"
+                )
+            ),
         ] = True,
     ) -> _MakeContentsResult:
         table = live.table

@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import document_contents  # noqa: E402
 
 HEADED = "# One\n\nbody\n\n## Two\n\nmore\n"
+HTML = "<!doctype html>\n<h1>HTML <em>heading</em></h1>\n"
 PROSE = "No heading anywhere in this document, which is what a tool page is.\n"
 
 
@@ -32,6 +33,7 @@ def tree(tmp_path):
     with FilesystemStore(tmp_path / "documents") as store:
         store.store_document("headed", HEADED)
         store.store_document("prose", PROSE)
+        store.store_document("html", HTML, format="html")
         store.store_document("headed/!title", "One")
         store.store_document("plain", "# Not markdown\n", format="text")
         yield store
@@ -40,8 +42,9 @@ def tree(tmp_path):
 def test_a_document_with_headings_gets_an_index(tree):
     swept = document_contents.sweep(tree)
 
-    assert swept.written == ["headed"]
+    assert swept.written == ["headed", "html"]
     assert tree.retrieve_document("headed/!contents").content == contents.render_contents(HEADED)
+    assert tree.retrieve_document("html/!contents").content == contents.render_html_contents(HTML)
 
 
 def test_a_second_run_writes_nothing(tree):
@@ -55,7 +58,7 @@ def test_a_second_run_writes_nothing(tree):
     swept = document_contents.sweep(tree)
 
     assert swept.written == []
-    assert swept.unchanged == ["headed"]
+    assert swept.unchanged == ["headed", "html"]
 
 
 def test_the_sweep_can_keep_link_targets(tree):
@@ -80,7 +83,7 @@ def test_an_index_that_no_longer_matches_is_rewritten(tree):
 
     swept = document_contents.sweep(tree)
 
-    assert swept.written == ["headed"]
+    assert swept.written == ["headed", "html"]
     assert tree.retrieve_document("headed/!contents").content == contents.render_contents(HEADED)
 
 
@@ -111,7 +114,7 @@ def test_a_dry_run_writes_nothing_and_removes_nothing(tree):
 
     swept = document_contents.sweep(tree, dry_run=True)
 
-    assert swept.written == ["headed"]
+    assert swept.written == ["headed", "html"]
     assert swept.removed == ["prose/!contents"]
     assert not tree.exists("headed/!contents")
     assert tree.exists("prose/!contents")
@@ -120,10 +123,10 @@ def test_a_dry_run_writes_nothing_and_removes_nothing(tree):
 def test_metadata_and_other_formats_are_passed_over(tree):
     """A sweep is not a `make_contents` call repeated.
 
-    `make_contents` refuses a document that is not markdown, which is right for
-    somebody who named one and wrong for a walk that meets one: an HTML page in
-    the tree is not an error, it is a page with no index. The `!title` beside a
-    document is skipped for the same reason a title has no title.
+    `make_contents` refuses a document that is not Markdown or HTML, which is
+    right for somebody who named one and wrong for a walk that meets one. The
+    `!title` beside a document is skipped for the same reason a title has no
+    title.
     """
     swept = document_contents.sweep(tree)
 

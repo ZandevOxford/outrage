@@ -1,6 +1,6 @@
-# Markdown contents
+# Document contents
 
-Build a small offset index from the headings in a Markdown document.
+Build a small offset index from the headings in a Markdown or HTML document.
 
 Each heading carries **two** numbers, character offset then byte offset. The
 character offset is a fact about the document as a Python string; the byte
@@ -17,7 +17,7 @@ The facts about one generated Markdown contents document.
 
 #### source_key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
-The normalized key of the Markdown document read.
+The normalized key of the source document read.
 
 #### metadata_key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
@@ -42,14 +42,15 @@ The number of characters stored in the generated contents document.
 
 ### outrage.contents.make_contents(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, metadata_name: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'contents', strip_links: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [ContentsResult](#outrage.contents.ContentsResult)
 
-Store an offset outline of one Markdown document as metadata.
+Store an offset outline of one Markdown or HTML document as metadata.
 
-The source document is not changed. Its ATX and setext headings are copied
-to direct metadata named by `metadata_name`; all section bodies are
-replaced by the heading's two zero-based offsets, character then byte.
-Inline link destinations are stripped by default while their text remains;
-`strip_links=False` keeps headings byte for byte. Regenerating the
-contents overwrites that metadata value.
+The source document is not changed. Markdown ATX and setext headings or
+HTML h1-h6 elements are copied to direct metadata named by
+`metadata_name`; all section bodies are replaced by the heading's two
+zero-based offsets, character then byte. HTML markup is flattened to plain
+visible text. Markdown inline link destinations are stripped by default
+while their text remains; `strip_links=False` keeps Markdown headings
+byte for byte. Regenerating the contents overwrites that metadata value.
 
 The byte number is what makes this more than a table of contents: paired
 with a byte-addressed [`retrieve_document()`](store.md#outrage.store.Store.retrieve_document) it is
@@ -72,3 +73,12 @@ Bare numbers, John's call, so **the token count on the line is the only
 thing that tells the two formats apart** -- an index written before this
 carries one number per heading. That is why regenerating an index is part
 of adopting this rather than housekeeping to get to later.
+
+### outrage.contents.render_html_contents(html: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+Render each HTML h1-h6 element as a plain Markdown heading and two offsets.
+
+Nested markup and link targets are omitted while readable text, decoded
+character references and image alternative text remain. The zero-based
+character and UTF-8 byte offsets beneath each heading point to the opening
+`<` of its source element.

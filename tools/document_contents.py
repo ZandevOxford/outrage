@@ -1,4 +1,4 @@
-"""Write a `!contents` offset index beside every markdown document in a tree.
+"""Write a `!contents` offset index beside every indexable document in a tree.
 
 `outrage.contents.make_contents` indexes one document. This walks a directory
 of documents and indexes all of them, which is what the shipped tree needs: an
@@ -71,20 +71,20 @@ class Swept:
 
 
 def indexable(opened: store.Store):
-    """Every markdown document in the store, in order.
+    """Every Markdown or HTML document in the store, in order.
 
     ``kind`` and ``format`` come off the listing, so nothing here parses a
     filename: a metadata key is skipped because the store says it is metadata,
-    and a document is indexed because the store says it is markdown.
+    and a document is indexed because the store says it is Markdown or HTML.
     :func:`outrage.contents.make_contents` refuses anything else, and refusing
-    is right for one call and wrong for a sweep, which should pass over an HTML
-    page rather than stop at it.
+    is right for one call and wrong for a sweep, which should pass over a text
+    or JSON document rather than stop at it.
 
     A key that exists only because something is beneath it -- kind
     ``implicit`` -- has no document to index.
     """
     for entry in bulk.walk(opened, None):
-        if entry.kind == "document" and entry.format == "markdown":
+        if entry.kind == "document" and entry.format in ("markdown", "html"):
             yield entry.key
 
 
@@ -117,8 +117,11 @@ def sweep(
     swept = Swept()
     for key in list(indexable(opened)):
         metadata_key = f"{key}{keys.DELIMITER}{keys.META_PREFIX}{metadata_name}"
-        rendered = contents.render_contents(
-            store.read_all(opened, key).content, strip_links=strip_links
+        source = store.read_all(opened, key)
+        rendered = (
+            contents.render_html_contents(source.content)
+            if source.format == "html"
+            else contents.render_contents(source.content, strip_links=strip_links)
         )
         existing = stored_index(opened, metadata_key)
 
