@@ -490,9 +490,11 @@ a directory named `.!` and the name — `document.md` carries its title at
 `.!document.md/!title.md`. Inside that directory it is the ordinary mapping
 again, so what a container holds is what a normal export would have written. A
 bundle's own directories are left plain, so `guide/intro.md` is still
-`guide/intro.md`, and a name beginning with `.!` is reserved. What the mode does
-cost is a format the key does not spell: `notes` stored as text is the file
-`notes`, and reads back as markdown.
+`guide/intro.md`. If that plain directory exists before its document, the
+exception is symmetric: `.!guide` is the document beside `guide/`. Entry type
+distinguishes the prefixed file from the prefixed container. What the mode does
+cost is a format the key does not spell: `notes` stored as text reads back as
+markdown whether its file is `notes` or `.!notes`.
 
 Omit `file` to mount the store **outrage ships** for that key. Today that is
 the `outrage` manual and nothing else. It is the way back after unmounting the

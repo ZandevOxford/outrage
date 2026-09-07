@@ -710,26 +710,27 @@ def test_a_bundles_own_directories_are_left_plain(tmp_path):
         assert kept.retrieve_document("guide/intro.md").content == "# Intro\n"
 
 
-def test_a_file_wearing_the_container_prefix_spells_no_key(tmp_path):
-    """Reserved, so that one name means one thing.
+def test_a_file_wearing_the_container_prefix_is_the_displaced_document(tmp_path):
+    """Entry type makes the collision spelling symmetric.
 
-    The alternative was for `.!notes` to be a container when a `notes` sat
-    beside it and a key otherwise, which is the reading that depends on what is
-    next to it. A file is reported by a check instead.
+    A prefixed directory is the container beside a plain document; a prefixed
+    file is the document beside a plain directory. Both spell the same key.
     """
     root = tmp_path / "kept"
     root.mkdir()
-    (root / ".!notes").write_text("not a key")
+    (root / ".!notes").write_text("a document")
+    (root / "notes").mkdir()
+    (root / "notes" / "x").write_text("below")
     (root / "ordinary.md").write_text("a document")
 
     with FilesystemStore(root, extensions="keep") as kept:
-        assert [key for key, *_ in walk_level(kept, None)[0]] == ["ordinary.md"]
+        assert [key for key, *_ in walk_level(kept, None)[0]] == ["notes", "ordinary.md"]
+        assert kept.retrieve_document("notes").content == "a document"
+        assert kept.retrieve_document("notes/x").content == "below"
         report = maintenance.check(kept)
-        assert not report.sound
-        assert any(".!notes" in problem.detail for problem in report.problems)
+        assert report.sound
 
-    with raises_rendered(bulk.UnmappableError, "spells no key"):
-        bulk.key_for_path(".!notes", extensions="keep")
+    assert bulk.key_for_path(".!notes", extensions="keep") == ("notes", None)
 
 
 def test_a_document_with_no_extension_gets_a_container_too(tmp_path):
@@ -757,25 +758,31 @@ def test_a_document_with_no_extension_gets_a_container_too(tmp_path):
         assert not (kept.root / ".!chapter").exists()
 
 
-def test_the_one_order_a_kept_tree_cannot_serve(tmp_path):
-    """A child written before its parent's document takes the plain directory.
-
-    Nothing then distinguishes it from a bundle's own, and renaming it would
-    break the links pointing into it -- so the document is refused instead.
-    Every write through `store_document` or a copy takes the parent first, so
-    this is reachable only by asking for it in that order.
-    """
+def test_a_kept_tree_serves_a_document_written_after_its_child(tmp_path):
+    """The prefixed file is the reverse-order exception to the plain directory."""
     with FilesystemStore(tmp_path / "kept", extensions="keep") as kept:
         kept.store_document("chapter/one", "first")
-        with raises_rendered(bulk.UnmappableError, "is the directory") as raised:
-            kept.store_document("chapter", "a body")
-        assert raised.value.code == "key-is-a-directory"
+        kept.store_document("chapter", "a body", title="Chapter")
 
-    # Under `strip` it is ordinary, which says the limit belongs to the
-    # mapping rather than to the backend.
+        assert (kept.root / ".!chapter").read_text() == "a body"
+        assert (kept.root / "chapter" / "one").read_text() == "first"
+        assert (kept.root / "chapter" / "!title.md").read_text() == "Chapter"
+        assert kept.retrieve_document("chapter").content == "a body"
+        assert kept.retrieve_document("chapter/one").content == "first"
+        assert kept.retrieve_document("chapter/!title").content == "Chapter"
+        assert [key for key, *_ in walk_level(kept, None)[0]] == ["chapter"]
+        assert [key for key, *_ in walk_level(kept, "chapter")[0]] == [
+            "chapter/!title",
+            "chapter/one",
+        ]
+
+    # `strip` is unchanged: the extension already keeps the document and its
+    # directory apart, so no collision spelling is needed.
     with FilesystemStore(tmp_path / "stripped") as stripped:
         stripped.store_document("chapter/one", "first")
         stripped.store_document("chapter", "a body")
+        assert (stripped.root / "chapter.md").read_text() == "a body"
+        assert (stripped.root / "chapter" / "one.md").read_text() == "first"
         assert stripped.retrieve_document("chapter").content == "a body"
 
 

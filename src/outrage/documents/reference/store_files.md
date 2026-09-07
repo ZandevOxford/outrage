@@ -29,9 +29,11 @@ has nowhere to record which of the two it is in and a marker file would be a
 file in the corpus that is not a document.
 
 That mode has one convention of its own, since identity alone cannot give a
-document the keys below it: [`outrage.bulk.CONTAINER_PREFIX`](bulk.md#outrage.bulk.CONTAINER_PREFIX). A file keeps
-its whole name and its keys live in `.!` beside it, so `document.md` can
-carry a title without giving up the name a link points at.
+document the keys below it: [`outrage.bulk.CONTAINER_PREFIX`](bulk.md#outrage.bulk.CONTAINER_PREFIX). A plain file
+keeps its keys in the `.!` directory beside it; if the plain directory was
+there first, the document takes the `.!` file instead. Thus `document.md`
+can carry a title without giving up the name a link points at, in either write
+order.
 
 Two ways in, because there are two kinds of caller.
 `__init__()` is overridden to take the tree

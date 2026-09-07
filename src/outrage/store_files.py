@@ -27,9 +27,11 @@ has nowhere to record which of the two it is in and a marker file would be a
 file in the corpus that is not a document.
 
 That mode has one convention of its own, since identity alone cannot give a
-document the keys below it: :data:`outrage.bulk.CONTAINER_PREFIX`. A file keeps
-its whole name and its keys live in ``.!`` beside it, so ``document.md`` can
-carry a title without giving up the name a link points at.
+document the keys below it: :data:`outrage.bulk.CONTAINER_PREFIX`. A plain file
+keeps its keys in the ``.!`` directory beside it; if the plain directory was
+there first, the document takes the ``.!`` file instead. Thus ``document.md``
+can carry a title without giving up the name a link points at, in either write
+order.
 
 Two ways in, because there are two kinds of caller.
 :meth:`~outrage.store.FileStore.__init__` is overridden to take the tree
@@ -305,10 +307,16 @@ class FilesystemStore(FileStore):
         if self._extensions != "keep" or parsed == keys.ROOT:
             return mapped
         parent = parsed.rpartition(keys.DELIMITER)[0]
-        if not parent:
-            return mapped
         below = self._dir_for(parent).relative_to(self.root)
-        return PurePosixPath(below.as_posix()) / mapped.name
+        directory = PurePosixPath(below.as_posix())
+        candidate = self.root / Path(directory / mapped.name)
+        # The symmetric half of the container convention: if the plain name
+        # is already the directory holding this key's children, put the key's
+        # own document in the `.!` file beside it. Entry type distinguishes it
+        # from a `.!` directory, which is the container beside a plain file.
+        if candidate.is_dir() and not candidate.is_symlink():
+            return directory / (bulk.CONTAINER_PREFIX + mapped.name)
+        return directory / mapped.name
 
     def _readable(self, key: str, format: str | None) -> Path | None:
         """Where ``key`` would be read from, or None if that is outside the tree.
@@ -400,11 +408,9 @@ class FilesystemStore(FileStore):
         * nothing is there, and :func:`outrage.bulk.container_name` decides,
           which is every write into empty space.
 
-        The one order this cannot serve is a child written before its parent's
-        document: the plain directory is taken by then, and the document is
-        refused by :meth:`_write` rather than a bundle's own directory being
-        renamed under the links that point into it. Every write through
-        ``store_document`` or a copy takes the parent first.
+        If a child took the plain directory before its parent's document was
+        written, :meth:`_relative` gives the document the symmetric prefixed
+        file beside it. No bundle directory has to move.
         """
         parsed = keys.parse(key).key
         if parsed == keys.ROOT:
@@ -492,12 +498,8 @@ class FilesystemStore(FileStore):
         # somebody else put in the way -- not the store's to explain, so the
         # system speaks for itself, which is the rule `tests/test_bulk.py`
         # states. Under `keep` a document's keys go to a container of their own
-        # (`bulk.CONTAINER_PREFIX`), so what is left is an *order* rather than
-        # a shape: a child written before its parent's document has taken the
-        # plain directory by then, and `_dir_for` will not rename it out from
-        # under the links pointing into it. That is a property of the mapping
-        # the caller asked for, this layer knows precisely what happened, and
-        # an errno reaching whoever is watching would be it declining to say.
+        # (`bulk.CONTAINER_PREFIX`), and `_relative` uses the symmetric
+        # prefixed *file* when the plain directory was written first.
         if self._extensions == "keep":
             if path.is_dir():
                 raise bulk.UnmappableError("key-is-a-directory", key=key, path=str(path))
@@ -1304,11 +1306,10 @@ def _children(
     which is the whole reason the mapping gives documents an extension. So a
     child is a name and up to two paths rather than one entry per file.
 
-    Under ``keep`` the pair is a name beside its container spelling:
-    ``a.md`` the file and ``.!a.md`` the directory are one key that is a
-    document and a container, which is what :data:`outrage.bulk.CONTAINER_PREFIX`
-    exists to allow. A plain ``a/`` beside ``a.md`` is two keys there rather
-    than one, since the file name is the whole segment.
+    Under ``keep`` the pair is symmetric: ``a.md`` the file beside
+    ``.!a.md/`` the directory, or ``.!a.md`` the file beside ``a.md/`` the
+    directory, are each one key that is both document and container. Entry
+    type distinguishes the two uses of :data:`outrage.bulk.CONTAINER_PREFIX`.
 
     What is passed over, and each is a decision rather than an omission:
     a **symlink**, in either direction, for the reason an import does not
@@ -1336,11 +1337,6 @@ def _children(
         if entry.is_dir():
             directories.setdefault(name[len(bulk.CONTAINER_PREFIX) :] if held else name, entry)
         elif entry.is_file():
-            if held:
-                # The prefix names a container, so a file wearing it spells no
-                # key. Passed over here and reported by `check_file`, rather
-                # than one name meaning two things by what sits beside it.
-                continue
             # The root document is the one file named by an extension alone,
             # and it belongs to the key *holding* this directory rather than to
             # a child of it -- so it is not a child here. Only at the top of
@@ -1350,10 +1346,17 @@ def _children(
             # An extension comes off to make the segment under `strip`, and
             # under `keep` only for metadata, which is written the ordinary way
             # because nothing in a bundle links to it.
-            stem, extension = os.path.splitext(name)
-            stripped = extensions != "keep" or name.startswith(keys.META_PREFIX)
-            segment = stem if stripped and extension in bulk.FORMAT_BY_EXTENSION else name
-            files.setdefault(segment, entry)
+            logical_name = name[len(bulk.CONTAINER_PREFIX) :] if held else name
+            stem, extension = os.path.splitext(logical_name)
+            stripped = extensions != "keep" or logical_name.startswith(keys.META_PREFIX)
+            segment = stem if stripped and extension in bulk.FORMAT_BY_EXTENSION else logical_name
+            # A plain file is the canonical spelling when a hand-edited tree
+            # contains both. The maintenance check still reports the doubled
+            # key; reads do not depend on directory iteration order.
+            if held:
+                files.setdefault(segment, entry)
+            else:
+                files[segment] = entry
 
     found = []
     for segment in files.keys() | directories.keys():

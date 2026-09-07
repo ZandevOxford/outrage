@@ -173,6 +173,18 @@ def test_a_container_is_named_for_the_segment_it_holds_the_keys_below():
     assert bulk.file_name("guide.md") == "guide.md"
 
 
+def test_a_prefixed_file_is_the_document_beside_a_plain_container():
+    assert bulk.key_for_path(".!notes", extensions="keep") == ("notes", None)
+    assert bulk.key_for_path("a/.!guide.md", extensions="keep") == (
+        "a/guide.md",
+        "markdown",
+    )
+    assert bulk.key_for_path("a/.!!title.md", extensions="keep") == (
+        "a/!title",
+        "markdown",
+    )
+
+
 def test_a_kept_tree_round_trips_through_an_export_with_its_metadata():
     """The convention's real assertion: out, back in, and the same store.
 

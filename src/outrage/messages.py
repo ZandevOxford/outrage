@@ -913,23 +913,12 @@ def _key_extension_contradicts_format(
     )
 
 
-@template("path-name-is-reserved")
-def _path_name_is_reserved(name: Namer, /, *, path: str, prefix: str = ".!", **_: Any) -> str:
-    return (
-        f"the file {path!r} spells no key: this tree keeps extensions, where a "
-        f"name beginning with {prefix!r} is the directory holding the keys "
-        f"below a document. Reserved so that one name means one thing rather "
-        f"than two depending on what sits beside it."
-    )
-
-
 @template("key-is-a-directory")
 def _key_is_a_directory(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
     return (
-        f"key {name(key)!r} is the directory {path!r} in this tree, which is "
-        f"where the keys below it are kept: a name is a file or a directory and "
-        f"not both, so this key can hold children or a document and not the two "
-        f"at once"
+        f"key {name(key)!r} would be stored at {path!r}, which is already a "
+        f"directory in this tree: replacing it with a document would lose the "
+        f"keys it holds"
     )
 
 

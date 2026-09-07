@@ -146,12 +146,14 @@ answer that it does not know. It also means metadata with children needs no
 container of its own: `!changelog.md` the file and `!changelog/` the
 directory are two names, exactly as under `strip`.
 
-**The prefix is reserved**, and that is the price. A *file* whose name
-begins with it spells no key and [`outrage.store_files.FilesystemStore.check_file()`](store_files.md#outrage.store_files.FilesystemStore.check_file)
-reports it, rather than one name meaning two things depending on what sits
-beside it. The leading dot keeps these out of a bundle's ordinary listing;
-they are exempt from the dotfile skip for the reason the root document is,
-since they are this package's own structure rather than somebody else's.
+**The entry type says which half it is.** A directory named `.!notes`
+holds the keys below a document in the plain file `notes`; a file named
+`.!notes` holds the document whose keys already occupy the plain directory
+`notes`. That symmetry means either half can be written first without
+moving a bundle's own directory. The leading dot keeps these out of a
+bundle's ordinary listing; they are exempt from the dotfile skip for the
+reason the root document is, since they are this package's own structure
+rather than somebody else's.
 
 ### outrage.bulk.EXTENSION_BY_FORMAT *= {'html': '.html', 'json': '.json', 'markdown': '.md', 'text': '.txt'}*
 
@@ -845,9 +847,10 @@ contents read exactly as `strip` wrote them.
 ('a/b.md/chapter', None)
 ```
 
-A *file* named for that prefix spells no key at all, which is the price of
-reserving it: one name means one thing, rather than two depending on what
-sits beside it.
+A final *file* named for that prefix is the symmetric collision spelling:
+`.!notes` is the document at `notes` when the plain `notes/`
+directory already holds its children. In an earlier component the same
+spelling is a directory, and therefore the container below that document.
 
 ### outrage.bulk.levels(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
 

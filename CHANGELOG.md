@@ -35,17 +35,16 @@ name is removed or renamed.
   title is `.!guide.md/!title.md` — so what a container holds is exactly what
   an ordinary export writes, and metadata carrying its extension is what lets a
   listing report its format without opening it. A bundle's own directories are
-  left plain, so `guide/intro.md` is still `guide/intro.md`, and a *file* whose
-  name begins with `.!` spells no key and is reported by `outrage check`.
-* **Two costs, both of them the mode's and neither hidden.** A document whose
+  left plain, so `guide/intro.md` is still `guide/intro.md`. The exception is
+  symmetric when the directory was written first: `.!guide` is then the
+  document beside `guide/`, while a prefixed directory remains the container
+  beside a plain file. Entry type distinguishes them.
+* **One cost, the mode's and not hidden.** A document whose
   key spells no extension is written to a file with none, so a format the key
   does not name does not survive the round trip: `notes` stored as text reads
-  back as markdown. And `notes` the document and `notes/` a bundle's own
-  directory are the same string, so which names need a container is the one
-  thing this mapping asks the tree rather than the key — a child written
-  *before* its parent's document takes the plain directory, and the document is
-  then refused rather than a bundle's directory being renamed under the links
-  pointing into it.
+  back as markdown. `notes` the document and `notes/` a bundle's own directory
+  are the same string, so which spelling to use is the one thing this mapping
+  asks the tree rather than the key.
 * **A mount specification is now opened in one place.** Every field of one says
   how to open a store, and three command-line paths took a specification apart
   by hand and so quietly dropped the new field: the option parsed, the store
