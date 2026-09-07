@@ -1199,9 +1199,18 @@ def build_server(
                 min_length=1,
             ),
         ] = "contents",
+        strip_links: Annotated[
+            bool,
+            Field(description="Remove inline link targets while keeping their text"),
+        ] = True,
     ) -> _MakeContentsResult:
         table = live.table
-        made = contents.make_contents(table, _named_key(table, key), metadata_name=metadata_name)
+        made = contents.make_contents(
+            table,
+            _named_key(table, key),
+            metadata_name=metadata_name,
+            strip_links=strip_links,
+        )
         return _MakeContentsResult.model_validate(dataclasses.asdict(made))
 
     @server.tool(
@@ -1918,7 +1927,26 @@ def _copied_result(
             # spelled the way the library already spells it. What matters is
             # that the sentence is written *here* at all: the walk carries the
             # refusal and neither front end inherits the other's wording.
-            said = transfer.reason if transfer.error is None else messages.render(transfer.error)
+            if transfer.error is None:
+                said = transfer.reason
+            else:
+                error_key = transfer.error.details.get("key")
+
+                def name(
+                    key: str,
+                    error_key: object = error_key,
+                    transfer_key: str | None = transfer.key,
+                ) -> str:
+                    # A transfer names the key in the copy's namespace while
+                    # a refusal carried out of a mounted target may still name
+                    # that same key as the target store saw it. They are the
+                    # same fact, so use the transfer's outer spelling. Errors
+                    # already renamed at the mount boundary compare equal and
+                    # pass through unchanged.
+                    outer = transfer_key if key == error_key and transfer_key is not None else key
+                    return keys.displayed(outer)
+
+                said = messages.render(transfer.error, name)
             failures.append({"key": transfer.key, "reason": said})
         # Named in full rather than sampled, unlike the failures: a caller told
         # that three keys moved and shown two has to go looking for the third,

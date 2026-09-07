@@ -101,7 +101,11 @@ def stored_index(opened: store.Store, metadata_key: str) -> str | None:
 
 
 def sweep(
-    opened: store.Store, *, metadata_name: str = CONTENTS_NAME, dry_run: bool = False
+    opened: store.Store,
+    *,
+    metadata_name: str = CONTENTS_NAME,
+    strip_links: bool = True,
+    dry_run: bool = False,
 ) -> Swept:
     """Bring every index in ``opened`` up to date with its document.
 
@@ -113,7 +117,9 @@ def sweep(
     swept = Swept()
     for key in list(indexable(opened)):
         metadata_key = f"{key}{keys.DELIMITER}{keys.META_PREFIX}{metadata_name}"
-        rendered = contents.render_contents(store.read_all(opened, key).content)
+        rendered = contents.render_contents(
+            store.read_all(opened, key).content, strip_links=strip_links
+        )
         existing = stored_index(opened, metadata_key)
 
         if not rendered:
@@ -133,7 +139,9 @@ def sweep(
             swept.unchanged.append(key)
         else:
             if not dry_run:
-                contents.make_contents(opened, key, metadata_name=metadata_name)
+                contents.make_contents(
+                    opened, key, metadata_name=metadata_name, strip_links=strip_links
+                )
             swept.written.append(key)
     return swept
 
@@ -147,6 +155,12 @@ def main(argv: list[str] | None = None) -> int:
         help=f"metadata to write, without its leading '!' (default: {CONTENTS_NAME})",
     )
     parser.add_argument("-n", "--dry-run", action="store_true", help="report without writing")
+    parser.add_argument(
+        "--strip-links",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="remove inline link targets but keep their text (default: enabled)",
+    )
     args = parser.parse_args(argv)
 
     if not args.tree.is_dir():
@@ -162,7 +176,12 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     with FilesystemStore(args.tree, create=False) as opened:
-        swept = sweep(opened, metadata_name=name, dry_run=args.dry_run)
+        swept = sweep(
+            opened,
+            metadata_name=name,
+            strip_links=args.strip_links,
+            dry_run=args.dry_run,
+        )
 
     for key in swept.written:
         print(f"  {key}")

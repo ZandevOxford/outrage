@@ -160,6 +160,8 @@ class Live:
         """
         prefix = keys.parse(key).key
         with self._lock:
+            mount_path = None if file is None else store_file(self._directory, file)
+            created = mount_path is not None and not mount_path.exists()
             store = self._opened(prefix, file, type, extensions, read_only)
             # Everything up to the swap is inside this, `open_mounts`'s own
             # shape: a failure anywhere closes what was opened and leaves the
@@ -173,7 +175,13 @@ class Live:
                     read_only=[prefix] if read_only or file is None else [],
                 )
                 replaced = prefix in {mount.prefix for mount in self._table}
-                notes = notes_for_mount(after, prefix, replaced=replaced, shipped=file is None)
+                notes = notes_for_mount(
+                    after,
+                    prefix,
+                    replaced=replaced,
+                    shipped=file is None,
+                    created=str(mount_path) if created else None,
+                )
             except Exception:
                 store.close()
                 raise
@@ -250,7 +258,12 @@ class Live:
 
 
 def notes_for_mount(
-    after: MountedStore, prefix: str, *, replaced: bool, shipped: bool = False
+    after: MountedStore,
+    prefix: str,
+    *,
+    replaced: bool,
+    shipped: bool = False,
+    created: str | None = None,
 ) -> list[Note]:
     """What a mount is worth remarking on, as codes and facts.
 
@@ -263,6 +276,11 @@ def notes_for_mount(
     is the rule a tool call makes unambiguous in a way two configuration
     sources do not.
 
+    ``created`` is the path of a writable store that did not exist before this
+    call opened it. Dynamic mounts are an MCP-only operation, so this is the
+    one audience that needs the typo warning; startup and command-line mounts
+    keep their existing quiet behaviour.
+
     ``shipped`` is whether this mounted the store outrage ships rather than a
     file, and it changes the last note rather than adding one. A file mount is
     made permanent by writing it into the mount configuration file; the shipped
@@ -272,6 +290,8 @@ def notes_for_mount(
     could not name.
     """
     notes: list[Note] = []
+    if created is not None:
+        notes.append(Note("mount-created-store", mount=prefix, path=created))
     if replaced:
         notes.append(Note("mount-replaced-another", mount=prefix))
     if any(mount.prefix == prefix for mount in after.shadowing()):

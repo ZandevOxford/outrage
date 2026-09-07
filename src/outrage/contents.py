@@ -125,14 +125,84 @@ def _headings(markdown: str) -> list[_Heading]:
     return found
 
 
-def render_contents(markdown: str) -> str:
+def _without_inline_link_targets(markdown: str) -> str:
+    """Keep inline link text while dropping the destination around it.
+
+    This is deliberately a small Markdown scanner rather than a regular
+    expression: destinations may contain balanced parentheses and labels may
+    contain brackets. Escapes protect the following character in both. An
+    unmatched construct is left byte for byte as it arrived.
+    """
+    rendered: list[str] = []
+    position = 0
+    while position < len(markdown):
+        if markdown[position] == "\\":
+            rendered.append(markdown[position : position + 2])
+            position += 2
+            continue
+        if markdown[position] == "`":
+            end = position
+            while end < len(markdown) and markdown[end] == "`":
+                end += 1
+            marker = markdown[position:end]
+            closing = markdown.find(marker, end)
+            if closing >= 0:
+                rendered.append(markdown[position : closing + len(marker)])
+                position = closing + len(marker)
+                continue
+        label_start = position + 1 if markdown[position : position + 2] == "![" else position
+        if markdown[label_start : label_start + 1] != "[":
+            rendered.append(markdown[position])
+            position += 1
+            continue
+
+        depth = 1
+        label_end = label_start + 1
+        while label_end < len(markdown) and depth:
+            if markdown[label_end] == "\\":
+                label_end += 2
+                continue
+            if markdown[label_end] == "[":
+                depth += 1
+            elif markdown[label_end] == "]":
+                depth -= 1
+            label_end += 1
+        if depth or markdown[label_end : label_end + 1] != "(":
+            rendered.append(markdown[position])
+            position += 1
+            continue
+
+        depth = 1
+        destination_end = label_end + 1
+        while destination_end < len(markdown) and depth:
+            if markdown[destination_end] == "\\":
+                destination_end += 2
+                continue
+            if markdown[destination_end] == "(":
+                depth += 1
+            elif markdown[destination_end] == ")":
+                depth -= 1
+            destination_end += 1
+        if depth:
+            rendered.append(markdown[position])
+            position += 1
+            continue
+
+        rendered.append(markdown[label_start + 1 : label_end - 1])
+        position = destination_end
+    return "".join(rendered)
+
+
+def render_contents(markdown: str, *, strip_links: bool = True) -> str:
     """Render each Markdown heading followed by its two source offsets.
 
-    Heading spelling is kept literal. Everything between headings is omitted,
-    and the numbers beneath each heading are the zero-based offsets at which
-    that heading begins in ``markdown``: the character offset first, then the
-    UTF-8 byte offset, separated by a space. Headings inside fenced code
-    blocks are ignored.
+    Heading spelling is kept literal apart from inline link destinations,
+    which are removed by default while their text is kept. Pass
+    ``strip_links=False`` to preserve the complete heading. Everything between
+    headings is omitted, and the numbers beneath each heading are the
+    zero-based offsets at which that heading begins in ``markdown``: the
+    character offset first, then the UTF-8 byte offset, separated by a space.
+    Headings inside fenced code blocks are ignored.
 
     Bare numbers, John's call, so **the token count on the line is the only
     thing that tells the two formats apart** -- an index written before this
@@ -141,16 +211,18 @@ def render_contents(markdown: str) -> str:
     """
     if not isinstance(markdown, str):
         raise TypeError(f"markdown must be a string, got {type(markdown).__name__}")
-    return _render(_headings(markdown))
+    return _render(_headings(markdown), strip_links=strip_links)
 
 
-def _render(headings: list[_Heading]) -> str:
+def _render(headings: list[_Heading], *, strip_links: bool = True) -> str:
     """Render headings already parsed from one source document."""
     if not headings:
         return ""
     return (
         "\n\n".join(
-            f"{heading.markdown}\n{heading.offset} {heading.byte_offset}" for heading in headings
+            f"{_without_inline_link_targets(heading.markdown) if strip_links else heading.markdown}"
+            f"\n{heading.offset} {heading.byte_offset}"
+            for heading in headings
         )
         + "\n"
     )
@@ -175,14 +247,20 @@ def _metadata_key(source_key: str, metadata_name: str) -> str:
 
 
 def make_contents(
-    opened: store.Store, key: str, *, metadata_name: str = "contents"
+    opened: store.Store,
+    key: str,
+    *,
+    metadata_name: str = "contents",
+    strip_links: bool = True,
 ) -> ContentsResult:
     """Store an offset outline of one Markdown document as metadata.
 
     The source document is not changed. Its ATX and setext headings are copied
     to direct metadata named by ``metadata_name``; all section bodies are
     replaced by the heading's two zero-based offsets, character then byte.
-    Regenerating the contents overwrites that metadata value.
+    Inline link destinations are stripped by default while their text remains;
+    ``strip_links=False`` keeps headings byte for byte. Regenerating the
+    contents overwrites that metadata value.
 
     The byte number is what makes this more than a table of contents: paired
     with a byte-addressed :meth:`~outrage.store.Store.retrieve_document` it is
@@ -198,7 +276,7 @@ def make_contents(
         )
 
     headings = _headings(source.content)
-    generated = _render(headings)
+    generated = _render(headings, strip_links=strip_links)
     metadata_key = opened.store_document(destination, generated, format="markdown")
     return ContentsResult(
         source_key=source_key,

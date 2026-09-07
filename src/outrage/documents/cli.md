@@ -290,9 +290,10 @@ outrage ingest [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 
 ## `make_contents`
 
-Read one stored Markdown document and write an index containing its literal headings and their
-zero-based character offsets. The source is unchanged. The generated index overwrites direct
-metadata named by --metadata-name, which defaults to contents.
+Read one stored Markdown document and write an index containing its headings and their zero-based
+character offsets. Inline link targets are removed by default while their text remains. The source
+is unchanged. The generated index overwrites direct metadata named by --metadata-name, which
+defaults to contents.
 
 ### Usage
 
@@ -302,6 +303,7 @@ outrage make_contents [-h] [--dir PATH] [--store FILE]
                       [--mount-docs] [--unmount KEY]
                       [--mount-config FILE] [--no-mount-config]
                       [--metadata-name METADATA_NAME]
+                      [--strip-links | --no-strip-links]
                       KEY
 ```
 
@@ -318,6 +320,7 @@ outrage make_contents [-h] [--dir PATH] [--store FILE]
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `KEY` - Markdown document key to index.
 - `--metadata-name METADATA_NAME` - Direct metadata name to write, without the leading '!'. Default contents.
+- `--strip-links, --no-strip-links` - Remove inline link targets but keep their text (default: enabled).
 
 ## `ls`
 

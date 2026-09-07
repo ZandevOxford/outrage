@@ -4,6 +4,13 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+Generated heading indexes now omit inline link destinations by default while
+keeping their visible text. Pass `strip_links=false` to the `make_contents`
+tool, `--no-strip-links` to either contents command, or `strip_links=False` to
+the Python API to retain the full Markdown link. The mount tool now says when
+opening a missing writable target created a new store, and copy failures name
+mounted keys in the outer namespace.
+
 A directory of files can now be read at the keys its own documents link to, so
 a documentation bundle somebody else wrote is mountable as a store without
 rewriting a single link inside it.

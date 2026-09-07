@@ -52,89 +52,89 @@
 ### outrage.mountfile.UNMOUNT_FLAG *= '--unmount'*
 6561 6561
 
-### *exception* outrage.mountfile.MountFileError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.mountfile.MountFileError(code: str, \*\*details: Any)
 6833 6833
 
-### *class* outrage.mountfile.MountTable(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), root: [Spec](mounts.md#outrage.mounts.Spec) | [None](https://docs.python.org/3/library/constants.html#None), mounts: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...], read_only: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...])
+### *class* outrage.mountfile.MountTable(path: Path, root: Spec | None, mounts: tuple[tuple[str, Spec], ...], read_only: tuple[tuple[str, Spec], ...])
 7242 7242
 
-#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+#### path *: Path*
 8098 8098
 
-#### root *: [Spec](mounts.md#outrage.mounts.Spec) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### root *: Spec | None*
 8181 8181
 
-#### mounts *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...]*
+#### mounts *: tuple[tuple[str, Spec], ...]*
 8366 8366
 
-#### read_only *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...]*
+#### read_only *: tuple[tuple[str, Spec], ...]*
 8665 8665
 
-#### options() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### options() → list[str]
 8946 8946
 
-### *class* outrage.mountfile.Origin(mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), flag: [str](https://docs.python.org/3/library/stdtypes.html#str), value: [str](https://docs.python.org/3/library/stdtypes.html#str), source: [str](https://docs.python.org/3/library/stdtypes.html#str))
+### *class* outrage.mountfile.Origin(mount: str | None, flag: str, value: str, source: str)
 9132 9134
 
-#### mount *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### mount *: str | None*
 9956 9958
 
-#### flag *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### flag *: str*
 10135 10137
 
-#### value *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### value *: str*
 10209 10211
 
-#### source *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### source *: str*
 10284 10286
 
-#### *property* read_only *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* read_only *: bool*
 10442 10444
 
-#### *property* file *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### *property* file *: str*
 10535 10537
 
-#### *property* store *: [Spec](mounts.md#outrage.mounts.Spec)*
+#### *property* store *: Spec*
 10947 10949
 
-### *class* outrage.mountfile.Starter(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/library/stdtypes.html#str), text: [str](https://docs.python.org/3/library/stdtypes.html#str), missing: [str](https://docs.python.org/3/library/stdtypes.html#str))
+### *class* outrage.mountfile.Starter(path: Path, action: str, text: str, missing: str)
 11069 11071
 
-#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+#### path *: Path*
 11518 11520
 
-#### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### action *: str*
 11601 11603
 
-#### text *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### text *: str*
 11704 11706
 
-#### missing *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### missing *: str*
 11844 11846
 
-#### *property* writes *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* writes *: bool*
 12125 12127
 
-### outrage.mountfile.directory_in(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.mountfile.directory_in(argv: Sequence[str]) → str | None
 12215 12217
 
-### outrage.mountfile.origins(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, front: [int](https://docs.python.org/3/library/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Origin](#outrage.mountfile.Origin)]
+### outrage.mountfile.origins(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[Origin]
 12759 12763
 
-### outrage.mountfile.plan_starter(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → [Starter](#outrage.mountfile.Starter)
+### outrage.mountfile.plan_starter(directory: str | PathLike[str], \*, root_mount: str | None = None, mounts: Sequence[str] = (), read_only_mounts: Sequence[str] = ()) → Starter
 13791 13797
 
-### outrage.mountfile.read(path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [MountTable](#outrage.mountfile.MountTable)
+### outrage.mountfile.read(path: str | PathLike[str]) → MountTable
 15445 15453
 
-### outrage.mountfile.sources(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, front: [int](https://docs.python.org/3/library/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.mountfile.sources(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[str]
 16071 16081
 
-### outrage.mountfile.spliced(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, front: [int](https://docs.python.org/3/library/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.mountfile.spliced(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[str]
 17628 17640
 
-### outrage.mountfile.starter_text(table: [MountTable](#outrage.mountfile.MountTable)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.mountfile.starter_text(table: MountTable) → str
 20242 20256
 
-### outrage.mountfile.write_starter(starter: [Starter](#outrage.mountfile.Starter)) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.mountfile.write_starter(starter: Starter) → None
 20675 20691

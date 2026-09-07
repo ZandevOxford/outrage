@@ -134,7 +134,7 @@ unreachable for as long as it was mounted.
 
 Close every store the live table holds.
 
-### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/library/functions.html#bool), shipped: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/library/functions.html#bool), shipped: [bool](https://docs.python.org/3/library/functions.html#bool) = False, created: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What a mount is worth remarking on, as codes and facts.
 
@@ -146,6 +146,11 @@ stderr at startup since mounts existed, where a tool caller could not read
 it. And a mount at a point something already held has *replaced* it, which
 is the rule a tool call makes unambiguous in a way two configuration
 sources do not.
+
+`created` is the path of a writable store that did not exist before this
+call opened it. Dynamic mounts are an MCP-only operation, so this is the
+one audience that needs the typo warning; startup and command-line mounts
+keep their existing quiet behaviour.
 
 `shipped` is whether this mounted the store outrage ships rather than a
 file, and it changes the last note rather than adding one. A file mount is

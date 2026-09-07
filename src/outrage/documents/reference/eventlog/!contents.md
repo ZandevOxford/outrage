@@ -22,32 +22,32 @@
 ### outrage.eventlog.NULL *= <outrage.eventlog.EventLog object>*
 2614 2614
 
-### *class* outrage.eventlog.EventLog(path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, content: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'excerpt', excerpt_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_EXCERPT_CHARS, session: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.eventlog.EventLog(path: str | PathLike[str] | None = None, \*, content: str = 'excerpt', excerpt_chars: int = DEFAULT_EXCERPT_CHARS, session: str | None = None)
 2781 2781
 
-#### *property* enabled *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* enabled *: bool*
 3546 3546
 
-#### emit(event: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/library/constants.html#None)
+#### emit(event: str, \*\*fields: Any) → None
 3637 3637
 
-#### start(\*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/library/constants.html#None)
+#### start(\*\*fields: Any) → None
 3889 3891
 
-#### stop(\*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/library/constants.html#None)
+#### stop(\*\*fields: Any) → None
 4113 4117
 
-#### close() → [None](https://docs.python.org/3/library/constants.html#None)
+#### close() → None
 4578 4584
 
-#### content_field(text: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+#### content_field(text: Any) → dict[str, Any]
 4960 4968
 
-#### arguments(values: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+#### arguments(values: dict[str, Any]) → dict[str, Any]
 5855 5865
 
-### outrage.eventlog.current_call *: [ContextVar](https://docs.python.org/3/library/contextvars.html#contextvars.ContextVar)* *= <ContextVar name='outrage_current_call' default=None>*
+### outrage.eventlog.current_call *: ContextVar* *= <ContextVar name='outrage_current_call' default=None>*
 6324 6336
 
-### outrage.eventlog.resolve_path(explicit: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | \_BesideTheStore | [None](https://docs.python.org/3/library/constants.html#None), directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.eventlog.resolve_path(explicit: str | PathLike[str] | \_BesideTheStore | None, directory: str | PathLike[str]) → Path | None
 6813 6825

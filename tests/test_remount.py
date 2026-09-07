@@ -221,6 +221,23 @@ def test_a_read_only_mount_of_a_file_that_is_not_there_is_refused(server):
     assert "mistyped name would mount as an empty store" in said
 
 
+def test_a_writable_mount_says_when_it_created_the_store(server, base):
+    path = base / "new-reference.sqlite"
+
+    said = call(server, "mount", key="new", file=path.name)
+
+    assert path.exists()
+    assert "a new writable store was created" in said["note"]
+    assert str(path) in said["note"]
+    assert "if an existing store was expected" in said["note"]
+
+
+def test_a_writable_mount_of_an_existing_store_does_not_say_it_created_one(server):
+    said = call(server, "mount", key="lib", file="other.sqlite")
+
+    assert "new writable store was created" not in said["note"]
+
+
 def test_the_root_can_be_neither_mounted_over_nor_unmounted(server):
     mounted = call_expecting_error(server, "mount", key="", file="other.sqlite")
     assert "at the root of a running server" in mounted

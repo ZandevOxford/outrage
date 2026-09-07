@@ -40,80 +40,80 @@
 ### outrage.maintenance.WAL_UNCHECKPOINTED *= 'wal-uncheckpointed'*
 3993 3993
 
-### *exception* outrage.maintenance.CheckError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.maintenance.CheckError(code: str, \*\*details: Any)
 4240 4240
 
-### *class* outrage.maintenance.Problem(code: [str](https://docs.python.org/3/library/stdtypes.html#str), severity: [str](https://docs.python.org/3/library/stdtypes.html#str), summary: [str](https://docs.python.org/3/library/stdtypes.html#str), detail: [str](https://docs.python.org/3/library/stdtypes.html#str) = '', repairable: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
+### *class* outrage.maintenance.Problem(code: str, severity: str, summary: str, detail: str = '', repairable: bool = False)
 4625 4625
 
-#### code *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### code *: str*
 6471 6471
 
-#### severity *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### severity *: str*
 6545 6545
 
-#### summary *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### summary *: str*
 6623 6623
 
-#### detail *: [str](https://docs.python.org/3/library/stdtypes.html#str)* *= ''*
+#### detail *: str* *= ''*
 6700 6700
 
-#### repairable *: [bool](https://docs.python.org/3/library/functions.html#bool)* *= False*
+#### repairable *: bool* *= False*
 6783 6783
 
-### *class* outrage.maintenance.Repaired(action: [str](https://docs.python.org/3/library/stdtypes.html#str), before: [int](https://docs.python.org/3/library/functions.html#int), after: [int](https://docs.python.org/3/library/functions.html#int), unit: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'bytes')
+### *class* outrage.maintenance.Repaired(action: str, before: int, after: int, unit: str = 'bytes')
 6876 6876
 
-#### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### action *: str*
 7713 7713
 
-#### before *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### before *: int*
 7789 7789
 
-#### after *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### after *: int*
 7866 7866
 
-#### unit *: [str](https://docs.python.org/3/library/stdtypes.html#str)* *= 'bytes'*
+#### unit *: str* *= 'bytes'*
 7942 7942
 
-### *class* outrage.maintenance.Report(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), backend: [str](https://docs.python.org/3/library/stdtypes.html#str) = '', format_version: [int](https://docs.python.org/3/library/functions.html#int) = 0, documents: [int](https://docs.python.org/3/library/functions.html#int) = 0, metadata: [int](https://docs.python.org/3/library/functions.html#int) = 0, characters: [int](https://docs.python.org/3/library/functions.html#int) = 0, details: dict[str, str]=<factory>, problems: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)] = <factory>)
+### *class* outrage.maintenance.Report(path: Path, backend: str = '', format_version: int = 0, documents: int = 0, metadata: int = 0, characters: int = 0, details: dict[str, str]=<factory>, problems: list[Problem] = <factory>)
 8028 8028
 
-#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+#### path *: Path*
 8818 8818
 
-#### backend *: [str](https://docs.python.org/3/library/stdtypes.html#str)* *= ''*
+#### backend *: str* *= ''*
 8901 8901
 
-#### format_version *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
+#### format_version *: int* *= 0*
 9199 9199
 
-#### documents *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
+#### documents *: int* *= 0*
 9290 9290
 
-#### metadata *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
+#### metadata *: int* *= 0*
 9376 9376
 
-#### characters *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
+#### characters *: int* *= 0*
 9461 9461
 
-#### details *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str)]*
+#### details *: dict[str, str]*
 9548 9548
 
-#### problems *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)]*
+#### problems *: list[Problem]*
 10152 10152
 
-#### *property* sound *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* sound *: bool*
 10273 10273
 
-#### *property* repairable *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)]*
+#### *property* repairable *: list[Problem]*
 10425 10425
 
-### outrage.maintenance.check(store: [FileStore](store.md#outrage.store.FileStore)) → [Report](#outrage.maintenance.Report)
+### outrage.maintenance.check(store: FileStore) → Report
 10921 10921
 
-### outrage.maintenance.repair(store: [FileStore](store.md#outrage.store.FileStore)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Repaired](#outrage.maintenance.Repaired)]
+### outrage.maintenance.repair(store: FileStore) → list[Repaired]
 11331 11333
 
-### outrage.maintenance.require_store(directory: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.maintenance.require_store(directory: Path, filename: str | None = None) → Path
 11916 11920

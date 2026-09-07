@@ -135,6 +135,11 @@ CLI.silent(
     "every run, and a mount lives exactly as long as the command",
 )
 CLI.silent(
+    "mount-created-store",
+    "dynamic mounting is offered only by the MCP server; startup and command-line "
+    "mounts keep their existing report",
+)
+CLI.silent(
     "mount-shadows-keys",
     "the same table is built each run from flags the caller just typed, and "
     "`outrage mounts` is where what shadows what is read",

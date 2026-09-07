@@ -125,6 +125,7 @@ which defaults to `contents`. Pass the name without its leading `!`.
 
 - `key` (string; required) — Markdown document key
 - `metadata_name` (string; default "contents"; minimum length 1) — Direct metadata name to write, without the leading '!'
+- `strip_links` (boolean; default true) — Remove inline link targets while keeping their text
 
 ### Returns
 

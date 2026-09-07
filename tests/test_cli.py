@@ -340,6 +340,16 @@ def test_make_contents_uses_the_requested_metadata_name(tmp_path):
     assert run("get", "--dir", str(directory), "manual/!outline") == (0, "# First\n0 0\n")
 
 
+def test_make_contents_can_keep_link_targets(tmp_path):
+    directory = tmp_path / "store"
+    heading = "# [Manual](https://example.test/manual)\n"
+    run("set", "--dir", str(directory), "manual", "--content", heading)
+
+    run("make_contents", "--dir", str(directory), "--no-strip-links", "manual")
+
+    assert run("get", "--dir", str(directory), "manual/!contents") == (0, f"{heading}0 0\n")
+
+
 # -- backup --------------------------------------------------------------
 
 

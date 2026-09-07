@@ -57,6 +57,30 @@ def test_each_heading_carries_its_character_offset_and_its_byte_offset():
     assert len("π\r\n".encode()) == 4
 
 
+def test_link_targets_are_stripped_by_default_and_can_be_kept():
+    markdown = (
+        "# A [string](https://example.test/types_(one)) and "
+        "[*display text*](target \"title\")\n"
+    )
+
+    assert contents.render_contents(markdown) == "# A string and *display text*\n0 0\n"
+    assert contents.render_contents(markdown, strip_links=False) == f"{markdown.rstrip()}\n0 0\n"
+
+
+def test_an_unclosed_link_is_kept_literal():
+    markdown = "# [Not a complete link](somewhere\n"
+
+    assert contents.render_contents(markdown) == "# [Not a complete link](somewhere\n0 0\n"
+
+
+def test_link_syntax_in_code_or_escaped_text_is_not_a_link():
+    markdown = r"# `[code](target)` and \[literal](target) and [link](target)" + "\n"
+
+    assert contents.render_contents(markdown) == (
+        r"# `[code](target)` and \[literal](target) and link" + "\n0 0\n"
+    )
+
+
 def test_a_byte_offset_from_an_index_lands_on_its_heading_in_every_backend(store, tmp_path):
     """The pair, checked by using it -- which is what it is for.
 

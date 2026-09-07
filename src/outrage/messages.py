@@ -481,6 +481,15 @@ def _mount_replaced_another(name: Namer, /, *, mount: str, **_: Any) -> str:
     )
 
 
+@MCP.template("mount-created-store")
+def _mount_created_store(name: Namer, /, *, mount: str, path: str, **_: Any) -> str:
+    return (
+        f"no store existed at {path!r}, so a new writable store was created "
+        f"and mounted at {name(mount)!r}. Check the file name if an existing "
+        f"store was expected."
+    )
+
+
 @MCP.template("mount-shadows-keys")
 def _mount_shadows_keys(name: Namer, /, *, mount: str, **_: Any) -> str:
     return (

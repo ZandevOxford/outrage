@@ -733,6 +733,12 @@ def _remounted(store, tmp_path) -> list[list[Note]]:
         return [
             remount.notes_for_mount(before, "ref", replaced=True),
             remount.notes_for_mount(before, "ref", replaced=False, shipped=True),
+            remount.notes_for_mount(
+                before,
+                "new",
+                replaced=False,
+                created=str(tmp_path / "new.sqlite"),
+            ),
             remount.notes_for_unmount(before.remounted(unmount=["ref"]), "ref"),
         ]
 

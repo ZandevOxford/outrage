@@ -307,6 +307,17 @@ def test_make_contents_accepts_a_custom_metadata_name(server):
     assert result["metadata_key"] == "manual/!outline"
 
 
+def test_make_contents_can_keep_link_targets(server):
+    heading = "# [Manual](https://example.test/manual)\n"
+    call(server, "store_document", key="manual", content=heading, format="markdown")
+
+    call(server, "make_contents", key="manual")
+    assert call(server, "read_document", key="manual/!contents")["content"] == "# Manual\n0 0\n"
+
+    call(server, "make_contents", key="manual", strip_links=False)
+    assert call(server, "read_document", key="manual/!contents")["content"] == f"{heading}0 0\n"
+
+
 def test_make_contents_rejects_a_non_markdown_source_with_a_tool_message(server):
     call(server, "store_document", key="plain", content="# Plain", format="text")
 
@@ -1098,6 +1109,21 @@ def test_copy_tree_names_the_read_only_mounts_the_copy_could_not_reach(tmp_path)
         ]
         assert "read-only" in result["failures"][0]["reason"]
         assert "refuse a write" in result["note"]
+
+
+def test_a_copy_failure_uses_the_transfer_key_as_its_outer_name():
+    """The transfer has crossed the mount boundary when its error has not."""
+    error = store_module.InvalidArgumentError(
+        "key-is-a-directory", key="inside", path="/tmp/tree/inside"
+    )
+    transfers = iter(
+        [store_module.Transfer(store_module.FAILED, "ref/inside", None, error=error)]
+    )
+
+    result = server_module._copied_result(transfers)
+
+    assert result["failures"][0]["key"] == "ref/inside"
+    assert "'ref/inside'" in result["failures"][0]["reason"]
 
 
 def test_copy_tree_says_when_the_failures_it_names_are_a_sample(tmp_path, monkeypatch):

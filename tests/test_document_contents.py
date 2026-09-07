@@ -58,6 +58,16 @@ def test_a_second_run_writes_nothing(tree):
     assert swept.unchanged == ["headed"]
 
 
+def test_the_sweep_can_keep_link_targets(tree):
+    linked = "# [One](https://example.test/one)\n"
+    tree.store_document("linked", linked)
+
+    swept = document_contents.sweep(tree, strip_links=False)
+
+    assert "linked" in swept.written
+    assert tree.retrieve_document("linked/!contents").content == f"{linked}0 0\n"
+
+
 def test_an_index_that_no_longer_matches_is_rewritten(tree):
     """Rewritten rather than skipped, which is where this differs from titles.
 

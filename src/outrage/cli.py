@@ -479,7 +479,8 @@ def argument_parser() -> argparse.ArgumentParser:
         help="store a character-offset index of a Markdown document's headings",
         description=(
             "Read one stored Markdown document and write an index containing its "
-            "literal headings and their zero-based character offsets. The "
+            "headings and their zero-based character offsets. Inline link targets "
+            "are removed by default while their text remains. The "
             "source is unchanged. The generated index overwrites direct metadata "
             "named by --metadata-name, which defaults to contents."
         ),
@@ -491,6 +492,12 @@ def argument_parser() -> argparse.ArgumentParser:
         "--metadata-name",
         default="contents",
         help="Direct metadata name to write, without the leading '!'. Default contents.",
+    )
+    make_contents.add_argument(
+        "--strip-links",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Remove inline link targets but keep their text (default: enabled).",
     )
     make_contents.set_defaults(handler=_make_contents_command)
 
@@ -1652,7 +1659,12 @@ def _make_contents_command(args: argparse.Namespace, out: TextIO) -> int:
     """Build a Markdown heading index and report the metadata destination."""
     with _open_table(args, create=True) as opened:
         _resolved(opened, args)
-        made = contents.make_contents(opened, args.key, metadata_name=args.metadata_name)
+        made = contents.make_contents(
+            opened,
+            args.key,
+            metadata_name=args.metadata_name,
+            strip_links=args.strip_links,
+        )
         where = _file_holding(opened, made.metadata_key)
 
     print(

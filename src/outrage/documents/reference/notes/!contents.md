@@ -7,11 +7,11 @@
 ### outrage.notes.UNCHECKED_OTHER_KEY *= 'other-key'*
 2384 2384
 
-### *class* outrage.notes.Note(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *class* outrage.notes.Note(code: str, \*\*details: Any)
 2585 2585
 
-#### details *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
+#### details *: Mapping[str, Any]*
 3359 3359
 
-#### \_\_str_\_() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### \_\_str_\_() → str
 3592 3592

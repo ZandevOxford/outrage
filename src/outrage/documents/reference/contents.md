@@ -40,29 +40,33 @@ number a caller needs to make sense of the second column.
 
 The number of characters stored in the generated contents document.
 
-### outrage.contents.make_contents(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, metadata_name: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'contents') → [ContentsResult](#outrage.contents.ContentsResult)
+### outrage.contents.make_contents(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, metadata_name: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'contents', strip_links: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [ContentsResult](#outrage.contents.ContentsResult)
 
 Store an offset outline of one Markdown document as metadata.
 
 The source document is not changed. Its ATX and setext headings are copied
 to direct metadata named by `metadata_name`; all section bodies are
 replaced by the heading's two zero-based offsets, character then byte.
-Regenerating the contents overwrites that metadata value.
+Inline link destinations are stripped by default while their text remains;
+`strip_links=False` keeps headings byte for byte. Regenerating the
+contents overwrites that metadata value.
 
 The byte number is what makes this more than a table of contents: paired
 with a byte-addressed [`retrieve_document()`](store.md#outrage.store.Store.retrieve_document) it is
 random access into a document far too large to read, without splitting it
 into children first.
 
-### outrage.contents.render_contents(markdown: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.contents.render_contents(markdown: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, strip_links: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 Render each Markdown heading followed by its two source offsets.
 
-Heading spelling is kept literal. Everything between headings is omitted,
-and the numbers beneath each heading are the zero-based offsets at which
-that heading begins in `markdown`: the character offset first, then the
-UTF-8 byte offset, separated by a space. Headings inside fenced code
-blocks are ignored.
+Heading spelling is kept literal apart from inline link destinations,
+which are removed by default while their text is kept. Pass
+`strip_links=False` to preserve the complete heading. Everything between
+headings is omitted, and the numbers beneath each heading are the
+zero-based offsets at which that heading begins in `markdown`: the
+character offset first, then the UTF-8 byte offset, separated by a space.
+Headings inside fenced code blocks are ignored.
 
 Bare numbers, John's call, so **the token count on the line is the only
 thing that tells the two formats apart** -- an index written before this
