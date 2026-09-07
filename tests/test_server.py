@@ -72,7 +72,7 @@ def test_tools_are_registered(server):
         "read_document",
         "store_document",
         "ingest_document",
-        "make_contents",
+        "make_metadata",
         "list_keys",
         "get_documents",
         "find_documents",
@@ -101,7 +101,7 @@ def test_every_tool_description_is_the_shipped_document(exporting):
         "read_document",
         "store_document",
         "ingest_document",
-        "make_contents",
+        "make_metadata",
         "list_keys",
         "get_documents",
         "find_documents",
@@ -280,65 +280,149 @@ def test_ingest_document_writes_markdown_and_title(server, tmp_path, monkeypatch
     assert call(server, "read_document", key="reports/q1/!title")["content"] == "report"
 
 
-def test_make_contents_writes_a_typed_heading_index(server):
+def test_make_metadata_writes_contents_and_title_by_default(server):
     source = "# Store schema\n\nbody\n\n## Detail\ntext\n"
     call(server, "store_document", key="manual", content=source, format="markdown")
 
-    result = call(server, "make_contents", key="manual")
+    result = call(server, "make_metadata", key="manual")
 
     detail = source.index("## Detail")
     expected = f"# Store schema\n0 0\n\n## Detail\n{detail} {detail}\n"
     assert result == {
         "source_key": "manual",
-        "metadata_key": "manual/!contents",
-        "headings": 2,
         "source_characters": len(source),
         "source_bytes": len(source.encode()),
-        "characters": len(expected),
+        "contents_key": "manual/!contents",
+        "headings": 2,
+        "contents_characters": len(expected),
+        "title_key": "manual/!title",
+        "title": "Store schema",
     }
     assert call(server, "read_document", key="manual/!contents")["content"] == expected
+    assert call(server, "read_document", key="manual/!title")["content"] == "Store schema"
 
 
-def test_make_contents_accepts_a_custom_metadata_name(server):
+def test_make_metadata_accepts_a_custom_contents_name(server):
     call(server, "store_document", key="manual", content="# Manual\n", format="markdown")
 
-    result = call(server, "make_contents", key="manual", metadata_name="outline")
+    result = call(server, "make_metadata", key="manual", metadata_name="outline")
 
-    assert result["metadata_key"] == "manual/!outline"
+    assert result["contents_key"] == "manual/!outline"
 
 
-def test_make_contents_can_keep_link_targets(server):
+def test_make_metadata_refuses_two_outputs_at_the_title_key(server):
+    call(server, "store_document", key="manual", content="# Manual\n", format="markdown")
+
+    message = call_expecting_error(server, "make_metadata", key="manual", metadata_name="title")
+
+    assert "both would be the same '!title'" in message
+    assert "metadata_name" in message
+    assert call_expecting_error(server, "read_document", key="manual/!title")
+
+    result = call(server, "make_metadata", key="manual", metadata_name="title", title=False)
+    assert result["contents_key"] == "manual/!title"
+
+
+def test_make_metadata_can_keep_link_targets_in_contents(server):
     heading = "# [Manual](https://example.test/manual)\n"
     call(server, "store_document", key="manual", content=heading, format="markdown")
 
-    call(server, "make_contents", key="manual")
+    call(server, "make_metadata", key="manual")
     assert call(server, "read_document", key="manual/!contents")["content"] == "# Manual\n0 0\n"
 
-    call(server, "make_contents", key="manual", strip_links=False)
+    call(server, "make_metadata", key="manual", strip_links=False)
     assert call(server, "read_document", key="manual/!contents")["content"] == f"{heading}0 0\n"
 
 
-def test_make_contents_indexes_html_as_plain_markdown(server):
-    html = "<!doctype html>\n<h2><a href='/detail'><em>Detail</em></a></h2>\n"
+def test_make_metadata_indexes_html_and_prefers_its_title_element(server):
+    html = (
+        "<!doctype html>\n<title>Manual title</title>\n"
+        "<h2><a href='/detail'><em>Detail</em></a></h2>\n"
+    )
     call(server, "store_document", key="manual", content=html, format="html")
 
-    result = call(server, "make_contents", key="manual")
+    result = call(server, "make_metadata", key="manual")
 
     offset = html.index("<h2>")
     assert result["headings"] == 1
+    assert result["title"] == "Manual title"
     assert call(server, "read_document", key="manual/!contents")["content"] == (
         f"## Detail\n{offset} {offset}\n"
     )
+    assert call(server, "read_document", key="manual/!title")["content"] == "Manual title"
 
 
-def test_make_contents_rejects_a_non_indexable_source_with_a_tool_message(server):
+def test_make_metadata_booleans_control_each_write(server):
+    call(server, "store_document", key="title-only", content="# Title only", format="markdown")
+    call(
+        server,
+        "store_document",
+        key="contents-only",
+        content="# Contents only",
+        format="markdown",
+    )
+
+    title_only = call(server, "make_metadata", key="title-only", contents=False)
+    contents_only = call(server, "make_metadata", key="contents-only", title=False)
+
+    assert title_only["title"] == "Title only"
+    assert "contents_key" not in title_only
+    assert call(server, "read_document", key="title-only/!title")["content"] == "Title only"
+    assert call_expecting_error(server, "read_document", key="title-only/!contents")
+    assert contents_only["contents_key"] == "contents-only/!contents"
+    assert "title" not in contents_only
+    assert call_expecting_error(server, "read_document", key="contents-only/!title")
+
+
+def test_make_metadata_without_a_parsed_title_preserves_an_existing_one(server):
+    call(
+        server,
+        "store_document",
+        key="manual",
+        content="## No document title\n",
+        format="markdown",
+        title="Curated title",
+    )
+
+    result = call(server, "make_metadata", key="manual", contents=False)
+
+    assert result["title"] is None
+    assert "title_key" not in result
+    assert call(server, "read_document", key="manual/!title")["content"] == "Curated title"
+
+
+def test_make_metadata_with_both_outputs_disabled_only_reports_the_source(server):
+    source = "# Manual\n"
+    call(server, "store_document", key="manual", content=source, format="markdown")
+
+    result = call(server, "make_metadata", key="manual", contents=False, title=False)
+
+    assert result == {
+        "source_key": "manual",
+        "source_characters": len(source),
+        "source_bytes": len(source),
+    }
+    assert call_expecting_error(server, "read_document", key="manual/!contents")
+    assert call_expecting_error(server, "read_document", key="manual/!title")
+
+
+def test_make_metadata_rejects_a_non_indexable_source_with_a_tool_message(server):
     call(server, "store_document", key="plain", content="# Plain", format="text")
 
-    message = call_expecting_error(server, "make_contents", key="plain")
+    message = call_expecting_error(server, "make_metadata", key="plain")
 
     assert "not 'markdown'" in message
     assert "or 'html'" in message
     assert "plain" in message
+
+
+def test_make_metadata_schema_defaults_to_both_outputs(server):
+    tools = list_tools(server)
+
+    assert "make_contents" not in tools
+    properties = tools["make_metadata"].input_schema["properties"]
+    assert properties["contents"]["default"] is True
+    assert properties["title"]["default"] is True
 
 
 def test_ingest_collision_is_a_tool_message_spelling_its_argument(server, tmp_path, monkeypatch):

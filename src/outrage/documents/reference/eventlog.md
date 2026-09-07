@@ -23,11 +23,12 @@ and the store can share it.
 
 ### outrage.eventlog.CONTENT_ARGS *= frozenset({'content', 'title'})*
 
-Argument names whose values are document text rather than metadata about it,
-and so are subject to the content policy. Shared by the store and the
-request middleware so that `--log-content=none` means the same thing at
+Argument names whose string values are document text rather than metadata
+about it, and so are subject to the content policy. Shared by the store and
+the request middleware so that `--log-content=none` means the same thing at
 both layers; scrubbing only one of them would leave the documents in the log
-anyway.
+anyway. A boolean `title` is a generation control, not title content, and
+[`EventLog.arguments()`](#outrage.eventlog.EventLog.arguments) retains it as a boolean.
 
 ### outrage.eventlog.CONTENT_POLICIES *= ('none', 'excerpt', 'full')*
 
@@ -113,7 +114,7 @@ is itself the signal that something was cut.
 
 #### arguments(values: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
-Apply the content policy to whichever arguments carry document text.
+Apply the content policy to string arguments carrying document text.
 
 ### outrage.eventlog.current_call *: [ContextVar](https://docs.python.org/3/library/contextvars.html#contextvars.ContextVar)* *= <ContextVar name='outrage_current_call' default=None>*
 

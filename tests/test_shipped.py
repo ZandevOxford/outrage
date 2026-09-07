@@ -148,7 +148,7 @@ def test_the_tool_descriptions_are_the_documents_here():
     names = (
         "read_document",
         "store_document",
-        "make_contents",
+        "make_metadata",
         "list_keys",
         "get_documents",
         "find_documents",

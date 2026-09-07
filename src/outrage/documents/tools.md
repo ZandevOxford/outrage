@@ -109,37 +109,52 @@ reports its result without writing the document or its title.
 - `title_key` (string or null; optional) — The metadata key written for the title, absent on a dry run
 - `dry_run` (boolean; required) — Whether conversion was performed without writing
 
-## `make_contents`
+## `make_metadata`
 
-Create an offset index from the headings in one stored Markdown or HTML
-document.
+Generate useful direct metadata from one stored Markdown or HTML document.
 
-The source document is left unchanged. Markdown ATX and setext headings, or
-HTML `h1` through `h6` elements, are copied in source order as Markdown, with
-all intervening content replaced by the zero-based character and UTF-8 byte
-offsets of the corresponding source heading. Headings inside Markdown fenced
+By default this writes both a Markdown offset index at `!contents` and a parsed
+title at `!title`. Set `contents` or `title` false to leave that metadata
+untouched. With both false, the source is validated and reported but nothing is
+written.
+
+Markdown contents include ATX and setext headings; HTML contents include `h1`
+through `h6`. Each becomes a Markdown heading followed by its zero-based
+character and UTF-8 byte offsets in the source. Markdown headings inside fenced
 code blocks are ignored. HTML markup and link targets are removed while
 readable text remains.
 
-`strip_links` applies to Markdown sources. HTML markup is always flattened.
+The title is the first non-empty level-one ATX heading in Markdown. For HTML, a
+non-empty `title` element wins, with the first non-empty `h1` as fallback. If no
+title can be parsed, `title` is returned as null and an existing `!title` is not
+deleted or replaced.
 
-The generated Markdown overwrites direct metadata named by `metadata_name`,
-which defaults to `contents`. Pass the name without its leading `!`.
+`metadata_name` and `strip_links` apply only when generating contents.
+`metadata_name` defaults to `contents` and is passed without its leading `!`.
+`strip_links` removes Markdown inline link targets while retaining their text;
+HTML is always flattened.
+
+When both outputs are enabled, `metadata_name` cannot be `title`, because both
+generated values would address the same `!title` metadata.
 
 ### Parameters
 
 - `key` (string; required) — Markdown or HTML document key
+- `contents` (boolean; default true) — Generate contents metadata from the document's headings
+- `title` (boolean; default true) — Generate title metadata parsed from the document
 - `metadata_name` (string; default "contents"; minimum length 1) — Direct metadata name to write, without the leading '!'
 - `strip_links` (boolean; default true) — Remove Markdown inline link targets while keeping their text; HTML markup is always flattened
 
 ### Returns
 
 - `source_key` (string; required) — The normalized source document key
-- `metadata_key` (string; required) — The metadata key written
-- `headings` (integer; required) — Headings found
 - `source_characters` (integer; required) — Source characters scanned
 - `source_bytes` (integer; required) — UTF-8 bytes those characters occupy, which the second number on each heading line is an offset into
-- `characters` (integer; required) — Contents characters stored
+- `contents_key` (string or null; optional) — Metadata key where contents were stored, when requested
+- `headings` (integer or null; optional) — Headings found, when contents were requested
+- `contents_characters` (integer or null; optional) — Contents characters stored, when contents were requested
+- `title_key` (string or null; optional) — Metadata key where the parsed title was stored, when one was found
+- `title` (string or null; optional) — Parsed title, null when requested but none was found
 
 ## `list_keys`
 

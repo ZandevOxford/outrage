@@ -24,7 +24,7 @@ find them.
   should also have `keywords`: a list, one per line, of the topics the document
   covers.
 * A long Markdown or HTML document can carry `contents`, a Markdown offset
-  index of its own headings, written by the `make_contents` tool. Each heading
+  index of its own headings, written by the `make_metadata` tool. Each heading
   is followed by two numbers: the character offset it begins at, and the same
   position as a UTF-8 byte offset. Reading the index and then one
   `read_document` with `offset` or `byte_offset` reaches a section directly, so

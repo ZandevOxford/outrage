@@ -1751,6 +1751,23 @@ def _contents_not_markdown(name: Namer, /, *, key: str, format: str | None, **_:
     )
 
 
+@template("metadata-format")
+def _metadata_format(name: Namer, /, *, key: str, format: str | None, **_: Any) -> str:
+    return (
+        f"cannot make metadata for {name(key)!r}: its format is {format!r}, "
+        "not 'markdown' or 'html'"
+    )
+
+
+@template("metadata-name-conflict")
+def _metadata_name_conflict(name: Namer, /, *, metadata_name: str, **_: Any) -> str:
+    return (
+        f"cannot write contents as {metadata_name!r} while generating a title: "
+        "both would be the same '!title' metadata; choose another metadata_name "
+        "or set contents or title to false"
+    )
+
+
 __all__ = [
     "MCP",
     "Namer",

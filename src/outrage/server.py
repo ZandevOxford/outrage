@@ -48,7 +48,6 @@ from pydantic import (
 from . import (
     __version__,
     bulk,
-    contents,
     eventlog,
     ingest,
     keys,
@@ -56,7 +55,9 @@ from . import (
     mountfile,
     remount,
     shipped,
+    titles,
 )
+from . import contents as contents_module
 from . import info as info_module
 from . import mounts as mounts_module
 from . import store as store_module
@@ -357,10 +358,8 @@ class _IngestDocumentResult(_ToolResult):
     dry_run: Annotated[bool, Field(description="Whether conversion was performed without writing")]
 
 
-class _MakeContentsResult(_ToolResult):
+class _MakeMetadataResult(_ToolResult):
     source_key: Annotated[str, Field(description="The normalized source document key")]
-    metadata_key: Annotated[str, Field(description="The metadata key written")]
-    headings: Annotated[int, Field(description="Headings found")]
     source_characters: Annotated[int, Field(description="Source characters scanned")]
     source_bytes: Annotated[
         int,
@@ -371,7 +370,23 @@ class _MakeContentsResult(_ToolResult):
             )
         ),
     ]
-    characters: Annotated[int, Field(description="Contents characters stored")]
+    contents_key: Annotated[
+        str | None, Field(description="Metadata key where contents were stored, when requested")
+    ] = None
+    headings: Annotated[
+        int | None, Field(description="Headings found, when contents were requested")
+    ] = None
+    contents_characters: Annotated[
+        int | None, Field(description="Contents characters stored, when contents were requested")
+    ] = None
+    title_key: Annotated[
+        str | None,
+        Field(description="Metadata key where the parsed title was stored, when one was found"),
+    ] = None
+    title: Annotated[
+        str | None,
+        Field(description="Parsed title, null when requested but none was found"),
+    ] = None
 
 
 class _EntryResult(_ToolResult):
@@ -1187,11 +1202,17 @@ def build_server(
 
     @server.tool(
         annotations=ToolAnnotations(idempotent_hint=True),
-        description=tool_description("make_contents"),
+        description=tool_description("make_metadata"),
     )
     @_reported
-    def make_contents(
+    def make_metadata(
         key: Annotated[str, Field(description="Markdown or HTML document key")],
+        contents: Annotated[
+            bool, Field(description="Generate contents metadata from the document's headings")
+        ] = True,
+        title: Annotated[
+            bool, Field(description="Generate title metadata parsed from the document")
+        ] = True,
         metadata_name: Annotated[
             str,
             Field(
@@ -1208,15 +1229,46 @@ def build_server(
                 )
             ),
         ] = True,
-    ) -> _MakeContentsResult:
+    ) -> _MakeMetadataResult:
         table = live.table
-        made = contents.make_contents(
-            table,
-            _named_key(table, key),
-            metadata_name=metadata_name,
-            strip_links=strip_links,
-        )
-        return _MakeContentsResult.model_validate(dataclasses.asdict(made))
+        source_key = keys.parse(_named_key(table, key), max_segments=keys.MAX_JOINED_SEGMENTS).key
+        if contents and title and metadata_name == "title":
+            raise store_module.InvalidArgumentError(
+                "metadata-name-conflict", metadata_name=metadata_name
+            )
+        source = store_module.read_all(table, source_key)
+        if source.format not in ("markdown", "html"):
+            raise store_module.InvalidArgumentError(
+                "metadata-format", key=source_key, format=source.format
+            )
+
+        result: dict[str, Any] = {
+            "source_key": source_key,
+            "source_characters": source.total,
+            "source_bytes": source.total_bytes,
+        }
+        if contents:
+            made = contents_module._make_contents_from_source(
+                table,
+                source_key,
+                source,
+                metadata_name=metadata_name,
+                strip_links=strip_links,
+            )
+            result.update(
+                contents_key=made.metadata_key,
+                headings=made.headings,
+                contents_characters=made.characters,
+            )
+        if title:
+            parsed_title = titles.parse_title(source.content, source.format)
+            result["title"] = parsed_title
+            if parsed_title is not None:
+                title_key = keys.with_prefix(source_key, f"{keys.META_PREFIX}title")
+                result["title_key"] = table.store_document(
+                    title_key, parsed_title, format="markdown"
+                )
+        return _MakeMetadataResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),

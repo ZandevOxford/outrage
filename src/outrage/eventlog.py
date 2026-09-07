@@ -52,11 +52,12 @@ CONTENT_POLICIES = ("none", "excerpt", "full")
 #: copy of the store.
 DEFAULT_EXCERPT_CHARS = 200
 
-#: Argument names whose values are document text rather than metadata about it,
-#: and so are subject to the content policy. Shared by the store and the
-#: request middleware so that ``--log-content=none`` means the same thing at
+#: Argument names whose string values are document text rather than metadata
+#: about it, and so are subject to the content policy. Shared by the store and
+#: the request middleware so that ``--log-content=none`` means the same thing at
 #: both layers; scrubbing only one of them would leave the documents in the log
-#: anyway.
+#: anyway. A boolean ``title`` is a generation control, not title content, and
+#: :meth:`EventLog.arguments` retains it as a boolean.
 CONTENT_ARGS = frozenset({"content", "title"})
 
 
@@ -231,9 +232,13 @@ class EventLog:
         return field
 
     def arguments(self, values: dict[str, Any]) -> dict[str, Any]:
-        """Apply the content policy to whichever arguments carry document text."""
+        """Apply the content policy to string arguments carrying document text."""
         return {
-            name: self.content_field(value) if name in CONTENT_ARGS else value
+            name: (
+                self.content_field(value)
+                if name in CONTENT_ARGS and not (name == "title" and isinstance(value, bool))
+                else value
+            )
             for name, value in values.items()
         }
 

@@ -5,49 +5,49 @@
 1178 1178
 
 ### outrage.eventlog.CONTENT_POLICIES *= ('none', 'excerpt', 'full')*
-1554 1554
+1715 1715
 
 ### outrage.eventlog.DEFAULT *= <beside the store>*
-1747 1747
+1908 1908
 
 ### outrage.eventlog.DEFAULT_EXCERPT_CHARS *= 200*
-1917 1917
+2078 2078
 
 ### outrage.eventlog.DEFAULT_LOG_NAME *= 'log.jsonl'*
-2139 2139
+2300 2300
 
 ### outrage.eventlog.ENV_LOG *= 'OUTRAGE_LOG'*
-2405 2405
+2566 2566
 
 ### outrage.eventlog.NULL *= <outrage.eventlog.EventLog object>*
-2614 2614
+2775 2775
 
 ### *class* outrage.eventlog.EventLog(path: str | PathLike[str] | None = None, \*, content: str = 'excerpt', excerpt_chars: int = DEFAULT_EXCERPT_CHARS, session: str | None = None)
-2781 2781
+2942 2942
 
 #### *property* enabled *: bool*
-3546 3546
+3707 3707
 
 #### emit(event: str, \*\*fields: Any) → None
-3637 3637
+3798 3798
 
 #### start(\*\*fields: Any) → None
-3889 3891
+4050 4052
 
 #### stop(\*\*fields: Any) → None
-4113 4117
+4274 4278
 
 #### close() → None
-4578 4584
+4739 4745
 
 #### content_field(text: Any) → dict[str, Any]
-4960 4968
+5121 5129
 
 #### arguments(values: dict[str, Any]) → dict[str, Any]
-5855 5865
+6016 6026
 
 ### outrage.eventlog.current_call *: ContextVar* *= <ContextVar name='outrage_current_call' default=None>*
-6324 6336
+6485 6497
 
 ### outrage.eventlog.resolve_path(explicit: str | PathLike[str] | \_BesideTheStore | None, directory: str | PathLike[str]) → Path | None
-6813 6825
+6974 6986

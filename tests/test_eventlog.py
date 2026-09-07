@@ -201,6 +201,12 @@ def test_only_the_content_bearing_arguments_are_policed(log):
     assert scrubbed["content"]["text"] == "hello"
 
 
+def test_a_boolean_title_control_is_not_mistaken_for_title_content(log):
+    scrubbed = log.arguments({"key": "a/b", "title": False})
+
+    assert scrubbed["title"] is False
+
+
 def test_an_unknown_content_policy_is_refused():
     with pytest.raises(ValueError, match="content must be one of"):
         EventLog(None, content="some")

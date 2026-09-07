@@ -380,8 +380,26 @@ def make_contents(
     into children first.
     """
     source_key = keys.parse(key, max_segments=keys.MAX_JOINED_SEGMENTS).key
-    destination = _metadata_key(source_key, metadata_name)
     source = store.read_all(opened, source_key)
+    return _make_contents_from_source(
+        opened,
+        source_key,
+        source,
+        metadata_name=metadata_name,
+        strip_links=strip_links,
+    )
+
+
+def _make_contents_from_source(
+    opened: store.Store,
+    source_key: str,
+    source: store.Excerpt,
+    *,
+    metadata_name: str = "contents",
+    strip_links: bool = True,
+) -> ContentsResult:
+    """Store contents from a source already read in full."""
+    destination = _metadata_key(source_key, metadata_name)
     if source.format not in ("markdown", "html"):
         raise store.InvalidArgumentError(
             "contents-not-markdown", key=source_key, format=source.format
