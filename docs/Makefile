@@ -69,14 +69,16 @@ markdown: check-env
 # shipped tree untouched, and the steps after it were commands nobody had
 # written down anywhere but a test docstring.
 #
-# **Three generators, not one.** Sphinx renders the API reference from the
+# **Four generators, not one.** Sphinx renders the API reference from the
 # docstrings; `render_cli.py` renders `cli.md` from the argument parser and
-# `render_tools.py` renders `tools.md` from the built MCP server. All three
-# write committed files from the code, so all three belong to the one command
-# that rebuilds the tree - a pipeline that covered only the first left the
-# other two to be remembered, and they were not. `tests/test_cli_docs.py` and
-# `tests/test_tool_docs.py` are what fail when a parser or a tool schema
-# changed without them.
+# `render_tools.py` renders `tools.md` from the built MCP server, while
+# `copy_project_documents.py` carries the repository-level documents into the
+# shipped tree. All four write committed files from their sources, so all four
+# belong to the one command that rebuilds the tree - a pipeline that covered
+# only the first left the other three to be remembered, and they were not.
+# `tests/test_cli_docs.py`, `tests/test_tool_docs.py` and
+# `tests/test_project_documents.py` are what fail when a source changes without
+# its generated document following it.
 #
 # They run before the sweeps below rather than after, because the sweeps index
 # what is on disk: a page rewritten afterwards would carry the offsets of the
@@ -93,6 +95,7 @@ documents: check-env markdown
 	@$(PYTHON) ../tools/render_reference.py "$(BUILDDIR)/markdown" ../src/outrage/documents
 	@$(PYTHON) ../tools/render_cli.py ../src/outrage/documents/cli.md
 	@$(PYTHON) ../tools/render_tools.py ../src/outrage/documents/tools.md
+	@$(PYTHON) ../tools/copy_project_documents.py ../src/outrage/documents/project
 	@$(PYTHON) ../tools/document_titles.py ../src/outrage/documents
 	@$(PYTHON) ../tools/document_contents.py ../src/outrage/documents
 

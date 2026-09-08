@@ -30,8 +30,12 @@ If reading this via the MCP server,
   use.
 * [keys](keys.md) - detailed definition of keys. The short version;
   [design](design.md) argues it.
+* [project files](project.md) - copies of the repository README, licence and
+  changelog that correspond to this installed documentation.
 * [reference](reference.md) - the API reference. The [reference](reference)
   folder contains the detailed pages generated from the code.
+* [requirements](requirements.md) - the short human-readable requirements that
+  the design and implementation satisfy.
 * [skills](skills.md) - the instructions delivered by the MCP server.
 * [tools](tools.md) - descriptions and schemas of the MCP tools.
 * [workflow](workflow.md) - advice for LLMs for surveying, recording,

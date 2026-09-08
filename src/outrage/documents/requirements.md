@@ -2,10 +2,10 @@
 
 Why this exists and what has to hold true of it.
 
-`src/outrage/documents/design.md` describes how it is built, and ships with
-the package as `outrage/design`. The outrage store itself, under
-`project/reference/`, holds the build discussion decision by decision. This
-file is the short human-readable version that should outlive both.
+`design.md` describes how it is built, and both documents ship with the package
+as `outrage/requirements` and `outrage/design`. The detailed build discussion
+lives in the project's development records; this file is the short
+human-readable version that should outlive them.
 
 ## What outrage is for
 
@@ -163,10 +163,10 @@ Bulk import, on-disk size, whether metadata values want their own index, and
 whether a reference corpus belongs in the same store as session context all
 follow from requirement 1 and none of them are settled.
 
-Requirement 2 has a live defect behind it: allocated numbers are not padded, so
+When this requirement was written, allocated numbers were not padded, so
 `findings/10` sorts before `findings/2` and a key-based cursor would skip what
-arrives after it. Measured, and written up in the store under
-`planned/pagination/key-ordering`. Allocation itself is already atomic.
+arrives after it. Allocation itself was already atomic; the ordering defect was
+subsequently addressed in the implementation.
 
 The codebase-notes use raises two more, both open. There is no way to **move or
 rename a key or a subtree** - the store can write and delete, nothing else - so

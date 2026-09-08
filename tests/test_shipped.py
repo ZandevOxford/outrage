@@ -57,8 +57,10 @@ EXPECTED = (
     "hooks",
     "implementation",
     "keys",
+    "project",
     "readme",
     "reference",
+    "requirements",
     "skills",
     "tools",
     "workflow",
@@ -174,6 +176,14 @@ def test_the_readme_says_what_the_mount_is_not():
         readme = store.retrieve_document("readme").content
 
     assert "not the project's own store" in readme.replace("*", "")
+
+
+def test_the_readme_routes_the_requirements_and_project_files():
+    with shipped.open_documents() as store:
+        readme = store.retrieve_document("readme").content
+
+    assert "[requirements](requirements.md)" in readme
+    assert "[project files](project.md)" in readme
 
 
 def test_default_readme_routes_detailed_working_practice():
