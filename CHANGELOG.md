@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.10.2 - 2026-09-08
 
 The installed documentation now includes the project's requirements and copies
 of its README, licence and changelog. The documentation build refreshes those
