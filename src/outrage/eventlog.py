@@ -56,9 +56,9 @@ DEFAULT_EXCERPT_CHARS = 200
 #: about it, and so are subject to the content policy. Shared by the store and
 #: the request middleware so that ``--log-content=none`` means the same thing at
 #: both layers; scrubbing only one of them would leave the documents in the log
-#: anyway. A boolean ``title`` is a generation control, not title content, and
-#: :meth:`EventLog.arguments` retains it as a boolean.
-CONTENT_ARGS = frozenset({"content", "title"})
+#: anyway. Boolean ``title`` and ``contents`` values are generation controls,
+#: not document text, and :meth:`EventLog.arguments` retains them as booleans.
+CONTENT_ARGS = frozenset({"content", "title", "contents"})
 
 
 class _BesideTheStore:
@@ -236,7 +236,8 @@ class EventLog:
         return {
             name: (
                 self.content_field(value)
-                if name in CONTENT_ARGS and not (name == "title" and isinstance(value, bool))
+                if name in CONTENT_ARGS
+                and not (name in {"title", "contents"} and isinstance(value, bool))
                 else value
             )
             for name, value in values.items()

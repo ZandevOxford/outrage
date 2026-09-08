@@ -46,8 +46,8 @@ Store (overwrite) a document or metadata value at a key.
 
 Content is markdown, JSON, plain text or HTML.
 
-When appropriate, supply `title` which will be stored in the `/!title` key
-below.
+When appropriate, supply `title` or `contents`, which will be stored in the
+`/!title` or `/!contents` key below.
 
 Use the `?` auto-increment path segment to add documents with incrementing
 ids. This is safe to use across parallel agents.
@@ -64,7 +64,8 @@ it this call overwrites whatever is there.
 - `content` (string; required) — Document content
 - `format` ("markdown" or "json" or "text" or "html" or null; default null) — 'markdown', 'json', 'text' or 'html'; detected from the content when omitted, though detection never chooses 'text'
 - `title` (string or null; default null) — Short title, stored as the key's '!title' metadata in the same write
-- `encoding` ("json-string" or null; default null) — How `content` and `title` are encoded in this call, not how they are stored. Pass 'json-string' to send each as a JSON string literal, quotes and escapes included; it is decoded before storing, so the stored document is plain text either way. Use it when the value is long or generated: a damaged value then fails loudly here instead of being stored as if it were correct. Omit to send the text as-is.
+- `contents` (string or null; default null) — Contents index, stored as the key's '!contents' metadata in the same write
+- `encoding` ("json-string" or null; default null) — How `content`, `title` and `contents` are encoded in this call, not how they are stored. Pass 'json-string' to send each as a JSON string literal, quotes and escapes included; it is decoded before storing, so the stored document is plain text either way. Use it when the value is long or generated: a damaged value then fails loudly here instead of being stored as if it were correct. Omit to send the text as-is.
 - `against` (string or null; default null) — Path of a file `document_edit` exported from `key`, to check this write against. Its content is not read - only its record of what the document held when it came out - so the write is refused if somebody else has written the document since. Pass it when storing back a document you exported and edited without editing the file
 - `overwrite` (boolean; default false) — Store the content even though `against` refuses it: the document changed after that file came out, or the file cannot say. Only for a caller who has looked at what changed and means to replace it
 
@@ -74,6 +75,7 @@ it this call overwrites whatever is there.
 - `stored` (integer; required) — Characters stored
 - `generated` (boolean; required) — Whether the store generated part of the key
 - `title_key` (string or null; optional) — Key where the supplied title was stored, when one was supplied
+- `contents_key` (string or null; optional) — Key where the supplied contents were stored, when supplied
 - `previous` (integer or null; optional) — Previous document size when the write was checked against an exported file, or null when the key held nothing
 - `unchecked_code` (string or null; optional) — Why the write was not compared with what was exported, when 'against' was given and 'overwrite' allowed it through uncompared: 'no-record' when nothing beside the file said what it held, 'other-key' when the record names the key it was exported from
 - `note` (string or null; optional) — Important qualification of the result

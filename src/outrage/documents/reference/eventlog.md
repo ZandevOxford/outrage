@@ -21,14 +21,14 @@ the store is worse than no logging system.
 Nothing here knows about MCP or about the store's own types, so both front ends
 and the store can share it.
 
-### outrage.eventlog.CONTENT_ARGS *= frozenset({'content', 'title'})*
+### outrage.eventlog.CONTENT_ARGS *= frozenset({'content', 'contents', 'title'})*
 
 Argument names whose string values are document text rather than metadata
 about it, and so are subject to the content policy. Shared by the store and
 the request middleware so that `--log-content=none` means the same thing at
 both layers; scrubbing only one of them would leave the documents in the log
-anyway. A boolean `title` is a generation control, not title content, and
-[`EventLog.arguments()`](#outrage.eventlog.EventLog.arguments) retains it as a boolean.
+anyway. Boolean `title` and `contents` values are generation controls,
+not document text, and [`EventLog.arguments()`](#outrage.eventlog.EventLog.arguments) retains them as booleans.
 
 ### outrage.eventlog.CONTENT_POLICIES *= ('none', 'excerpt', 'full')*
 

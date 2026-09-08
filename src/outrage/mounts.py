@@ -1258,6 +1258,7 @@ class MountedStore(Store):
         format: str | None = None,
         *,
         title: str | None = None,
+        contents: str | None = None,
         encoding: str | None = None,
         updated_at: str | None = None,
     ) -> str:
@@ -1268,6 +1269,7 @@ class MountedStore(Store):
                 content,
                 format,
                 title=title,
+                contents=contents,
                 encoding=encoding,
                 updated_at=updated_at,
             )

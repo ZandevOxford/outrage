@@ -244,6 +244,18 @@ def test_json_string_encoding_applies_to_title_too(store):
     assert store.retrieve_document("a/!title").content == 'A "quoted" title'
 
 
+def test_json_string_encoding_applies_to_contents_too(store):
+    store.store_document(
+        "a",
+        '"Body."',
+        contents='"# A \\"quoted\\" heading"',
+        encoding="json-string",
+    )
+
+    assert store.retrieve_document("a").content == "Body."
+    assert store.retrieve_document("a/!contents").content == '# A "quoted" heading'
+
+
 def test_encoding_must_be_known(store):
     with pytest.raises(ValueError, match="encoding"):
         store.store_document("a", '"x"', encoding="base64")
@@ -332,6 +344,20 @@ def test_title_argument_overwrites_a_previous_title(store):
     assert store.retrieve_document("a/b/!title").content == "Second"
 
 
+def test_contents_argument_writes_and_overwrites_the_metadata_alongside(store):
+    store.store_document("a/b", "body", contents="# First\n")
+    store.store_document("a/b", "body", contents="# Second\n")
+    stored = store.retrieve_document("a/b/!contents")
+    assert stored.content == "# Second\n"
+    assert stored.format == "markdown"
+
+
+def test_contents_argument_follows_an_allocated_number(store):
+    written = store.store_document("context/?/design", "body", contents="# Design\n")
+    assert written == "context/1/design"
+    assert store.retrieve_document("context/1/design/!contents").content == "# Design\n"
+
+
 def test_title_argument_describes_a_metadata_namespace(store):
     # Metadata used not to take a title, on the grounds that it did not nest.
     # It nests now: `!` opens a namespace, and a namespace can be described.
@@ -342,6 +368,13 @@ def test_title_argument_describes_a_metadata_namespace(store):
 def test_a_failed_title_write_leaves_no_document_behind(store):
     with pytest.raises(TypeError, match="title must be a string"):
         store.store_document("a/b", "body", title=object())
+    with pytest.raises(KeyNotFoundError):
+        store.retrieve_document("a/b")
+
+
+def test_a_failed_contents_write_leaves_no_document_behind(store):
+    with pytest.raises(TypeError, match="contents must be a string"):
+        store.store_document("a/b", "body", contents=object())
     with pytest.raises(KeyNotFoundError):
         store.retrieve_document("a/b")
 
@@ -385,6 +418,16 @@ def test_updated_at_stamps_the_title_written_beside_it(store):
     """
     store.store_document("a/b", "body", title="A title", updated_at="2020-01-02T03:04:05+00:00")
     assert store.retrieve_document("a/b/!title").updated_at == "2020-01-02T03:04:05+00:00"
+
+
+def test_updated_at_stamps_the_contents_written_beside_it(store):
+    store.store_document(
+        "a/b",
+        "body",
+        contents="# Body\n",
+        updated_at="2020-01-02T03:04:05+00:00",
+    )
+    assert store.retrieve_document("a/b/!contents").updated_at == "2020-01-02T03:04:05+00:00"
 
 
 @pytest.mark.parametrize(
@@ -1777,11 +1820,12 @@ def test_a_failed_call_is_recorded_with_its_error(logged, tmp_path):
 
 
 def test_stored_text_is_recorded_under_the_content_policy(logged, tmp_path):
-    logged.store_document("a/b", "body", title="A title")
+    logged.store_document("a/b", "body", title="A title", contents="# Body\n")
 
     (event,) = [e for e in events(tmp_path) if e["op"] == "store_document"]
     assert event["args"]["content"]["text"] == "body"
     assert event["args"]["title"]["text"] == "A title"
+    assert event["args"]["contents"]["text"] == "# Body\n"
     assert event["args"]["key"] == "a/b"
 
 
@@ -2993,12 +3037,17 @@ def test_validation_normalises_what_a_backend_then_writes():
     """The arguments as they are written, with every refusal already made.
 
     The shared half of ``store_document``: a backend gets the parsed key, the
-    decoded content, a format that is never None, and the decoded title. Only
+    decoded content, a format that is never None, and decoded metadata. Only
     the wildcard is left to it, because which number a ``?`` becomes is read
     from the store inside the transaction that writes it.
     """
-    parsed, content, format, title, updated_at = Store._validated(
-        "notes/?", '"{\\"a\\": 1}"', None, title='"Numbers"', encoding="json-string"
+    parsed, content, format, title, contents, updated_at = Store._validated(
+        "notes/?",
+        '"{\\"a\\": 1}"',
+        None,
+        title='"Numbers"',
+        contents='"# Numbers\\n"',
+        encoding="json-string",
     )
     assert parsed.has_wildcard
     assert content == '{"a": 1}'
@@ -3006,6 +3055,7 @@ def test_validation_normalises_what_a_backend_then_writes():
     # is a string, and it is the document inside it that is an object.
     assert format == "json"
     assert title == "Numbers"
+    assert contents == "# Numbers\n"
     # None survives: what "now" means is the storage's own answer, and a
     # timestamp settled here would be the moment the arguments were checked
     # rather than the moment the document was written.

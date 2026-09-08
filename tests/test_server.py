@@ -142,7 +142,15 @@ def test_schemas_tell_clients_that_arguments_are_fixed(server):
 
 def test_known_arguments_still_pass(server):
     """The strictness must not cost the optional arguments."""
-    assert call(server, "store_document", key="a/b", content="x", title="T", format="markdown")
+    assert call(
+        server,
+        "store_document",
+        key="a/b",
+        content="x",
+        title="T",
+        contents="# X",
+        format="markdown",
+    )
     assert call(server, "list_keys")["entries"]
 
 
@@ -584,6 +592,30 @@ def test_store_document_titles_a_metadata_namespace(server):
     call(server, "store_document", key="a/b/!changelog", content="text", title="What changed")
     title = call(server, "read_document", key="a/b/!changelog/!title")
     assert title["content"] == "What changed"
+
+
+def test_store_document_writes_contents_in_one_call(server):
+    stored = call(
+        server,
+        "store_document",
+        key="project/notes",
+        content="# Notes",
+        contents="# Notes 0 0",
+    )
+    assert stored["contents_key"] == "project/notes/!contents"
+    contents = call(server, "read_document", key="project/notes/!contents")
+    assert contents["content"] == "# Notes 0 0"
+
+
+def test_store_document_contents_follow_the_allocated_key(server):
+    stored = call(
+        server,
+        "store_document",
+        key="tmp/?",
+        content="scratch",
+        contents="# Scratch",
+    )
+    assert (stored["key"], stored["contents_key"]) == ("tmp/1", "tmp/1/!contents")
 
 
 def test_store_document_detects_json(server):

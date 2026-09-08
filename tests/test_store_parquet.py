@@ -379,6 +379,8 @@ def test_a_refused_write_still_validates_its_arguments_first(packed):
         packed.store_document("a/b\x00c", "content")
     with pytest.raises(ValueError, match="format must be one of"):
         packed.store_document("a", "content", "parquet")
+    with pytest.raises(TypeError, match="contents must be a string"):
+        packed.store_document("a", "content", contents=object())
 
 
 def test_a_refused_write_is_recorded_in_the_event_log(tmp_path):

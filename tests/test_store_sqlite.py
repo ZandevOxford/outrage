@@ -54,6 +54,23 @@ def test_rejects_a_newer_schema(tmp_path):
         SqliteStore(tmp_path)
 
 
+def test_document_title_and_contents_are_one_transaction(store, monkeypatch):
+    original = store._write
+
+    def fail_on_contents(parsed, content, format, updated_at=None):
+        if parsed.meta_name == "contents":
+            raise RuntimeError("failed contents write")
+        original(parsed, content, format, updated_at)
+
+    monkeypatch.setattr(store, "_write", fail_on_contents)
+    with pytest.raises(RuntimeError, match="failed contents write"):
+        store.store_document("a", "body", title="A", contents="# A\n")
+
+    assert not store.exists("a")
+    assert not store.exists("a/!title")
+    assert not store.exists("a/!contents")
+
+
 # -- migrations ----------------------------------------------------------
 
 

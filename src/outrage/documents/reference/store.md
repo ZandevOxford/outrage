@@ -323,9 +323,9 @@ A selected document and the bounded evidence that selected it.
 
 ### outrage.store.Encoding
 
-Encodings a caller may use for the content and title it passes in. These
-describe the argument in transit, not the stored document, which is always
-decoded back to plain text before it is written. See `_decode`.
+Encodings a caller may use for the content, title and contents it passes in.
+These describe the argument in transit, not the stored document, which is
+always decoded back to plain text before it is written. See `_decode`.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['json-string']
 
@@ -923,7 +923,7 @@ released is the backend's business -- a store that holds nothing open
 has nothing to do here -- but a caller is entitled to say it is
 finished, and to have that mean something.
 
-#### *abstractmethod* store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### *abstractmethod* store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, contents: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 Store `content` at `key`, overwriting anything already there.
 
@@ -937,19 +937,19 @@ when the content parses as a JSON object or array, 'html' when it opens
 with a doctype or an `<html>` element, and 'markdown' otherwise --
 'text' is never detected and has to be asked for.
 
-`title` writes the `!title` metadata alongside the document in the
-same transaction. It saves a second call, but it exists mainly because
-the title is what makes a document discoverable later, and a separate
-call is one that can simply be forgotten. It may be given for a
-metadata key too, and becomes that key's own `!title`: metadata is a
-namespace and a namespace can be described, so `a/!changelog` may say
-what its changelog is for at `a/!changelog/!title`.
+`title` and `contents` write the `!title` and `!contents`
+metadata alongside the document, in the same transaction where
+possible. They save a second call, but exist mainly because metadata
+written separately can simply be forgotten. Either may be given for a
+metadata key too, and becomes that key's own metadata: metadata is a
+namespace and a namespace can be described, so `a/!changelog` may
+say what its changelog is for at `a/!changelog/!title`.
 
-`encoding` describes how `content` and `title` arrived, not what
-is stored: 'json-string' means each is a JSON string literal, quotes
-and all, which is decoded before it is written. The stored document is
-plain text either way, so readers are unaffected. Its purpose is to
-make damage in transit loud - see `_decode`.
+`encoding` describes how `content`, `title` and `contents`
+arrived, not what is stored: 'json-string' means each is a JSON string
+literal, quotes and all, which is decoded before it is written. The
+stored documents are plain text either way, so readers are unaffected.
+Its purpose is to make damage in transit loud - see `_decode`.
 
 `updated_at` is when the document was last written, and left out it
 is now - which is what an ordinary write means by it. It is here for

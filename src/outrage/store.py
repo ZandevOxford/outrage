@@ -123,9 +123,9 @@ SearchCombination = Literal["any", "all"]
 #: schema that advertises a format the store then refuses.
 FORMATS: tuple[str, ...] = get_args(Format)
 
-#: Encodings a caller may use for the content and title it passes in. These
-#: describe the argument in transit, not the stored document, which is always
-#: decoded back to plain text before it is written. See ``_decode``.
+#: Encodings a caller may use for the content, title and contents it passes in.
+#: These describe the argument in transit, not the stored document, which is
+#: always decoded back to plain text before it is written. See ``_decode``.
 Encoding = Literal["json-string"]
 
 #: The same, as a tuple. See :data:`FORMATS` for why it is derived.
@@ -831,6 +831,7 @@ class Store(ABC):
         format: str | None = None,
         *,
         title: str | None = None,
+        contents: str | None = None,
         encoding: str | None = None,
         updated_at: str | None = None,
     ) -> str:
@@ -846,19 +847,19 @@ class Store(ABC):
         with a doctype or an ``<html>`` element, and 'markdown' otherwise --
         'text' is never detected and has to be asked for.
 
-        ``title`` writes the ``!title`` metadata alongside the document in the
-        same transaction. It saves a second call, but it exists mainly because
-        the title is what makes a document discoverable later, and a separate
-        call is one that can simply be forgotten. It may be given for a
-        metadata key too, and becomes that key's own ``!title``: metadata is a
-        namespace and a namespace can be described, so ``a/!changelog`` may say
-        what its changelog is for at ``a/!changelog/!title``.
+        ``title`` and ``contents`` write the ``!title`` and ``!contents``
+        metadata alongside the document, in the same transaction where
+        possible. They save a second call, but exist mainly because metadata
+        written separately can simply be forgotten. Either may be given for a
+        metadata key too, and becomes that key's own metadata: metadata is a
+        namespace and a namespace can be described, so ``a/!changelog`` may
+        say what its changelog is for at ``a/!changelog/!title``.
 
-        ``encoding`` describes how ``content`` and ``title`` arrived, not what
-        is stored: 'json-string' means each is a JSON string literal, quotes
-        and all, which is decoded before it is written. The stored document is
-        plain text either way, so readers are unaffected. Its purpose is to
-        make damage in transit loud - see ``_decode``.
+        ``encoding`` describes how ``content``, ``title`` and ``contents``
+        arrived, not what is stored: 'json-string' means each is a JSON string
+        literal, quotes and all, which is decoded before it is written. The
+        stored documents are plain text either way, so readers are unaffected.
+        Its purpose is to make damage in transit loud - see ``_decode``.
 
         ``updated_at`` is when the document was last written, and left out it
         is now - which is what an ordinary write means by it. It is here for
@@ -887,19 +888,20 @@ class Store(ABC):
         format: str | None,
         *,
         title: str | None,
+        contents: str | None,
         encoding: str | None,
         updated_at: str | None = None,
-    ) -> tuple[keys.Key, str, str, str | None, str | None]:
+    ) -> tuple[keys.Key, str, str, str | None, str | None, str | None]:
         """What :meth:`store_document` accepts, and what it turns into.
 
         Returns the parsed key, the decoded content, the resolved format, the
-        decoded title and the normalised timestamp - the arguments as they are
-        actually written, with every refusal already made. A ``?`` in the key
-        survives this: which number it becomes is read from the store, inside
-        the transaction that writes it, and is the one part of the call that is
-        not decidable here. So does a timestamp of None, because what "now"
-        means is the storage's own answer: a row gets :func:`_now` and a file
-        gets the mtime the write already gave it.
+        decoded title and contents, and the normalised timestamp - the
+        arguments as they are actually written, with every refusal already
+        made. A ``?`` in the key survives this: which number it becomes is read
+        from the store, inside the transaction that writes it, and is the one
+        part of the call that is not decidable here. So does a timestamp of
+        None, because what "now" means is the storage's own answer: a row gets
+        :func:`_now` and a file gets the mtime the write already gave it.
 
         A classmethod rather than a template method calling down into the
         backend. It leaves every implementation's control flow exactly where it
@@ -916,7 +918,8 @@ class Store(ABC):
 
         The order is guarded, not incidental: the key parses first, then the
         content is a string, then the encoding decodes it, then the format is
-        detected from what the decode produced, and the title is checked last.
+        detected from what the decode produced, and the metadata is checked
+        last.
         A metadata key used to be refused a title here, on the grounds that
         metadata does not nest; it nests now, so every key in a metadata
         namespace takes a title like any other.
@@ -936,6 +939,10 @@ class Store(ABC):
                 if not isinstance(title, str):
                     raise TypeError(f"title must be a string, got {type(title).__name__}")
                 title = _decode(title, encoding, "title")
+            if contents is not None:
+                if not isinstance(contents, str):
+                    raise TypeError(f"contents must be a string, got {type(contents).__name__}")
+                contents = _decode(contents, encoding, "contents")
         if format is None:
             format = _detect_format(content)
         elif format not in FORMATS:
@@ -943,7 +950,10 @@ class Store(ABC):
         if title is not None:
             if not isinstance(title, str):
                 raise TypeError(f"title must be a string, got {type(title).__name__}")
-        return parsed, content, format, title, _timestamp(updated_at)
+        if contents is not None:
+            if not isinstance(contents, str):
+                raise TypeError(f"contents must be a string, got {type(contents).__name__}")
+        return parsed, content, format, title, contents, _timestamp(updated_at)
 
     def copy_from(
         self,

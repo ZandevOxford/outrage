@@ -535,24 +535,31 @@ class SqliteStore(FileStore):
         format: str | None = None,
         *,
         title: str | None = None,
+        contents: str | None = None,
         encoding: str | None = None,
         updated_at: str | None = None,
     ) -> str:
-        """One row per key, upserted, with the title written in the same
-        transaction.
+        """One row per key, upserted, with its supplied metadata written in
+        the same transaction.
 
         The transaction is ``IMMEDIATE`` only when a ``?`` has to be allocated:
         that path reads the level before it writes, and a deferred transaction
         would let two callers read the same highest number and pick it twice.
 
-        A caller's ``updated_at`` stamps the title row too. The pair is written
-        as one thing and read back as one thing, and a title dated later than
-        the document it titles would say an edit happened that did not.
+        A caller's ``updated_at`` stamps the metadata rows too. The documents
+        are written as one thing and read back as one thing, and metadata dated
+        later than its document would say an edit happened that did not.
         """
         # Inside the logged method, deliberately: `_logged` has already bound
         # the arguments the caller passed, which is what the log is for.
-        parsed, content, format, title, updated_at = self._validated(
-            key, content, format, title=title, encoding=encoding, updated_at=updated_at
+        parsed, content, format, title, contents, updated_at = self._validated(
+            key,
+            content,
+            format,
+            title=title,
+            contents=contents,
+            encoding=encoding,
+            updated_at=updated_at,
         )
 
         # Allocating reads before it writes, so the whole thing has to be one
@@ -566,6 +573,9 @@ class SqliteStore(FileStore):
             if title is not None:
                 title_key = f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}title"
                 self._write(keys.parse(title_key), title, "markdown", updated_at)
+            if contents is not None:
+                contents_key = f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}contents"
+                self._write(keys.parse(contents_key), contents, "markdown", updated_at)
         return parsed.key
 
     def _write(

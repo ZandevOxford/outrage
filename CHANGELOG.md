@@ -4,6 +4,10 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+`store_document` can now write supplied `!contents` metadata alongside a
+document, in the same transaction where the backend supports one, just as it
+already could for `!title`.
+
 The new library-level `outrage.titles` utility extracts a document title from
 Markdown or HTML without reading or writing a store. Markdown uses the first
 level-one ATX heading; HTML prefers `<title>` and falls back to the first `<h1>`.

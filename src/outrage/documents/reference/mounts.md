@@ -411,7 +411,7 @@ twenty failures and named no mount at all while it asked the other
 question -- each failure carrying the whole read-only refusal, so the
 one fact arrived five times as a sample and never once as a sentence.
 
-#### store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, contents: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 Store `content` at `key`, overwriting anything already there.
 
@@ -425,19 +425,19 @@ when the content parses as a JSON object or array, 'html' when it opens
 with a doctype or an `<html>` element, and 'markdown' otherwise --
 'text' is never detected and has to be asked for.
 
-`title` writes the `!title` metadata alongside the document in the
-same transaction. It saves a second call, but it exists mainly because
-the title is what makes a document discoverable later, and a separate
-call is one that can simply be forgotten. It may be given for a
-metadata key too, and becomes that key's own `!title`: metadata is a
-namespace and a namespace can be described, so `a/!changelog` may say
-what its changelog is for at `a/!changelog/!title`.
+`title` and `contents` write the `!title` and `!contents`
+metadata alongside the document, in the same transaction where
+possible. They save a second call, but exist mainly because metadata
+written separately can simply be forgotten. Either may be given for a
+metadata key too, and becomes that key's own metadata: metadata is a
+namespace and a namespace can be described, so `a/!changelog` may
+say what its changelog is for at `a/!changelog/!title`.
 
-`encoding` describes how `content` and `title` arrived, not what
-is stored: 'json-string' means each is a JSON string literal, quotes
-and all, which is decoded before it is written. The stored document is
-plain text either way, so readers are unaffected. Its purpose is to
-make damage in transit loud - see `_decode`.
+`encoding` describes how `content`, `title` and `contents`
+arrived, not what is stored: 'json-string' means each is a JSON string
+literal, quotes and all, which is decoded before it is written. The
+stored documents are plain text either way, so readers are unaffected.
+Its purpose is to make damage in transit loud - see `_decode`.
 
 `updated_at` is when the document was last written, and left out it
 is now - which is what an ordinary write means by it. It is here for

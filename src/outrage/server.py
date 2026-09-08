@@ -319,6 +319,10 @@ class _StoreDocumentResult(_ToolResult):
         str | None,
         Field(description="Key where the supplied title was stored, when one was supplied"),
     ] = None
+    contents_key: Annotated[
+        str | None,
+        Field(description="Key where the supplied contents were stored, when supplied"),
+    ] = None
     previous: Annotated[
         int | None,
         Field(
@@ -1073,12 +1077,20 @@ def build_server(
                 description=("Short title, stored as the key's '!title' metadata in the same write")
             ),
         ] = None,
+        contents: Annotated[
+            str | None,
+            Field(
+                description=(
+                    "Contents index, stored as the key's '!contents' metadata in the same write"
+                )
+            ),
+        ] = None,
         encoding: Annotated[
             Encoding | None,
             Field(
                 description=(
-                    "How `content` and `title` are encoded in this call, not how "
-                    "they are stored. Pass 'json-string' to send each as a JSON "
+                    "How `content`, `title` and `contents` are encoded in this call, "
+                    "not how they are stored. Pass 'json-string' to send each as a JSON "
                     "string literal, quotes and escapes included; it is decoded "
                     "before storing, so the stored document is plain text either "
                     "way. Use it when the value is long or generated: a damaged "
@@ -1124,7 +1136,9 @@ def build_server(
             if against is None
             else bulk.check_write(table, at, against, bulk.export_root(), overwrite=overwrite)
         )
-        written = table.store_document(at, content, format, title=title, encoding=encoding)
+        written = table.store_document(
+            at, content, format, title=title, contents=contents, encoding=encoding
+        )
         result: dict[str, Any] = {
             "key": written,
             # `content` is what arrived, which is not what was stored once it
@@ -1149,6 +1163,11 @@ def build_server(
             # judged against.
             result["title_key"] = keys.parse(
                 f"{written}{keys.DELIMITER}{keys.META_PREFIX}title",
+                max_segments=keys.MAX_JOINED_SEGMENTS,
+            ).key
+        if contents is not None:
+            result["contents_key"] = keys.parse(
+                f"{written}{keys.DELIMITER}{keys.META_PREFIX}contents",
                 max_segments=keys.MAX_JOINED_SEGMENTS,
             ).key
         return _StoreDocumentResult.model_validate(result)

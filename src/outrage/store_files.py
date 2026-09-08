@@ -441,10 +441,11 @@ class FilesystemStore(FileStore):
         format: str | None = None,
         *,
         title: str | None = None,
+        contents: str | None = None,
         encoding: str | None = None,
         updated_at: str | None = None,
     ) -> str:
-        """One file per key, written whole, with the title written beside it.
+        """One file per key, written whole, with supplied metadata beside it.
 
         No transaction. A filesystem has none to offer, and pretending
         otherwise by writing to a staging directory and renaming would buy
@@ -454,8 +455,14 @@ class FilesystemStore(FileStore):
         halfway leaves whole files and no half of one.
         """
         # Inside the logged method, deliberately: see `Store._validated`.
-        parsed, content, format, title, updated_at = self._validated(
-            key, content, format, title=title, encoding=encoding, updated_at=updated_at
+        parsed, content, format, title, contents, updated_at = self._validated(
+            key,
+            content,
+            format,
+            title=title,
+            contents=contents,
+            encoding=encoding,
+            updated_at=updated_at,
         )
         if parsed.has_wildcard:
             with self._allocating:
@@ -468,6 +475,13 @@ class FilesystemStore(FileStore):
             self._write(
                 f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}title",
                 title,
+                "markdown",
+                updated_at,
+            )
+        if contents is not None:
+            self._write(
+                f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}contents",
+                contents,
                 "markdown",
                 updated_at,
             )

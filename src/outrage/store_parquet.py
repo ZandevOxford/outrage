@@ -932,6 +932,7 @@ class ParquetStore(FileStore):
         format: str | None = None,
         *,
         title: str | None = None,
+        contents: str | None = None,
         encoding: str | None = None,
         updated_at: str | None = None,
     ) -> str:
@@ -953,7 +954,15 @@ class ParquetStore(FileStore):
         :meth:`build` is the way in, and ``outrage pack`` is the command line
         over it.
         """
-        self._validated(key, content, format, title=title, encoding=encoding, updated_at=updated_at)
+        self._validated(
+            key,
+            content,
+            format,
+            title=title,
+            contents=contents,
+            encoding=encoding,
+            updated_at=updated_at,
+        )
         raise ReadOnlyStoreError("store-read-only", key=key, path=str(self.path), action="write")
 
     @_logged("delete")
@@ -1720,8 +1729,14 @@ class ParquetStore(FileStore):
 
         rows: dict[str, tuple[keys.Key, str, str, str]] = {}
         for key, content, format, updated_at in documents:
-            parsed, decoded, resolved, _, stamped = cls._validated(
-                key, content, format, title=None, encoding=None, updated_at=updated_at
+            parsed, decoded, resolved, _, _, stamped = cls._validated(
+                key,
+                content,
+                format,
+                title=None,
+                contents=None,
+                encoding=None,
+                updated_at=updated_at,
             )
             if parsed.has_wildcard:
                 raise BackendError("parquet-build-wildcard", key=key)
