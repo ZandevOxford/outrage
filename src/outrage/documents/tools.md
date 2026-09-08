@@ -46,8 +46,13 @@ Store (overwrite) a document or metadata value at a key.
 
 Content is markdown, JSON, plain text or HTML.
 
-When appropriate, supply `title` or `contents`, which will be stored in the
-`/!title` or `/!contents` key below.
+Markdown and HTML documents get a generated `/!contents` heading index by
+default. Pass `generate_contents=false` to leave existing contents metadata
+untouched. Explicit `contents` takes precedence over generation. Metadata-key
+writes and formats without a supported heading index do not generate one.
+
+When appropriate, supply `title` or explicit `contents`, which will be stored
+in the `/!title` or `/!contents` key below.
 
 Use the `?` auto-increment path segment to add documents with incrementing
 ids. This is safe to use across parallel agents.
@@ -65,6 +70,7 @@ it this call overwrites whatever is there.
 - `format` ("markdown" or "json" or "text" or "html" or null; default null) — 'markdown', 'json', 'text' or 'html'; detected from the content when omitted, though detection never chooses 'text'
 - `title` (string or null; default null) — Short title, stored as the key's '!title' metadata in the same write
 - `contents` (string or null; default null) — Contents index, stored as the key's '!contents' metadata in the same write
+- `generate_contents` (boolean; default true) — Generate and store '!contents' for a Markdown or HTML document when explicit contents are not supplied; ignored for metadata keys
 - `encoding` ("json-string" or null; default null) — How `content`, `title` and `contents` are encoded in this call, not how they are stored. Pass 'json-string' to send each as a JSON string literal, quotes and escapes included; it is decoded before storing, so the stored document is plain text either way. Use it when the value is long or generated: a damaged value then fails loudly here instead of being stored as if it were correct. Omit to send the text as-is.
 - `against` (string or null; default null) — Path of a file `document_edit` exported from `key`, to check this write against. Its content is not read - only its record of what the document held when it came out - so the write is refused if somebody else has written the document since. Pass it when storing back a document you exported and edited without editing the file
 - `overwrite` (boolean; default false) — Store the content even though `against` refuses it: the document changed after that file came out, or the file cannot say. Only for a caller who has looked at what changed and means to replace it
@@ -455,6 +461,11 @@ exporting the same key cannot overwrite an edit you have not stored back.
 **Pass `path` to import**: that file's content is stored at `key`, and the
 answer reports both the size written and the size that was there before, so
 an edit that truncated is visible. The path must be one this tool exported.
+Markdown and HTML imports also regenerate `/!contents` by default, in the same
+store call as the document; pass `generate_contents=false` to leave existing
+contents metadata untouched. Metadata-key imports and formats without a
+supported heading index do not generate one. The option has no effect while
+exporting.
 
 **A write that cannot be checked is refused**, as is one the check fails.
 The check is the export record beside the file: it says what the document
@@ -474,6 +485,7 @@ safe as saving back - or pass `overwrite` to write it unchecked.
 - `path` (string or null; default null) — Omit to export the document to a file. Pass the path of a file this tool exported to store its content at `key` instead; the file may have been edited, and may be one exported for another key. Give the path the export returned, or one relative to the export directory - a relative path is taken from there, not from the working directory
 - `against` (string or null; default null) — Path of a second exported file, exported from `key`, whose record checks the import. Only its record is read, never its content. Pass it to import a file exported for another key: the content then comes from `path` and the check that nobody else has written `key` comes from here
 - `overwrite` (boolean; default false) — Store the file even though the check refuses it: the document changed after the checking file was exported, or there is no record naming `key` to check against. Only for a caller who has looked and means to replace it: the refusal is there because another agent's write is about to be lost
+- `generate_contents` (boolean; default true) — On import, generate and store '!contents' for a Markdown or HTML document; ignored when exporting or when the key is metadata
 
 ### Returns
 
@@ -484,6 +496,7 @@ safe as saving back - or pass `overwrite` to write it unchecked.
 - `stored` (integer or null; optional) — Characters stored, when importing an edited file
 - `previous` (integer or null; optional) — Previous document size, or null when it did not exist
 - `unchecked_code` (string or null; optional) — Why an import was not compared with what was exported, when 'overwrite' allowed it through uncompared: 'no-record' when there was no export record, 'other-key' when the file came from another key and no 'against' file was given
+- `contents_key` (string or null; optional) — Metadata key where an automatic contents index was stored
 - `note` (string or null; optional) — Important qualification of the result
 
 ## `mount`

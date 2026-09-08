@@ -97,164 +97,167 @@
 ### outrage.bulk.FORMAT_BY_EXTENSION *= {'.html': 'html', '.json': 'json', '.md': 'markdown', '.txt': 'text'}*
 17912 17920
 
-### *class* outrage.bulk.Imported(key: str, stored: int, previous: int | None, unchecked_code: str | None = None, unchecked_from: str | None = None, unedited: bool = False, copied_from: str | None = None, overwritten: bool = False, changed_at: str | None = None)
+### *class* outrage.bulk.Imported(key: str, stored: int, previous: int | None, unchecked_code: str | None = None, unchecked_from: str | None = None, unedited: bool = False, copied_from: str | None = None, overwritten: bool = False, changed_at: str | None = None, contents_key: str | None = None)
 18655 18663
 
 #### key *: str*
-19849 19857
+19994 20002
 
 #### stored *: int*
-19961 19969
+20106 20114
 
 #### previous *: int | None*
-20059 20067
+20204 20212
 
 #### unchecked_code *: str | None*
-20371 20379
+20516 20524
 
 #### unchecked_from *: str | None*
-21069 21077
+21214 21222
 
 #### unedited *: bool*
-21501 21509
+21646 21654
 
 #### copied_from *: str | None*
-21863 21871
+22008 22016
 
 #### overwritten *: bool*
-22343 22351
+22488 22496
 
 #### changed_at *: str | None*
-22495 22503
+22640 22648
+
+#### contents_key *: str | None*
+22920 22928
 
 ### outrage.bulk.PAGE *= 200*
-22775 22783
+23205 23213
 
 ### outrage.bulk.Packable
-23092 23100
+23522 23530
 
 ### outrage.bulk.RECORD_SUFFIX *= '.outrage.json'*
-24045 24053
+24475 24483
 
 ### outrage.bulk.TEMP_PREFIX *= '.outrage-'*
-24330 24338
+24760 24768
 
 ### outrage.bulk.TRAVERSAL *= ('.', '..')*
-24741 24749
+25171 25179
 
 ### *exception* outrage.bulk.ExportRootError(code: str, \*\*details: Any)
-25020 25028
+25450 25458
 
 ### *exception* outrage.bulk.FileMissingError(code: str, \*\*details: Any)
-25348 25356
+25778 25786
 
 ### *exception* outrage.bulk.OverlappingCopyError(code: str, \*\*details: Any)
-25759 25767
+26189 26197
 
 ### *exception* outrage.bulk.SourceMissingError(code: str, \*\*details: Any)
-26166 26174
+26596 26604
 
 ### *exception* outrage.bulk.StaleImportError(code: str, \*\*details: Any)
-26571 26579
+27001 27009
 
 ### *exception* outrage.bulk.UncheckedWriteError(code: str, \*\*details: Any)
-27192 27200
+27622 27630
 
 ### *exception* outrage.bulk.UnmappableError(code: str, \*\*details: Any)
-28015 28023
+28445 28453
 
 ### outrage.bulk.check_extensions(extensions: str) → str
-28418 28426
+28848 28856
 
 ### outrage.bulk.check_write(opened: Store, key: str, path: str | PathLike[str], root: str | PathLike[str], \*, storing: str | PathLike[str] | None = None, overwrite: bool = False) → Check
-29043 29053
+29473 29483
 
 ### outrage.bulk.contained_file(root: str | PathLike[str], path: str | PathLike[str], key: str) → Path
-31368 31380
+31798 31810
 
 ### outrage.bulk.contained_path(root: str | PathLike[str], relative: PurePosixPath, key: str) → Path
-32349 32363
+32779 32793
 
 ### outrage.bulk.container_name(segment: str) → str
-33905 33921
+34335 34351
 
 ### outrage.bulk.content_hash(content: str) → str
-34928 34946
+35358 35376
 
 ### outrage.bulk.copied(source: Store, target: Store, subtree: BoundedSubtree = store.EVERYTHING, \*, key_range: KeyRange = store.UNBOUNDED, prefix: str | None = None, reroot: bool = False, on_conflict: str = SKIP, unchanged_since: str | None = None, dry_run: bool = False, cursor: str | None = None, limit: int | None = None) → Generator[Transfer, None, str | None]
-35334 35354
+35764 35784
 
 ### outrage.bulk.declared_format(name: str) → str | None
-40555 40577
+40985 41007
 
 ### outrage.bulk.documents_from_store(opened: Store, key: str | None = None) → Iterator[tuple[Transfer, tuple[str, str, str | None, str | None] | None]]
-40971 40995
+41401 41425
 
 ### outrage.bulk.documents_from_tree(source: str | PathLike[str], key: str | None = None, \*, hidden: bool = False, extensions: str = DEFAULT_EXTENSIONS) → Iterator[tuple[Transfer, tuple[str, str, str | None, str | None] | None]]
-42488 42514
+42918 42944
 
 ### outrage.bulk.export_document(opened: Store, key: str, root: str | PathLike[str]) → Exported
-44580 44608
+45010 45038
 
 ### outrage.bulk.export_root() → Path
-45563 45593
+45993 46023
 
 ### outrage.bulk.export_tree(opened: Store, key: str | None, target: str | PathLike[str], \*, on_conflict: str = SKIP, dry_run: bool = False, extensions: str = DEFAULT_EXTENSIONS) → Iterator[Transfer]
-46387 46419
+46817 46849
 
 ### outrage.bulk.file_name(segment: str, format: str | None = None) → str
-48627 48661
+49057 49091
 
-### outrage.bulk.import_document(opened: Store, key: str, path: str | PathLike[str], root: str | PathLike[str], \*, against: str | PathLike[str] | None = None, overwrite: bool = False) → Imported
-49372 49408
+### outrage.bulk.import_document(opened: Store, key: str, path: str | PathLike[str], root: str | PathLike[str], \*, against: str | PathLike[str] | None = None, overwrite: bool = False, generate_contents: bool = False) → Imported
+49802 49838
 
 ### outrage.bulk.import_tree(opened: Store, source: str | PathLike[str], key: str | None = None, \*, on_conflict: str = SKIP, dry_run: bool = False, hidden: bool = False, extensions: str = DEFAULT_EXTENSIONS) → Iterator[Transfer]
-51832 51870
+52703 52741
 
 ### outrage.bulk.key_for_path(relative: PurePosixPath | str, prefix: str | None = None, \*, extensions: str = DEFAULT_EXTENSIONS) → tuple[str, str | None]
-54415 54455
+55286 55326
 
 ### outrage.bulk.levels(opened: Store, key: str | None) → Iterator[Entry]
-56649 56691
+57520 57562
 
 ### outrage.bulk.new_export_file(root: str | PathLike[str], format: str | None = None) → Path
-57403 57447
+58274 58318
 
 ### outrage.bulk.notes_for(imported: Imported) → list[Note]
-58738 58784
+59609 59655
 
 ### outrage.bulk.notes_for_checked_write(key: str, check: Check, stored: int) → list[Note]
-60053 60101
+60924 60972
 
 ### outrage.bulk.notes_for_copy(landing: str, \*, dry_run: bool, on_conflict: str, unchanged_since: str | None, changed: Sequence[str], next_cursor: str | None, limit: int, failed: int, named: int, stopped: bool, mounts_kept: Sequence[str]) → list[Note]
-60952 61002
+61823 61873
 
 ### outrage.bulk.notes_for_delete(key: str, \*, dry_run: bool, remaining: int, mounts_kept: Sequence[str]) → list[Note]
-63044 63096
+63915 63967
 
 ### outrage.bulk.notes_for_export(exported: Exported) → list[Note]
-64319 64373
+65190 65244
 
 ### outrage.bulk.notes_for_write(previous: int | None, stored: int) → list[Note]
-65179 65235
+66050 66106
 
 ### outrage.bulk.overlapping(source: str, target: str, \*, reroot: bool = False) → None
-66140 66198
+67011 67069
 
 ### outrage.bulk.pack(target: str | PathLike[str], documents: Iterator[tuple[Transfer, tuple[str, str, str | None, str | None] | None]], \*, overwrite: bool = False, dry_run: bool = False, byte_lengths: bool = True) → Iterator[Transfer]
-67740 67800
+68611 68671
 
 ### outrage.bulk.path_for_key(key: str, format: str | None = None, \*, extensions: str = DEFAULT_EXTENSIONS) → PurePosixPath
-69869 69931
+70740 70802
 
 ### outrage.bulk.renew(opened: Store, key: str, check: Check, content: str | None = None) → None
-72029 72093
+72900 72964
 
 ### outrage.bulk.size_of(opened: Store, key: str) → int | None
-73126 73192
+73997 74063
 
 ### outrage.bulk.sweep_exports(root: str | PathLike[str], max_age: timedelta = EXPORT_MAX_AGE, now: datetime | None = None) → int
-73817 73885
+74688 74756
 
 ### outrage.bulk.walk(opened: Store, key: str | None) → Iterator[Entry]
-74924 74994
+75795 75865

@@ -339,6 +339,27 @@ def _render(headings: list[_Heading], *, strip_links: bool = True) -> str:
     )
 
 
+def _render_for_document(
+    content: str,
+    format: str | None,
+    *,
+    strip_links: bool = True,
+) -> str | None:
+    """Render supported document content, or None when it has no index format.
+
+    ``format`` may be omitted on the same paths where ``store_document``
+    detects it. Kept here so an automatic write and ``make_contents`` use the
+    same renderers rather than acquiring a second definition of a contents
+    index in a front end.
+    """
+    resolved = store._detect_format(content) if format is None else format
+    if resolved == "markdown":
+        return render_contents(content, strip_links=strip_links)
+    if resolved == "html":
+        return render_html_contents(content)
+    return None
+
+
 def _metadata_key(source_key: str, metadata_name: str) -> str:
     """Validate one direct metadata name and join it to ``source_key``."""
     if not isinstance(metadata_name, str):

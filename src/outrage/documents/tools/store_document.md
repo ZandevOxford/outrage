@@ -2,8 +2,13 @@ Store (overwrite) a document or metadata value at a key.
 
 Content is markdown, JSON, plain text or HTML.
 
-When appropriate, supply `title` or `contents`, which will be stored in the
-`/!title` or `/!contents` key below.
+Markdown and HTML documents get a generated `/!contents` heading index by
+default. Pass `generate_contents=false` to leave existing contents metadata
+untouched. Explicit `contents` takes precedence over generation. Metadata-key
+writes and formats without a supported heading index do not generate one.
+
+When appropriate, supply `title` or explicit `contents`, which will be stored
+in the `/!title` or `/!contents` key below.
 
 Use the `?` auto-increment path segment to add documents with incrementing
 ids. This is safe to use across parallel agents.

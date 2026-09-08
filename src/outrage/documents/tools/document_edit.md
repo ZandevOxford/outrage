@@ -11,6 +11,11 @@ exporting the same key cannot overwrite an edit you have not stored back.
 **Pass `path` to import**: that file's content is stored at `key`, and the
 answer reports both the size written and the size that was there before, so
 an edit that truncated is visible. The path must be one this tool exported.
+Markdown and HTML imports also regenerate `/!contents` by default, in the same
+store call as the document; pass `generate_contents=false` to leave existing
+contents metadata untouched. Metadata-key imports and formats without a
+supported heading index do not generate one. The option has no effect while
+exporting.
 
 **A write that cannot be checked is refused**, as is one the check fails.
 The check is the export record beside the file: it says what the document

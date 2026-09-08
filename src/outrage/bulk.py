@@ -41,6 +41,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from stat import S_ISDIR, S_ISLNK
 
+from . import contents as contents_module
 from . import keys, store
 from .errors import OutrageError
 from .notes import UNCHECKED_NO_RECORD, UNCHECKED_OTHER_KEY, Note
@@ -1257,6 +1258,9 @@ class Imported:
     changed_at: str | None = None
     """What the displaced document's ``updated_at`` was, for the sentence that
     says what ``overwrite`` overwrote. None when the key held nothing."""
+    contents_key: str | None = None
+    """Where an automatically generated contents index was stored, or None
+    when generation was disabled or did not apply to this key and format."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1748,6 +1752,7 @@ def import_document(
     *,
     against: str | os.PathLike[str] | None = None,
     overwrite: bool = False,
+    generate_contents: bool = False,
 ) -> Imported:
     """Store the content of ``path`` at ``key``, and say what it displaced.
 
@@ -1780,6 +1785,12 @@ def import_document(
     thing a person may legitimately mean. What guards the accident is the
     report: both sizes come back, so an edit script that truncated is visible
     to whoever asked.
+
+    ``generate_contents`` asks a Markdown or HTML document to carry a fresh
+    heading index in ``!contents`` as part of the same store call. Metadata
+    keys and formats without a heading index are left alone. It defaults off
+    here because this is a general import API; the editing tool opts in by
+    default so an edited document cannot silently keep a stale index.
     """
     from .store_files import NotTextError
 
@@ -1816,7 +1827,13 @@ def import_document(
         storing=file,
         overwrite=overwrite,
     )
-    written = opened.store_document(key, content, _format_of(file.name))
+    format = _format_of(file.name)
+    generated_contents = (
+        contents_module._render_for_document(content, format)
+        if generate_contents and store.entry_kind(key) == "document"
+        else None
+    )
+    written = opened.store_document(key, content, format, contents=generated_contents)
     # `content` rather than a read back: what the file holds is what was
     # stored, and the record that moves on is the one that was asked, which
     # with `against` is the second file rather than this one.
@@ -1831,6 +1848,11 @@ def import_document(
         copied_from=copied_from,
         overwritten=check.overwritten,
         changed_at=check.changed_at if check.overwritten else None,
+        contents_key=(
+            keys.with_prefix(written, f"{keys.META_PREFIX}contents")
+            if generated_contents is not None
+            else None
+        ),
     )
 
 

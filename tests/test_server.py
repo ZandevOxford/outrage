@@ -361,13 +361,21 @@ def test_make_metadata_indexes_html_and_prefers_its_title_element(server):
 
 
 def test_make_metadata_booleans_control_each_write(server):
-    call(server, "store_document", key="title-only", content="# Title only", format="markdown")
+    call(
+        server,
+        "store_document",
+        key="title-only",
+        content="# Title only",
+        format="markdown",
+        generate_contents=False,
+    )
     call(
         server,
         "store_document",
         key="contents-only",
         content="# Contents only",
         format="markdown",
+        generate_contents=False,
     )
 
     title_only = call(server, "make_metadata", key="title-only", contents=False)
@@ -401,7 +409,14 @@ def test_make_metadata_without_a_parsed_title_preserves_an_existing_one(server):
 
 def test_make_metadata_with_both_outputs_disabled_only_reports_the_source(server):
     source = "# Manual\n"
-    call(server, "store_document", key="manual", content=source, format="markdown")
+    call(
+        server,
+        "store_document",
+        key="manual",
+        content=source,
+        format="markdown",
+        generate_contents=False,
+    )
 
     result = call(server, "make_metadata", key="manual", contents=False, title=False)
 
@@ -566,13 +581,26 @@ def test_read_document_rejects_the_removed_length_argument(server):
 
 def test_store_document_round_trip(server):
     stored = call(server, "store_document", key="project/notes", content="# Notes")
-    assert stored == {"key": "project/notes", "stored": 7, "generated": False}
+    assert stored == {
+        "key": "project/notes",
+        "stored": 7,
+        "generated": False,
+        "contents_key": "project/notes/!contents",
+    }
     assert call(server, "read_document", key="project/notes")["content"] == "# Notes"
+    assert call(server, "read_document", key="project/notes/!contents")["content"] == (
+        "# Notes\n0 0\n"
+    )
 
 
 def test_store_document_reports_an_allocated_key(server):
     stored = call(server, "store_document", key="tmp/?", content="scratch")
-    assert stored == {"key": "tmp/1", "stored": 7, "generated": True}
+    assert stored == {
+        "key": "tmp/1",
+        "stored": 7,
+        "generated": True,
+        "contents_key": "tmp/1/!contents",
+    }
     assert call(server, "store_document", key="tmp/?", content="more")["key"] == "tmp/2"
     assert call(server, "read_document", key="tmp/1")["content"] == "scratch"
 
@@ -607,6 +635,48 @@ def test_store_document_writes_contents_in_one_call(server):
     assert contents["content"] == "# Notes 0 0"
 
 
+def test_explicit_store_document_contents_take_precedence_over_generation(server):
+    call(
+        server,
+        "store_document",
+        key="project/notes",
+        content="# Generated",
+        contents="# Supplied",
+    )
+
+    contents = call(server, "read_document", key="project/notes/!contents")
+    assert contents["content"] == "# Supplied"
+
+
+def test_store_document_contents_generation_can_be_disabled(server):
+    call(
+        server,
+        "store_document",
+        key="project/notes",
+        content="# Before",
+        contents="# Keep me",
+    )
+
+    stored = call(
+        server,
+        "store_document",
+        key="project/notes",
+        content="# After",
+        generate_contents=False,
+    )
+
+    assert "contents_key" not in stored
+    contents = call(server, "read_document", key="project/notes/!contents")
+    assert contents["content"] == "# Keep me"
+
+
+def test_storing_metadata_does_not_generate_contents_metadata(server):
+    stored = call(server, "store_document", key="project/!summary", content="# Summary")
+
+    assert "contents_key" not in stored
+    assert call_expecting_error(server, "read_document", key="project/!summary/!contents")
+
+
 def test_store_document_contents_follow_the_allocated_key(server):
     stored = call(
         server,
@@ -637,6 +707,20 @@ def test_store_document_decodes_a_json_string_encoding(server):
         call(server, "read_document", key="a/b/!summary")["content"]
         == 'A summary saying "hi".\nSecond line.'
     )
+
+
+def test_store_document_encodes_automatically_generated_contents_for_transport(server):
+    stored = call(
+        server,
+        "store_document",
+        key="manual",
+        content='"# Heading"',
+        format="markdown",
+        encoding="json-string",
+    )
+
+    assert stored["contents_key"] == "manual/!contents"
+    assert call(server, "read_document", key="manual/!contents")["content"] == ("# Heading\n0 0\n")
 
 
 def test_store_document_rejects_scaffolding_under_a_json_string_encoding(server):
@@ -1844,9 +1928,36 @@ def test_a_file_edited_on_disk_is_stored_back(exporting):
     imported = call(exporting, "document_edit", key="context/a1b2/design", path=exported["path"])
 
     assert (imported["stored"], imported["previous"]) == (23, 14)
+    assert imported["contents_key"] == "context/a1b2/design/!contents"
     assert "note" not in imported
     read = call(exporting, "read_document", key="context/a1b2/design")
     assert read["content"] == "# Store schema, revised"
+    contents = call(exporting, "read_document", key="context/a1b2/design/!contents")
+    assert contents["content"] == "# Store schema, revised\n0 0\n"
+
+
+def test_document_edit_contents_generation_can_be_disabled(exporting):
+    call(
+        exporting,
+        "store_document",
+        key="context/a1b2/design",
+        content="# Store schema",
+        contents="# Keep me",
+    )
+    exported = call(exporting, "document_edit", key="context/a1b2/design")
+    Path(exported["path"]).write_text("# Store schema, revised")
+
+    imported = call(
+        exporting,
+        "document_edit",
+        key="context/a1b2/design",
+        path=exported["path"],
+        generate_contents=False,
+    )
+
+    assert "contents_key" not in imported
+    contents = call(exporting, "read_document", key="context/a1b2/design/!contents")
+    assert contents["content"] == "# Keep me"
 
 
 def test_a_document_that_shrank_is_said_to_have_shrunk(exporting):
@@ -2157,10 +2268,15 @@ def test_a_store_that_shrank_under_a_check_is_said_to_have_shrunk(exporting):
 
 
 def test_an_ordinary_store_document_is_unchanged_by_all_of_this(exporting):
-    """Opt-in: no `against`, no check, no extra fields in the answer."""
+    """No `against` still means no check fields in the answer."""
     stored = call(exporting, "store_document", key="context/a1b2/design", content="# Whatever")
 
-    assert stored == {"key": "context/a1b2/design", "stored": 10, "generated": False}
+    assert stored == {
+        "key": "context/a1b2/design",
+        "stored": 10,
+        "generated": False,
+        "contents_key": "context/a1b2/design/!contents",
+    }
 
 
 def test_a_check_file_on_an_export_is_refused_rather_than_ignored(exporting):

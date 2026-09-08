@@ -26,6 +26,7 @@ import argparse
 import dataclasses
 import functools
 import itertools
+import json
 import os
 import sys
 import time
@@ -591,6 +592,10 @@ class _DocumentEditResult(_ToolResult):
             )
         ),
     ] = None
+    contents_key: Annotated[
+        str | None,
+        Field(description="Metadata key where an automatic contents index was stored"),
+    ] = None
     note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
@@ -1085,6 +1090,15 @@ def build_server(
                 )
             ),
         ] = None,
+        generate_contents: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Generate and store '!contents' for a Markdown or HTML document when "
+                    "explicit contents are not supplied; ignored for metadata keys"
+                )
+            ),
+        ] = True,
         encoding: Annotated[
             Encoding | None,
             Field(
@@ -1136,6 +1150,17 @@ def build_server(
             if against is None
             else bulk.check_write(table, at, against, bulk.export_root(), overwrite=overwrite)
         )
+        if generate_contents and contents is None and store_module.entry_kind(at) == "document":
+            decoded = (
+                content if encoding is None else store_module._decode(content, encoding, "content")
+            )
+            generated_contents = contents_module._render_for_document(decoded, format)
+            if generated_contents is not None:
+                contents = (
+                    generated_contents
+                    if encoding is None
+                    else json.dumps(generated_contents, ensure_ascii=False)
+                )
         written = table.store_document(
             at, content, format, title=title, contents=contents, encoding=encoding
         )
@@ -1816,6 +1841,15 @@ def build_server(
                 )
             ),
         ] = False,
+        generate_contents: Annotated[
+            bool,
+            Field(
+                description=(
+                    "On import, generate and store '!contents' for a Markdown or HTML "
+                    "document; ignored when exporting or when the key is metadata"
+                )
+            ),
+        ] = True,
     ) -> _DocumentEditResult:
         # No wildcard: `?` allocates a number, and a round trip is about a
         # key that already exists on one end or the other. Allocating one
@@ -1842,7 +1876,13 @@ def build_server(
             _say(result, bulk.notes_for_export(exported))
             return _DocumentEditResult.model_validate(result)
         imported = bulk.import_document(
-            table, at, path, exports, against=against, overwrite=overwrite
+            table,
+            at,
+            path,
+            exports,
+            against=against,
+            overwrite=overwrite,
+            generate_contents=generate_contents,
         )
         result = {
             "key": imported.key,
@@ -1851,6 +1891,8 @@ def build_server(
             "previous": imported.previous,
             "unchecked_code": imported.unchecked_code,
         }
+        if imported.contents_key is not None:
+            result["contents_key"] = imported.contents_key
         _say(result, bulk.notes_for(imported))
         return _DocumentEditResult.model_validate(result)
 

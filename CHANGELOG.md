@@ -6,7 +6,11 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 `store_document` can now write supplied `!contents` metadata alongside a
 document, in the same transaction where the backend supports one, just as it
-already could for `!title`.
+already could for `!title`. The MCP `store_document` and `document_edit` tools
+now use that path to generate a Markdown or HTML document's contents index by
+default; pass `generate_contents=false` to leave it untouched. Explicit
+contents supplied to `store_document` take precedence, and metadata writes do
+not recursively generate metadata.
 
 The new library-level `outrage.titles` utility extracts a document title from
 Markdown or HTML without reading or writing a store. Markdown uses the first
