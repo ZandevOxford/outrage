@@ -653,6 +653,12 @@ def copied(
                     continue
 
         try:
+            target._check_writable(landed)
+        except OutrageError as exc:
+            yield _failed(landed, path, exc)
+            continue
+
+        try:
             excerpt = store.read_all(source, key)
         except (OutrageError, OSError) as exc:
             # A key can go between the listing and the read; the walk is not a

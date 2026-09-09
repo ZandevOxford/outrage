@@ -2,6 +2,12 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+The command-line import report now names only the store files that received
+documents, or would receive them in a dry run. It no longer presents every
+open mounted store as though the import wrote there.
+
 ## 0.10.2 - 2026-09-08
 
 The installed documentation now includes the project's requirements and copies

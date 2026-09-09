@@ -1828,6 +1828,7 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
     # visible rather than silently successful.
     with _open_table(args, create=True) as opened:
         _resolved(opened, args)
+        destinations: dict[str, None] = {}
         transfers = bulk.import_tree(
             opened,
             args.source,
@@ -1837,16 +1838,29 @@ def _import_command(args: argparse.Namespace, out: TextIO) -> int:
             hidden=args.hidden,
             extensions=args.extensions,
         )
-        status = _report_transfers(transfers, args, out, source_first=True)
-        where = _file_holding(opened, keys.ROOT)
-        if isinstance(opened, mounts.MountedStore) and opened.multiple:
-            # An import spanning a table lands in more than one file, and which
-            # documents went where is a routing question this line cannot
-            # answer. It says how many stores were open instead, which is the
-            # part a reader can act on.
-            where += f", across {len(opened)} mounted stores"
-    print(f"outrage: into {where}", file=sys.stderr)
+        status = _report_transfers(
+            _with_destinations(transfers, opened, destinations),
+            args,
+            out,
+            source_first=True,
+        )
+    verb = "would write" if args.dry_run else "wrote"
+    label = "store" if len(destinations) == 1 else "stores"
+    where = f": {', '.join(destinations)}" if destinations else ""
+    print(f"outrage: {verb} to {len(destinations)} {label}{where}", file=sys.stderr)
     return status
+
+
+def _with_destinations(
+    transfers: Iterator[store.Transfer],
+    opened: store.Store,
+    destinations: dict[str, None],
+) -> Iterator[store.Transfer]:
+    """Keep the stores a successful import reaches while its report streams."""
+    for transfer in transfers:
+        if transfer.action == store.WROTE and transfer.key is not None:
+            destinations.setdefault(_file_holding(opened, transfer.key), None)
+        yield transfer
 
 
 def _copy_command(args: argparse.Namespace, out: TextIO) -> int:

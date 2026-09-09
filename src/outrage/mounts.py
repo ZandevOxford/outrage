@@ -1278,6 +1278,10 @@ class MountedStore(Store):
         # since the store that allocated it has never heard of the prefix.
         return found.mount.outer(written)
 
+    def _check_writable(self, key: str) -> None:
+        """Refuse a write routed into a read-only mount before it is attempted."""
+        self.resolve(key).writable()
+
     def retrieve_document(
         self,
         key: str,

@@ -880,6 +880,17 @@ class Store(ABC):
         calls before it writes anything.
         """
 
+    def _check_writable(self, key: str) -> None:
+        """Raise for a structural refusal knowable before a document is written.
+
+        Empty for an ordinary store: a backend may need the content or the
+        filesystem operation itself before it can know a write will fail. A
+        mounted namespace overrides this because read-only routing is already
+        settled by the key, so a dry-run transfer can report the same refusal
+        as the real write instead of promising an operation that cannot land.
+        """
+        return None
+
     @classmethod
     def _validated(
         cls,

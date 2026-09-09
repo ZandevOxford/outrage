@@ -33,6 +33,7 @@ from outrage.mounts import (
 from outrage.server import build_server, parse_args
 from outrage.store import (
     EVERYTHING,
+    FAILED,
     OVERWRITE,
     UNBOUNDED,
     WROTE,
@@ -2365,6 +2366,23 @@ def test_a_copy_landing_inside_a_read_only_mount_names_it_once(tmp_path):
         assert result["mounts_kept"] == ["ref"]
         assert "refuse a write at or below" in result["note"]
         assert "'ref'" in result["note"]
+
+
+def test_a_dry_run_and_real_copy_report_the_same_read_only_refusal(tmp_path):
+    source = SqliteStore(tmp_path, filename="source.sqlite")
+    root = SqliteStore(tmp_path, filename="root.sqlite")
+    kept = SqliteStore(tmp_path, filename="kept.sqlite")
+    source.store_document("notes/one", "One.")
+
+    with source, MountedStore({keys.ROOT: root, "ref": kept}, read_only=["ref"]) as table:
+        preview = list(table.copy_from(source, prefix="ref", dry_run=True))
+        actual = list(table.copy_from(source, prefix="ref"))
+
+        assert [transfer.action for transfer in preview] == [FAILED]
+        assert [transfer.action for transfer in actual] == [FAILED]
+        assert preview[0].error is not None and preview[0].error.code == "mount-read-only"
+        assert actual[0].error is not None and actual[0].error.code == "mount-read-only"
+        assert kept.list_keys().items == []
 
 
 def test_an_error_from_inside_a_mount_names_the_key_the_caller_passed(tmp_path):

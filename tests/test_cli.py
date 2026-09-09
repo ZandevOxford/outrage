@@ -418,6 +418,40 @@ def test_backup_dry_run_names_the_destination_without_writing(tmp_path):
     assert not (tmp_path / ".outrage" / "backups").exists()
 
 
+def test_backup_dry_run_and_real_run_name_the_same_files(tmp_path):
+    """The preview's claim is checked against the operation it describes."""
+    directory = tmp_path / ".outrage"
+    source = directory / "named.sqlite"
+    target = tmp_path / "snapshot.sqlite"
+    a_store(directory)
+    (directory / "store.sqlite").rename(source)
+
+    preview_status, preview = run(
+        "backup",
+        "--dir",
+        str(directory),
+        "--store",
+        source.name,
+        "--to",
+        str(target),
+        "--dry-run",
+    )
+    run_status, reported = run(
+        "backup",
+        "--dir",
+        str(directory),
+        "--store",
+        source.name,
+        "--to",
+        str(target),
+    )
+
+    assert preview_status == run_status == 0
+    assert preview == f"would back up {source} to {target}\n"
+    assert reported.startswith(f"backed up {source} to {target}\n")
+    assert target.is_file()
+
+
 def test_an_empty_pattern_is_a_message_and_a_status(tmp_path, capsys):
     # It was a traceback until 2026-08-29 - `issues/1`. An empty --pattern is
     # something the person typing it can correct, so by `errors.OutrageError`'s
@@ -583,6 +617,29 @@ def test_log_limit_keeps_the_end_and_says_what_it_dropped(tmp_path):
 
     assert "4 earlier matching events not shown" in output
     assert "session bbb" in output and "session aaa" not in output
+
+
+def test_log_limit_remedy_shows_every_event(tmp_path):
+    a_log(tmp_path / ".outrage")
+
+    _, limited = run("log", "--dir", str(tmp_path / ".outrage"), "--limit", "1")
+    remedy = limited.split("; ", 1)[1].split(" for all", 1)[0].split()
+    status, complete = run("log", "--dir", str(tmp_path / ".outrage"), *remedy)
+
+    assert status == 0
+    assert "session aaa" in complete and "session bbb" in complete
+
+
+def test_log_reports_exactly_how_many_unparseable_lines_it_skipped(tmp_path):
+    path = a_log(tmp_path / ".outrage")
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write("not json\n[]\n")
+
+    status, output = run("log", "--dir", str(tmp_path / ".outrage"))
+
+    assert status == 0
+    assert "2 unparseable lines skipped" in output
+    assert "retrieve_document" in output, "a bad line must not hide the valid report"
 
 
 def test_log_finds_the_file_beside_the_store_by_default(tmp_path, monkeypatch):
@@ -958,6 +1015,19 @@ def test_rm_leaves_the_subtree_and_says_it_did(tmp_path):
     assert "notes/1/detail" in listing
 
 
+def test_rm_recursive_remedy_takes_what_the_first_run_said_remained(tmp_path):
+    directory = str(tmp_path / ".outrage")
+    a_tree(tmp_path / ".outrage")
+
+    _, first = run("rm", "--dir", directory, "notes/1")
+    remedy = next(word.rstrip(".,;") for word in first.split() if word.startswith("--recursive"))
+    status, second = run("rm", "--dir", directory, "notes/1", remedy)
+
+    assert status == 0
+    assert "deleted notes/1/detail" in second
+    assert run("ls", "--dir", directory, "notes/1")[1] == "nothing below notes/1\n"
+
+
 def test_rm_says_what_a_read_only_mount_kept_back(tmp_path, capsys):
     """The one note this front end says that its own report cannot.
 
@@ -973,6 +1043,39 @@ def test_rm_says_what_a_read_only_mount_kept_back(tmp_path, capsys):
     said = capsys.readouterr().err
     assert "1 read-only mounted store(s) below / refuse a delete: ref" in said
     assert "--mount-ro" in said
+
+
+def test_rm_read_only_mount_remedy_makes_the_kept_key_deletable(tmp_path, capsys):
+    directory = tmp_path / ".outrage"
+    a_mounted_project(directory)
+
+    run("rm", "--dir", str(directory), "ref", "--recursive")
+    advice = capsys.readouterr().err
+    writable = next(word for word in advice.split() if word == "--mount")
+    status, output = run(
+        "rm",
+        "--dir",
+        str(directory),
+        "ref",
+        "--recursive",
+        writable,
+        "ref=reference.sqlite",
+    )
+
+    assert status == 0
+    assert "deleted ref/python/asyncio" in output
+    assert "refuse a delete" not in capsys.readouterr().err
+    assert (
+        run(
+            "ls",
+            "--dir",
+            str(directory),
+            "--store",
+            "reference.sqlite",
+            "--no-mount-config",
+        )[1]
+        == "nothing below the top level\n"
+    )
 
 
 def test_rm_says_nothing_about_mounts_when_none_refuse(tmp_path, capsys):
@@ -1165,8 +1268,11 @@ def test_check_repairs_the_write_ahead_log(tmp_path):
     assert log.stat().st_size > database.stat().st_size
 
     try:
-        status, output = run("check", "--repair", "--dir", str(directory))
+        before_status, before = run("check", "--dir", str(directory))
+        remedy = next(word.rstrip(":") for word in before.split() if word.startswith("--repair"))
+        status, output = run("check", remedy, "--dir", str(directory))
 
+        assert before_status == 1
         assert status == 0
         assert "checkpoint the write-ahead log" in output
         # The second report is the one that matters: a repair whose own writes
@@ -1445,6 +1551,43 @@ def test_import_stores_a_directory_and_says_where(tmp_path, capsys):
 
     _, listed = run("ls", "--dir", str(tmp_path / "fresh"), "--recursive")
     assert "project/reference/env" in listed
+
+
+def test_import_reports_only_the_stores_its_documents_reach(tmp_path, capsys):
+    directory = a_mounted_project(tmp_path / ".outrage")
+    source = tmp_path / "incoming"
+    (source / "team").mkdir(parents=True)
+    (source / "ref").mkdir()
+    (source / "at-root.md").write_text("root", encoding="utf-8")
+    (source / "team" / "next.md").write_text("team", encoding="utf-8")
+    (source / "ref" / "blocked.md").write_text("blocked", encoding="utf-8")
+
+    preview_status, preview_output = run(
+        "import", "--dir", str(directory), str(source), "--dry-run"
+    )
+    preview = capsys.readouterr().err
+    status, output = run("import", "--dir", str(directory), str(source))
+    reported = capsys.readouterr().err
+
+    root = directory / "store.sqlite"
+    team = directory / "team.sqlite"
+    reference = directory / "reference.sqlite"
+    assert preview_status == status == 1
+    assert f"would write to 2 stores: {root}, {team}" in preview
+    assert f"wrote to 2 stores: {root}, {team}" in reported
+    assert str(reference) not in preview + reported
+    assert "would write" in preview_output and "wrote" in output
+    assert "failed" in preview_output and "failed" in output
+    assert "stores:" not in preview_output + output, "the destination summary belongs on stderr"
+    assert run("get", "--dir", str(directory), "at-root")[1] == "root"
+    assert run("get", "--dir", str(directory), "team/next")[1] == "team"
+
+    repeated_status, repeated = run("import", "--dir", str(directory), str(source))
+
+    assert repeated_status == 1
+    assert repeated.count("skipped") == 2
+    assert repeated.count("failed") == 1
+    assert capsys.readouterr().err.endswith("outrage: wrote to 0 stores\n")
 
 
 def test_import_keeping_extensions_stores_the_keys_a_bundle_links_to(tmp_path):
@@ -1960,6 +2103,22 @@ def test_ls_reads_the_mount_table_from_the_default_file(tmp_path):
     assert "top" in output
 
 
+def test_shadow_warning_names_the_mount_and_the_keys_reappear_without_it(tmp_path, capsys):
+    from outrage.store_sqlite import SqliteStore
+
+    directory = a_mounted_project(tmp_path / ".outrage")
+    with SqliteStore(directory) as root:
+        root.store_document("team/hidden", "still at the root")
+
+    _, mounted = run("ls", "--dir", str(directory), "--recursive")
+    warning = capsys.readouterr().err
+    _, revealed = run("ls", "--dir", str(directory), "--recursive", "--unmount", "team")
+
+    assert "team/hidden" not in mounted
+    assert "store at 'team' shadows keys already held there" in warning
+    assert "team/hidden" in revealed
+
+
 def test_get_crosses_a_mount_boundary(tmp_path):
     a_mounted_project(tmp_path / ".outrage")
 
@@ -1989,6 +2148,44 @@ def test_copy_moves_a_subtree_between_mounted_stores(tmp_path):
     assert "wrote       archive/imported/team/plans/q3" in output
     _, copied = run("get", "--dir", str(directory), "archive/imported/team/plans/q3")
     assert copied == "the plan"
+
+
+def test_a_mixed_copy_report_agrees_with_the_target_and_its_summary(tmp_path, capsys):
+    from outrage.store_sqlite import SqliteStore
+
+    directory = tmp_path / ".outrage"
+    a_mounted_project(
+        directory,
+        config=(
+            '[mount]\nteam = "team.sqlite"\narchive = "archive.sqlite"\n\n'
+            '[mount-ro]\nref = "reference.sqlite"\n'
+        ),
+    )
+    with SqliteStore(directory, filename="team.sqlite") as team:
+        team.store_document("plans/q4", "the next plan")
+    with SqliteStore(directory, filename="archive.sqlite") as archive:
+        archive.store_document("imported/team/plans/q3", "mine")
+
+    capsys.readouterr()
+    status, output = run(
+        "copy",
+        "--dir",
+        str(directory),
+        "team/plans",
+        "archive/imported",
+        "--on-conflict",
+        "skip",
+    )
+    summary = capsys.readouterr().err
+
+    assert status == 0
+    assert output.count("skipped     archive/imported/team/plans/q3") == 1
+    assert output.count("wrote       archive/imported/team/plans/q4") == 1
+    assert summary == "outrage: 1 skipped, 1 written\n"
+    assert run("get", "--dir", str(directory), "archive/imported/team/plans/q3")[1] == "mine"
+    assert (
+        run("get", "--dir", str(directory), "archive/imported/team/plans/q4")[1] == "the next plan"
+    )
 
 
 def test_copy_exposes_depth_and_the_whole_key_range(tmp_path):
