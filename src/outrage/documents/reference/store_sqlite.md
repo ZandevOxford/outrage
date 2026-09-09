@@ -34,6 +34,22 @@ spot rather than waiting -- which is invisible with one connection and the
 usual cause of spurious "database is locked" with several. Generous, because
 every write here is small and the alternative to waiting is an error.
 
+### outrage.store_sqlite.CHILD_BATCH *= 8*
+
+How many rows a child walk reads before seeking past the child it is on.
+Measured over a 47,000 key store rather than guessed. A level of twenty
+children with a deep subtree each walks in 0.25 ms where scanning those
+subtrees costs 42 ms, and one seek a child is the whole win there. A level
+of two thousand shallow children is the opposite case: at one row a read it
+costs 22 ms against 8.8 ms for the scan, and only a larger read brings it
+back to 2.3 ms. Neither number suits the other shape, so the walk starts
+here and adapts -- see `SqliteStore._children()`.
+
+### outrage.store_sqlite.CHILD_BATCH_CEILING *= 256*
+
+Where a growing child walk stops growing. Past this, a read costs more than
+the seeks it saves on every shape measured.
+
 ### outrage.store_sqlite.DEFAULT_STORE_FILE *= 'store.sqlite'*
 
 What a SQLite store's file is called when a caller names none. The name a
@@ -219,13 +235,21 @@ that costs and what it cannot do.
 
 #### list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
 
-Two queries, merged: the rows stored at this level, and the keys
-that exist only because something lies beneath them.
+One level, real and implicit keys together, walked in order.
 
-Both halves are taken past the same cursor and merged before either is
-cut. Cutting them separately is what makes the two disagree about where
-the page ends: whichever half is denser near the cursor pushes the
-other's keys over the edge, and a cursor never looks back.
+Three questions, each asked of what it is actually about.
+`_children()` names the level in `sort_key` order and costs the
+level rather than the subtree; `_level_chars()` sums the characters
+the level holds, which is a question about rows and not about children;
+and `_entries()` fills in a page's worth of detail. A key's
+characters are the expensive column here -- a length is counted where
+the cache does not hold it -- so they are asked for once over the level
+and once over the page, rather than for every row a walk steps past.
+
+**The totals are over the whole level and unaffected by the cursor**,
+which is what a caller cannot work out from a page: 20 keys of 22 is a
+listing and 20 of 40000 is a sample. So the level is walked whatever
+happens; what does not happen is an `Entry` per key surviving it.
 
 #### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Excerpt](store.md#outrage.store.Excerpt)]
 

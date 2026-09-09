@@ -174,7 +174,7 @@ END;
 #: A document's length in characters, from the cache where it is there and by
 #: counting where it is not. Written as a correlated subquery rather than a
 #: join because every predicate in this module names ``key`` unqualified --
-#: :func:`_children_clause`, :meth:`SqliteStore._selection` -- and a joined
+#: :meth:`SqliteStore._children`, :meth:`SqliteStore._selection` -- and a joined
 #: table carrying a ``key`` of its own would make all of them ambiguous. It
 #: measures the same: 0.99 ms against 0.94 for the join, where counting every
 #: row outright is 2.49.
@@ -183,6 +183,25 @@ _CACHED_CHARS = (
 )
 
 _CHARS = f"coalesce({_CACHED_CHARS}, length(content))"
+
+#: How many keys a page's detail read names at once. Well inside SQLite's limit
+#: on bound parameters, which is the only reason the read is chunked at all: a
+#: page is normally smaller than this and takes one read.
+_KEY_CHUNK = 500
+
+#: How many rows a child walk reads before seeking past the child it is on.
+#: Measured over a 47,000 key store rather than guessed. A level of twenty
+#: children with a deep subtree each walks in 0.25 ms where scanning those
+#: subtrees costs 42 ms, and one seek a child is the whole win there. A level
+#: of two thousand shallow children is the opposite case: at one row a read it
+#: costs 22 ms against 8.8 ms for the scan, and only a larger read brings it
+#: back to 2.3 ms. Neither number suits the other shape, so the walk starts
+#: here and adapts -- see :meth:`SqliteStore._children`.
+CHILD_BATCH = 8
+
+#: Where a growing child walk stops growing. Past this, a read costs more than
+#: the seeks it saves on every shape measured.
+CHILD_BATCH_CEILING = 256
 
 #: How long a writer waits for another writer to finish before giving up, in
 #: milliseconds. SQLite's own default is zero -- a busy database fails on the
@@ -667,23 +686,14 @@ class SqliteStore(FileStore):
         the key holding it has content only further down.
         """
         prefix_len = len(parent) + 1 if parent != keys.ROOT else 0
-        # By the segment rather than by ``meta_name``, which says where the
-        # *key* first turns to metadata and not whether this child does: every
-        # row inside ``a/!changelog`` carries that name, and ``22`` there is an
-        # ordinary child a number may be allocated beside.
-        names = {
-            name
-            for row in self._conn.execute(
-                f"SELECT key FROM documents WHERE {_children_clause()}",
-                (parent, parent),
-            )
-            if not (name := row["key"][prefix_len:]).startswith(keys.META_PREFIX)
-        }
-        names.update(
-            entry.key[prefix_len:]
-            for entry in self._implicit_children(parent, bound=None, limit=None)
-        )
-        return names
+        # By the segment, which is what :meth:`_children` yields, rather than by
+        # ``meta_name``: that column says where the *key* first turns to
+        # metadata and not whether this child does, and every row inside
+        # ``a/!changelog`` carries it while ``22`` there is an ordinary child a
+        # number may be allocated beside. A metadata child of this level is
+        # named here too and costs nothing: a name opening with the metadata
+        # prefix is not a number and no number is allocated beside it.
+        return {child[prefix_len:] for child, _ in self._children(parent)}
 
     @_logged("delete")
     def delete(
@@ -1058,131 +1068,171 @@ class SqliteStore(FileStore):
         limit: int | None = None,
         cursor: str | None = None,
     ) -> Page[Entry]:
-        """Two queries, merged: the rows stored at this level, and the keys
-        that exist only because something lies beneath them.
+        """One level, real and implicit keys together, walked in order.
 
-        Both halves are taken past the same cursor and merged before either is
-        cut. Cutting them separately is what makes the two disagree about where
-        the page ends: whichever half is denser near the cursor pushes the
-        other's keys over the edge, and a cursor never looks back.
+        Three questions, each asked of what it is actually about.
+        :meth:`_children` names the level in ``sort_key`` order and costs the
+        level rather than the subtree; :meth:`_level_chars` sums the characters
+        the level holds, which is a question about rows and not about children;
+        and :meth:`_entries` fills in a page's worth of detail. A key's
+        characters are the expensive column here -- a length is counted where
+        the cache does not hold it -- so they are asked for once over the level
+        and once over the page, rather than for every row a walk steps past.
+
+        **The totals are over the whole level and unaffected by the cursor**,
+        which is what a caller cannot work out from a page: 20 keys of 22 is a
+        listing and 20 of 40000 is a sample. So the level is walked whatever
+        happens; what does not happen is an ``Entry`` per key surviving it.
         """
         # The whole key, not its document part: a metadata namespace is a
         # level like any other and ``list_keys("a/!x")`` lists what is in it.
         parent = keys.parse(_scope(key)).key
         bound = _cursor_bound(cursor)
 
-        # Both halves are taken past the same cursor and merged before either
-        # is cut. Cutting them separately is what makes the two disagree about
-        # where the page ends: whichever half is denser near the cursor pushes
-        # the other's keys over the edge, and a cursor never looks back.
-        candidates = self._real_children(parent, bound, limit) + self._implicit_children(
-            parent, bound, limit
-        )
-        candidates.sort(key=lambda entry: keys.sort_form(entry.key))
+        total = 0
+        more = False
+        page: list[tuple[str, bool]] = []
+        for child, stored in self._children(parent):
+            total += 1
+            if bound is not None and keys.sort_form(child) <= bound:
+                continue
+            if limit is None or len(page) < limit:
+                page.append((child, stored))
+            else:
+                # One past the page is all it takes to know there is a next
+                # one. Counting the rest would walk the level twice.
+                more = True
 
-        items = candidates if limit is None else candidates[:limit]
-        more = limit is not None and len(candidates) > limit
-        total, total_chars = self._level_totals(parent)
+        items = self._entries(page)
         return Page(
             items=items,
             returned=len(items),
             total=total,
-            total_chars=total_chars,
-            next_cursor=items[-1].key if more and items else None,
+            total_chars=self._level_chars(parent),
+            next_cursor=page[-1][0] if more and page else None,
         )
 
-    def _real_children(self, parent: str, bound: str | None, limit: int | None) -> list[Entry]:
-        """The rows stored directly under ``parent``, in order, after ``bound``."""
-        # Not `SELECT *`: an entry reports a size and nothing else off the
-        # document, so selecting `content` would pull every listed document's
-        # whole text into Python to measure it. `CHARS` measures it in SQLite.
-        sql = (
-            f"SELECT key, format, updated_at, {_CHARS} AS chars "
-            f"FROM documents WHERE {_children_clause()}"
-        )
-        params: list[object] = [parent, parent]
-        if bound is not None:
-            sql += " AND sort_key > ?"
-            params.append(bound)
-        sql += " ORDER BY sort_key"
-        if limit is not None:
-            # One more than the page: enough to know another page exists,
-            # without counting the level a second time to find out.
-            sql += " LIMIT ?"
-            params.append(limit + 1)
+    def _children(self, parent: str) -> Iterator[tuple[str, bool]]:
+        """Each key immediately below ``parent``, and whether it has a row.
 
-        return [_entry(row) for row in self._conn.execute(sql, params)]
+        In ``sort_key`` order. A child with no row of its own is **implicit** --
+        it holds nothing and has something beneath it -- and no row anywhere
+        says it exists: the walk arrives at a row whose key lies *below* the
+        child rather than equal to it, which is the same fact read off the
+        order instead of derived from a set of every parent in the subtree.
 
-    def _implicit_child_query(self, parent: str) -> tuple[str, dict[str, object]]:
-        """A SELECT over the children of ``parent`` that hold no content.
+        **Bounded by the level and not by what lies under it.** A subtree is one
+        contiguous stretch of the order -- :func:`outrage.keys.sort_subtree_end`
+        -- so once a child is named, everything beneath it is skipped with a
+        seek rather than read. A level of twenty children costs about twenty
+        seeks whether it holds fifty rows or fifty thousand.
 
-        Every stored row names its own parent, so the distinct parents lying
-        within the subtree, truncated back to one level down, are exactly the
-        keys that exist implicitly. Keys that are stored in their own right are
-        excluded here rather than after the fact, so this half and the real one
-        are disjoint and a merge of the two cannot lose a key to a duplicate.
+        **The batch is what keeps a seek a child from being the wrong trade.**
+        Where children are shallow, seeking past each one costs more than
+        reading the level outright, so several rows are read at a time and
+        yield as many children as they hold. The read doubles while it keeps
+        naming more than one child and halves when it names only one, so a deep
+        level settles at a small read per seek and a wide one grows into
+        :data:`CHILD_BATCH_CEILING`. Both directions are measured in
+        :data:`CHILD_BATCH`.
+
+        ``key <> parent`` keeps the level out of its own listing: a key's row
+        sorts first inside its own subtree, and the root is its own parent
+        besides -- as POSIX makes ``/..`` be ``/``. With it, every row read is
+        below ``parent``, so a read that returned anything has named a child
+        and there is always somewhere past it to seek to.
         """
-        params: dict[str, object] = {"parent": parent}
-        if parent == keys.ROOT:
-            # Every row is within the root's subtree, so the only thing to
-            # exclude is the top level itself: a row whose parent is the root
-            # truncates to the root, which is not a child of anything. The
-            # root's own row is excluded by the same test, for the same reason.
-            within = "parent <> ''"
-            params["plen"] = 0
-        else:
-            within = "parent >= :lo AND parent < :hi"
-            params["lo"], params["hi"] = keys.subtree_range(parent)
-            params["plen"] = len(parent) + 1
-
-        children = _children_clause(":parent")
-        return (
-            f"""
-            SELECT DISTINCT CASE
-                     WHEN instr(substr(parent, :plen + 1), '/') > 0
-                     THEN substr(parent, 1, :plen + instr(substr(parent, :plen + 1), '/') - 1)
-                     ELSE parent
-                   END AS child
-              FROM documents
-             WHERE {within}
-               AND child NOT IN (SELECT key FROM documents WHERE {children})
-            """,
-            params,
+        start = keys.sort_form(parent)
+        end = None if parent == keys.ROOT else keys.sort_subtree_end(parent)
+        cut = 0 if parent == keys.ROOT else len(parent) + 1
+        # Only the key: what this answers is which children there are, and the
+        # columns an entry reports are asked for by `_entries`, over a page.
+        sql = (
+            "SELECT key FROM documents WHERE sort_key >= ? AND key <> ?"
+            f"{'' if end is None else ' AND sort_key < ?'} ORDER BY sort_key LIMIT ?"
         )
+        bounds: tuple[object, ...] = () if end is None else (end,)
 
-    def _implicit_children(self, parent: str, bound: str | None, limit: int | None) -> list[Entry]:
-        inner, params = self._implicit_child_query(parent)
-        sql = f"SELECT child FROM ({inner})"
-        if bound is not None:
-            sql += " WHERE sort_form(child) > :bound"
-            params["bound"] = bound
-        sql += " ORDER BY sort_form(child)"
-        if limit is not None:
-            sql += " LIMIT :limit"
-            params["limit"] = limit + 1
+        position = start
+        batch = CHILD_BATCH
+        while True:
+            rows = self._conn.execute(sql, (position, parent, *bounds, batch)).fetchall()
+            if not rows:
+                return
 
-        return [
-            Entry(key=row["child"], kind="implicit", size=None, format=None, updated_at=None)
-            for row in self._conn.execute(sql, params)
-        ]
+            last = ""
+            named = 0
+            for row in rows:
+                key = row["key"]
+                edge = key.find(keys.DELIMITER, cut)
+                child = key if edge < 0 else key[:edge]
+                if child != last:
+                    yield child, key == child
+                    last = child
+                    named += 1
 
-    def _level_totals(self, parent: str) -> tuple[int, int]:
-        """How many keys the whole level holds, and how many characters.
+            batch = min(batch * 2, CHILD_BATCH_CEILING) if named > 1 else max(batch // 2, 1)
+            position = keys.sort_subtree_end(last)
 
-        Asked of the level rather than of the page, and so unaffected by the
-        cursor: what a caller cannot work out from a page is how much of the
-        whole they are holding.
+    def _level_chars(self, parent: str) -> int:
+        """How many characters the keys immediately below ``parent`` hold.
+
+        Over the level rather than the page, for the reason the count is: what
+        a caller cannot work out from a page is how much of the whole they are
+        holding. An implicit child adds nothing, having nothing of its own, so
+        this asks about rows and reaches them by ``parent`` rather than by
+        walking children again.
         """
         row = self._conn.execute(
-            f"SELECT count(*) AS n, coalesce(sum({_CHARS}), 0) AS chars "
-            f"FROM documents WHERE {_children_clause()}",
+            f"SELECT coalesce(sum({_CHARS}), 0) AS chars FROM documents "
+            "WHERE parent = ? AND key <> ?",
             (parent, parent),
         ).fetchone()
-        inner, params = self._implicit_child_query(parent)
-        implicit = self._conn.execute(f"SELECT count(*) AS n FROM ({inner})", params).fetchone()
-        # Implicit keys hold no content of their own, so they add to the count
-        # and nothing to the characters.
-        return row["n"] + implicit["n"], row["chars"]
+        return int(row["chars"])
+
+    def _entries(self, page: list[tuple[str, bool]]) -> list[Entry]:
+        """A page of children as listing entries, with the detail read by key.
+
+        By ``key`` and not by ``parent``, though the level was just named and
+        the column is right there: the walk decided what a child *is* from the
+        key order, and a second read deciding it again from a different column
+        can disagree. That column is a stored claim, checked after the fact by
+        :mod:`outrage.maintenance` because it can drift, and a listing is not
+        the place to discover it has -- the primary key is the same truth the
+        walk already used.
+
+        An implicit child has no row to find, and says so with None three times
+        rather than borrowing a descendant's.
+        """
+        wanted = [child for child, stored in page if stored]
+        rows: dict[str, sqlite3.Row] = {}
+        for start in range(0, len(wanted), _KEY_CHUNK):
+            chunk = wanted[start : start + _KEY_CHUNK]
+            marks = ",".join("?" * len(chunk))
+            # Not `SELECT *`: an entry reports a size and nothing else off the
+            # document, so selecting `content` would pull every listed
+            # document's whole text into Python to measure it. `CHARS` measures
+            # it in SQLite, and over a page rather than over the level.
+            rows.update(
+                (row["key"], row)
+                for row in self._conn.execute(
+                    f"SELECT key, format, updated_at, {_CHARS} AS chars "
+                    f"FROM documents WHERE key IN ({marks})",
+                    chunk,
+                )
+            )
+
+        items: list[Entry] = []
+        for child, stored in page:
+            if not stored:
+                items.append(_implicit(child))
+            elif (row := rows.get(child)) is not None:
+                items.append(_entry(row))
+            # A key the walk named and this read cannot find was deleted
+            # between the two, so it drops out of the page exactly as it would
+            # have from a listing taken a moment later.
+
+        return items
 
     def _selection(
         self,
@@ -1855,20 +1905,13 @@ def _entry(row: sqlite3.Row) -> Entry:
     )
 
 
-def _children_clause(parent: str = "?") -> str:
-    """SQL selecting the rows immediately below the key bound to ``parent``.
+def _implicit(key: str) -> Entry:
+    """A key that holds nothing and has something beneath it, as a listing entry.
 
-    ``key <> parent`` is what keeps the root out of its own listing. The root
-    is its own parent -- as POSIX makes ``/..`` be ``/`` -- so a plain
-    ``parent = ?`` would hand it back as a child of itself, and count it into
-    the level's totals besides. For every other key the second test excludes
-    nothing, since no other key is its own parent.
-
-    One function because four queries ask this question, and four hand written
-    clauses that must all remember the same exception is exactly the drift
-    ``_check_parents`` exists to catch after the fact.
+    It has no row, so it has no size, format or timestamp -- and saying so with
+    None three times is the honest answer rather than borrowing a descendant's.
     """
-    return f"parent = {parent} AND key <> {parent}"
+    return Entry(key=key, kind="implicit", size=None, format=None, updated_at=None)
 
 
 def _below(column: str, doc_key: str) -> tuple[str, list[object]]:
@@ -1892,6 +1935,8 @@ def _below(column: str, doc_key: str) -> tuple[str, list[object]]:
 
 __all__ = [
     "BUSY_TIMEOUT_MS",
+    "CHILD_BATCH",
+    "CHILD_BATCH_CEILING",
     "DEFAULT_STORE_FILE",
     "LENGTH_CACHE_TABLE",
     "LENGTH_THRESHOLD",

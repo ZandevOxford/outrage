@@ -4,6 +4,17 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+Listing a key in a SQLite store no longer costs time proportional to
+everything stored beneath it. A level is now found by seeking past each child
+in turn rather than by scanning its descendants, so a listing costs about the
+number of children it has: over a 47,000 key store, a level of twenty children
+holding fifty thousand keys between them lists around a hundred times faster,
+and a level of two thousand shallow children about twice as fast. The
+characters a level holds are counted once for the level and once for the page
+returned, instead of for every row stepped over on the way. `CHILD_BATCH` and
+`CHILD_BATCH_CEILING` in `outrage.store_sqlite` are the read sizes that walk
+adapts between.
+
 The command-line import report now names only the store files that received
 documents, or would receive them in a dry run. It no longer presents every
 open mounted store as though the import wrote there.
