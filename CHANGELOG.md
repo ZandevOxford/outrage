@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.10.3 - 2026-09-10
 
 Listing a key in a SQLite store no longer costs time proportional to
 everything stored beneath it. A level is now found by seeking past each child
