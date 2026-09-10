@@ -461,43 +461,43 @@
 95438 95494
 
 #### action *: str*
-97658 97714
+98185 98241
 
 #### key *: str | None*
-97734 97790
+98261 98317
 
 #### path *: Path | None*
-97871 97927
+98398 98454
 
 #### reason *: str | None*
-98018 98074
+98545 98601
 
 #### characters *: int*
-98158 98214
+98685 98741
 
 #### error *: OutrageError | None*
-98239 98295
+98766 98822
 
 ### outrage.store.default_store(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, backend: str | None = None, extensions: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → FileStore
-98373 98429
+98900 98956
 
 ### outrage.store.default_store_file() → str
-100580 100638
+101107 101165
 
 ### outrage.store.entry_kind(key: str) → str
-101235 101295
+101762 101822
 
 ### outrage.store.meta_reader(scope: str) → Callable[[str, str | None, str | None], tuple[str | None, str | None]]
-101908 101970
+102435 102497
 
 ### outrage.store.open_store(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, backend: str | None = None, extensions: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Iterator[FileStore]
-103590 103654
+104117 104181
 
 ### outrage.store.read_all(store: Store, key: str, \*\*kwargs: Any) → Excerpt
-104885 104951
+105412 105478
 
 ### outrage.store.resolve_directory(explicit: str | PathLike[str] | None = None) → Path
-105889 105957
+106416 106484
 
 ### outrage.store.store_file(directory: str | PathLike[str], filename: str | PathLike[str] | None = None) → Path
-106433 106503
+106960 107030

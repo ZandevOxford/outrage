@@ -1503,8 +1503,15 @@ the walk that produces a transfer is a library: it does not know whether
 the reader spells an argument `overwrite` or `--overwrite`, nor which
 of a mount table's names a key should be given. So a store's own refusal
 travels as `error`, unrendered, and each front end turns it into the
-sentence its reader gets -- the rule `plans/error-naming` settled for
-every other error and that this one was still outside. `reason` stays for
+sentence its reader gets. That is the rule every other error in this
+codebase already follows -- an error carries a code and the facts its
+sentence needs, [`outrage.messages`](messages.md#module-outrage.messages) renders it, and the front end says
+how a key should be spelled -- and this one was the last thing outside it.
+It is not fixable by making the store cleverer: the same missing key is
+`python/nope` to the command line, which opens one store, and
+`ref/python/nope` to the MCP server, which presents several as one
+namespace. A sentence built where the failure happened is wrong for one of
+them, and the store cannot know which reader it has. `reason` stays for
 what has no error behind it: a symlink skipped, a key already stored, a
 document written again since the caller looked, and what the operating
 system said about a file, which has no code to carry. Exactly one of the

@@ -55,10 +55,16 @@ class CheckError(OutrageError, RuntimeError):
 # WAL summary as a constant -- a code wearing a sentence's clothes -- and why
 # the suite picked problems out with `"cached document lengths" in p.summary`.
 #
-# The wording stays where the fault is found. There is one reader of these,
-# `outrage check`, so a wording table per audience would be a table of one;
-# see `plans/problem-codes` for the half of that argument that is deferred
-# rather than rejected.
+# The wording stays where the fault is found, and moving it into a table keyed
+# by code is deferred rather than rejected. There is one reader of these --
+# `outrage check` is command line only and there is no maintenance tool over
+# MCP -- so a table per audience would be a table of one, which buys nothing
+# the note layer's tables buy, the whole point there being that two front ends
+# remark on different things. A second reader is what would change the answer,
+# and the codes are already in place for it.
+#
+# What stays true either way: `summary` and `detail` are for a person to read,
+# nothing should match on them, and the code is what selection is for.
 
 #: A store written by a build newer than this one, which cannot read it safely.
 FORMAT_TOO_NEW = "format-too-new"
