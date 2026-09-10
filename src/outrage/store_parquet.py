@@ -96,6 +96,7 @@ from .store import (
     Page,
     PatternNotFoundError,
     ReadOnlyStoreError,
+    SubtreeTotals,
     _byte_excerpt,
     _cursor_bound,
     _excerpt,
@@ -106,7 +107,6 @@ from .store import (
     _position,
     _scope,
     _sliced,
-    _SubtreeTotals,
     _with_descendants,
     check_read_position,
     entry_kind,
@@ -1045,9 +1045,10 @@ class ParquetStore(FileStore):
             if below(candidate) and (whole_subtree or not lo <= candidate < hi)
         )
 
-    def _subtree_totals(
+    @_logged("subtree_totals")
+    def subtree_totals(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
-    ) -> _SubtreeTotals:
+    ) -> SubtreeTotals:
         """The subtree's run of rows, counted by arithmetic and walked once.
 
         A subtree is one contiguous stretch of a file already written in key
@@ -1056,7 +1057,7 @@ class ParquetStore(FileStore):
         document count needs the walk, and only ``meta_name`` is converted for
         it: that column is written for every row below a metadata segment and
         not the segment alone, which is exactly the definition
-        :class:`~outrage.store._SubtreeTotals` states.
+        :class:`~outrage.store.SubtreeTotals` states.
 
         ``key``'s own row sorts first inside its own subtree and is dropped
         here, which is what makes this *strictly* below and keeps an entry's
@@ -1079,7 +1080,7 @@ class ParquetStore(FileStore):
             start += 1
         documents = sum(1 for name in index.column_in("meta_name", start, stop) if name is None)
         sizes = index.sizes
-        return _SubtreeTotals(
+        return SubtreeTotals(
             keys=stop - start,
             documents=documents,
             chars=sum(sizes[position] for position in range(start, stop)) if chars else None,
@@ -1231,7 +1232,7 @@ class ParquetStore(FileStore):
         The characters come from ``chars`` without any content being read.
 
         The descendant flags are filled over the page afterwards, one
-        :meth:`_subtree_totals` per child, and are the one part of this that is
+        :meth:`subtree_totals` per child, and are the one part of this that is
         linear in the subtree rather than in the level.
         """
         # The whole key, not its document part: a metadata namespace is a

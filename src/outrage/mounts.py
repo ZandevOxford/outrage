@@ -67,11 +67,11 @@ from .store import (
     Page,
     ReadOnlyStoreError,
     Store,
+    SubtreeTotals,
     _cut,
     _document_change,
     _later,
     _metadata_change,
-    _SubtreeTotals,
     _with_descendants,
     _within,
     check_unchanged,
@@ -1383,9 +1383,9 @@ class MountedStore(Store):
             for segment in self.segments(found.outer, key_range=key_range)
         )
 
-    def _subtree_totals(
+    def subtree_totals(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
-    ) -> _SubtreeTotals:
+    ) -> SubtreeTotals:
         """The three totals summed over the segments, as the count is.
 
         :meth:`descendant_count`'s merge with two more numbers riding along:
@@ -1420,7 +1420,7 @@ class MountedStore(Store):
             # has never seen.
             with _renamed(segment.mount):
                 root = segment.subtree.key
-                totals = segment.store._subtree_totals(
+                totals = segment.store.subtree_totals(
                     root, key_range=segment.key_range, chars=chars
                 )
                 at = (
@@ -1433,7 +1433,7 @@ class MountedStore(Store):
                     measured += _document_chars_at(segment.store, root)
             counted += totals.keys + at
             documents += totals.documents + at
-        return _SubtreeTotals(keys=counted, documents=documents, chars=measured if chars else None)
+        return SubtreeTotals(keys=counted, documents=documents, chars=measured if chars else None)
 
     def latest_change(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
@@ -1559,7 +1559,7 @@ class MountedStore(Store):
         cannot see a mount below it: it would count rows the mount shadows and
         reading by key refuses, and leave out everything the mounted store
         holds -- wrong in both directions at once, and quietly. So the page is
-        filled by :meth:`_subtree_totals` over the *table*, which is the same
+        filled by :meth:`subtree_totals` over the *table*, which is the same
         merge :meth:`descendant_count` makes, and a mount point reports what the
         store mounted there holds rather than the nothing its own row says.
 

@@ -232,6 +232,26 @@ no subtraction at all. See [`outrage.keys.meta_range()`](keys.md#outrage.keys.me
 Unmeasured: a count has no use for a document's length, and measuring
 would make asking how much is below a key cost reading all of it.
 
+#### subtree_totals(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [SubtreeTotals](store.md#outrage.store.SubtreeTotals)
+
+One walk of the directory beneath `key`, counted as it goes.
+
+`_below_rows()` is already strictly below and already in key order,
+which is the selection [`SubtreeTotals`](store.md#outrage.store.SubtreeTotals) names, so
+nothing is subtracted here the way [`descendant_count()`](#outrage.store_files.FilesystemStore.descendant_count) has to.
+
+`measure` is passed through rather than always set: a length in this
+backend means opening and decoding the file, so counting without
+measuring is the difference between reading a directory and reading
+every document in it. That is the same split the other backends make
+for a much smaller saving, and here it is the whole cost.
+
+The document test is the row's own `meta_name`, which `_row()`
+takes from [`outrage.keys.parse()`](keys.md#outrage.keys.parse) -- so it is set for every key
+below a metadata segment and not the segment alone, which is the
+definition [`SubtreeTotals`](store.md#outrage.store.SubtreeTotals) states and the same
+one the other two backends read off a stored column.
+
 #### retrieve_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, length: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/library/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
 
 One path lookup, one file read, and the shared slicing.

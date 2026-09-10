@@ -127,6 +127,7 @@ from .store import (
     Page,
     PatternNotFoundError,
     Store,
+    SubtreeTotals,
     _byte_excerpt,
     _cursor_bound,
     _detect_format,
@@ -135,7 +136,6 @@ from .store import (
     _find_occurrence,
     _logged,
     _scope,
-    _SubtreeTotals,
     _with_descendants,
     _within,
     check_read_position,
@@ -699,13 +699,14 @@ class FilesystemStore(FileStore):
             if below(row.key) and (whole_subtree or not lo <= row.key < hi) and within(row.sort_key)
         )
 
-    def _subtree_totals(
+    @_logged("subtree_totals")
+    def subtree_totals(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
-    ) -> _SubtreeTotals:
+    ) -> SubtreeTotals:
         """One walk of the directory beneath ``key``, counted as it goes.
 
         :meth:`_below_rows` is already strictly below and already in key order,
-        which is the selection :class:`~outrage.store._SubtreeTotals` names, so
+        which is the selection :class:`~outrage.store.SubtreeTotals` names, so
         nothing is subtracted here the way :meth:`descendant_count` has to.
 
         ``measure`` is passed through rather than always set: a length in this
@@ -717,7 +718,7 @@ class FilesystemStore(FileStore):
         The document test is the row's own ``meta_name``, which :meth:`_row`
         takes from :func:`outrage.keys.parse` -- so it is set for every key
         below a metadata segment and not the segment alone, which is the
-        definition :class:`~outrage.store._SubtreeTotals` states and the same
+        definition :class:`~outrage.store.SubtreeTotals` states and the same
         one the other two backends read off a stored column.
         """
         inside = _within(key_range)
@@ -731,7 +732,7 @@ class FilesystemStore(FileStore):
             if row.meta_name is None:
                 documents += 1
             measured += row.chars or 0
-        return _SubtreeTotals(keys=count, documents=documents, chars=measured if chars else None)
+        return SubtreeTotals(keys=count, documents=documents, chars=measured if chars else None)
 
     @_logged("retrieve_document")
     def retrieve_document(

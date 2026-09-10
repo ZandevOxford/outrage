@@ -193,6 +193,26 @@ counted here. See `_below()` and [`outrage.keys.meta_range()`](keys.md#outrage.k
 the question is then the subtree itself, and one range scan is all of
 it.
 
+#### subtree_totals(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [SubtreeTotals](store.md#outrage.store.SubtreeTotals)
+
+One range scan over the subtree, aggregated three ways in SQLite.
+
+[`descendant_count()`](#outrage.store_sqlite.SqliteStore.descendant_count)'s `whole_subtree` selection -- `_below()`
+and nothing subtracted -- with two more aggregates on it. All three come
+from one scan because they are one question about one stretch of the
+primary key, and asking separately would read the same rows twice.
+
+`meta_name IS NOT NULL` is the document test, which is free: it is
+already set on **every** row below a metadata segment rather than on the
+segment alone, so the definition `SubtreeTotals` states is the
+one the column was already keeping. No second predicate, no new column.
+
+The characters are the part that is left out when they are not asked
+for, and leaving them out is the point: `_CHARS` falls back to
+`length(content)` where the cache does not hold a row, so a sum over
+a subtree of small documents measures every one of them. The counts
+read the index and stop.
+
 #### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
 
 A `max(updated_at)` over the same bounds the count scans.
@@ -252,7 +272,7 @@ listing and 20 of 40000 is a sample. So the level is walked whatever
 happens; what does not happen is an `Entry` per key surviving it.
 
 The descendant flags add a fourth question, asked only of the page and
-only when it is asked for -- `_subtree_totals()`, one range scan per
+only when it is asked for -- [`subtree_totals()`](#outrage.store_sqlite.SqliteStore.subtree_totals), one range scan per
 child. That is deliberately the one part of this method that is linear
 in what lies below, which is why it is opt in; the rest stays bounded by
 the level whether or not it is set.

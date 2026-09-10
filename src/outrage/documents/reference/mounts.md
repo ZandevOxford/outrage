@@ -527,6 +527,30 @@ See [`outrage.keys.meta_range()`](keys.md#outrage.keys.meta_range).
 that includes keys a mount has made unreachable tells a caller to pass
 `recursive` to remove keys that are not there to remove.
 
+#### subtree_totals(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [SubtreeTotals](store.md#outrage.store.SubtreeTotals)
+
+The three totals summed over the segments, as the count is.
+
+[`descendant_count()`](#outrage.mounts.MountedStore.descendant_count)'s merge with two more numbers riding along:
+the same segments, the same ranges cutting out what each mount shadows,
+and the same asymmetry about what "below" means from outside a store.
+Deliberately the same shape rather than a fresh traversal, because the
+one property worth having here is that `keys` agrees with
+`descendant_count(key, whole_subtree=True)` -- a listing that reported
+a different number of descendants from the count beside it would be a
+second definition of the subtree wearing the first one's name.
+
+The asymmetry, in this selection: a store mounted further down
+contributes its **root document row** as well as everything below it,
+because that row is the mount point and the mount point is beneath the
+key. Its root metadata unit needs no putting back -- unlike the plain
+count, this selection already holds it.
+
+**What it does not count is a key only a mount table knows about.** A
+mount at `lib/ref` puts `lib` in a listing, and no store holds a row
+there; [`descendant_count()`](#outrage.mounts.MountedStore.descendant_count) has never counted those either, and
+answering differently here is precisely the disagreement above.
+
 #### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
 
 The newest change any mount the range touches holds below `key`.
@@ -585,7 +609,7 @@ is the whole reason they compose. A store asked about its own subtree
 cannot see a mount below it: it would count rows the mount shadows and
 reading by key refuses, and leave out everything the mounted store
 holds -- wrong in both directions at once, and quietly. So the page is
-filled by `_subtree_totals()` over the *table*, which is the same
+filled by [`subtree_totals()`](#outrage.mounts.MountedStore.subtree_totals) over the *table*, which is the same
 merge [`descendant_count()`](#outrage.mounts.MountedStore.descendant_count) makes, and a mount point reports what the
 store mounted there holds rather than the nothing its own row says.
 

@@ -412,77 +412,92 @@
 #### latest_change(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → str | None
 72786 72820
 
-#### *abstractmethod* exists(key: str) → bool
+#### subtree_totals(key: str, \*, key_range: KeyRange = UNBOUNDED, chars: bool = False) → SubtreeTotals
 74787 74823
 
+#### *abstractmethod* exists(key: str) → bool
+77500 77538
+
 #### *abstractmethod* level_entry(key: str) → Entry | None
-75297 75335
+78010 78050
 
 #### *abstractmethod* retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
-76180 76220
+78893 78935
 
 #### *abstractmethod* list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
-77892 77934
+80605 80649
 
 #### last_child(key: str) → str | None
-80996 81040
+83747 83793
 
 #### *abstractmethod* get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-82709 82755
+85460 85508
 
 #### find_documents(subtree: BoundedSubtree = EVERYTHING, \*, criteria: Sequence[SearchCriterion], combine: Literal['any', 'all'] = 'any', key_range: KeyRange = UNBOUNDED, cursor: str | None = None, scan_limit: int | None = None) → SearchPage
-84882 84930
+87633 87683
 
 #### *abstractmethod* missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
-86130 86180
+88881 88933
 
 #### *abstractmethod* keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-87987 88039
+90738 90792
 
 ### *exception* outrage.store.StoreFileError(code: str, \*\*details: Any)
-89191 89245
+91942 91998
+
+### *class* outrage.store.SubtreeTotals(keys: int, documents: int, chars: int | None)
+92689 92745
+
+#### keys *: int*
+93741 93797
+
+#### documents *: int*
+94318 94374
+
+#### chars *: int | None*
+94901 94957
 
 ### *class* outrage.store.Transfer(action: str, key: str | None, path: Path | None, reason: str | None = None, characters: int = 0, error: OutrageError | None = None)
-89938 89992
+95438 95494
 
 #### action *: str*
-92158 92212
+97658 97714
 
 #### key *: str | None*
-92234 92288
+97734 97790
 
 #### path *: Path | None*
-92371 92425
+97871 97927
 
 #### reason *: str | None*
-92518 92572
+98018 98074
 
 #### characters *: int*
-92658 92712
+98158 98214
 
 #### error *: OutrageError | None*
-92739 92793
+98239 98295
 
 ### outrage.store.default_store(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, backend: str | None = None, extensions: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → FileStore
-92873 92927
+98373 98429
 
 ### outrage.store.default_store_file() → str
-95080 95136
+100580 100638
 
 ### outrage.store.entry_kind(key: str) → str
-95735 95793
+101235 101295
 
 ### outrage.store.meta_reader(scope: str) → Callable[[str, str | None, str | None], tuple[str | None, str | None]]
-96408 96468
+101908 101970
 
 ### outrage.store.open_store(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, backend: str | None = None, extensions: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Iterator[FileStore]
-98090 98152
+103590 103654
 
 ### outrage.store.read_all(store: Store, key: str, \*\*kwargs: Any) → Excerpt
-99385 99449
+104885 104951
 
 ### outrage.store.resolve_directory(explicit: str | PathLike[str] | None = None) → Path
-100389 100455
+105889 105957
 
 ### outrage.store.store_file(directory: str | PathLike[str], filename: str | PathLike[str] | None = None) → Path
-100933 101001
+106433 106503

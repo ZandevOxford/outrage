@@ -71,6 +71,7 @@ from .store import (
     MissingMeta,
     Page,
     PatternNotFoundError,
+    SubtreeTotals,
     _byte_excerpt,
     _cursor_bound,
     _excerpt,
@@ -81,7 +82,6 @@ from .store import (
     _position,
     _scope,
     _sliced,
-    _SubtreeTotals,
     _with_descendants,
     check_read_position,
     check_unchanged,
@@ -793,9 +793,10 @@ class SqliteStore(FileStore):
         ).fetchone()
         return row["n"]
 
-    def _subtree_totals(
+    @_logged("subtree_totals")
+    def subtree_totals(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
-    ) -> _SubtreeTotals:
+    ) -> SubtreeTotals:
         """One range scan over the subtree, aggregated three ways in SQLite.
 
         :meth:`descendant_count`'s ``whole_subtree`` selection -- :func:`_below`
@@ -805,7 +806,7 @@ class SqliteStore(FileStore):
 
         ``meta_name IS NOT NULL`` is the document test, which is free: it is
         already set on **every** row below a metadata segment rather than on the
-        segment alone, so the definition :class:`_SubtreeTotals` states is the
+        segment alone, so the definition :class:`SubtreeTotals` states is the
         one the column was already keeping. No second predicate, no new column.
 
         The characters are the part that is left out when they are not asked
@@ -824,7 +825,7 @@ class SqliteStore(FileStore):
             f"{measure} FROM documents WHERE {below}{within}",
             [*bounds, *params],
         ).fetchone()
-        return _SubtreeTotals(
+        return SubtreeTotals(
             keys=row["n"],
             documents=row["documents"],
             chars=int(row["chars"]) if chars else None,
@@ -1126,7 +1127,7 @@ class SqliteStore(FileStore):
         happens; what does not happen is an ``Entry`` per key surviving it.
 
         The descendant flags add a fourth question, asked only of the page and
-        only when it is asked for -- :meth:`_subtree_totals`, one range scan per
+        only when it is asked for -- :meth:`subtree_totals`, one range scan per
         child. That is deliberately the one part of this method that is linear
         in what lies below, which is why it is opt in; the rest stays bounded by
         the level whether or not it is set.

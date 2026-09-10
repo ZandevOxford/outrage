@@ -34,6 +34,14 @@ always reported. Across a mount boundary the mount table answers, so a mount
 point reports what the store mounted there holds and rows a mount shadows are
 left out.
 
+The same three numbers are available directly as `Store.subtree_totals`, which
+answers what lies below a key: every stored key, how many of those are
+documents, and optionally the characters they hold. It is the question about
+the territory, where `descendant_count` is the question about a delete -- so it
+has no `whole_subtree` option, being that selection already, and its key count
+equals `descendant_count(key, whole_subtree=True)` exactly. It reads the
+subtree and nothing is maintained at write time.
+
 ## 0.10.2 - 2026-09-08
 
 The installed documentation now includes the project's requirements and copies

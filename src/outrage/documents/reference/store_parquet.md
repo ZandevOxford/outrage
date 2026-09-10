@@ -270,6 +270,30 @@ plain delete of `key` would *keep*, which the bounds narrow but do
 not answer -- and under `whole_subtree` there is nothing left to ask,
 since the bisected stretch is the answer.
 
+#### subtree_totals(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [SubtreeTotals](store.md#outrage.store.SubtreeTotals)
+
+The subtree's run of rows, counted by arithmetic and walked once.
+
+A subtree is one contiguous stretch of a file already written in key
+order, so `_Index.span()` gives it in two bisections and the number
+of keys in it is a subtraction -- no rows converted at all. Only the
+document count needs the walk, and only `meta_name` is converted for
+it: that column is written for every row below a metadata segment and
+not the segment alone, which is exactly the definition
+[`SubtreeTotals`](store.md#outrage.store.SubtreeTotals) states.
+
+`key`'s own row sorts first inside its own subtree and is dropped
+here, which is what makes this *strictly* below and keeps an entry's
+own `size` from being counted again in its `descendant_chars`. It
+is dropped after the range is applied and not before: a range that
+starts past it has already excluded it, and stepping over a row the
+bounds never included would take a real one with it.
+
+The characters are a slice of `chars` off its buffer, so they cost
+far less here than in a store that has to measure content -- but they
+stay behind the flag, because a surface that is opt in on one backend
+and always on in another is two contracts wearing one name.
+
 #### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
 
 The newest `updated_at` over the rows [`descendant_count()`](#outrage.store_parquet.ParquetStore.descendant_count) counts.
@@ -316,7 +340,7 @@ which is how `more` is known without counting the rest twice.
 The characters come from `chars` without any content being read.
 
 The descendant flags are filled over the page afterwards, one
-`_subtree_totals()` per child, and are the one part of this that is
+[`subtree_totals()`](#outrage.store_parquet.ParquetStore.subtree_totals) per child, and are the one part of this that is
 linear in the subtree rather than in the level.
 
 #### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Excerpt](store.md#outrage.store.Excerpt)]

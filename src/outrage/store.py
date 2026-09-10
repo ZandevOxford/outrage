@@ -357,7 +357,7 @@ class AuditRow:
 
 
 @dataclass(frozen=True, slots=True)
-class _SubtreeTotals:
+class SubtreeTotals:
     """How much lies strictly below one key, in the three numbers a map needs.
 
     Strictly below, and **including the key's own metadata unit** -- so a key's
@@ -367,13 +367,8 @@ class _SubtreeTotals:
     delete keep", which is a question about a delete, and this one is a
     question about the territory.
 
-    **Private, deliberately**, as is the method returning it. What it is here
-    for is filling in :class:`Entry`, whose three fields are the public half;
-    whether this pair gets a spelling of its own beside ``descendant_count`` is
-    still undecided. So this is the shape that answer would take, and declaring
-    it now would assert a name before it has been chosen -- ``__all__`` is what
-    the generated reference publishes, so there is no halfway house between
-    promised and internal.
+    What :meth:`Store.subtree_totals` answers, and what fills in the last three
+    fields of an :class:`Entry`.
     """
 
     keys: int
@@ -1281,18 +1276,33 @@ class Store(ABC):
                 newest = entry.updated_at
         return newest
 
-    def _subtree_totals(
+    @_logged("subtree_totals")
+    def subtree_totals(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
-    ) -> _SubtreeTotals:
+    ) -> SubtreeTotals:
         """What lies strictly below ``key``, counted and optionally measured.
 
+        **The question about the territory**, where :meth:`descendant_count` is
+        the question about a delete. That is the difference worth holding, and
+        it is why these are two methods rather than one with a mode: every
+        caller of ``descendant_count`` in this package asks it what a
+        non-recursive delete left behind, or whether anything is there at all,
+        and a count for that purpose has to include metadata because a delete
+        takes it. A caller mapping a subtree wants a different answer and says
+        so by calling something else.
+
+        So there is no ``whole_subtree`` here. This *is* that selection --
+        strictly below ``key``, its own metadata unit included -- and offering
+        the other one would put the delete's question back into the method that
+        exists to be free of it. ``keys`` therefore equals
+        ``descendant_count(key, whole_subtree=True)`` exactly, which is asserted
+        rather than assumed: one meaning of "how many lie below" in the store,
+        not two that nearly agree.
+
         The one call :meth:`list_keys`' descendant flags need, kept apart from
-        them so a backend overrides the *aggregate* and not the listing. See
-        :class:`_SubtreeTotals` for the selection, which is
-        :meth:`descendant_count`'s ``whole_subtree`` one -- and ``keys`` here
-        answers about the same set of keys that call does, deliberately, so
-        there is one meaning of "how many lie below" in the store rather than
-        two that nearly agree.
+        them so a backend overrides the *aggregate* and not the listing.
+        :class:`SubtreeTotals` says what counts as a document, which is not what
+        counts as one in a listing.
 
         ``chars`` is separate because it is separately expensive, and a backend
         that can count without measuring should: this default cannot -- a walk
@@ -1305,6 +1315,10 @@ class Store(ABC):
         the stretches of a store that a mount does not shadow are named as
         ranges, and totals taken over the whole of it would count rows that
         reading by key refuses.
+
+        **It reads the subtree**, so it costs what is under ``key`` rather than
+        what is beside it -- which is why :meth:`list_keys` asks for it only
+        when told to. Nothing here is maintained at write time.
 
         The default walks, which is every store's answer until it has a better
         one, and it is the answer :class:`~outrage.mounts.MountedStore` would
@@ -1323,7 +1337,7 @@ class Store(ABC):
             if keys.parse(entry.key).meta_name is None:
                 documents += 1
             measured += entry.size or 0
-        return _SubtreeTotals(keys=count, documents=documents, chars=measured if chars else None)
+        return SubtreeTotals(keys=count, documents=documents, chars=measured if chars else None)
 
     @abstractmethod
     def exists(self, key: str) -> bool:
@@ -1437,7 +1451,7 @@ class Store(ABC):
         ``total_chars``, which describe the level whatever the cursor is doing.
         A caller paging a wide level pays per page and can stop.
 
-        Concrete where a backend has nothing faster: :meth:`_subtree_totals` is
+        Concrete where a backend has nothing faster: :meth:`subtree_totals` is
         the one call each of these needs, and :func:`_with_descendants` fills a
         page from it.
         """
@@ -2545,7 +2559,7 @@ def _with_descendants(
         return list(items)
     filled = []
     for entry in items:
-        totals = source._subtree_totals(entry.key, chars=chars)
+        totals = source.subtree_totals(entry.key, chars=chars)
         filled.append(
             replace(
                 entry,
@@ -2763,6 +2777,18 @@ def _summarise(
                 "path": str(result.path),
                 "bytes": result.bytes,
                 "documents": result.documents,
+            }
+        case SubtreeTotals():
+            # All three, because all three are the shape of the answer -- an
+            # aggregate logged as its type name records that a question was
+            # asked and never what it said, which is the one thing a log of an
+            # aggregate is for. ``chars`` is None where it was not asked for,
+            # and that is worth recording too: it is the difference between a
+            # cheap call and an expensive one.
+            return {
+                "count": result.keys,
+                "documents": result.documents,
+                "chars": result.chars,
             }
         case str():
             return {"key": keys.with_prefix(mount_point, result)}
@@ -3155,6 +3181,7 @@ __all__ = [
     "SearchTarget",
     "Store",
     "StoreFileError",
+    "SubtreeTotals",
     "Transfer",
     "default_store",
     "default_store_file",

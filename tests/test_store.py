@@ -1772,6 +1772,67 @@ def test_descendant_count_does_not_cross_a_sibling_prefix(store):
     assert store.descendant_count("a/b") == 1
 
 
+# -- the totals over a subtree --------------------------------------------
+
+
+def test_subtree_totals_answer_the_territory_and_not_the_delete(store):
+    """The one difference between this and ``descendant_count``'s default.
+
+    A plain delete of ``a`` takes ``a/!title`` with it, so the count that
+    previews one leaves it out. Nothing is being deleted here, so it is in.
+    """
+    store.store_document("a", "body", title="T")
+    store.store_document("a/b", "child")
+
+    assert store.descendant_count("a") == 1
+    assert store.subtree_totals("a").keys == 2
+
+
+def test_subtree_totals_agree_with_the_whole_subtree_count(populated):
+    """One meaning of "how many lie below", asserted at every key.
+
+    The property the two methods are built to share: ``descendant_count`` under
+    ``whole_subtree`` and ``subtree_totals().keys`` select the same rows. This
+    is the guard that catches a definition drifting at the edges rather than an
+    arithmetic slip, which is the failure that survives hand-written
+    expectations.
+    """
+    for entry in bulk.walk(populated, None):
+        assert populated.subtree_totals(entry.key).keys == populated.descendant_count(
+            entry.key, whole_subtree=True
+        )
+
+
+def test_subtree_totals_measure_only_when_asked(store):
+    """Characters are the expensive half and are not bought by counting."""
+    store.store_document("a/b", "xyz")
+
+    assert store.subtree_totals("a").chars is None
+    assert store.subtree_totals("a", chars=True).chars == 3
+
+
+def test_subtree_totals_are_bounded_by_the_range(store):
+    """A range narrows all three numbers, which is what lets a mount compose them."""
+    for name in "abc":
+        store.store_document(f"top/{name}", name * 2)
+
+    whole = store.subtree_totals("top", chars=True)
+    assert (whole.keys, whole.documents, whole.chars) == (3, 3, 6)
+
+    narrowed = store.subtree_totals(
+        "top", key_range=store_module.KeyRange(after="top/a"), chars=True
+    )
+    assert (narrowed.keys, narrowed.documents, narrowed.chars) == (2, 2, 4)
+
+
+def test_subtree_totals_of_an_empty_subtree_are_zero(store):
+    """Not an error, and not None: nothing below a key is a real answer."""
+    store.store_document("a", "body")
+
+    totals = store.subtree_totals("a", chars=True)
+    assert (totals.keys, totals.documents, totals.chars) == (0, 0, 0)
+
+
 # -- the newest change, and the watermark measured against it -------------
 
 OLD = "2026-01-01T00:00:00+00:00"
@@ -2000,6 +2061,25 @@ def test_work_done_on_a_caller_s_behalf_is_recorded_too(logged, tmp_path):
     # say so rather than dead-ending. One call being more than one access is
     # exactly what the log is for.
     assert [e["op"] for e in events(tmp_path)][-2:] == ["descendant_count", "retrieve_document"]
+
+
+def test_the_log_records_what_an_aggregate_answered(logged, tmp_path):
+    """All three numbers, not the name of the type they came in.
+
+    An aggregate logged as ``{"type": "SubtreeTotals"}`` records that a question
+    was asked and never what it said, which is the one thing a log of an
+    aggregate is for. ``chars`` stays None where it was not asked for, since
+    that is the difference between a cheap call and an expensive one.
+    """
+    logged.store_document("a/b", "xyz", title="T")
+    logged.subtree_totals("a", chars=True)
+    logged.subtree_totals("a")
+
+    answers = [e["result"] for e in events(tmp_path) if e["op"] == "subtree_totals"]
+    assert answers == [
+        {"count": 2, "documents": 1, "chars": 4},
+        {"count": 2, "documents": 1, "chars": None},
+    ]
 
 
 def test_keys_missing_meta_is_one_access_now(logged, tmp_path):

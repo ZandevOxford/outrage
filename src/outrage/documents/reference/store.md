@@ -1178,6 +1178,52 @@ which is every store's answer until it has a better one: a database
 has `max()`, a sorted file has a row range, and a directory of files
 has the walk this does.
 
+#### subtree_totals(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [SubtreeTotals](#outrage.store.SubtreeTotals)
+
+What lies strictly below `key`, counted and optionally measured.
+
+**The question about the territory**, where [`descendant_count()`](#outrage.store.Store.descendant_count) is
+the question about a delete. That is the difference worth holding, and
+it is why these are two methods rather than one with a mode: every
+caller of `descendant_count` in this package asks it what a
+non-recursive delete left behind, or whether anything is there at all,
+and a count for that purpose has to include metadata because a delete
+takes it. A caller mapping a subtree wants a different answer and says
+so by calling something else.
+
+So there is no `whole_subtree` here. This *is* that selection --
+strictly below `key`, its own metadata unit included -- and offering
+the other one would put the delete's question back into the method that
+exists to be free of it. `keys` therefore equals
+`descendant_count(key, whole_subtree=True)` exactly, which is asserted
+rather than assumed: one meaning of "how many lie below" in the store,
+not two that nearly agree.
+
+The one call [`list_keys()`](#outrage.store.Store.list_keys)' descendant flags need, kept apart from
+them so a backend overrides the *aggregate* and not the listing.
+[`SubtreeTotals`](#outrage.store.SubtreeTotals) says what counts as a document, which is not what
+counts as one in a listing.
+
+`chars` is separate because it is separately expensive, and a backend
+that can count without measuring should: this default cannot -- a walk
+has the entry in hand -- but SQLite asks for a sum only when told to,
+and on a directory of files a length means decoding every document.
+
+`key_range` bounds it for the reason it bounds
+[`descendant_count()`](#outrage.store.Store.descendant_count), and because
+[`MountedStore`](mounts.md#outrage.mounts.MountedStore) cannot compose this without one:
+the stretches of a store that a mount does not shadow are named as
+ranges, and totals taken over the whole of it would count rows that
+reading by key refuses.
+
+**It reads the subtree**, so it costs what is under `key` rather than
+what is beside it -- which is why [`list_keys()`](#outrage.store.Store.list_keys) asks for it only
+when told to. Nothing here is maintained at write time.
+
+The default walks, which is every store's answer until it has a better
+one, and it is the answer [`MountedStore`](mounts.md#outrage.mounts.MountedStore) would
+otherwise have no way to give for a store spliced under a prefix.
+
 #### *abstractmethod* exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
 
 Whether `key` itself holds a document.
@@ -1267,7 +1313,7 @@ what they cost as well as what comes back -- unlike `total` and
 `total_chars`, which describe the level whatever the cursor is doing.
 A caller paging a wide level pays per page and can stop.
 
-Concrete where a backend has nothing faster: `_subtree_totals()` is
+Concrete where a backend has nothing faster: [`subtree_totals()`](#outrage.store.Store.subtree_totals) is
 the one call each of these needs, and `_with_descendants()` fills a
 page from it.
 
@@ -1388,6 +1434,52 @@ lets one directory hold several stores, and what keeps a configuration file
 free of absolute paths that stop being true when a project moves. An
 absolute path, or one climbing out with `..`, is refused here rather than
 quietly opening a database somewhere nobody was looking.
+
+### *class* outrage.store.SubtreeTotals(keys: [int](https://docs.python.org/3/library/functions.html#int), documents: [int](https://docs.python.org/3/library/functions.html#int), chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None))
+
+Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+
+How much lies strictly below one key, in the three numbers a map needs.
+
+Strictly below, and **including the key's own metadata unit** -- so a key's
+own row and its totals do not overlap, and the two added together are the
+whole subtree. That is [`Store.descendant_count()`](#outrage.store.Store.descendant_count)'s `whole_subtree`
+selection rather than its default: the default answers "what would a plain
+delete keep", which is a question about a delete, and this one is a
+question about the territory.
+
+What [`Store.subtree_totals()`](#outrage.store.Store.subtree_totals) answers, and what fills in the last three
+fields of an [`Entry`](#outrage.store.Entry).
+
+#### keys *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+Every **stored** key below, metadata included.
+
+Stored, so an implicit key is not one of them: it has no row, it holds
+nothing, and what makes it appear in a listing is the keys beneath it --
+which are counted. A level can therefore show more children than the
+number below their parent, and that is the same arithmetic
+[`Store.descendant_count()`](#outrage.store.Store.descendant_count) has always done. The alternative is a second
+definition of "how many", which is the thing this is here to avoid.
+
+#### documents *: [int](https://docs.python.org/3/library/functions.html#int)*
+
+Those of them that are documents. **A key with a metadata segment
+anywhere in its path is metadata**, at any depth, so `a/!x/y` is not one
+of these. That is deliberately not [`entry_kind()`](#outrage.store.entry_kind)'s question, which is
+decided by the last segment alone -- `a/!x/y` *lists* inside `a/!x` as
+the ordinary document it is, and is still metadata as far as `a` is
+concerned. Two questions, two answers, and a caller comparing this against
+a count of listed kinds will find they disagree.
+
+#### chars *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Characters stored across all of them, or None when they were not asked
+for. Separated from the counts because it is the expensive half: a count
+reads an index and a character total reads a length per row, and the length
+cache does not save them -- it holds only documents over
+[`LENGTH_THRESHOLD`](store_sqlite.md#outrage.store_sqlite.LENGTH_THRESHOLD), and the cost here is the
+many small rows.
 
 ### *class* outrage.store.Transfer(action: [str](https://docs.python.org/3/library/stdtypes.html#str), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None), reason: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, characters: [int](https://docs.python.org/3/library/functions.html#int) = 0, error: [OutrageError](errors.md#outrage.errors.OutrageError) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
