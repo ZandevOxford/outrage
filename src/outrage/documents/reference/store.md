@@ -329,11 +329,15 @@ always decoded back to plain text before it is written. See `_decode`.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['json-string']
 
-### *class* outrage.store.Entry(key: [str](https://docs.python.org/3/library/stdtypes.html#str), kind: [str](https://docs.python.org/3/library/stdtypes.html#str), size: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None))
+### *class* outrage.store.Entry(key: [str](https://docs.python.org/3/library/stdtypes.html#str), kind: [str](https://docs.python.org/3/library/stdtypes.html#str), size: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), descendants: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, descendant_documents: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, descendant_chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
 One key immediately below some other key.
+
+The first five fields are the key's **own** row. The last three describe
+what lies *below* it and are None unless a listing was asked for them --
+see [`Store.list_keys()`](#outrage.store.Store.list_keys).
 
 #### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
@@ -347,6 +351,25 @@ something beneath it does.
 #### format *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
 
 #### updated_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+#### descendants *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Stored keys strictly below this one, metadata included -- and *stored*,
+so an implicit key is not one of them. A level can show more children than
+the number below their parent.
+
+#### descendant_documents *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Those of them that are documents. **A key with a metadata segment
+anywhere in its path is metadata**, at any depth, so `a/!x/y` is not one
+of these -- which is deliberately not [`entry_kind()`](#outrage.store.entry_kind)'s question. That
+is decided by the last segment alone, so `a/!x/y` *lists* inside `a/!x`
+as the ordinary document it is and is still metadata as far as `a` is
+concerned. Comparing this against a count of listed kinds will disagree.
+
+#### descendant_chars *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Characters held across everything strictly below this one.
 
 ### *class* outrage.store.Excerpt(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str), offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), returned: [int](https://docs.python.org/3/library/functions.html#int), total: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), next_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), byte_offset: [int](https://docs.python.org/3/library/functions.html#int), total_bytes: [int](https://docs.python.org/3/library/functions.html#int), next_byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None))
 
@@ -1201,7 +1224,7 @@ cannot converts and slices -- and that contract is what makes a byte
 offset something a caller can carry between stores, and out of the
 store altogether to a file [`bulk()`](bulk.md#module-outrage.bulk) exported.
 
-#### *abstractmethod* list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](#outrage.store.Page)[[Entry](#outrage.store.Entry)]
+#### *abstractmethod* list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, descendant_counts: [bool](https://docs.python.org/3/library/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Page](#outrage.store.Page)[[Entry](#outrage.store.Entry)]
 
 List the keys immediately below `key`, or below the root.
 
@@ -1217,6 +1240,36 @@ No [`KeyRange`](#outrage.store.KeyRange) here, deliberately. This reads one *lev
 stretch of the order, and the cursor is the only bound a level has ever
 needed; a range would have to be honoured by every part of a level's
 answer, for no caller that exists.
+
+**The two descendant flags turn a listing into a map of the subtree.**
+`descendant_counts` fills [`Entry.descendants`](#outrage.store.Entry.descendants) and
+[`Entry.descendant_documents`](#outrage.store.Entry.descendant_documents), `descendant_chars` fills
+[`Entry.descendant_chars`](#outrage.store.Entry.descendant_chars), and each is None where it was not
+asked for. The selection is [`descendant_count()`](#outrage.store.Store.descendant_count)'s under
+`whole_subtree` -- strictly below the listed key, its own metadata
+unit included -- so an entry's own row and its descendant columns do
+not overlap, and the two added together are the whole subtree.
+[`Entry`](#outrage.store.Entry) says what counts as a document there, which is not what
+counts as one in a listing.
+
+**Opt in because they cost**, which is the whole reason they are flags
+and not columns. Naming a level is bounded by its fan-out -- one index
+seek per child, whatever hangs below -- and a count over a child's
+subtree reads that subtree, so asking for one puts the size of the
+store back into a call that had stopped depending on it. Characters
+cost more again and the length cache does not help them: measured over
+a level of twenty children holding fifty thousand keys, naming the
+level cost 0.19 ms, the counts took it to 8.6 ms, and the characters to
+75 ms.
+
+**They are filled over the page, not the level**, so `limit` bounds
+what they cost as well as what comes back -- unlike `total` and
+`total_chars`, which describe the level whatever the cursor is doing.
+A caller paging a wide level pays per page and can stop.
+
+Concrete where a backend has nothing faster: `_subtree_totals()` is
+the one call each of these needs, and `_with_descendants()` fills a
+page from it.
 
 #### last_child(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
 

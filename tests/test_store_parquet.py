@@ -107,6 +107,19 @@ CORPUS = [
 _BYTE_OFFSETS = [0, 1, 5, 6, 13, 14, 15, 20, 21, 22, 31, 32, 99]
 
 
+def _descendants(store, key):
+    """A level as the subtree totals of each key in it.
+
+    Beside :func:`walk_level` rather than folded into it: that compares the
+    columns a listing has always had, and a differential that quietly started
+    asking for more would stop saying which half disagreed.
+    """
+    return [
+        (entry.key, entry.descendants, entry.descendant_documents, entry.descendant_chars)
+        for entry in store.list_keys(key, descendant_counts=True, descendant_chars=True).items
+    ]
+
+
 @pytest.fixture
 def sqlite(tmp_path):
     """The corpus in the backend that can be written."""
@@ -238,6 +251,10 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
         # Paged to the end at a page size of two, so a level of three or more
         # crosses a boundary and the totals are asserted on every page.
         answers_alike(sqlite, parquet, lambda s, k=key: walk_level(s, k))
+        # And the same level with what lies below each of its keys. Both
+        # flags at once, since a backend that answered one of them from the
+        # other's selection would still agree with itself.
+        answers_alike(sqlite, parquet, lambda s, k=key: _descendants(s, k))
 
     for key, key_range in itertools.product(_KEYS, _RANGES):
         answers_alike(

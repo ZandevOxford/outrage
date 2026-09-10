@@ -1274,6 +1274,160 @@ def test_list_empty(store):
     assert store.list_keys("nothing/here").items == []
 
 
+# -- what lies below each listed key --------------------------------------
+
+
+def _below(store, key=None, **flags):
+    """A level as its descendant columns, keyed by the key they belong to."""
+    return {
+        entry.key: (entry.descendants, entry.descendant_documents, entry.descendant_chars)
+        for entry in store.list_keys(key, **flags).items
+    }
+
+
+def test_a_listing_reports_nothing_about_subtrees_unless_asked(populated):
+    """The default listing is unchanged, which is what makes the flags opt in.
+
+    Asserted as None rather than as absent: the fields exist on every entry, so
+    a caller that reads one without asking gets a value that says "not asked"
+    and never a zero it could mistake for an empty subtree.
+    """
+    assert _below(populated) == {"context": (None, None, None), "project": (None, None, None)}
+
+
+def test_descendant_counts_separate_documents_from_metadata(store):
+    """The two counts, on the definition that metadata is metadata all the way down.
+
+    ``a/!x/y`` is the case worth writing down. It *lists* inside ``a/!x`` as an
+    ordinary document -- ``entry_kind`` decides by the last segment -- and it is
+    still not counted as one here, because a key with a metadata segment
+    anywhere above it is metadata as far as ``a`` is concerned. A count of
+    listed kinds and this number are two different questions.
+    """
+    store.store_document("a", "AAA")
+    store.store_document("a/b", "BB")
+    store.store_document("a/b/c", "C")
+    store.store_document("a/!title", "T")
+    store.store_document("a/!x/y", "YY")
+
+    assert _below(store, descendant_counts=True) == {"a": (4, 2, None)}
+    # The same key, listed one level down, where it is a document by kind and
+    # is still not one of `a`'s two.
+    (inside,) = store.list_keys("a/!x").items
+    assert (inside.key, inside.kind) == ("a/!x/y", "document")
+
+
+def test_descendant_totals_exclude_the_key_they_belong_to(store):
+    """An entry's own row is reported by ``size`` and never again below it.
+
+    Strictly below, so the two halves of an entry do not overlap and adding
+    them gives the whole subtree. Written with a body big enough to notice: if
+    the key's own characters leaked in, this would read 9 and not 3.
+    """
+    store.store_document("a", "AAAAAA")
+    store.store_document("a/b", "BBB")
+
+    (entry,) = store.list_keys(descendant_counts=True, descendant_chars=True).items
+    assert (entry.size, entry.descendants, entry.descendant_chars) == (6, 1, 3)
+
+
+def test_the_two_flags_are_asked_for_separately(store):
+    """Characters cost most, so wanting counts must not buy them by accident."""
+    store.store_document("a/b", "BBB")
+
+    assert _below(store, descendant_counts=True) == {"a": (1, 1, None)}
+    assert _below(store, descendant_chars=True) == {"a": (None, None, 3)}
+    assert _below(store, descendant_counts=True, descendant_chars=True) == {"a": (1, 1, 3)}
+
+
+def test_descendants_agree_with_the_count_beside_them(populated):
+    """The one property worth having: one meaning of "how many lie below".
+
+    ``descendant_count``'s ``whole_subtree`` selection is what a listing
+    reports, so a caller cannot read two numbers about the same subtree and
+    find they disagree. Checked at every key rather than at a chosen one,
+    because the disagreement this guards against is a definition drifting at
+    the edges -- a metadata unit counted here and not there.
+    """
+    for entry in bulk.walk(populated, None):
+        (listed,) = [
+            e
+            for e in populated.list_keys(_parent(entry.key), descendant_counts=True).items
+            if e.key == entry.key
+        ]
+        assert listed.descendants == populated.descendant_count(entry.key, whole_subtree=True)
+
+
+def _parent(key):
+    """The key one level above ``key``, or None at the top."""
+    above = key.rpartition("/")[0]
+    return above or None
+
+
+def test_descendant_totals_are_filled_over_the_page(store):
+    """Bounded by ``limit``, unlike ``total`` and ``total_chars``.
+
+    A page carries the numbers for the keys it holds and no others, which is
+    what keeps a wide level from costing every subtree beneath it at once. So a
+    level read two at a time reports the same numbers as one read whole, and a
+    caller who stops after one page has paid for one page.
+    """
+    for name in "abcd":
+        store.store_document(f"{name}/child", name * 3)
+
+    whole = _below(store, descendant_counts=True, descendant_chars=True)
+    paged, cursor = {}, None
+    while True:
+        page = store.list_keys(
+            limit=2, cursor=cursor, descendant_counts=True, descendant_chars=True
+        )
+        paged |= {
+            e.key: (e.descendants, e.descendant_documents, e.descendant_chars) for e in page.items
+        }
+        if page.next_cursor is None:
+            break
+        cursor = page.next_cursor
+
+    assert paged == whole == {f"{name}": (1, 1, 3) for name in "abcd"}
+
+
+def test_an_implicit_key_is_listed_and_not_counted(store):
+    """A listing can show more children than the count below their parent.
+
+    An implicit key has no row, so it is not one of the stored keys below
+    anything -- while the keys that make it exist are. ``descendant_count`` has
+    always answered this way and the columns beside it must, or a store holds
+    two definitions of "how many lie below" that agree everywhere except where
+    a container stands.
+    """
+    store.store_document("a/b/c", "CCC")
+    store.store_document("a/d", "D")
+
+    (entry,) = store.list_keys(descendant_counts=True).items
+    # Two keys are listed inside `a`, and only a/b/c and a/d are stored: a/b
+    # is a position in the order rather than a row, so it is one of the level's
+    # children and none of the parent's descendants.
+    assert [e.key for e in store.list_keys("a").items] == ["a/b", "a/d"]
+    assert entry.descendants == 2
+    assert entry.descendants == store.descendant_count("a", whole_subtree=True)
+
+
+def test_an_implicit_key_reports_what_is_under_it(store):
+    """A container holds nothing itself, which is not the same as holding none.
+
+    Its own three columns are None because it has no row; its descendant
+    columns are the whole point of listing it, and reading them as absent
+    because the key is implicit would leave a level unable to say where its
+    material is.
+    """
+    store.store_document("a/b/c", "CCC")
+
+    (entry,) = store.list_keys(descendant_counts=True, descendant_chars=True).items
+    assert (entry.kind, entry.size) == ("implicit", None)
+    # a/b/c alone: a/b is implicit too, and implicit keys are not stored.
+    assert (entry.descendants, entry.descendant_documents, entry.descendant_chars) == (1, 1, 3)
+
+
 # -- the last key at a level ----------------------------------------------
 
 

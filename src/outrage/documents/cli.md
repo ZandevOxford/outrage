@@ -334,7 +334,7 @@ disagree about whether it is there.
 outrage ls [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
            [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
            [--mount-config FILE] [--no-mount-config] [--recursive]
-           [--limit N]
+           [--counts] [--chars] [--limit N]
            [key]
 ```
 
@@ -351,6 +351,8 @@ outrage ls [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `key` - Key to list below, ?last for the newest. Omit for the top.
 - `--recursive, -r` - Descend the whole subtree rather than one level.
+- `--counts` - Report how many keys and documents lie below each one listed, which is how a level says where the material is. Costs a scan of each subtree, so it is off by default - and with --recursive each subtree is scanned once per level above it.
+- `--chars` - Also report the characters held below each one. The expensive column.
 - `--limit N` - Show at most N keys, and say so on stderr. Everything by default.
 
 ## `dump`

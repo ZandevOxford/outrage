@@ -571,7 +571,7 @@ though it were all of it. A read-only mount is skipped in a preview
 exactly as it is skipped in the delete, which is what makes the two
 lists the same list.
 
-#### list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
+#### list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, descendant_counts: [bool](https://docs.python.org/3/library/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
 
 As [`list_keys()`](store.md#outrage.store.Store.list_keys), with the mounts spliced in.
 
@@ -579,6 +579,17 @@ A mount point is a key no store knows about: the store beneath it has no
 row there, and the store above it cannot see where it was mounted. Put
 in here or a mounted store is invisible to anyone who does not already
 know its prefix.
+
+**The descendant flags are answered here and not passed inward**, which
+is the whole reason they compose. A store asked about its own subtree
+cannot see a mount below it: it would count rows the mount shadows and
+reading by key refuses, and leave out everything the mounted store
+holds -- wrong in both directions at once, and quietly. So the page is
+filled by `_subtree_totals()` over the *table*, which is the same
+merge [`descendant_count()`](#outrage.mounts.MountedStore.descendant_count) makes, and a mount point reports what the
+store mounted there holds rather than the nothing its own row says.
+
+Filled after the cut, so a level wider than the page costs the page.
 
 #### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Excerpt](store.md#outrage.store.Excerpt)]
 

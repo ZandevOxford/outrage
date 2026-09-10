@@ -984,6 +984,53 @@ def test_ls_recursive_from_the_top_reports_the_container(tmp_path):
     assert output.index("  notes\n") < output.index("  notes/1\n")
 
 
+def test_ls_counts_what_is_below_each_key_when_asked(tmp_path):
+    """The two count columns, under a header that only appears with them."""
+    a_tree(tmp_path / ".outrage")
+
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "--counts", "notes")
+
+    header, *rows = output.splitlines()
+    assert header.split() == ["kind", "size", "updated", "below", "docs", "key"]
+    # notes/1 holds a title and a subkey; the other two hold a title each.
+    assert [(row.split()[-3], row.split()[-2], row.split()[-1]) for row in rows] == [
+        ("2", "1", "notes/1"),
+        ("1", "0", "notes/2"),
+        ("1", "0", "notes/10"),
+    ]
+
+
+def test_ls_measures_what_is_below_only_when_asked_for_that_too(tmp_path):
+    """Characters are the separate, expensive column, and say so separately."""
+    a_tree(tmp_path / ".outrage")
+
+    _, counted = run("ls", "--dir", str(tmp_path / ".outrage"), "--counts", "notes")
+    _, measured = run("ls", "--dir", str(tmp_path / ".outrage"), "--counts", "--chars", "notes")
+
+    assert "chars" not in counted.splitlines()[0].split()
+    assert measured.splitlines()[0].split()[-2] == "chars"
+    # notes/1: "Note 1" and "deeper".
+    assert measured.splitlines()[1].split()[-2] == str(len("Note 1") + len("deeper"))
+
+
+def test_ls_without_the_flags_prints_what_it_always_did(tmp_path):
+    """No header, no extra columns, and the same widths.
+
+    The plain listing is what every existing caller and every eye is used to,
+    so the flags add columns rather than changing the shape of a line that did
+    not ask for them.
+    """
+    a_tree(tmp_path / ".outrage")
+
+    _, output = run("ls", "--dir", str(tmp_path / ".outrage"), "notes")
+
+    assert not output.startswith("kind")
+    assert [line.split() for line in output.splitlines()] == [
+        ["document", str(len(f"body {n}")), line.split()[2], f"notes/{n}"]
+        for n, line in zip((1, 2, 10), output.splitlines(), strict=True)
+    ]
+
+
 def test_ls_says_so_when_there_is_nothing(tmp_path):
     a_tree(tmp_path / ".outrage")
 

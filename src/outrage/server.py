@@ -402,6 +402,18 @@ class _EntryResult(_ToolResult):
     size: Annotated[int | None, Field(description="Stored characters, when this key has content")]
     format: Annotated[str | None, Field(description="Stored content format, when applicable")]
     updated_at: Annotated[str | None, Field(description="Last write time, when applicable")]
+    descendants: Annotated[
+        int | None,
+        Field(description="Keys below this one, metadata included; only when asked for"),
+    ] = None
+    descendant_documents: Annotated[
+        int | None,
+        Field(description="Those of them that are documents; only when asked for"),
+    ] = None
+    descendant_chars: Annotated[
+        int | None,
+        Field(description="Characters held below this key; only when asked for"),
+    ] = None
 
 
 class _SearchCriterionArgument(BaseModel):
@@ -1331,10 +1343,34 @@ def build_server(
             str | None,
             Field(description="Resume after this key, from a previous result's next_cursor"),
         ] = None,
+        descendant_counts: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Report how many keys and documents lie below each listed key. "
+                    "Costs a scan of each one's subtree, so off by default"
+                )
+            ),
+        ] = False,
+        descendant_chars: Annotated[
+            bool,
+            Field(
+                description=(
+                    "Report how many characters lie below each listed key. "
+                    "The most expensive of the three, so off by default"
+                )
+            ),
+        ] = False,
     ) -> _ListKeysResult:
         table = live.table
         at = _named_key(table, key)
-        page = table.list_keys(at, limit=limit, cursor=after)
+        page = table.list_keys(
+            at,
+            limit=limit,
+            cursor=after,
+            descendant_counts=descendant_counts,
+            descendant_chars=descendant_chars,
+        )
         return _ListKeysResult(
             key=at,
             entries=[

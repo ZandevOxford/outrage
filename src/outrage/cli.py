@@ -529,6 +529,23 @@ def argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Descend the whole subtree rather than one level.",
     )
+    ls.add_argument(
+        "--counts",
+        dest="descendant_counts",
+        action="store_true",
+        help=(
+            "Report how many keys and documents lie below each one listed, "
+            "which is how a level says where the material is. Costs a scan of "
+            "each subtree, so it is off by default - and with --recursive each "
+            "subtree is scanned once per level above it."
+        ),
+    )
+    ls.add_argument(
+        "--chars",
+        dest="descendant_chars",
+        action="store_true",
+        help="Also report the characters held below each one. The expensive column.",
+    )
     _limit_option(ls, "keys")
     ls.set_defaults(handler=_ls_command)
 
@@ -1729,24 +1746,94 @@ class ConflictingSourceError(OutrageError):
 def _ls_command(args: argparse.Namespace, out: TextIO) -> int:
     """List one level, or the whole subtree, printing as it goes."""
     shown = 0
+    below = args.descendant_counts or args.descendant_chars
     with _open_table(args) as opened:
         _resolved(opened, args)
-        entries = bulk.walk(opened, args.key) if args.recursive else bulk.levels(opened, args.key)
+        source = bulk.walk if args.recursive else bulk.levels
+        entries = source(
+            opened,
+            args.key,
+            descendant_counts=args.descendant_counts,
+            descendant_chars=args.descendant_chars,
+        )
         for entry in entries:
             if args.limit is not None and shown >= args.limit:
                 # On stderr, so a listing piped into something else is not
                 # corrupted by a note about itself.
                 print(f"outrage: stopped at --limit {args.limit}", file=sys.stderr)
                 break
-            size = "-" if entry.size is None else str(entry.size)
-            print(
-                f"{entry.kind:<9} {size:>8}  {entry.updated_at or '-':<20}  {entry.key}", file=out
-            )
+            if below and not shown:
+                # Only when the extra columns are on. The ordinary listing has
+                # never had a header and reads without one -- a kind, a date and
+                # a key say what they are -- where a bare column of integers
+                # does not, which is the whole reason this line exists.
+                print(_ls_header(args), file=out)
+            print(_ls_row(entry, args), file=out)
             shown += 1
 
     if not shown:
         print(f"nothing below {args.key or 'the top level'}", file=out)
     return 0
+
+
+#: The ordinary listing line, unchanged: the leading columns are narrower than
+#: their widest value, so `read-only mount` and a timestamp both push the key
+#: right. That is harmless where the key is the last column and reads as a
+#: ragged left edge on one field.
+_LS_PLAIN = "{0:<9} {1:>8}  {2:<20}  {3}"
+
+#: The same line where descendant columns follow, widened to the values that
+#: actually occur -- `read-only mount` is fifteen characters and an ISO
+#: timestamp is twenty-five. A column of integers that does not line up cannot
+#: be read down, which is the one thing these columns are for, so the overflow
+#: the plain listing tolerates is not tolerable here.
+_LS_WIDE = "{0:<15} {1:>8}  {2:<25}  {3}"
+
+#: The two count columns and the character column, used for the header and the
+#: row alike so a heading cannot drift from what it names.
+_LS_BELOW = "{0:>9} {1:>8}"
+_LS_CHARS = " {0:>11}"
+
+
+def _ls_header(args: argparse.Namespace) -> str:
+    """The heading line, printed only above a listing carrying counts."""
+    return _LS_WIDE.format("kind", "size", "updated", f"{_ls_below(args, None)}  key")
+
+
+def _ls_row(entry: store.Entry, args: argparse.Namespace) -> str:
+    """One listing line, with whichever descendant columns were asked for."""
+    size = "-" if entry.size is None else str(entry.size)
+    if not (args.descendant_counts or args.descendant_chars):
+        return _LS_PLAIN.format(entry.kind, size, entry.updated_at or "-", entry.key)
+    return _LS_WIDE.format(
+        entry.kind, size, entry.updated_at or "-", f"{_ls_below(args, entry)}  {entry.key}"
+    )
+
+
+def _ls_below(args: argparse.Namespace, entry: store.Entry | None) -> str:
+    """The descendant columns of one row, or their headings when given no row.
+
+    One function for both, because two would be two places to widen a column.
+
+    A number that was not asked for is absent rather than zero, and a number
+    asked for that the store had no answer for prints as ``-``, for the reason
+    a size does: a key holding nothing is not the same as a key holding none.
+    """
+    shown = ""
+    if args.descendant_counts:
+        pair = (
+            ("below", "docs") if entry is None else (entry.descendants, entry.descendant_documents)
+        )
+        shown += _LS_BELOW.format(*(_ls_number(value) for value in pair))
+    if args.descendant_chars:
+        chars = "chars" if entry is None else entry.descendant_chars
+        shown += _LS_CHARS.format(_ls_number(chars))
+    return shown
+
+
+def _ls_number(value: int | str | None) -> str:
+    """A descendant column's value, or ``-`` where the store had none."""
+    return "-" if value is None else str(value)
 
 
 def _dump_command(args: argparse.Namespace, out: TextIO) -> int:

@@ -135,6 +135,8 @@ from .store import (
     _find_occurrence,
     _logged,
     _scope,
+    _SubtreeTotals,
+    _with_descendants,
     _within,
     check_read_position,
     check_unchanged,
@@ -697,6 +699,40 @@ class FilesystemStore(FileStore):
             if below(row.key) and (whole_subtree or not lo <= row.key < hi) and within(row.sort_key)
         )
 
+    def _subtree_totals(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
+    ) -> _SubtreeTotals:
+        """One walk of the directory beneath ``key``, counted as it goes.
+
+        :meth:`_below_rows` is already strictly below and already in key order,
+        which is the selection :class:`~outrage.store._SubtreeTotals` names, so
+        nothing is subtracted here the way :meth:`descendant_count` has to.
+
+        ``measure`` is passed through rather than always set: a length in this
+        backend means opening and decoding the file, so counting without
+        measuring is the difference between reading a directory and reading
+        every document in it. That is the same split the other backends make
+        for a much smaller saving, and here it is the whole cost.
+
+        The document test is the row's own ``meta_name``, which :meth:`_row`
+        takes from :func:`outrage.keys.parse` -- so it is set for every key
+        below a metadata segment and not the segment alone, which is the
+        definition :class:`~outrage.store._SubtreeTotals` states and the same
+        one the other two backends read off a stored column.
+        """
+        inside = _within(key_range)
+        count = 0
+        documents = 0
+        measured = 0
+        for row in self._below_rows(keys.parse(key).key, measure=chars):
+            if not inside(row.sort_key):
+                continue
+            count += 1
+            if row.meta_name is None:
+                documents += 1
+            measured += row.chars or 0
+        return _SubtreeTotals(keys=count, documents=documents, chars=measured if chars else None)
+
     @_logged("retrieve_document")
     def retrieve_document(
         self,
@@ -840,6 +876,8 @@ class FilesystemStore(FileStore):
         *,
         limit: int | None = None,
         cursor: str | None = None,
+        descendant_counts: bool = False,
+        descendant_chars: bool = False,
     ) -> Page[Entry]:
         """One directory, its files and its subdirectories together.
 
@@ -851,6 +889,12 @@ class FilesystemStore(FileStore):
         The totals are over the level rather than over the page, so a cursor
         does not reach them, and they cost a decode per document -- see the
         module docstring on what a character count is.
+
+        The descendant flags cost a directory walk per child on the page and,
+        with ``descendant_chars``, a decode of every document under it. That is
+        the most expensive this surface gets on any backend, and it is the
+        reason it is a flag: here it is not one scan of an index but a
+        recursive walk of the tree.
         """
         entries = self._level(_scope(key))
         bound = _cursor_bound(cursor)
@@ -858,8 +902,9 @@ class FilesystemStore(FileStore):
             entry for entry in entries if bound is None or keys.sort_form(entry.key) > bound
         ]
 
-        items = candidates if limit is None else candidates[:limit]
+        page = candidates if limit is None else candidates[:limit]
         more = limit is not None and len(candidates) > limit
+        items = _with_descendants(self, page, counts=descendant_counts, chars=descendant_chars)
         return Page(
             items=items,
             returned=len(items),

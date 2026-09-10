@@ -71,6 +71,8 @@ from .store import (
     _document_change,
     _later,
     _metadata_change,
+    _SubtreeTotals,
+    _with_descendants,
     _within,
     check_unchanged,
     entry_kind,
@@ -556,6 +558,19 @@ def _document_row_at(store: Store, key: str, key_range: KeyRange) -> int:
     back would count the unit twice.
     """
     return 1 if store.exists(key) and _in_range(key, key_range) else 0
+
+
+def _document_chars_at(store: Store, key: str) -> int:
+    """How long the document at ``key`` is, without reading it.
+
+    The root row of a mounted store is counted from outside by
+    :func:`_document_row_at`, and a character total has to measure the same row.
+    ``max_chars=1`` is what asks: an excerpt states the size of the whole it
+    came from, so one character comes back and ``total`` is the answer -- the
+    same trick :meth:`~outrage.store.Store.find_documents` uses to walk
+    candidates without reading them.
+    """
+    return store.retrieve_document(key, max_chars=1).total
 
 
 def _rows_at(store: Store, key: str, key_range: KeyRange) -> int:
@@ -1368,6 +1383,58 @@ class MountedStore(Store):
             for segment in self.segments(found.outer, key_range=key_range)
         )
 
+    def _subtree_totals(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
+    ) -> _SubtreeTotals:
+        """The three totals summed over the segments, as the count is.
+
+        :meth:`descendant_count`'s merge with two more numbers riding along:
+        the same segments, the same ranges cutting out what each mount shadows,
+        and the same asymmetry about what "below" means from outside a store.
+        Deliberately the same shape rather than a fresh traversal, because the
+        one property worth having here is that ``keys`` agrees with
+        ``descendant_count(key, whole_subtree=True)`` -- a listing that reported
+        a different number of descendants from the count beside it would be a
+        second definition of the subtree wearing the first one's name.
+
+        The asymmetry, in this selection: a store mounted further down
+        contributes its **root document row** as well as everything below it,
+        because that row is the mount point and the mount point is beneath the
+        key. Its root metadata unit needs no putting back -- unlike the plain
+        count, this selection already holds it.
+
+        **What it does not count is a key only a mount table knows about.** A
+        mount at ``lib/ref`` puts ``lib`` in a listing, and no store holds a row
+        there; :meth:`descendant_count` has never counted those either, and
+        answering differently here is precisely the disagreement above.
+        """
+        found = self.resolve(key)
+        counted = 0
+        documents = 0
+        measured = 0
+        for segment in self.segments(found.outer, key_range=key_range):
+            # The whole segment inside the rename, not just the aggregate:
+            # measuring the root row reads it, and a row deleted between the
+            # test and the read raises. Outside this, that error would name the
+            # key as the mounted store spells it, which is a name the caller
+            # has never seen.
+            with _renamed(segment.mount):
+                root = segment.subtree.key
+                totals = segment.store._subtree_totals(
+                    root, key_range=segment.key_range, chars=chars
+                )
+                at = (
+                    0
+                    if segment.mount is found.mount
+                    else _document_row_at(segment.store, root, segment.key_range)
+                )
+                measured += totals.chars or 0
+                if chars and at:
+                    measured += _document_chars_at(segment.store, root)
+            counted += totals.keys + at
+            documents += totals.documents + at
+        return _SubtreeTotals(keys=counted, documents=documents, chars=measured if chars else None)
+
     def latest_change(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
     ) -> str | None:
@@ -1477,6 +1544,8 @@ class MountedStore(Store):
         *,
         limit: int | None = None,
         cursor: str | None = None,
+        descendant_counts: bool = False,
+        descendant_chars: bool = False,
     ) -> Page[Entry]:
         """As :meth:`~outrage.store.Store.list_keys`, with the mounts spliced in.
 
@@ -1484,6 +1553,17 @@ class MountedStore(Store):
         row there, and the store above it cannot see where it was mounted. Put
         in here or a mounted store is invisible to anyone who does not already
         know its prefix.
+
+        **The descendant flags are answered here and not passed inward**, which
+        is the whole reason they compose. A store asked about its own subtree
+        cannot see a mount below it: it would count rows the mount shadows and
+        reading by key refuses, and leave out everything the mounted store
+        holds -- wrong in both directions at once, and quietly. So the page is
+        filled by :meth:`_subtree_totals` over the *table*, which is the same
+        merge :meth:`descendant_count` makes, and a mount point reports what the
+        store mounted there holds rather than the nothing its own row says.
+
+        Filled after the cut, so a level wider than the page costs the page.
         """
         found = self.resolve(key)
         inward = _inward_cursor(found, cursor)
@@ -1525,7 +1605,12 @@ class MountedStore(Store):
         # half is denser near the cursor push the other's keys over the edge,
         # and a cursor never looks back.
         cut = limit is not None and len(ordered) > limit
-        items = ordered[:limit] if cut else ordered
+        items = _with_descendants(
+            self,
+            ordered[:limit] if cut else ordered,
+            counts=descendant_counts,
+            chars=descendant_chars,
+        )
 
         # Where to resume. When the page was cut, the last key emitted -- never
         # the store's own cursor, which lies past the rows the cut withheld and

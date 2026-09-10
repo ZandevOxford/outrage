@@ -814,6 +814,48 @@ def test_list_keys_shows_subkeys_and_metadata(server):
     assert [(e["key"], e["kind"]) for e in entries] == [("context/c3d4/task/!title", "metadata")]
 
 
+def test_list_keys_says_nothing_about_subtrees_unless_asked(server):
+    """The three fields are present and empty, which is what "not asked" looks like.
+
+    A tool result that dropped them would leave a caller unable to tell a
+    listing that did not measure from one that measured nothing.
+    """
+    (entry,) = call(server, "list_keys")["entries"]
+    assert entry["descendants"] is None
+    assert entry["descendant_documents"] is None
+    assert entry["descendant_chars"] is None
+
+
+def test_list_keys_reports_what_is_below_when_asked(server):
+    """Both flags through the tool, on a level where the two counts differ."""
+    (entry,) = call(server, "list_keys", descendant_counts=True, descendant_chars=True)["entries"]
+    assert entry["key"] == "context"
+    # The design and task documents and a title on each: four stored keys, two
+    # of them documents. `a1b2` and `c3d4` are listed but not counted -- they
+    # are implicit, and nothing is stored at them.
+    assert (entry["descendants"], entry["descendant_documents"]) == (4, 2)
+    assert entry["descendant_chars"] > 0
+
+
+def test_list_keys_asks_for_characters_separately(server):
+    """Counting must not buy the expensive column by accident."""
+    (entry,) = call(server, "list_keys", descendant_counts=True)["entries"]
+    assert entry["descendants"] == 4
+    assert entry["descendant_chars"] is None
+
+
+def test_the_list_keys_description_says_the_new_columns_cost(server):
+    """A tool whose description does not say a flag is expensive invites it.
+
+    The one thing a caller cannot discover by trying it: the listing itself is
+    bounded by the level and these are not.
+    """
+    description = list_tools(server)["list_keys"].description
+    assert "descendant_counts" in description
+    assert "descendant_chars" in description
+    assert "off by default" in description
+
+
 def test_get_documents_surveys_titles(server):
     result = call(server, "get_documents", key="context", meta_name=["title"])
     assert result["count"] == 2

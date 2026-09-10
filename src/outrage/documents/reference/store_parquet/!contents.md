@@ -73,35 +73,35 @@
 #### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
 18025 18039
 
-#### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None) → Page[Entry]
+#### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
 19457 19473
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-20877 20895
+21235 21253
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
-22492 22512
+22850 22870
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-23674 23696
+24032 24054
 
 #### backup(destination: str | PathLike[str] | None = None, \*, overwrite: bool = False) → Backup
-24841 24865
+25199 25223
 
 #### *property* stored_format_version *: int*
-25949 25975
+26307 26333
 
 #### audit_rows() → Iterator[AuditRow]
-26378 26404
+26736 26762
 
 #### check_file(report: Report) → None
-27645 27673
+28003 28031
 
 #### repair() → list[Repaired]
-28361 28391
+28719 28749
 
 #### *classmethod* check_target(path: str | PathLike[str], \*, overwrite: bool = False) → Path
-29140 29172
+29498 29530
 
 #### *classmethod* build(path: str | PathLike[str], documents: Iterable[tuple[str, str, str | None, str | None]], \*, overwrite: bool = False, byte_lengths: bool = BYTE_LENGTHS) → int
-30035 30069
+30393 30427

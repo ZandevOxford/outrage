@@ -2034,6 +2034,45 @@ def test_a_whole_subtree_count_across_a_boundary_does_not_count_the_unit_twice(t
         assert table.descendant_count("a", whole_subtree=True) == 4
 
 
+def test_a_listing_reports_what_a_mount_holds_below_a_listed_key(tmp_path):
+    """The descendant columns cross a boundary, because the count they match does.
+
+    A store asked about its own subtree cannot see a mount below it: it would
+    count the rows the mount shadows, which reading by key refuses, and leave
+    out everything the mounted store holds. Both wrong at once and neither
+    visible, which is why the table answers these rather than passing the flags
+    inward.
+
+    The corpus is built so the two errors do not cancel: the outer store holds
+    *more* rows under the mount point than the inner store holds altogether, so
+    a listing that forgot to cross would report a larger number rather than a
+    suspiciously small one.
+    """
+    outer = SqliteStore(tmp_path, filename="outer.sqlite")
+    inner = SqliteStore(tmp_path, filename="inner.sqlite")
+    outer.store_document("a", "a")
+    for name in ("b", "b/x", "b/y", "b/z"):
+        outer.store_document(f"a/{name}", "shadowed")
+    inner.store_document("", "mounted")
+    inner.store_document("!title", "Mounted")
+    inner.store_document("c", "below")
+
+    with MountedStore({keys.ROOT: outer, "a/b": inner}) as table:
+        (entry,) = table.list_keys("a", descendant_counts=True, descendant_chars=True).items
+        assert (entry.key, entry.kind) == ("a/b", "mount")
+        # a/b/!title and a/b/c, and neither of the three shadowed keys.
+        assert (entry.descendants, entry.descendant_documents) == (2, 1)
+        assert entry.descendant_chars == len("Mounted") + len("below")
+
+        # And the level above, where the mount point itself is one of the keys
+        # below `a` -- the asymmetry `descendant_count` already has.
+        (above,) = table.list_keys(descendant_counts=True, descendant_chars=True).items
+        assert above.key == "a"
+        assert above.descendants == table.descendant_count("a", whole_subtree=True) == 3
+        assert above.descendant_documents == 2
+        assert above.descendant_chars == len("mounted") + len("Mounted") + len("below")
+
+
 def test_the_newest_change_crosses_a_boundary_the_way_a_count_does(tmp_path):
     """The maximum over the mounts, including the two rows the inside cannot see.
 

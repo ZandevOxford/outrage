@@ -863,7 +863,7 @@ A final *file* named for that prefix is the symmetric collision spelling:
 directory already holds its children. In an earlier component the same
 spelling is a directory, and therefore the container below that document.
 
-### outrage.bulk.levels(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
+### outrage.bulk.levels(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), \*, descendant_counts: [bool](https://docs.python.org/3/library/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
 
 One level, a page at a time, to the end.
 
@@ -872,6 +872,11 @@ the level, and a listing that stops at an internal page size is the silent
 partial answer this project keeps finding. Streaming is what makes it both
 complete and bounded in memory - and it fails better, since a long listing
 interrupted has already shown its first thousand lines rather than nothing.
+
+The descendant flags are passed through to
+[`list_keys()`](store.md#outrage.store.Store.list_keys), which fills them over each page as
+it arrives -- so a listing that streams pays for them a page at a time and
+an interrupted one has paid for what it printed.
 
 ### outrage.bulk.new_export_file(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
@@ -1117,7 +1122,7 @@ alone rather than raising. This runs on the way to an export, and failing
 that export because somebody else's leftovers are unreadable would be a
 worse answer than leaving them there.
 
-### outrage.bulk.walk(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
+### outrage.bulk.walk(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), \*, descendant_counts: [bool](https://docs.python.org/3/library/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
 
 Every key below `key`, depth first.
 
@@ -1135,3 +1140,11 @@ reading that metadata is a leaf, drops `a/!x/y` from an export without
 saying so. The shape on disk is the ordinary
 document-with-children one -- `!x.md` beside the directory `!x/` --
 which is what `FilesystemStore` already writes.
+
+**The descendant flags are quadratic here**, and are passed through anyway.
+Every level asks each of its children what lies below it, then descends and
+asks the same of theirs, so a subtree is measured once per ancestor it has.
+That is the honest cost of a recursive listing reporting subtree totals; it
+is bounded by depth rather than unbounded, and the caller who wants it -- a
+person at a command line looking at one subtree -- is the one in a position
+to know the subtree is small. [`levels()`](#outrage.bulk.levels) does not have this shape.

@@ -52,35 +52,35 @@
 #### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
 15695 15709
 
-#### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None) → Page[Entry]
+#### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
 16972 16988
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-17992 18010
+18470 18488
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
-19305 19325
+19783 19803
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-20431 20453
+20909 20931
 
 #### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
-21583 21607
+22061 22085
 
 #### opened_at(path: Path) → Self
-23541 23567
+24019 24045
 
 #### *property* stored_format_version *: int*
-24814 24842
+25292 25320
 
 #### audit_rows() → Iterator[AuditRow]
-25442 25470
+25920 25948
 
 #### check_file(report: Report) → None
-25983 26013
+26461 26491
 
 #### repair() → list[Repaired]
-26547 26579
+27025 27057
 
 ### *exception* outrage.store_files.NotTextError(code: str, \*\*details: Any)
-27103 27137
+27581 27615

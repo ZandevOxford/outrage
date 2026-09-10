@@ -173,6 +173,16 @@ content themselves but have something beneath them. A key of kind `mount`
 is where another store is mounted, and `read-only mount` is one that refuses
 writes.
 
+`descendant_counts` reports how many keys and how many documents lie below
+each listed key, which is how a level says which of its children is worth
+descending into. `descendant_chars` reports how much text is down there.
+Both are off by default because both read the subtree, where the listing
+itself does not: ask for them when choosing where to go, not on every call.
+A key with a metadata segment anywhere above it counts as metadata, so
+`descendant_documents` never includes one. Both counts are of *stored* keys,
+so a key of kind `implicit` is listed but is not counted below its own
+parent - a level can show more children than the number beneath it.
+
 Pages contain at most 100 keys. Pass `next_cursor` as `after` for the next
 slice.
 
@@ -181,6 +191,8 @@ slice.
 - `key` (string or null; default null) — Key to list below
 - `limit` (integer; default 100; greater than 0) — Maximum keys to return
 - `after` (string or null; default null) — Resume after this key, from a previous result's next_cursor
+- `descendant_counts` (boolean; default false) — Report how many keys and documents lie below each listed key. Costs a scan of each one's subtree, so off by default
+- `descendant_chars` (boolean; default false) — Report how many characters lie below each listed key. The most expensive of the three, so off by default
 
 ### Returns
 
@@ -198,6 +210,9 @@ slice.
 - `size` (integer or null; required) — Stored characters, when this key has content
 - `format` (string or null; required) — Stored content format, when applicable
 - `updated_at` (string or null; required) — Last write time, when applicable
+- `descendants` (integer or null; optional) — Keys below this one, metadata included; only when asked for
+- `descendant_documents` (integer or null; optional) — Those of them that are documents; only when asked for
+- `descendant_chars` (integer or null; optional) — Characters held below this key; only when asked for
 
 ## `get_documents`
 
@@ -305,6 +320,9 @@ continuing. Pass it as `after` until `next_cursor` is null.
 - `size` (integer or null; required) — Stored characters, when this key has content
 - `format` (string or null; required) — Stored content format, when applicable
 - `updated_at` (string or null; required) — Last write time, when applicable
+- `descendants` (integer or null; optional) — Keys below this one, metadata included; only when asked for
+- `descendant_documents` (integer or null; optional) — Those of them that are documents; only when asked for
+- `descendant_chars` (integer or null; optional) — Characters held below this key; only when asked for
 
 #### `MatchWitness` fields
 

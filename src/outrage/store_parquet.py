@@ -106,6 +106,8 @@ from .store import (
     _position,
     _scope,
     _sliced,
+    _SubtreeTotals,
+    _with_descendants,
     check_read_position,
     entry_kind,
     meta_reader,
@@ -1043,6 +1045,46 @@ class ParquetStore(FileStore):
             if below(candidate) and (whole_subtree or not lo <= candidate < hi)
         )
 
+    def _subtree_totals(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
+    ) -> _SubtreeTotals:
+        """The subtree's run of rows, counted by arithmetic and walked once.
+
+        A subtree is one contiguous stretch of a file already written in key
+        order, so :meth:`_Index.span` gives it in two bisections and the number
+        of keys in it is a subtraction -- no rows converted at all. Only the
+        document count needs the walk, and only ``meta_name`` is converted for
+        it: that column is written for every row below a metadata segment and
+        not the segment alone, which is exactly the definition
+        :class:`~outrage.store._SubtreeTotals` states.
+
+        ``key``'s own row sorts first inside its own subtree and is dropped
+        here, which is what makes this *strictly* below and keeps an entry's
+        own ``size`` from being counted again in its ``descendant_chars``. It
+        is dropped after the range is applied and not before: a range that
+        starts past it has already excluded it, and stepping over a row the
+        bounds never included would take a real one with it.
+
+        The characters are a slice of ``chars`` off its buffer, so they cost
+        far less here than in a store that has to measure content -- but they
+        stay behind the flag, because a surface that is opt in on one backend
+        and always on in another is two contracts wearing one name.
+        """
+        parsed = keys.parse(key)
+        index = self._index
+        inner, outer = index.span(parsed.key)
+        lower, upper = _span(index.order, key_range)
+        start, stop = max(inner, lower), max(min(outer, upper), max(inner, lower))
+        if start < stop and index.names[start] == parsed.key:
+            start += 1
+        documents = sum(1 for name in index.column_in("meta_name", start, stop) if name is None)
+        sizes = index.sizes
+        return _SubtreeTotals(
+            keys=stop - start,
+            documents=documents,
+            chars=sum(sizes[position] for position in range(start, stop)) if chars else None,
+        )
+
     @_logged("latest_change")
     def latest_change(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
@@ -1167,6 +1209,8 @@ class ParquetStore(FileStore):
         *,
         limit: int | None = None,
         cursor: str | None = None,
+        descendant_counts: bool = False,
+        descendant_chars: bool = False,
     ) -> Page[Entry]:
         """One level, real and implicit keys together, walked in order.
 
@@ -1185,6 +1229,10 @@ class ParquetStore(FileStore):
         which is how ``more`` is known without counting the rest twice.
 
         The characters come from ``chars`` without any content being read.
+
+        The descendant flags are filled over the page afterwards, one
+        :meth:`_subtree_totals` per child, and are the one part of this that is
+        linear in the subtree rather than in the level.
         """
         # The whole key, not its document part: a metadata namespace is a
         # level like any other and ``list_keys("a/!x")`` lists what is in it.
@@ -1216,6 +1264,7 @@ class ParquetStore(FileStore):
                 # one. Counting the rest would walk the level twice.
                 more = True
 
+        items = _with_descendants(self, items, counts=descendant_counts, chars=descendant_chars)
         return Page(
             items=items,
             returned=len(items),

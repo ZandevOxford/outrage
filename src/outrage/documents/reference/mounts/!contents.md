@@ -130,89 +130,89 @@
 #### delete(key: str, recursive: bool = False, \*, key_range: KeyRange = UNBOUNDED, unchanged_since: str | None = None, dry_run: bool = False) → list[str]
 32118 32156
 
-#### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None) → Page[Entry]
+#### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
 34173 34213
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-35006 35048
+35859 35901
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-37194 37238
+38047 38091
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
-38405 38451
+39258 39304
 
 #### close() → None
-39366 39414
+40219 40267
 
 ### *exception* outrage.mounts.ReadOnlyMountError(code: str, \*\*details: Any)
-39500 39550
+40353 40403
 
 ### *class* outrage.mounts.Resolved(mount: Mount, key: str, outer: str)
-40304 40354
+41157 41207
 
 #### mount *: Mount*
-40643 40693
+41496 41546
 
 #### key *: str*
-40690 40740
+41543 41593
 
 #### outer *: str*
-40798 40848
+41651 41701
 
 #### *property* store *: Store*
-40915 40965
+41768 41818
 
 #### *property* read_only *: bool*
-41364 41414
+42217 42267
 
 #### writable(action: str = 'write') → Resolved
-41510 41560
+42363 42413
 
 ### *class* outrage.mounts.Segment(mount: Mount, subtree: BoundedSubtree, key_range: KeyRange)
-43052 43104
+43905 43957
 
 #### mount *: Mount*
-43978 44030
+44831 44883
 
 #### subtree *: BoundedSubtree*
-44025 44077
+44878 44930
 
 #### key_range *: KeyRange*
-44099 44151
+44952 45004
 
 #### *property* store *: Store*
-44163 44215
+45016 45068
 
 #### resume_from(after: str | None) → tuple[str | None, bool]
-44513 44565
+45366 45418
 
 ### *class* outrage.mounts.Spec(path: Path, type: str | None = None, extensions: str | None = None)
-45998 46052
+46851 46905
 
 #### path *: Path*
-46987 47041
+47840 47894
 
 #### type *: str | None*
-47070 47124
+47923 47977
 
 #### extensions *: str | None*
-47282 47336
+48135 48189
 
 #### opened(directory: str | PathLike[str] | None = None, \*, log: EventLog | None = None, mount_point: str | None = None) → FileStore
-47608 47662
+48461 48515
 
 ### outrage.mounts.mount_point(prefix: str, \*, spec: str | None = None) → str
-48789 48845
+49642 49698
 
 ### outrage.mounts.open_mounts(directory: str | PathLike[str] | None, specs: Sequence[str] = (), read_only_specs: Sequence[str] = (), \*, root_mount: str | PathLike[str] | Spec | None = None, log: EventLog | None = None, attached: Mapping[str, Store] = MappingProxyType({})) → MountedStore
-49567 49625
+50420 50478
 
 ### outrage.mounts.parse_options(value: str, \*, spec: str | None = None) → Spec
-53558 53618
+54411 54471
 
 ### outrage.mounts.parse_spec(spec: str) → tuple[str, Spec]
-54870 54932
+55723 55785
 
 ### outrage.mounts.unparse(spec: Spec) → str
-56161 56225
+57014 57078

@@ -81,6 +81,8 @@ from .store import (
     _position,
     _scope,
     _sliced,
+    _SubtreeTotals,
+    _with_descendants,
     check_read_position,
     check_unchanged,
     entry_kind,
@@ -791,6 +793,43 @@ class SqliteStore(FileStore):
         ).fetchone()
         return row["n"]
 
+    def _subtree_totals(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
+    ) -> _SubtreeTotals:
+        """One range scan over the subtree, aggregated three ways in SQLite.
+
+        :meth:`descendant_count`'s ``whole_subtree`` selection -- :func:`_below`
+        and nothing subtracted -- with two more aggregates on it. All three come
+        from one scan because they are one question about one stretch of the
+        primary key, and asking separately would read the same rows twice.
+
+        ``meta_name IS NOT NULL`` is the document test, which is free: it is
+        already set on **every** row below a metadata segment rather than on the
+        segment alone, so the definition :class:`_SubtreeTotals` states is the
+        one the column was already keeping. No second predicate, no new column.
+
+        The characters are the part that is left out when they are not asked
+        for, and leaving them out is the point: ``_CHARS`` falls back to
+        ``length(content)`` where the cache does not hold a row, so a sum over
+        a subtree of small documents measures every one of them. The counts
+        read the index and stop.
+        """
+        below, bounds = _below("key", keys.parse(key).key)
+        clauses, params = _range_clauses(key_range)
+        within = "".join(f" AND {clause}" for clause in clauses)
+        measure = f", coalesce(sum({_CHARS}), 0) AS chars" if chars else ""
+        row = self._conn.execute(
+            "SELECT count(*) AS n, "
+            "count(*) FILTER (WHERE meta_name IS NULL) AS documents"
+            f"{measure} FROM documents WHERE {below}{within}",
+            [*bounds, *params],
+        ).fetchone()
+        return _SubtreeTotals(
+            keys=row["n"],
+            documents=row["documents"],
+            chars=int(row["chars"]) if chars else None,
+        )
+
     @_logged("latest_change")
     def latest_change(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
@@ -1067,6 +1106,8 @@ class SqliteStore(FileStore):
         *,
         limit: int | None = None,
         cursor: str | None = None,
+        descendant_counts: bool = False,
+        descendant_chars: bool = False,
     ) -> Page[Entry]:
         """One level, real and implicit keys together, walked in order.
 
@@ -1083,6 +1124,12 @@ class SqliteStore(FileStore):
         which is what a caller cannot work out from a page: 20 keys of 22 is a
         listing and 20 of 40000 is a sample. So the level is walked whatever
         happens; what does not happen is an ``Entry`` per key surviving it.
+
+        The descendant flags add a fourth question, asked only of the page and
+        only when it is asked for -- :meth:`_subtree_totals`, one range scan per
+        child. That is deliberately the one part of this method that is linear
+        in what lies below, which is why it is opt in; the rest stays bounded by
+        the level whether or not it is set.
         """
         # The whole key, not its document part: a metadata namespace is a
         # level like any other and ``list_keys("a/!x")`` lists what is in it.
@@ -1103,7 +1150,9 @@ class SqliteStore(FileStore):
                 # one. Counting the rest would walk the level twice.
                 more = True
 
-        items = self._entries(page)
+        items = _with_descendants(
+            self, self._entries(page), counts=descendant_counts, chars=descendant_chars
+        )
         return Page(
             items=items,
             returned=len(items),

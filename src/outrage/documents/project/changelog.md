@@ -19,6 +19,21 @@ The command-line import report now names only the store files that received
 documents, or would receive them in a dry run. It no longer presents every
 open mounted store as though the import wrote there.
 
+A listing can now report what lies below each key it names. `list_keys` takes
+`descendant_counts`, which fills in how many keys and how many documents are
+stored beneath each entry, and `descendant_chars`, which fills in how many
+characters they hold; the MCP tool and `outrage ls` take the same two as
+`descendant_counts`/`descendant_chars` and `--counts`/`--chars`. Both are off
+by default, because naming a level costs its number of children while counting
+what is under one costs the subtree. They are answered over the page returned
+rather than over the whole level, so a `limit` bounds what they cost. A key
+with a metadata segment anywhere above it counts as metadata, and the counts
+are of stored keys, so a key listed as `implicit` is not counted beneath its
+parent -- the same selection `descendant_count(key, whole_subtree=True)` has
+always reported. Across a mount boundary the mount table answers, so a mount
+point reports what the store mounted there holds and rows a mount shadows are
+left out.
+
 ## 0.10.2 - 2026-09-08
 
 The installed documentation now includes the project's requirements and copies

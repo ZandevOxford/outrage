@@ -193,7 +193,13 @@ Packable = tuple[Transfer, Document | None]
 # -- walking the store ---------------------------------------------------
 
 
-def levels(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
+def levels(
+    opened: store.Store,
+    key: str | None,
+    *,
+    descendant_counts: bool = False,
+    descendant_chars: bool = False,
+) -> Iterator[store.Entry]:
     """One level, a page at a time, to the end.
 
     The store pages and the command line does not: a person listing a key wants
@@ -201,17 +207,34 @@ def levels(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
     partial answer this project keeps finding. Streaming is what makes it both
     complete and bounded in memory - and it fails better, since a long listing
     interrupted has already shown its first thousand lines rather than nothing.
+
+    The descendant flags are passed through to
+    :meth:`~outrage.store.Store.list_keys`, which fills them over each page as
+    it arrives -- so a listing that streams pays for them a page at a time and
+    an interrupted one has paid for what it printed.
     """
     cursor = None
     while True:
-        page = opened.list_keys(key, limit=PAGE, cursor=cursor)
+        page = opened.list_keys(
+            key,
+            limit=PAGE,
+            cursor=cursor,
+            descendant_counts=descendant_counts,
+            descendant_chars=descendant_chars,
+        )
         yield from page.items
         if page.next_cursor is None:
             return
         cursor = page.next_cursor
 
 
-def walk(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
+def walk(
+    opened: store.Store,
+    key: str | None,
+    *,
+    descendant_counts: bool = False,
+    descendant_chars: bool = False,
+) -> Iterator[store.Entry]:
     """Every key below ``key``, depth first.
 
     Built from repeated ``list_keys`` rather than from ``get_documents``,
@@ -228,10 +251,25 @@ def walk(opened: store.Store, key: str | None) -> Iterator[store.Entry]:
     saying so. The shape on disk is the ordinary
     document-with-children one -- ``!x.md`` beside the directory ``!x/`` --
     which is what ``FilesystemStore`` already writes.
+
+    **The descendant flags are quadratic here**, and are passed through anyway.
+    Every level asks each of its children what lies below it, then descends and
+    asks the same of theirs, so a subtree is measured once per ancestor it has.
+    That is the honest cost of a recursive listing reporting subtree totals; it
+    is bounded by depth rather than unbounded, and the caller who wants it -- a
+    person at a command line looking at one subtree -- is the one in a position
+    to know the subtree is small. :func:`levels` does not have this shape.
     """
-    for entry in levels(opened, key):
+    for entry in levels(
+        opened, key, descendant_counts=descendant_counts, descendant_chars=descendant_chars
+    ):
         yield entry
-        yield from walk(opened, entry.key)
+        yield from walk(
+            opened,
+            entry.key,
+            descendant_counts=descendant_counts,
+            descendant_chars=descendant_chars,
+        )
 
 
 # -- the mapping ---------------------------------------------------------
