@@ -2,6 +2,34 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+A reference base can now be a directory of parquet files rather than one. The
+new `duckdb` backend reads every part in a directory as one store, and the
+parts may be in any order, within a file and across files, so a corpus that
+arrives in pieces can be read as it arrives rather than merged and sorted
+first. Each part is a file `outrage pack` could have written. A directory has
+no extension to name its backend, so it is named when mounted:
+`--mount-ro ref=parts,type=duckdb`, or `type = "duckdb"` in `mounts.toml`. It
+needs the new `duckdb` extra, `pip install 'outrage[duckdb]'`, and not pyarrow.
+
+A key held in more than one part is held more than once. Reading documents
+returns each row and their totals count rows, while reading the key, or
+listing the level it is on, gives the newest of them. Pages of documents never
+end between two rows of one key, so a page can hold fewer than its `limit`
+and, when one key's rows fill a page by themselves, more. The store
+reads the parts present when it is opened, refuses writes, and refuses parts in
+an older or a mixed format version with a sentence saying so.
+
+Reads here take several milliseconds where the parquet backend's take
+microseconds, both far below the cost of the tool call carrying them; what this
+backend holds in memory does not grow with the corpus, where the parquet
+backend's index does. So which to use turns on the corpus's shape and size
+rather than on speed.
+
+Refusing a write to a read-only backend now names the backend, where it used to
+call every such store a parquet store.
+
 ## 0.10.3 - 2026-09-10
 
 Listing a key in a SQLite store no longer costs time proportional to

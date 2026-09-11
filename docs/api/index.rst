@@ -40,14 +40,16 @@ read-write, accumulated a document at a time, and what session context and
 notes on a codebase live in. :mod:`outrage.store_parquet` is one file, written
 whole and read many times, for a reference base of tens of thousands of
 documents; it refuses writes, and ``outrage pack`` is how documents get into
-one. :mod:`outrage.store_files` is a directory of files, one per key, which is
-what an export target and a working copy are -- the shape a person edits by
-hand.
+one. :mod:`outrage.store_duckdb` reads a directory of such files, in any
+order, as one store, for a reference base too large for one file or that
+arrives in pieces; it refuses writes too. :mod:`outrage.store_files` is a
+directory of files, one per key, which is what an export target and a working
+copy are -- the shape a person edits by hand.
 
 Which storage a store *file* is kept in follows from its extension --
-:func:`outrage.store._backend_for` -- and a tree has no extension to read, so
-a filesystem store is constructed directly at its path rather than opened by
-name.
+:func:`outrage.store._backend_for` -- and a directory has no extension to read,
+so a tree or a directory of parts is named with ``type=`` rather than
+inferred.
 
 :mod:`outrage.remount` is what a *process* has, which :mod:`outrage.mounts`
 deliberately is not: one table reference, swapped under a lock, and the stores
@@ -73,6 +75,7 @@ read-only at ``outrage``. A store file is relative to ``--dir`` and a tree in
    store
    store_sqlite
    store_parquet
+   store_duckdb
    store_files
    mounts
    remount

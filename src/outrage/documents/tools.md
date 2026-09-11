@@ -574,7 +574,7 @@ server; write it into the mount configuration file to keep it.
 
 - `key` (string; required) — Key to mount the store at; the root cannot be mounted over
 - `file` (string or null; default null) — Store file, relative to the store directory. Omit it to mount the store outrage ships for this key, which is how the 'outrage' manual is put back after unmounting it
-- `type` (string or null; default null) — Backend to open `file` with, when the file name does not say: 'files' for a directory of files
+- `type` (string or null; default null) — Backend to open `file` with, when the file name does not say: 'files' for a directory of files, 'duckdb' for a directory of parquet parts
 - `extensions` (string or null; default null) — For a directory of files, whether a known extension is part of the key: 'strip' takes it off, 'keep' makes the file name and the key one string, for a bundle whose documents link to each other by name
 - `read_only` (boolean; default false) — Refuse every write routed here; the file itself is untouched
 

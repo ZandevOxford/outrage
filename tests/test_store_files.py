@@ -842,7 +842,7 @@ def test_a_backend_kept_in_one_file_refuses_the_option_rather_than_ignoring_it(t
     and an option that silently did nothing is the failure a mount
     configuration is least able to notice.
     """
-    with raises_rendered(store_module.BackendError, "kept in one file") as raised:
+    with raises_rendered(store_module.BackendError, "holds its documents as rows") as raised:
         store_module.default_store(tmp_path, filename="s.sqlite", extensions="keep")
     assert raised.value.code == "backend-takes-no-extensions"
 

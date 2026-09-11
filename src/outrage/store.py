@@ -1994,6 +1994,7 @@ _BACKENDS: dict[str, tuple[str, str]] = {
     "sqlite": (".store_sqlite", "SqliteStore"),
     "parquet": (".store_parquet", "ParquetStore"),
     "files": (".store_files", "FilesystemStore"),
+    "duckdb": (".store_duckdb", "DuckdbStore"),
 }
 
 #: The extension each backend claims, as the name it resolves to. A store file

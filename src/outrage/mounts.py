@@ -371,6 +371,7 @@ class Resolved:
                 key=self.outer,
                 path=str(self.mount.store.path),
                 action=action,
+                backend=type(self.mount.store).backend_name,
             )
         raise ReadOnlyMountError(
             "mount-read-only", key=self.outer, mount=self.mount.prefix, action=action

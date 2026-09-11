@@ -96,6 +96,14 @@ Install the extra to add Parquet support:
 
 `pip install outrage[parquet]`
 
+A reference base too large for one file, or that arrives in pieces, can be
+read as a directory of Parquet parts in any order, through DuckDB. That is a
+second optional extra, and the directory is named as one when it is mounted:
+
+`pip install outrage[duckdb]`
+
+`outrage-server --mount-ro ref=parts,type=duckdb`
+
 ## Development
 
 Outrage itself has been developed using Outrage as a memory store.

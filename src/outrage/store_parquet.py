@@ -965,7 +965,13 @@ class ParquetStore(FileStore):
             encoding=encoding,
             updated_at=updated_at,
         )
-        raise ReadOnlyStoreError("store-read-only", key=key, path=str(self.path), action="write")
+        raise ReadOnlyStoreError(
+            "store-read-only",
+            key=key,
+            path=str(self.path),
+            action="write",
+            backend=self.backend_name,
+        )
 
     @_logged("delete")
     def delete(
@@ -988,7 +994,13 @@ class ParquetStore(FileStore):
         "these keys would go" from a store where they never could is the one
         thing a preview must not say.
         """
-        raise ReadOnlyStoreError("store-read-only", key=key, path=str(self.path), action="delete")
+        raise ReadOnlyStoreError(
+            "store-read-only",
+            key=key,
+            path=str(self.path),
+            action="delete",
+            backend=self.backend_name,
+        )
 
     # -- reading ---------------------------------------------------------
 

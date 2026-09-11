@@ -41,12 +41,14 @@ can be tested and reused on its own.
 **The interface and the backend are separate modules.** `outrage.store` says
 what a store is - the operations, the value types every answer comes back as,
 and the two ways a call bounds what it is asking about - as an abstract `Store`.
-There are three **backends**. `outrage.store_sqlite` is the read-write one -
+There are four **backends**. `outrage.store_sqlite` is the read-write one -
 the schema, its migrations, the connection handling, and the SQL - and is what
 a store is opened as when its file says nothing else. `outrage.store_parquet`
 is one columnar file, written whole and read many times, for a reference base
 of tens of thousands of documents; it refuses writes, and `outrage pack` is how
-documents get into one. `outrage.store_files` is a directory of files, one per
+documents get into one. `outrage.store_duckdb` reads a directory of those files
+in any order as one store, for a reference base too large for one file or that
+arrives in pieces, and refuses writes too. `outrage.store_files` is a directory of files, one per
 key, which is what an export target and a working copy already were - the same
 mapping `outrage.bulk` writes a tree with, expressed as a store, so that moving
 documents between a database and a directory is a copy rather than a fourth

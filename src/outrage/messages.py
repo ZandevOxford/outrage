@@ -1487,15 +1487,28 @@ def _assets_empty(name: Namer, /, *, asset: str, path: str, **_: Any) -> str:
 
 
 @template("store-read-only")
-def _store_read_only(name: Namer, /, *, key: str, path: str, action: str, **_: Any) -> str:
+def _store_read_only(
+    name: Namer, /, *, key: str, path: str, action: str, backend: str, **_: Any
+) -> str:
     # Deliberately does *not* offer a flag to drop, which is what separates
     # this from `mount-read-only`: no way of opening a parquet file makes a
     # write to it succeed, and advice that cannot work is worse than none. It
     # reaches a caller through a mount as well as through a bare store --
     # `Resolved.writable` picks between the two refusals by asking the store
     # rather than the configuration.
+    #
+    # The backend is named by the raise site because the reason differs
+    # between the stores that refuse, and so does what to do instead: a
+    # sentence about one file written whole is wrong about a directory of them.
+    if backend == "duckdb":
+        return (
+            f"cannot {action} {name(key)!r}: it is in a duckdb store, a directory "
+            f"of parquet parts that is read and never written through. No way of "
+            f"starting the server allows a write here; a part is added by putting "
+            f"a new file in the directory, which `outrage pack` can write. ({path})"
+        )
     return (
-        f"cannot {action} {name(key)!r}: it is in a parquet store, which is "
+        f"cannot {action} {name(key)!r}: it is in a {backend} store, which is "
         f"written whole rather than updated in place. No way of starting the "
         f"server allows a write here; build a new one with `outrage pack`. "
         f"({path})"
@@ -1529,8 +1542,9 @@ def _backend_takes_no_extensions(
     return (
         f"the {backend} store{about} cannot be asked for {extensions!r} "
         f"extensions: how a file name lines up with a key is a question only a "
-        f"directory of files has, and this store is kept in one file. Mount it "
-        f"with `type=files` if it is a tree, or drop the option."
+        f"directory of files has, one file per key, and this store holds its "
+        f"documents as rows. Mount it with `type=files` if it is a tree, or "
+        f"drop the option."
     )
 
 
@@ -1571,6 +1585,95 @@ def _parquet_format_newer(name: Namer, /, *, path: str, found: int, expected: in
 @template("parquet-target-exists")
 def _parquet_target_exists(name: Namer, /, *, path: str, **_: Any) -> str:
     return f"{path} already exists; pass --overwrite to replace it"
+
+
+@template("duckdb-needs-duckdb")
+def _duckdb_needs_duckdb(name: Namer, /, *, reason: str, **_: Any) -> str:
+    return (
+        f"a duckdb store needs duckdb, which is not installed: {reason}. "
+        f"Install it with `pip install 'outrage[duckdb]'`."
+    )
+
+
+@template("duckdb-store-missing")
+def _duckdb_store_missing(name: Namer, /, *, path: str, **_: Any) -> str:
+    return (
+        f"there is no directory of parquet parts at {path}. A duckdb store is "
+        f"not created empty: nothing writes to it, so an empty one could only "
+        f"ever read back empty. Put the parts in a directory and name that."
+    )
+
+
+@template("duckdb-not-a-directory")
+def _duckdb_not_a_directory(name: Namer, /, *, path: str, **_: Any) -> str:
+    return (
+        f"{path} is a file, and a duckdb store is a directory of parquet parts. "
+        f"A single parquet file is read by the parquet backend, which its "
+        f"extension already chooses: drop `type=duckdb`."
+    )
+
+
+@template("duckdb-no-parts")
+def _duckdb_no_parts(name: Namer, /, *, path: str, **_: Any) -> str:
+    return (
+        f"{path} holds no parquet parts: a part is a file ending .parquet, "
+        f"directly inside it and not hidden. An empty directory would mount as "
+        f"a store that is simply empty, so it is refused instead."
+    )
+
+
+@template("duckdb-part-unreadable")
+def _duckdb_part_unreadable(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
+    return (
+        f"a part in {path} cannot be read as parquet, so the directory is not "
+        f"opened at all rather than read without it: {reason}"
+    )
+
+
+@template("duckdb-part-not-a-store")
+def _duckdb_part_not_a_store(name: Namer, /, *, path: str, **_: Any) -> str:
+    return (
+        f"{path} is a parquet file but not an outrage store: it carries no format "
+        f"version, so its columns are somebody else's and mean something else. "
+        f"Every part in the directory has to be one `outrage pack` could have written."
+    )
+
+
+@template("duckdb-mixed-versions")
+def _duckdb_mixed_versions(
+    name: Namer,
+    /,
+    *,
+    path: str,
+    first: str,
+    first_version: int,
+    other: str,
+    other_version: int,
+    **_: Any,
+) -> str:
+    return (
+        f"the parts in {path} disagree about their format: {first} is format "
+        f"{first_version} and {other} is format {other_version}. Every part "
+        f"must be written in one format; repack the older ones."
+    )
+
+
+@template("duckdb-format-newer")
+def _duckdb_format_newer(name: Namer, /, *, path: str, found: int, expected: int, **_: Any) -> str:
+    return (
+        f"the parts in {path} are written in parquet store format {found} and "
+        f"this build reads {expected}; upgrade outrage, or repack them with this one"
+    )
+
+
+@template("duckdb-format-older")
+def _duckdb_format_older(name: Namer, /, *, path: str, found: int, expected: int, **_: Any) -> str:
+    return (
+        f"the parts in {path} are written in parquet store format {found}, and a "
+        f"duckdb store reads only format {expected}: the older format's metadata "
+        f"columns would have to be re-derived from every key. The parquet backend "
+        f"still reads a single file of it; repack the parts to read them here."
+    )
 
 
 @template("parquet-build-wildcard")

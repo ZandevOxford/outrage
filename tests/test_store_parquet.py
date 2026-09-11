@@ -714,7 +714,7 @@ def test_a_backend_may_be_named_instead_of_inferred(tmp_path):
     assert store_module._backend_for("documents", "files") is FilesystemStore
     # The name wins over the extension, which is the point of asking.
     assert store_module._backend_for("ref.sqlite", "parquet") is ParquetStore
-    assert store_module.backend_names() == ("files", "parquet", "sqlite")
+    assert store_module.backend_names() == ("duckdb", "files", "parquet", "sqlite")
 
     with raises_rendered(BackendError, "there is no 'tree' backend"):
         store_module._backend_for("documents", "tree")

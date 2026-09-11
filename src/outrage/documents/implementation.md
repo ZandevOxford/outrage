@@ -156,6 +156,43 @@ integrity check, so the row count is the only check that catches it. The count
 is taken after the copy, which means a concurrent write can fail a good backup;
 that is preferred to trusting a count nobody took.
 
+### 2b. Duckdb backend - `src/outrage/store_duckdb.py` - done
+
+A fourth implementation of `Store`, read-only, for a reference base too large
+for one file or that arrives in pieces: a directory of parquet parts, each one a
+file `outrage pack` could have written, read as one store through duckdb. The
+parts may be in **any order**, within a part and across parts. That is what
+rules out the parquet backend's own reads, which bisect one sorted file and
+hold its small columns resident to do it; here nothing is held between queries,
+so what a store costs does not grow with the corpus. Named rather than inferred,
+since a directory has no extension: `--mount-ro ref=parts,type=duckdb`.
+
+Reads are the SQLite backend's SQL over a view of the parts, sharing its range,
+subtree and metadata clauses, so the three backends are one namespace by
+construction as well as by test. A listing groups the rows below a key by their
+next segment, which costs the subtree rather than the level - the one read here
+not bounded by what it returns. Measured against the parquet backend at
+666,667 rows, reads are several times slower and all of them tens of
+milliseconds or less, which is below the cost of the tool call carrying them.
+
+**A key held in more than one part is held more than once.** Reading documents
+returns each row and counts rows; reading the key, or listing its level,
+gives the newest - a listing entry being by contract what `level_entry` says
+about the key, and a mount table merging a level by key. What the repeated rows
+need is a rule about pages, since a cursor names a key: a page never ends
+between two rows of one key, stopping in front of them or, when one key's rows
+fill a page by themselves, returning all of them. Compaction - packing the
+directory into one file - is what removes the repeats.
+
+Every part must be in this build's format version; an older part is refused
+with the advice to repack it, and a directory mixing versions is refused naming
+both. duckdb is an optional extra (`pip install 'outrage[duckdb]'`), and reading
+a directory needs no pyarrow.
+
+It is checked the way the parquet backend is, with the same corpus and battery
+dealt at random across shuffled parts, and with a key repeated across parts
+paged through at every limit.
+
 ### 3. MCP server - `src/outrage/server.py` - done
 
 Stdio server built on `MCPServer` from the MCP Python SDK, exposing

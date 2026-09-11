@@ -1959,7 +1959,8 @@ def build_server(
                 Field(
                     description=(
                         "Backend to open `file` with, when the file name does not "
-                        "say: 'files' for a directory of files"
+                        "say: 'files' for a directory of files, 'duckdb' for a "
+                        "directory of parquet parts"
                     )
                 ),
             ] = None,

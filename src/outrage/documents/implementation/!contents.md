@@ -16,29 +16,32 @@
 ### 2a. Parquet backend - `src/outrage/store_parquet.py` - done
 3122 3122
 
-### 3. MCP server - `src/outrage/server.py` - done
+### 2b. Duckdb backend - `src/outrage/store_duckdb.py` - done
 9236 9239
 
+### 3. MCP server - `src/outrage/server.py` - done
+11502 11505
+
 ### 3a. Mounted stores - `src/outrage/mounts.py` - done
-10387 10390
+12653 12656
 
 ### 4. Integration with Claude Code - done
-20970 20973
+23236 23239
 
 #### Getting a changed server to the agent
-21682 21685
+23948 23951
 
 #### What the session use changed
-22572 22575
+24838 24841
 
 ### 5. Skills - done
-25891 25894
+28157 28160
 
 #### Delivery
-27785 27788
+30051 30054
 
 ### 8. Event log - `src/outrage/eventlog.py` - done
-28886 28889
+31152 31155
 
 ## Planned work
-30957 30960
+33223 33226
