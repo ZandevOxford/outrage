@@ -175,7 +175,8 @@ class Live:
             try:
                 after = self._table.remounted(
                     mount={prefix: store},
-                    read_only=[prefix] if read_only or file is None else [],
+                    read_only=[prefix] if read_only and file is not None else [],
+                    lent=[prefix] if file is None else [],
                 )
                 replaced = prefix in {mount.prefix for mount in self._table}
                 notes = notes_for_mount(

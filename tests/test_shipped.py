@@ -22,11 +22,12 @@ from pathlib import Path
 import pytest
 
 from conftest import raises_rendered
-from outrage import keys, mounts, server, shipped
+from outrage import keys, messages, mounts, server, shipped
 from outrage.eventlog import EventLog
 from outrage.mounts import ReadOnlyMountError
 from outrage.store import BoundedSubtree
 from outrage.store_files import FilesystemStore
+from outrage.store_sqlite import SqliteStore
 
 # The sweep that writes the `!contents` indexes lives in `tools/`, run after a
 # docs build rather than imported by anything outrage installs, so it goes on
@@ -235,8 +236,29 @@ def test_a_write_through_the_mount_is_refused(tmp_path):
     """
     with mounts.open_mounts(tmp_path, attached=shipped.attached()) as table:
         assert [mount.prefix for mount in table.read_only] == [shipped.MOUNT_POINT]
-        with pytest.raises(ReadOnlyMountError):
+        with pytest.raises(ReadOnlyMountError) as raised:
             table.store_document(f"{shipped.MOUNT_POINT}/readme", "no")
+
+    # Lent, which is the refusal that offers no remount: nothing can mount the
+    # tree writable, so advice to do so is advice nobody can take.
+    assert raised.value.code == "mount-lent"
+    said = messages.render(raised.value)
+    assert "lent to this server" in said
+    assert "Mounting it again" not in said
+
+
+def test_the_manual_stays_lent_through_a_change_to_the_table(tmp_path):
+    """A remount copies every surviving mount whole, and that includes this."""
+    with mounts.open_mounts(tmp_path, attached=shipped.attached()) as table:
+        other = SqliteStore(tmp_path, filename="other.sqlite", mount_point="lib")
+        after = table.remounted(mount={"lib": other})
+        try:
+            assert after.unwritable([shipped.MOUNT_POINT]) == [shipped.MOUNT_POINT]
+            with pytest.raises(ReadOnlyMountError) as raised:
+                after.store_document(f"{shipped.MOUNT_POINT}/readme", "no")
+            assert raised.value.code == "mount-lent"
+        finally:
+            other.close()
 
 
 def test_the_log_names_a_read_of_the_manual_in_the_outer_namespace(tmp_path):

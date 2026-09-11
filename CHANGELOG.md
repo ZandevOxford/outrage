@@ -44,8 +44,11 @@ Four messages gave advice that could not work, and now do not:
 
 * A copy or delete that a read-only mount refused told the caller to mount it
   again without the flag. A parquet or duckdb store cannot be written however
-  it is mounted, and is now said to be; only a mount read-only by choice is
-  told to remount.
+  it is mounted, and neither can the documentation shipped at `outrage`, which
+  the `mount` tool always mounts read-only; these are now said to be, and only
+  a mount read-only by choice is told to remount. A write refused by the
+  shipped documentation says the same, where it used to offer both causes and
+  the remount.
 * Unmounting a store that was mounted with the `mount` tool said a restart would
   mount it again. Only a mount the server started with comes back, so the
   others now say nothing needs writing down.

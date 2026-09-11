@@ -201,6 +201,17 @@ class Mount:
     by accident.
     """
 
+    lent: bool = False
+    """Whether the store was lent to the table already open, which makes it
+    read-only whatever it is mounted with.
+
+    The shipped documentation is the case: it lives in the installation, has
+    no ``KEY=FILE`` spelling for a flag to name, and the ``mount`` tool mounts
+    it read-only however it is asked. So the remedy for an ordinary read-only
+    mount, mounting it again writable, is one nobody can take here, and a
+    refusal has to know which of the two it is looking at to say so.
+    """
+
     @property
     def kind(self) -> str:
         """What a listing calls this mount point."""
@@ -372,6 +383,12 @@ class Resolved:
                 path=str(self.mount.store.path),
                 action=action,
                 backend=type(self.mount.store).backend_name,
+            )
+        if self.mount.lent:
+            # The third refusal, and like the backend's it offers no remount:
+            # nothing can mount a lent store any other way.
+            raise ReadOnlyMountError(
+                "mount-lent", key=self.outer, mount=self.mount.prefix, action=action
             )
         raise ReadOnlyMountError(
             "mount-read-only", key=self.outer, mount=self.mount.prefix, action=action
@@ -801,7 +818,13 @@ class MountedStore(Store):
     #: Not an extension, because no file is kept here; see the class docstring.
     backend_name = "mounts"
 
-    def __init__(self, stores: Mapping[str, Store], *, read_only: Collection[str] = ()) -> None:
+    def __init__(
+        self,
+        stores: Mapping[str, Store],
+        *,
+        read_only: Collection[str] = (),
+        lent: Collection[str] = (),
+    ) -> None:
         # The base's own, which settles nothing but the log -- where a store's
         # file is belongs to `FileStore`, and this one has none. The log is
         # null because every mounted store already records what it was asked,
@@ -813,12 +836,19 @@ class MountedStore(Store):
         # point spelled one way in `stores` and another way here still names
         # the same mount. A read-only flag that silently applied to nothing
         # would be the worst of the available failures.
-        refusing = set()
-        for prefix in read_only:
-            parsed = keys.parse(prefix)
-            if parsed.key == keys.ROOT:
-                raise MountError("mount-root-read-only")
-            refusing.add(parsed.key)
+        def points(prefixes: Collection[str]) -> set[str]:
+            held = set()
+            for prefix in prefixes:
+                parsed = keys.parse(prefix)
+                if parsed.key == keys.ROOT:
+                    raise MountError("mount-root-read-only")
+                held.add(parsed.key)
+            return held
+
+        # A lent store is read-only as well, so it is held to the same checks:
+        # never the root, and never a point nothing is mounted at.
+        lending = points(lent)
+        refusing = points(read_only) | lending
 
         by_prefix: dict[str, Mount] = {}
         for prefix, store in stores.items():
@@ -845,6 +875,7 @@ class MountedStore(Store):
                 prefix=parsed.key,
                 store=store,
                 read_only=storage or parsed.key in refusing,
+                lent=parsed.key in lending,
             )
 
         # A read-only flag naming a mount point nothing is mounted at is a
@@ -878,6 +909,7 @@ class MountedStore(Store):
         *,
         mount: Mapping[str, Store] = MappingProxyType({}),
         read_only: Collection[str] = (),
+        lent: Collection[str] = (),
         unmount: Collection[str] = (),
     ) -> MountedStore:
         """This table with mounts removed and added, as a new table.
@@ -896,8 +928,10 @@ class MountedStore(Store):
         newly opened store, and this cannot silently do otherwise: the stores
         it mounts are the ones it was handed.
 
-        A surviving mount keeps its read-only flag; a replaced one does not,
-        since a replacement states what it is. The result goes through
+        A surviving mount keeps its read-only flag and whether it was lent; a
+        replaced one keeps neither, since a replacement states what it is --
+        ``lent`` names the new mounts that are lent stores, as
+        :func:`open_mounts`'s ``attached`` does. The result goes through
         :meth:`__init__`, so every invariant a table has is re-checked here
         rather than restated -- a metadata mount point, a duplicate, a root
         that must exist and be writable, a read-only flag matching nothing.
@@ -937,14 +971,17 @@ class MountedStore(Store):
             adding[parsed.key] = store
 
         stores = {m.prefix: m.store for m in self._mounts if m.prefix not in removing}
-        refusing = {
-            m.prefix
-            for m in self._mounts
-            if m.read_only and m.prefix in stores and m.prefix not in adding
-        }
+        surviving = [m for m in self._mounts if m.prefix in stores and m.prefix not in adding]
+        refusing = {m.prefix for m in surviving if m.read_only and not m.lent}
+        lending = {m.prefix for m in surviving if m.lent}
         stores.update(adding)
         refusing.update(keys.parse(prefix).key for prefix in read_only)
-        return MountedStore(stores, read_only=sorted(refusing, key=keys.sort_form))
+        lending.update(keys.parse(prefix).key for prefix in lent)
+        return MountedStore(
+            stores,
+            read_only=sorted(refusing, key=keys.sort_form),
+            lent=sorted(lending, key=keys.sort_form),
+        )
 
     @property
     def root(self) -> Mount:
@@ -1237,12 +1274,16 @@ class MountedStore(Store):
 
         The other half of a read-only mount's story. One mounted with
         ``--mount-ro`` or ``read_only`` refuses because of how it was started,
-        and mounting it again is the remedy; a parquet or duckdb store refuses
-        because its backend is never written through, and no remount changes
-        that. Advice written for the first is wrong about the second.
+        and mounting it again is the remedy. A parquet or duckdb store refuses
+        because its backend is never written through, and a lent store because
+        nothing can mount it any other way, so no remount changes either.
+        Advice written for the first is wrong about the other two.
         """
-        stores = {mount.prefix: mount.store for mount in self._mounts}
-        return [prefix for prefix in prefixes if not type(stores[prefix]).writable]
+        return [
+            prefix
+            for prefix in prefixes
+            if (mount := self._by_prefix[prefix]).lent or not type(mount.store).writable
+        ]
 
     def _replaced(self, found: Resolved, outer_key: str) -> Entry | None:
         """The entry a mount point displaces from the answering store's level.
@@ -2053,7 +2094,7 @@ def open_mounts(
             if prefix in opened:
                 raise MountError("mount-duplicate", mount=prefix)
             opened[prefix] = spec.opened(base, log=log, mount_point=prefix)
-        return MountedStore(opened, read_only=[prefix for prefix, _ in refusing] + list(lent))
+        return MountedStore(opened, read_only=[prefix for prefix, _ in refusing], lent=list(lent))
     except Exception:
         for store in opened.values():
             store.close()

@@ -5,151 +5,151 @@
 108 108
 
 ## 0.10.3 - 2026-09-10
-3269 3269
+3498 3498
 
 ## 0.10.2 - 2026-09-08
-5720 5720
+5949 5949
 
 ## 0.10.1 - 2026-09-07
-7321 7321
+7550 7550
 
 ## 0.10.0 - 2026-09-06
-11263 11271
+11492 11500
 
 ## 0.9.0 - 2026-09-05
-19742 19750
+19971 19979
 
 ## 0.8.1 - 2026-09-05
-23061 23069
+23290 23298
 
 ## 0.8.0 - 2026-09-05
-25267 25281
+25496 25510
 
 ## 0.7.0 - 2026-09-04
-28881 28895
+29110 29124
 
 ## 0.6.0 - 2026-09-02
-32626 32640
+32855 32869
 
 ## 0.5.1 - 2026-09-02
-34428 34442
+34657 34671
 
 ## 0.5.0 - 2026-09-01
-35443 35457
+35672 35686
 
 ## 0.4.4 - 2026-08-31
-36726 36740
+36955 36969
 
 ## 0.4.3 - 2026-08-31
-37636 37650
+37865 37879
 
 ## 0.4.2 - 2026-08-30
-38904 38918
+39133 39147
 
 ## 0.4.1 - 2026-08-30
-39662 39676
+39891 39905
 
 ## 0.4.0 - 2026-08-29
-40798 40812
+41027 41041
 
 ### Nothing shipped names the machine it was built on
-42079 42093
+42308 42322
 
 ### Python 3.12 is enough
-43492 43506
+43721 43735
 
 ### A failure a caller can fix now says so
-44249 44263
+44478 44492
 
 ### The store's `readme` is named in the server's instructions, not carried in them
-45972 45986
+46201 46215
 
 ### A mount can say which backend keeps it, so a directory of files is mountable
-47501 47515
+47730 47744
 
 ### A subtree copy, as a tool
-49383 49397
+49612 49626
 
 ### A copy can re-root a subtree, not only nest it deeper
-50893 50907
+51122 51136
 
 ### Outrage's own documentation, as a store
-51985 51999
+52214 52228
 
 ### One document through a file, as a tool
-53567 53581
+53796 53810
 
 ## 0.3.0 - 2026-08-27
-55624 55638
+55853 55867
 
 ### A mount table in a file, and a command line that reads it
-56878 56892
+57107 57121
 
 ### `Store` and `FileStore`: a store, and a store kept in a file
-61588 61602
+61817 61831
 
 ### Every store can back itself up
-62925 62939
+63154 63168
 
 ### `Store.copy_from`: every bulk move is a copy between two stores
-64109 64123
+64338 64352
 
 ### `outrage export` and `outrage import` are copies
-65472 65486
+65701 65715
 
 ### Copying ranges from the command line
-66804 66818
+67033 67047
 
 ### A write may carry the timestamp it is copying
-67683 67697
+67912 67926
 
 ### A `!` segment opens a metadata namespace
-68549 68563
+68778 68792
 
 ### A mount table is now a `Store`, and `Mounts` is renamed
-71501 71515
+71730 71744
 
 ### A directory of files is now a `Store`
-72309 72323
+72538 72552
 
 ### The root document can be exported, and comes back
-73369 73383
+73598 73612
 
 ### A key can no longer be exported outside the directory it was given
-73763 73777
+73992 74006
 
 ### Six fixes at a mount boundary
-74257 74271
+74486 74500
 
 ### A shortened delete preview counts what it previews
-75896 75910
+76125 76139
 
 ## 0.2.0 - 2026-08-24
-76764 76778
+76993 77007
 
 ### Parquet stores written by 0.1.x no longer open
-76981 76995
+77210 77224
 
 ### The MCP server is named `outrage`, so every tool is renamed
-77425 77439
+77654 77668
 
 ### Environment variables
-77980 77994
+78209 78223
 
 ### Public API
-78355 78375
+78584 78604
 
 ### Skill and agents
-78506 78528
+78735 78757
 
 ### Fixed
-78775 78797
+79004 79026
 
 ## 0.1.2 - 2026-08-23
-79218 79240
+79447 79469
 
 ## 0.1.1 - 2026-08-22
-79651 79673
+79880 79902
 
 ## 0.1.0 - 2026-08-22
-79804 79826
+80033 80055

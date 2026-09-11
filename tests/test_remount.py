@@ -220,7 +220,8 @@ def test_a_read_only_mount_refuses_a_write_and_names_both_ways_out(server):
     call(server, "mount", key="lib", file="other.sqlite", read_only=True)
 
     said = call_expecting_error(server, "store_document", key="lib/a", content="No.")
-    assert "read-only through this server" in said
+    assert "was mounted read-only" in said
+    assert "lent" not in said
     # Both remedies, each qualified by whose it is: the advice varies by reader
     # where the spelling does not, which is what the error side cannot carry.
     assert "`mount` tool" in said
@@ -291,7 +292,7 @@ def test_the_shipped_manual_can_be_unmounted_and_put_back_by_name(base):
     root = SqliteStore(base, filename="outrage.sqlite")
     table = MountedStore(
         {keys.ROOT: root, shipped.MOUNT_POINT: shipped.open_documents()},
-        read_only=[shipped.MOUNT_POINT],
+        lent=[shipped.MOUNT_POINT],
     )
     with Live(table, directory=base) as live:
         server = build_server(live, directory=base)
@@ -308,6 +309,14 @@ def test_the_shipped_manual_can_be_unmounted_and_put_back_by_name(base):
         # remount would be an invitation to lose the writing.
         assert [one["read_only"] for one in said["mounts"]] == [False, True]
         assert call(server, "read_document", key="outrage/readme")["content"]
+
+        # Lent, so neither refusal offers the remount nobody can make.
+        refused = call_expecting_error(server, "store_document", key="outrage/x", content="x")
+        assert "lent to this server" in refused
+        assert "read_only` false" not in refused
+        copied = call(server, "copy_tree", source="context", target="outrage", dry_run=True)
+        assert "'outrage' cannot be written however it is mounted" in copied["note"]
+        assert "read_only` false" not in copied["note"]
 
 
 def test_mounting_the_manual_by_name_says_it_needs_nothing_written_down(base):

@@ -134,7 +134,7 @@ the store file's extension, and a directory of files has no extension to
 read: without a way to say so, a tree is not mountable and a mount table
 cannot describe one. See `outrage.store._BY_EXTENSION`.
 
-### *class* outrage.mounts.Mount(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), store: [Store](store.md#outrage.store.Store), read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
+### *class* outrage.mounts.Mount(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), store: [Store](store.md#outrage.store.Store), read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False, lent: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -153,6 +153,17 @@ Whether this server refuses writes routed here.
 Defaults to False so that every existing construction of a `Mount` means
 what it meant before, and so the single store case cannot become read-only
 by accident.
+
+#### lent *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+
+Whether the store was lent to the table already open, which makes it
+read-only whatever it is mounted with.
+
+The shipped documentation is the case: it lives in the installation, has
+no `KEY=FILE` spelling for a flag to name, and the `mount` tool mounts
+it read-only however it is asked. So the remedy for an ordinary read-only
+mount, mounting it again writable, is one nobody can take here, and a
+refusal has to know which of the two it is looking at to say so.
 
 #### *property* kind *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
 
@@ -192,7 +203,7 @@ Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](h
 
 Raised when a mount table cannot be built as described.
 
-### *class* outrage.mounts.MountedStore(stores: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)], \*, read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ())
+### *class* outrage.mounts.MountedStore(stores: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)], \*, read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ())
 
 Bases: [`Store`](store.md#outrage.store.Store)
 
@@ -230,7 +241,7 @@ The single store case stated as a mount table rather than as a separate
 path through the server, so there is one set of behaviour to test and
 no second code path that only runs when nothing is mounted.
 
-#### remounted(\*, mount: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), unmount: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → [MountedStore](#outrage.mounts.MountedStore)
+#### remounted(\*, mount: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), unmount: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → [MountedStore](#outrage.mounts.MountedStore)
 
 This table with mounts removed and added, as a new table.
 
@@ -248,8 +259,10 @@ store knows about its own mounting. A mount at a *new* prefix takes a
 newly opened store, and this cannot silently do otherwise: the stores
 it mounts are the ones it was handed.
 
-A surviving mount keeps its read-only flag; a replaced one does not,
-since a replacement states what it is. The result goes through
+A surviving mount keeps its read-only flag and whether it was lent; a
+replaced one keeps neither, since a replacement states what it is --
+`lent` names the new mounts that are lent stores, as
+[`open_mounts()`](#outrage.mounts.open_mounts)'s `attached` does. The result goes through
 `__init__()`, so every invariant a table has is re-checked here
 rather than restated -- a metadata mount point, a duplicate, a root
 that must exist and be writable, a read-only flag matching nothing.
@@ -417,9 +430,10 @@ Those of `prefixes` whose store cannot be written however it is mounted.
 
 The other half of a read-only mount's story. One mounted with
 `--mount-ro` or `read_only` refuses because of how it was started,
-and mounting it again is the remedy; a parquet or duckdb store refuses
-because its backend is never written through, and no remount changes
-that. Advice written for the first is wrong about the second.
+and mounting it again is the remedy. A parquet or duckdb store refuses
+because its backend is never written through, and a lent store because
+nothing can mount it any other way, so no remount changes either.
+Advice written for the first is wrong about the other two.
 
 #### store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, contents: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 

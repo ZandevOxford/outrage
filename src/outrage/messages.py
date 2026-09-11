@@ -1129,11 +1129,12 @@ def _mount_key_too_deep(name: Namer, /, *, key: str, mount: str, **_: Any) -> st
 
 @template("mount-read-only")
 def _mount_read_only(name: Namer, /, *, key: str, mount: str, action: str, **_: Any) -> str:
-    # The two causes that actually reach here, and no third. A parquet store
-    # used to be offered as one and cannot be: `Resolved.writable` asks the
-    # store before the configuration, so a backend that refuses writes raises
-    # `store-read-only` instead and this code never sees one. An explanation
-    # that cannot be the explanation is worse than a shorter sentence.
+    # One cause reaches here, a mount made read-only by choice. A backend that
+    # refuses writes raises `store-read-only`, because `Resolved.writable` asks
+    # the store before the configuration, and a lent store raises `mount-lent`,
+    # because the table records that it was lent. Neither can be remounted
+    # writable, which is this sentence's whole remedy, and an explanation that
+    # cannot be the explanation is worse than a shorter sentence.
     #
     # Still no `spell`, and still on purpose, but the reason has moved. A
     # speller turns one argument into each front end's spelling, and
@@ -1146,14 +1147,26 @@ def _mount_read_only(name: Namer, /, *, key: str, mount: str, action: str, **_: 
     # and no reader is told to type something they cannot.
     return (
         f"cannot {action} {keys.displayed(key)!r}: the store mounted at "
-        f"{keys.displayed(mount)!r} is read-only through this server. Either it "
-        f"was mounted with --mount-ro; or it was lent to the server already "
-        f"open, as the documentation shipped inside outrage is, and the next "
-        f"upgrade would replace anything written there. Mounting it again "
-        f"writable is what changes that: the `mount` tool with `read_only` "
-        f"false, where this server offers it, and otherwise --mount rather "
-        f"than --mount-ro at startup, which is an operator's to do. The file "
-        f"itself is not read-only to anything else."
+        f"{keys.displayed(mount)!r} was mounted read-only, with --mount-ro or "
+        f"by the `mount` tool with `read_only`. Mounting it again writable is "
+        f"what changes that: the `mount` tool with `read_only` false, where "
+        f"this server offers it, and otherwise --mount rather than --mount-ro "
+        f"at startup, which is an operator's to do. The file itself is not "
+        f"read-only to anything else."
+    )
+
+
+@template("mount-lent")
+def _mount_lent(name: Namer, /, *, key: str, mount: str, action: str, **_: Any) -> str:
+    # No remount on offer, which is the difference from `mount-read-only`: a
+    # lent store has no spelling as a mount file, and the `mount` tool lends
+    # the shipped tree read-only however it is asked.
+    return (
+        f"cannot {action} {keys.displayed(key)!r}: the store mounted at "
+        f"{keys.displayed(mount)!r} was lent to this server already open, as "
+        f"the documentation shipped inside outrage is, and is read-only however "
+        f"it is mounted: it lives in the installation, and the next upgrade "
+        f"would replace anything written there."
     )
 
 
