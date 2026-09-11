@@ -387,9 +387,10 @@ def _remounting(mounts: Sequence[str], unwritable: Sequence[str], verb: str) -> 
 
     Two answers, because a mount refuses for one of two reasons. One mounted
     read-only by choice opens to a remount, which is the caller's with the
-    `mount` tool and an operator's at startup. A parquet or duckdb store refuses
-    whatever it is mounted with, and advice to remount one costs a remount or a
-    restart to find out is wrong.
+    `mount` tool and an operator's at startup. A parquet or duckdb store, or a
+    lent one such as the shipped documentation, refuses whatever it is mounted
+    with, and advice to remount one costs a remount or a restart to find out is
+    wrong.
     """
     flagged = [mount for mount in mounts if mount not in unwritable]
     said = []
