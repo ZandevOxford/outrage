@@ -49,6 +49,19 @@ def test_documents_extra_installs_the_bounded_common_format_readers():
     ]
 
 
+def test_the_all_extra_names_every_extra_but_the_ones_for_working_on_outrage():
+    """`all` is what the README says to install, so an extra it misses is one
+    nobody following the README gets, with nothing to say so."""
+    extras = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "optional-dependencies"
+    ]
+    wanted = sorted(set(extras) - {"all", "dev", "docs"})
+
+    (named,) = extras["all"]
+    assert named.startswith("outrage[") and named.endswith("]")
+    assert sorted(named.removeprefix("outrage[").removesuffix("]").split(",")) == wanted
+
+
 def _data_files() -> list[str]:
     """Every non-Python file under ``src/outrage``, package-relative.
 

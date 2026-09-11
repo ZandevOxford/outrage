@@ -22,7 +22,11 @@ Set up a 3.12 or later Python environment.
 
 Install outrage with:
 
-`pip install outrage`
+`pip install "outrage[all]"`
+
+That includes every optional backend and document reader. A plain
+`pip install outrage` leaves them out, for an install that only ever holds
+session context.
 
 To set up a project to use Outrage, change directory to the root of the project
 and run:
@@ -94,13 +98,13 @@ optional `pyarrow` dependency, support isn't included by default.
 
 Install the extra to add Parquet support:
 
-`pip install outrage[parquet]`
+`pip install "outrage[parquet]"`
 
 A reference base too large for one file, or that arrives in pieces, can be
 read as a directory of Parquet parts in any order, through DuckDB. That is a
 second optional extra, and the directory is named as one when it is mounted:
 
-`pip install outrage[duckdb]`
+`pip install "outrage[duckdb]"`
 
 `outrage-server --mount-ro ref=parts,type=duckdb`
 

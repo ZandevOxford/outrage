@@ -66,7 +66,7 @@ which is a second definition of the key grammar. So an older part is refused
 with the advice to repack it, and a directory mixing versions -- a repack left
 half done -- is refused naming both.
 
-duckdb is an optional dependency: `pip install outrage[duckdb]`. It is
+duckdb is an optional dependency: `pip install "outrage[duckdb]"`. It is
 imported inside this module, and this module only when something names the
 backend, so an install without it is unaffected until then. pyarrow is not
 needed to read a directory; only building a part is its business.

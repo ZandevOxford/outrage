@@ -30,6 +30,11 @@ rather than on speed.
 Refusing a write to a read-only backend now names the backend, where it used to
 call every such store a parquet store.
 
+A new `all` extra installs every optional backend and document reader --
+`parquet`, `duckdb` and `documents` -- and is what the README now recommends:
+`pip install 'outrage[all]'`. A plain `pip install outrage` still leaves them
+out.
+
 `outrage dump` no longer prints one row's text under another's header. A
 document longer than the page cap is finished by reading its key, and when that
 read gives a different document -- an older row of a key a duckdb store holds

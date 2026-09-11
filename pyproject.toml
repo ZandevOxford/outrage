@@ -48,6 +48,12 @@ duckdb = ["duckdb>=1.5"]
 # ingestion path. Kept out of the base installation so a store that only holds
 # hand-written context does not import or install a conversion stack.
 documents = ["markitdown[docx,pdf,pptx,xlsx]>=0.1.7,<0.2"]
+# Every extra a user of outrage might want, since an extra cannot be installed
+# by default: the install the README recommends. Not `dev` or `docs`, which are
+# for working on outrage itself. It names the others rather than repeating
+# their requirements, so each is written once; tests/test_packaging.py fails if
+# a new one is left out.
+all = ["outrage[parquet,duckdb,documents]"]
 # hatchling and build are here because the suite builds the sdist and the wheel
 # and asserts what is in them - tests/test_packaging.py. Without them that
 # check skips, and a release can drop a file the way 0.1.0 did.

@@ -57,7 +57,7 @@ of a seven-million-document reference base. Holding the columns instead is 120
 bytes a row on the same corpus, and the eager dictionaries turn out to be
 derivable from the order the file is already in: see `_Index`.
 
-pyarrow is an optional dependency: `pip install outrage[parquet]`. It is
+pyarrow is an optional dependency: `pip install "outrage[parquet]"`. It is
 imported inside this module and this module is imported only by
 `outrage.store._backend_for()`, so an install without it is unaffected until
 something names a `.parquet` file.
