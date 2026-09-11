@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.11.0 - 2026-09-11
 
 A reference base can now be a directory of parquet files rather than one. The
 new `duckdb` backend reads every part in a directory as one store, and the
