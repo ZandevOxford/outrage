@@ -160,7 +160,7 @@ the reason it can be mounted by name -- and needs no entry, because it is
 mounted by default. Telling that caller to write it down named a file they
 could not name.
 
-### outrage.remount.notes_for_unmount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.remount.notes_for_unmount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, started: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What an unmount is worth remarking on.
 
@@ -174,3 +174,8 @@ lasts only as long as the server, which is the fact; what follows from it
 is the opposite instruction, and for a while this shared the mount's, so an
 unmount ended by telling the caller to write the mount they had just
 removed into the configuration file.
+
+`started` is whether the server was started with something at
+`prefix`. Only then does a restart mount it again; a mount made by the
+`mount` tool is gone for good once unmounted, and a note saying a restart
+brings it back sends the caller looking for an entry no file holds.

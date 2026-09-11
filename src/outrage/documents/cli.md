@@ -523,7 +523,8 @@ them, or an existing store, whose documents, metadata and timestamps all come ac
 how a reference base is usually made, by accumulating into a SQLite store and compacting it
 afterwards. Nothing is written until the whole file is, so an interrupted pack leaves no store
 behind and the report says `read` rather than `wrote`. Mount the result with the server's
---mount-ro, or read it directly with --store.
+--mount-ro, or read it directly with --store, adding --no-mount-config where a mounts.toml would
+mount other stores around it.
 
 ### Usage
 

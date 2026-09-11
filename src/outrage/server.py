@@ -1641,7 +1641,13 @@ def build_server(
             result["mounts_kept"] = refused
         _say(
             result,
-            bulk.notes_for_delete(key, dry_run=dry_run, remaining=remaining, mounts_kept=refused),
+            bulk.notes_for_delete(
+                key,
+                dry_run=dry_run,
+                remaining=remaining,
+                mounts_kept=refused,
+                unwritable=table.unwritable(refused),
+            ),
         )
         return _DeleteKeysResult.model_validate(result)
 
@@ -1819,6 +1825,7 @@ def build_server(
                 named=len(result["failures"]),
                 stopped=bool(result["copied"].get(store_module.STOPPED)),
                 mounts_kept=refused,
+                unwritable=table.unwritable(refused),
             ),
         )
         return _CopyTreeResult.model_validate(result)

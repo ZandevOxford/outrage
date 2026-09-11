@@ -18,6 +18,7 @@ directory has that a file does not.
 
 from __future__ import annotations
 
+import io
 import itertools
 import random
 import subprocess
@@ -37,6 +38,7 @@ from conftest import (
 )
 from outrage import keys, maintenance, messages
 from outrage import store as store_module
+from outrage.cli import main
 from outrage.mounts import open_mounts
 from outrage.store import (
     EVERYTHING,
@@ -536,6 +538,36 @@ def test_through_a_mount_a_listing_totals_what_it_pages_through(repeated, tmp_pa
                     break
                 cursor = page.next_cursor
             assert len(seen) == total == 5, limit
+
+
+def test_dump_does_not_print_the_newest_row_under_an_older_one(tmp_path):
+    """A capped row is finished by a read by key, and that read is the newest row.
+
+    So an older row longer than the bulk cap would come out as the newer row's
+    text under the older row's header, with nothing to say so. It is printed as
+    far as the page reached it instead, and the header says why it stops.
+    """
+    older = "the older row\n" + "filler line\n" * 500
+    directory = tmp_path / "d" / "ref"
+    _write_part(
+        _rows([("a", older, "markdown", "2026-01-01T00:00:00+00:00")]), directory / "0.parquet"
+    )
+    _write_part(
+        _rows([("a", "the newer row\n", "markdown", "2026-03-01T00:00:00+00:00")]),
+        directory / "1.parquet",
+    )
+
+    out = io.StringIO()
+    status = main(["dump", "--dir", str(tmp_path / "d"), "--store", "ref,type=duckdb"], out)
+    printed = out.getvalue()
+
+    assert status == 0
+    assert printed.count("the newer row") == 1
+    assert "the older row" in printed
+    assert (
+        f"=== a  [{store_module.DEFAULT_BULK_MAX_CHARS} of {len(older)} characters; "
+        f"reading the key whole gives a different document"
+    ) in printed
 
 
 # -- what a directory refuses ----------------------------------------------

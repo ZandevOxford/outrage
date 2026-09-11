@@ -156,11 +156,27 @@ def test_a_mount_says_to_write_it_down_and_an_unmount_says_the_opposite(server):
     mounted = call(server, "mount", key="lib", file="other.sqlite")["note"]
     assert "To keep 'lib' across a restart, write it into the mount" in mounted
 
-    unmounted = call(server, "unmount", key="lib")["note"]
-    assert "a restart mounts 'lib' again" in unmounted
+    # `ref` is in the table the server started with, so a restart brings it back.
+    unmounted = call(server, "unmount", key="ref")["note"]
+    assert "a restart mounts 'ref' again" in unmounted
     assert "taking its entry out of that file" in unmounted
     # The instruction the mount gives, which is the one an unmount must not.
-    assert "To keep 'lib' across a restart, write it into" not in unmounted
+    assert "To keep 'ref' across a restart, write it into" not in unmounted
+
+
+def test_an_unmount_of_a_mount_made_by_the_tool_needs_nothing_written_down(server):
+    """A restart builds the table the server started with, and `lib` was not in it.
+
+    Found live: unmounting a store mounted by the tool this session said a
+    restart would mount it again, and sent the caller to take out an entry that
+    no configuration file held.
+    """
+    call(server, "mount", key="lib", file="other.sqlite")
+    unmounted = call(server, "unmount", key="lib")["note"]
+
+    assert "a restart does not mount it again" in unmounted
+    assert "a restart mounts 'lib' again" not in unmounted
+    assert "taking its entry out" not in unmounted
 
 
 def test_an_unmount_names_the_startup_flag_as_an_operators_and_does_not_respell_it(server):

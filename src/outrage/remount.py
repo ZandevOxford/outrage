@@ -108,6 +108,9 @@ class Live:
         log: EventLog | None = None,
     ) -> None:
         self._table = table
+        # What a restart would mount again, as far as this process can know:
+        # the table it was started with came from the same flags and file.
+        self._started = frozenset(mount.prefix for mount in table)
         # Resolved once, here, for the reason `open_mounts` resolves it once:
         # a mount's file and any check made about that file have to agree
         # about where it is, and asking twice is how they come to disagree.
@@ -198,7 +201,8 @@ class Live:
         prefix = keys.parse(key).key
         with self._lock:
             after = self._table.remounted(unmount=[prefix])
-            return self._swap(after, notes_for_unmount(after, prefix))
+            notes = notes_for_unmount(after, prefix, started=prefix in self._started)
+            return self._swap(after, notes)
 
     def close(self) -> None:
         """Close every store the live table holds."""
@@ -306,7 +310,7 @@ def notes_for_mount(
     return notes
 
 
-def notes_for_unmount(after: MountedStore, prefix: str) -> list[Note]:
+def notes_for_unmount(after: MountedStore, prefix: str, *, started: bool = True) -> list[Note]:
     """What an unmount is worth remarking on.
 
     Asked of the table *after* the change, which is what makes it true: whether
@@ -319,11 +323,20 @@ def notes_for_unmount(after: MountedStore, prefix: str) -> list[Note]:
     is the opposite instruction, and for a while this shared the mount's, so an
     unmount ended by telling the caller to write the mount they had just
     removed into the configuration file.
+
+    ``started`` is whether the server was started with something at
+    ``prefix``. Only then does a restart mount it again; a mount made by the
+    ``mount`` tool is gone for good once unmounted, and a note saying a restart
+    brings it back sends the caller looking for an entry no file holds.
     """
     notes: list[Note] = []
     if after.exists(prefix) or after.descendant_count(prefix) > 0:
         notes.append(Note("unmount-revealed-keys", mount=prefix))
-    notes.append(Note("unmount-not-permanent", mount=prefix))
+    # Two appends for the reason `notes_for_mount` gives.
+    if started:
+        notes.append(Note("unmount-not-permanent", mount=prefix))
+    else:
+        notes.append(Note("unmount-of-a-dynamic-mount", mount=prefix))
     return notes
 
 

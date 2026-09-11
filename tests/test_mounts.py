@@ -1602,6 +1602,25 @@ def test_a_parquet_store_cannot_be_the_root_mount(tmp_path):
     with raises_rendered(MountError, "nothing would have anywhere to go") as raised:
         open_mounts(tmp_path / "base", root_mount="root.parquet")
     assert raised.value.code == "mount-root-not-writable"
+    # Named as the backend is spelled in `type=`, not as its class. And the
+    # command line reaching this already opened the store directly, so the
+    # advice names what put a table around it.
+    said = messages.render(raised.value)
+    assert "a parquet store" in said
+    assert "ParquetStore" not in said
+    assert "--no-mount-config" in said
+
+
+def test_a_table_says_which_read_only_mounts_no_remount_would_open(tmp_path):
+    """A mount read-only by choice, and one read-only because of what it is."""
+    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    a_packed_store(tmp_path / "base")
+    SqliteStore(tmp_path / "base", filename="lent.sqlite").close()
+
+    with open_mounts(tmp_path / "base", ["pack=ref.parquet"], ["lent=lent.sqlite"]) as table:
+        refusing = table.read_only_below(keys.ROOT)
+        assert refusing == ["lent", "pack"]
+        assert table.unwritable(refusing) == ["pack"]
 
 
 def test_a_missing_parquet_mount_is_refused_rather_than_created(tmp_path):

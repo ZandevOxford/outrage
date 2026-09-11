@@ -34,5 +34,5 @@
 ### outrage.remount.notes_for_mount(after: MountedStore, prefix: str, \*, replaced: bool, shipped: bool = False, created: str | None = None) → list[Note]
 8663 8669
 
-### outrage.remount.notes_for_unmount(after: MountedStore, prefix: str) → list[Note]
+### outrage.remount.notes_for_unmount(after: MountedStore, prefix: str, \*, started: bool = True) → list[Note]
 10512 10520

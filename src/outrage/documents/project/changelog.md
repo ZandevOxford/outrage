@@ -30,6 +30,33 @@ rather than on speed.
 Refusing a write to a read-only backend now names the backend, where it used to
 call every such store a parquet store.
 
+`outrage dump` no longer prints one row's text under another's header. A
+document longer than the page cap is finished by reading its key, and when that
+read gives a different document -- an older row of a key a duckdb store holds
+twice, or a document written between the page and the read -- the capped text
+is printed instead, and its header says the rest cannot be shown.
+
+Backing up a parquet store written in an older format no longer fails. The copy
+was checked against this build's format rather than the file's own, and the
+refusal said the store was at a version it was not.
+
+Four messages gave advice that could not work, and now do not:
+
+* A copy or delete that a read-only mount refused told the caller to mount it
+  again without the flag. A parquet or duckdb store cannot be written however
+  it is mounted, and is now said to be; only a mount read-only by choice is
+  told to remount.
+* Unmounting a store that was mounted with the `mount` tool said a restart would
+  mount it again. Only a mount the server started with comes back, so the
+  others now say nothing needs writing down.
+* A parquet or duckdb store opened as the root with `--store` was refused with
+  the advice to open it directly, which is what `--store` does. It is refused
+  because other mounts, usually from `mounts.toml`, need a writable root; the
+  advice now names `--no-mount-config`, and the backend is named as `type=`
+  spells it rather than by its class.
+* `outrage backup` reported rows as documents, so a store with metadata looked
+  bigger than `outrage check` said it was. It now says rows.
+
 ## 0.10.3 - 2026-09-10
 
 Listing a key in a SQLite store no longer costs time proportional to

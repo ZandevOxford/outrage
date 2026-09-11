@@ -229,35 +229,35 @@
 ### outrage.bulk.notes_for_checked_write(key: str, check: Check, stored: int) → list[Note]
 61367 61415
 
-### outrage.bulk.notes_for_copy(landing: str, \*, dry_run: bool, on_conflict: str, unchanged_since: str | None, changed: Sequence[str], next_cursor: str | None, limit: int, failed: int, named: int, stopped: bool, mounts_kept: Sequence[str]) → list[Note]
+### outrage.bulk.notes_for_copy(landing: str, \*, dry_run: bool, on_conflict: str, unchanged_since: str | None, changed: Sequence[str], next_cursor: str | None, limit: int, failed: int, named: int, stopped: bool, mounts_kept: Sequence[str], unwritable: Sequence[str] = ()) → list[Note]
 62266 62316
 
-### outrage.bulk.notes_for_delete(key: str, \*, dry_run: bool, remaining: int, mounts_kept: Sequence[str]) → list[Note]
-64358 64410
+### outrage.bulk.notes_for_delete(key: str, \*, dry_run: bool, remaining: int, mounts_kept: Sequence[str], unwritable: Sequence[str] = ()) → list[Note]
+64569 64621
 
 ### outrage.bulk.notes_for_export(exported: Exported) → list[Note]
-65633 65687
+66134 66188
 
 ### outrage.bulk.notes_for_write(previous: int | None, stored: int) → list[Note]
-66493 66549
+66994 67050
 
 ### outrage.bulk.overlapping(source: str, target: str, \*, reroot: bool = False) → None
-67454 67512
+67955 68013
 
 ### outrage.bulk.pack(target: str | PathLike[str], documents: Iterator[tuple[Transfer, tuple[str, str, str | None, str | None] | None]], \*, overwrite: bool = False, dry_run: bool = False, byte_lengths: bool = True) → Iterator[Transfer]
-69054 69114
+69555 69615
 
 ### outrage.bulk.path_for_key(key: str, format: str | None = None, \*, extensions: str = DEFAULT_EXTENSIONS) → PurePosixPath
-71183 71245
+71684 71746
 
 ### outrage.bulk.renew(opened: Store, key: str, check: Check, content: str | None = None) → None
-73343 73407
+73844 73908
 
 ### outrage.bulk.size_of(opened: Store, key: str) → int | None
-74440 74506
+74941 75007
 
 ### outrage.bulk.sweep_exports(root: str | PathLike[str], max_age: timedelta = EXPORT_MAX_AGE, now: datetime | None = None) → int
-75131 75199
+75632 75700
 
 ### outrage.bulk.walk(opened: Store, key: str | None, \*, descendant_counts: bool = False, descendant_chars: bool = False) → Iterator[Entry]
-76238 76308
+76739 76809

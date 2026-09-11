@@ -53,16 +53,32 @@ def _document_shrank(name: Namer, /, *, previous: int, stored: int, **_: Any) ->
 
 
 @CLI.template("mounts-refused-delete")
-def _mounts_refused_delete(name: Namer, /, *, key: str, mounts: Sequence[str], **_: Any) -> str:
+def _mounts_refused_delete(
+    name: Namer, /, *, key: str, mounts: Sequence[str], unwritable: Sequence[str] = (), **_: Any
+) -> str:
     # Said here because nothing else on this path can say it. Every other thing
     # a delete leaves behind is a key, and a key is printed or counted; a
     # read-only mount is not a key, so a delete that stops at one prints
     # exactly what a delete that took everything prints.
-    return (
+    #
+    # Only a mount read-only by choice is told to drop the flag. A parquet or
+    # duckdb store refuses however it is mounted, so the flag is not the reason.
+    flagged = [mount for mount in mounts if mount not in unwritable]
+    said = [
         f"{len(mounts)} read-only mounted store(s) below {name(key)} refuse a delete: "
-        f"{', '.join(mounts)}; --recursive will not reach them either. "
-        f"Mount with --mount rather than --mount-ro to delete there too"
-    )
+        f"{', '.join(mounts)}; --recursive will not reach them either"
+    ]
+    if flagged:
+        said.append(
+            f"Mount {', '.join(flagged)} with --mount rather than --mount-ro to delete there too"
+        )
+    if unwritable:
+        one = len(unwritable) == 1
+        said.append(
+            f"{', '.join(unwritable)} cannot be written however "
+            f"{'it is' if one else 'they are'} mounted"
+        )
+    return ". ".join(said)
 
 
 # -- and what it means not to say ------------------------------------------
@@ -165,6 +181,10 @@ CLI.silent(
     "the same reason as the mount it mirrors: `--unmount` here is a flag on the "
     "command being run, and advice about keeping it across a restart would be "
     "advice about the run that just ended",
+)
+CLI.silent(
+    "unmount-of-a-dynamic-mount",
+    "there are no dynamic mounts on this side: the table is the flags of one run",
 )
 CLI.silent(
     "exported-for-editing",

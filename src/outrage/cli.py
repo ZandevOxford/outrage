@@ -723,7 +723,8 @@ def argument_parser() -> argparse.ArgumentParser:
             "Nothing is written until the whole file is, so an interrupted "
             "pack leaves no store behind and the report says `read` rather "
             "than `wrote`. Mount the result with the server's --mount-ro, or "
-            "read it directly with --store."
+            "read it directly with --store, adding --no-mount-config where a "
+            "mounts.toml would mount other stores around it."
         ),
     )
     pack.add_argument(
@@ -1441,7 +1442,7 @@ def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
 
     print(f"backed up {database} to {result.path}", file=out)
     print(
-        f"  {result.documents} documents, {result.bytes} bytes, integrity {result.integrity}",
+        f"  {result.documents} rows, {result.bytes} bytes, integrity {result.integrity}",
         file=out,
     )
     return 0
@@ -1841,12 +1842,18 @@ def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
     shown = 0
     with _open_table(args) as opened:
         _resolved(opened, args)
-        for excerpt in _documents(opened, args):
+        for excerpt, unfinished in _documents(opened, args):
             if args.limit is not None and shown >= args.limit:
                 print(f"outrage: stopped at --limit {args.limit}", file=sys.stderr)
                 break
             header = f"=== {keys.displayed(excerpt.key)}"
-            if excerpt.truncated:
+            if unfinished:
+                header += (
+                    f"  [{excerpt.returned} of {excerpt.total} characters; reading "
+                    f"the key whole gives a different document, so the rest cannot "
+                    f"be shown]"
+                )
+            elif excerpt.truncated:
                 # Named on the line above the content, so that a reader sees it
                 # before reading rather than after acting on half a document.
                 header += f"  [{excerpt.returned} of {excerpt.total} characters]"
@@ -1859,13 +1866,23 @@ def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.Excerpt]:
+def _documents(
+    opened: store.Store, args: argparse.Namespace
+) -> Iterator[tuple[store.Excerpt, bool]]:
     """The subtree, a page at a time, each document whole unless capped.
 
     Yielded as they arrive rather than collected first. An export that holds
     every document in memory before writing any stops working at exactly the
     size an export matters at, and it fails worse when it does: an interrupted
     stream has already written what it reached.
+
+    Each comes with whether it is **unfinished**: cut by the page's cap, and
+    the key read whole gave back a different document. A read by key is the
+    only way to the rest, and it is not always the row the page listed -- a
+    duckdb store can hold one key in several parts and reads the newest, and
+    any store can be written between the page and the read. Printing what came
+    back would put one document's text under another's header, so the capped
+    excerpt is kept and the header says why it stops.
     """
     cursor = None
     while True:
@@ -1883,12 +1900,29 @@ def _documents(opened: store.Store, args: argparse.Namespace) -> Iterator[store.
             # scale requirement exists to keep out of the library, and the
             # command line is the one caller that legitimately wants it.
             if args.max_chars is None and found.truncated:
-                yield store.read_all(opened, found.key)
+                whole = store.read_all(opened, found.key)
+                if _same_document(found, whole):
+                    yield whole, False
+                else:
+                    yield found, True
             else:
-                yield found
+                yield found, False
         if page.next_cursor is None:
             return
         cursor = page.next_cursor
+
+
+def _same_document(listed: store.Excerpt, whole: store.Excerpt) -> bool:
+    """Whether ``whole`` is the rest of the document ``listed`` began.
+
+    The timestamp and the size tell two rows apart almost always; the prefix
+    is what settles two rows written in the same second at the same length.
+    """
+    return (
+        whole.updated_at == listed.updated_at
+        and whole.total_bytes == listed.total_bytes
+        and whole.content.startswith(listed.content)
+    )
 
 
 def _export_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -2216,13 +2250,14 @@ def _delete_notes(
     that alone and is silent about the rest; the selection is
     :data:`outrage.cli_messages.CLI`'s to make, so all of it is handed over.
     """
+    table = opened if isinstance(opened, mounts.MountedStore) else None
+    kept = table.read_only_below(args.key) if table is not None else []
     return bulk.notes_for_delete(
         args.key,
         dry_run=dry_run,
         remaining=0 if args.recursive else beneath,
-        mounts_kept=(
-            opened.read_only_below(args.key) if isinstance(opened, mounts.MountedStore) else []
-        ),
+        mounts_kept=kept,
+        unwritable=table.unwritable(kept) if table is not None else [],
     )
 
 

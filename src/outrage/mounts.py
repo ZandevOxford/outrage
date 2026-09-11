@@ -838,8 +838,9 @@ class MountedStore(Store):
                 # the root owns every key no mount claims, so a root that
                 # cannot be written is a namespace with nowhere to put
                 # anything. Mount it at a prefix instead -- or, to simply read
-                # one, open it directly, which is what the command line does.
-                raise MountError("mount-root-not-writable", backend=type(store).__name__)
+                # one, open it with nothing else mounted, which is what the
+                # command line does.
+                raise MountError("mount-root-not-writable", backend=type(store).backend_name)
             by_prefix[parsed.key] = Mount(
                 prefix=parsed.key,
                 store=store,
@@ -1230,6 +1231,18 @@ class MountedStore(Store):
         if not owner.read_only:
             return below
         return sorted({owner.mount.prefix, *below}, key=keys.sort_form)
+
+    def unwritable(self, prefixes: Sequence[str]) -> list[str]:
+        """Those of ``prefixes`` whose store cannot be written however it is mounted.
+
+        The other half of a read-only mount's story. One mounted with
+        ``--mount-ro`` or ``read_only`` refuses because of how it was started,
+        and mounting it again is the remedy; a parquet or duckdb store refuses
+        because its backend is never written through, and no remount changes
+        that. Advice written for the first is wrong about the second.
+        """
+        stores = {mount.prefix: mount.store for mount in self._mounts}
+        return [prefix for prefix in prefixes if not type(stores[prefix]).writable]
 
     def _replaced(self, found: Resolved, outer_key: str) -> Entry | None:
         """The entry a mount point displaces from the answering store's level.

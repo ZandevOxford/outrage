@@ -382,15 +382,43 @@ def _keys_kept_below(name: Namer, /, *, key: str, remaining: int, dry_run: bool,
     )
 
 
+def _remounting(mounts: Sequence[str], unwritable: Sequence[str], verb: str) -> str:
+    """What a caller can do about the mounts a copy or a delete could not reach.
+
+    Two answers, because a mount refuses for one of two reasons. One mounted
+    read-only by choice opens to a remount, which is the caller's with the
+    `mount` tool and an operator's at startup. A parquet or duckdb store refuses
+    whatever it is mounted with, and advice to remount one costs a remount or a
+    restart to find out is wrong.
+    """
+    flagged = [mount for mount in mounts if mount not in unwritable]
+    said = []
+    if flagged:
+        said.append(
+            f"Mount {', '.join(repr(mount) for mount in flagged)} again with "
+            f"`mount` and `read_only` false to {verb} there too, where this "
+            f"server offers that tool; otherwise it is a restart with --mount "
+            f"rather than --mount-ro, which is an operator's to do."
+        )
+    if unwritable:
+        one = len(unwritable) == 1
+        said.append(
+            f"{', '.join(repr(mount) for mount in unwritable)} cannot be written "
+            f"however {'it is' if one else 'they are'} mounted, so no remount "
+            f"reaches {'it' if one else 'them'}."
+        )
+    return " ".join(said)
+
+
 @MCP.template("mounts-refused-delete")
-def _mounts_refused_delete(name: Namer, /, *, key: str, mounts: Sequence[str], **_: Any) -> str:
+def _mounts_refused_delete(
+    name: Namer, /, *, key: str, mounts: Sequence[str], unwritable: Sequence[str] = (), **_: Any
+) -> str:
     return (
         f"{len(mounts)} read-only mounted store(s) below {name(key)!r} refuse a "
         f"delete: {', '.join(repr(mount) for mount in mounts)}. Nothing there was "
-        f"removed, and `recursive` will not reach it either. Mount one again "
-        f"with `mount` and `read_only` false to delete there too, where this "
-        f"server offers that tool; otherwise it is a restart with --mount "
-        f"rather than --mount-ro, which is an operator's to do."
+        f"removed, and `recursive` will not reach it either. "
+        f"{_remounting(mounts, unwritable, 'delete')}"
     )
 
 
@@ -456,7 +484,9 @@ def _copy_stopped_at_conflict(name: Namer, /, **_: Any) -> str:
 
 
 @MCP.template("mounts-refused-write")
-def _mounts_refused_write(name: Namer, /, *, key: str, mounts: Sequence[str], **_: Any) -> str:
+def _mounts_refused_write(
+    name: Namer, /, *, key: str, mounts: Sequence[str], unwritable: Sequence[str] = (), **_: Any
+) -> str:
     # "at or below", because the mount that refuses a copy is as often the one
     # the documents are landing *inside* as one standing under the landing
     # zone. Saying only "below" was how the first case went unreported: the
@@ -465,10 +495,7 @@ def _mounts_refused_write(name: Namer, /, *, key: str, mounts: Sequence[str], **
     return (
         f"{len(mounts)} read-only mounted store(s) refuse a write at or below "
         f"{name(key)!r}: {', '.join(repr(mount) for mount in mounts)}. Nothing "
-        f"lands there. Mount one again with `mount` and `read_only` false to "
-        f"copy there too, where this server offers that tool; otherwise it is a "
-        f"restart with --mount rather than --mount-ro, which is an operator's "
-        f"to do."
+        f"lands there. {_remounting(mounts, unwritable, 'copy')}"
     )
 
 
@@ -566,6 +593,16 @@ def _unmount_not_permanent(name: Namer, /, *, mount: str, **_: Any) -> str:
         f"mount configuration file, so keeping it away means taking its entry "
         f"out of that file, or, for a mount no file names, starting the server "
         f"with --unmount, which is an operator's to do."
+    )
+
+
+@MCP.template("unmount-of-a-dynamic-mount")
+def _unmount_of_a_dynamic_mount(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"this table lasts as long as this server and no longer, but "
+        f"{name(mount)!r} needs nothing written down: it was mounted while this "
+        f"server ran rather than when it started, so a restart does not mount "
+        f"it again."
     )
 
 
@@ -1130,11 +1167,19 @@ def _mount_root_read_only(name: Namer, /, **_: Any) -> str:
 
 @template("mount-root-not-writable")
 def _mount_root_not_writable(name: Namer, /, *, backend: str, **_: Any) -> str:
+    # Reached by a command line that opened the store with `--store`, which is
+    # already opening it directly, so that cannot be the advice. What made a
+    # table of it is other mounts, most often a mounts.toml nobody typed. Only
+    # the command line can read a store with nothing else mounted -- the
+    # server mounts its shipped documentation whatever it is given -- so that
+    # half says whose it is.
     return (
-        f"the store at the root is a {backend}, which cannot be written: the "
-        f"root owns every key no mount claims, so nothing would have anywhere "
-        f"to go. Mount it at a prefix with --mount-ro, or open it directly to "
-        f"read it."
+        f"the store at the root is a {backend} store, which cannot be written: "
+        f"the root owns every key no mount claims, so nothing would have "
+        f"anywhere to go. Mount it at a prefix with --mount-ro instead. To read "
+        f"it on its own, the command line opens it with nothing else mounted: "
+        f"no --mount of its own, and --no-mount-config where the mounts come "
+        f"from mounts.toml."
     )
 
 

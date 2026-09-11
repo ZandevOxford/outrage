@@ -393,7 +393,9 @@ def test_backup_writes_a_snapshot_and_says_what_it_checked(tmp_path):
     assert status == 0
     (written,) = (tmp_path / ".outrage" / "backups").glob("store-*.sqlite")
     assert str(written) in output
-    assert "2 documents" in output
+    # Rows, a document and its title, since that is what a backup copies and
+    # counts: `check` is the report that tells documents from metadata.
+    assert "2 rows" in output
     assert "integrity ok" in output
 
 
@@ -1438,7 +1440,7 @@ def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
 
     with SqliteStore(tmp_path / ".outrage") as opened:
         arguments = argparse.Namespace(key="notes", meta_name=None, depth=None, max_chars=None)
-        first = next(outrage.cli._documents(opened, arguments))
+        first, _ = next(outrage.cli._documents(opened, arguments))
 
     # Lazy, not merely paged: an export that reads the whole subtree before
     # writing its first line is the shape that fails at the size it matters.

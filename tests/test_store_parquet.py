@@ -465,15 +465,8 @@ def test_a_file_from_a_later_build_is_refused_rather_than_read(tmp_path, monkeyp
     assert raised.value.code == "parquet-format-newer"
 
 
-def test_a_version_1_file_is_read_by_deriving_the_split_from_its_keys(tmp_path):
-    """The older layout, read whole and re-split -- not repacked.
-
-    Version 1 has no ``meta_path`` column and a ``meta_name`` written under the
-    rule that a name swallowed everything below the first ``!``. Both come off
-    ``key``, which every version carries, so the file opens and answers about
-    the namespace exactly as a repacked one would. Nothing is written back:
-    this backend has no migrations, and that stance is intact.
-    """
+def _version_1_file(path) -> None:
+    """A store in the version 1 layout, holding metadata nested below metadata."""
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
     from outrage import store_parquet
@@ -514,8 +507,20 @@ def test_a_version_1_file_is_read_by_deriving_the_split_from_its_keys(tmp_path):
             },
             schema=schema,
         ),
-        tmp_path / "old.parquet",
+        path,
     )
+
+
+def test_a_version_1_file_is_read_by_deriving_the_split_from_its_keys(tmp_path):
+    """The older layout, read whole and re-split -- not repacked.
+
+    Version 1 has no ``meta_path`` column and a ``meta_name`` written under the
+    rule that a name swallowed everything below the first ``!``. Both come off
+    ``key``, which every version carries, so the file opens and answers about
+    the namespace exactly as a repacked one would. Nothing is written back:
+    this backend has no migrations, and that stance is intact.
+    """
+    _version_1_file(tmp_path / "old.parquet")
 
     with ParquetStore(tmp_path, filename="old.parquet") as store:
         assert [e.key for e in store.list_keys("a/!changelog").items] == ["a/!changelog/22"]
@@ -659,6 +664,22 @@ def test_backing_up_copies_the_file_because_the_file_is_the_store(packed, tmp_pa
 
     with ParquetStore(tmp_path, filename="copy.parquet") as copy:
         assert copy.retrieve_document("a").content == "a body"
+
+
+def test_a_backup_of_an_older_file_is_that_older_file(tmp_path):
+    """A byte copy keeps the version the source was written in.
+
+    It was checked against this build's version instead, so every backup of a
+    version 1 file failed -- and said the store was at a version it was not.
+    """
+    _version_1_file(tmp_path / "old.parquet")
+
+    with ParquetStore(tmp_path, filename="old.parquet") as store:
+        result = store.backup(tmp_path / "copy.parquet")
+
+    assert result.documents == 5
+    with ParquetStore(tmp_path, filename="copy.parquet") as copy:
+        assert copy.stored_format_version == 1
 
 
 def test_a_backup_over_the_store_itself_is_refused(packed):

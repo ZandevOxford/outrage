@@ -2048,7 +2048,12 @@ def notes_for_export(exported: Exported) -> list[Note]:
 
 
 def notes_for_delete(
-    key: str, *, dry_run: bool, remaining: int, mounts_kept: Sequence[str]
+    key: str,
+    *,
+    dry_run: bool,
+    remaining: int,
+    mounts_kept: Sequence[str],
+    unwritable: Sequence[str] = (),
 ) -> list[Note]:
     """What a delete has to remark on, which is all about what it left standing.
 
@@ -2061,8 +2066,10 @@ def notes_for_delete(
     answer is the store's and says only what it did: ``remaining`` is what lies
     below ``key`` after a delete that was not recursive, and ``mounts_kept``
     names read-only mounted stores below it, which are not keys and so are
-    counted by nothing. ``key`` is the caller's own spelling, echoed back so
-    that the advice to try again names the call they made.
+    counted by nothing. ``unwritable`` is those of them that no remount would
+    open to a delete, since the advice for the rest is to remount them. ``key``
+    is the caller's own spelling, echoed back so that the advice to try again
+    names the call they made.
     """
     notes: list[Note] = []
     if dry_run:
@@ -2072,7 +2079,14 @@ def notes_for_delete(
         # a dry run kept nothing, it is reporting what a real one would keep.
         notes.append(Note("keys-kept-below", key=key, remaining=remaining, dry_run=dry_run))
     if mounts_kept:
-        notes.append(Note("mounts-refused-delete", key=key, mounts=list(mounts_kept)))
+        notes.append(
+            Note(
+                "mounts-refused-delete",
+                key=key,
+                mounts=list(mounts_kept),
+                unwritable=list(unwritable),
+            )
+        )
     return notes
 
 
@@ -2089,6 +2103,7 @@ def notes_for_copy(
     named: int,
     stopped: bool,
     mounts_kept: Sequence[str],
+    unwritable: Sequence[str] = (),
 ) -> list[Note]:
     """The same for a copy, which has more ways to do less than it was asked.
 
@@ -2104,7 +2119,7 @@ def notes_for_copy(
     ``failed`` for how many there were. ``on_conflict`` decides only whether
     the advice can be followed as it stands: a watermark refuses to be handed
     to the plain overwrite rule, so a dry run under that rule has to point at
-    the narrowed one instead.
+    the narrowed one instead. ``unwritable`` is what it is for a delete.
     """
     notes: list[Note] = []
     if dry_run:
@@ -2124,7 +2139,14 @@ def notes_for_copy(
     if stopped:
         notes.append(Note("copy-stopped-at-conflict"))
     if mounts_kept:
-        notes.append(Note("mounts-refused-write", key=landing, mounts=list(mounts_kept)))
+        notes.append(
+            Note(
+                "mounts-refused-write",
+                key=landing,
+                mounts=list(mounts_kept),
+                unwritable=list(unwritable),
+            )
+        )
     return notes
 
 

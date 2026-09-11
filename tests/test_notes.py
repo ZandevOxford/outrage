@@ -610,6 +610,28 @@ def test_the_mounts_a_delete_could_not_reach_are_both_counted_and_named():
     assert "'ref', 'docs'" in said
 
 
+def test_only_a_mount_a_remount_would_open_is_told_to_remount():
+    """A parquet or duckdb store refuses however it is mounted.
+
+    Found live: a copy into a duckdb mount was told to mount it again with
+    `read_only` false, which is how it had been mounted, beside the store's own
+    refusal saying no way of starting the server allows a write there.
+    """
+    mixed = _words(_copied(mounts_kept=["ref", "pack"], unwritable=["pack"]))
+    assert "Mount 'ref' again with `mount` and `read_only` false to copy" in mixed
+    assert "'pack' cannot be written however it is mounted" in mixed
+
+    stored = _words(_deleted(mounts_kept=["pack", "parts"], unwritable=["pack", "parts"]))
+    assert "`read_only` false" not in stored
+    assert "--mount rather than --mount-ro" not in stored
+    assert "'pack', 'parts' cannot be written however they are mounted" in stored
+
+    (line,) = _deleted(mounts_kept=["ref", "pack"], unwritable=["pack"])
+    said = cli_messages.CLI.render(line)
+    assert "Mount ref with --mount rather than --mount-ro to delete there too" in said
+    assert "pack cannot be written however it is mounted" in said
+
+
 def test_a_delete_says_what_it_did_not_do_before_what_it_could_not_do():
     assert [note.code for note in _deleted(dry_run=True, remaining=1, mounts_kept=["ref"])] == [
         "delete-was-a-dry-run",
@@ -720,11 +742,13 @@ def _remounted(store, tmp_path) -> list[list[Note]]:
     from another: a mount shadows what the store beneath holds at its point,
     and unmounting reveals it again. One store can show neither.
 
-    A mount is asked for twice, and the second is the shipped tree. What a
-    change says about making it permanent is not one sentence but three: a file
-    mount is written into the configuration file, the shipped tree cannot be
-    and needs no entry, and an unmount has no spelling in that file at all.
-    Driving only the first left the other two reachable in principle and
+    A mount is asked for twice, and the second is the shipped tree; so is an
+    unmount, and the second is of a mount the server was not started with.
+    What a change says about making it permanent is not one sentence but four:
+    a file mount is written into the configuration file, the shipped tree
+    cannot be and needs no entry, an unmount has no spelling in that file at
+    all, and an unmount of a mount no restart would bring back needs nothing.
+    Driving only the first left the others reachable in principle and
     unreachable here, which is exactly what this helper exists to deny.
     """
     store.store_document("ref/left", "Shadowed by the mount above it.")
@@ -740,6 +764,7 @@ def _remounted(store, tmp_path) -> list[list[Note]]:
                 created=str(tmp_path / "new.sqlite"),
             ),
             remount.notes_for_unmount(before.remounted(unmount=["ref"]), "ref"),
+            remount.notes_for_unmount(before.remounted(unmount=["ref"]), "ref", started=False),
         ]
 
 

@@ -1610,12 +1610,15 @@ class ParquetStore(FileStore):
         finally:
             copy.close()
 
-        if written is None or int(written) != FORMAT_VERSION:
+        # Against the version the source was written in, not this build's: a
+        # byte copy of an older file is that older file, and nothing here
+        # migrates one.
+        if written is None or int(written) != self._written_version:
             raise BackupError(
                 "backup-schema-mismatch",
                 target=str(target),
                 found=0 if written is None else int(written),
-                expected=FORMAT_VERSION,
+                expected=self._written_version,
             )
         if documents != expected:
             raise BackupError(

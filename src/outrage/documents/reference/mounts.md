@@ -411,6 +411,16 @@ twenty failures and named no mount at all while it asked the other
 question -- each failure carrying the whole read-only refusal, so the
 one fact arrived five times as a sample and never once as a sentence.
 
+#### unwritable(prefixes: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+
+Those of `prefixes` whose store cannot be written however it is mounted.
+
+The other half of a read-only mount's story. One mounted with
+`--mount-ro` or `read_only` refuses because of how it was started,
+and mounting it again is the remedy; a parquet or duckdb store refuses
+because its backend is never written through, and no remount changes
+that. Advice written for the first is wrong about the second.
+
 #### store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, contents: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 Store `content` at `key`, overwriting anything already there.
