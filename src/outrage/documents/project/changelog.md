@@ -2,6 +2,33 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+The instructions the MCP server delivers are now one document rather than two,
+and the text itself is edited down: it says the same things in fewer words, and
+tells a session to read the store's `readme` first rather than noting that one
+usually exists. What has gone with the second document is the apparatus that
+kept the text in two halves.
+
+That apparatus existed because the text did not fit the 2048 characters a
+client keeps, so it was split into an `essentials` half sent first and a `tail`
+half that could be lost, with each sentence placed by asking whether it was
+recoverable elsewhere. The whole of it now fits, with room to spare, so the
+split has nothing left to decide.
+
+The document moved with it. It reads at `outrage/instructions/instructions`,
+where the halves read at `outrage/skills/essentials` and `outrage/skills/tail`,
+and the document describing the split, `outrage/skills`, has gone -- a short
+readme beside the text says what it is for instead. A session whose client cut
+the instructions short still reads the whole of them from the mounted manual;
+the key it reads has changed.
+
+`outrage.server` loses the names that served the split: `SKILLS`, `DELIVERED`,
+`PROTECTED_CHARS`, `skill` and `static_instructions`. `INSTRUCTIONS` names where
+the document is and `delivered_text` returns it. `DELIVERY_BUDGET` is now a
+bound the delivered text has to fit rather than an order it is arranged
+against.
+
 ## 0.12.0 - 2026-09-12
 
 `ParquetStore.build_part` streams an arbitrary-order part for a

@@ -1640,9 +1640,9 @@ def test_the_caps_are_written_where_a_caller_can_read_them(server):
 
 
 def test_the_instructions_say_a_listing_is_a_page(server):
-    from outrage.server import static_instructions
+    from outrage.server import delivered_text
 
-    text = static_instructions()
+    text = delivered_text()
 
     assert "next_cursor" in text
     assert "`after`" in text
@@ -1759,8 +1759,7 @@ def test_the_readme_is_named_in_the_instructions(store):
     assert "`readme`" in text
     assert "Read it before starting." in text
     assert "Read `contents` next." not in text
-    assert server_module.skill("essentials") in text
-    assert server_module.skill("tail") in text
+    assert server_module.delivered_text() in text
 
 
 def test_the_readme_is_named_before_the_protocol(store):
@@ -1768,13 +1767,10 @@ def test_the_readme_is_named_before_the_protocol(store):
 
     text = server_module.instructions(store)
 
-    # The client cuts this text at a length it does not announce, so order is
-    # what decides what survives. The readme line is first because a session
-    # that gets only one sentence should get that one.
-    essentials = server_module.skill("essentials")
-
-    assert text.index(server_module.READ_README) < text.index(essentials)
-    assert text.index(essentials) < text.index(server_module.skill("tail"))
+    # The readme line is first because a session that reads only one sentence
+    # should read that one. It no longer decides what *survives* -- the whole
+    # composition fits the budget -- but it still decides what is read first.
+    assert text.index(server_module.READ_README) < text.index(server_module.delivered_text())
 
 
 def test_a_readme_costs_the_same_whatever_length_it_is(store):
@@ -1791,15 +1787,16 @@ def test_a_readme_costs_the_same_whatever_length_it_is(store):
 
 def test_the_delivered_text_fits_the_budget(store):
     # The failure this guards is static prose growing past the cut. It used to
-    # push the store's own readme off the end; now it would push the essentials
-    # there, which is worse. The tail is allowed to fall past -- that is what
-    # makes it the tail.
+    # be answered by ordering -- two documents, the recoverable half sent last
+    # and allowed to fall past -- and is now answered by the text being short
+    # enough that nothing is cut at all. Both sentences are measured, since
+    # which one is sent depends on the store and the longer must fit too.
     store.store_document("readme", "# This store")
-    text = server_module.instructions(store)
 
-    protected = text.removesuffix(f"\n{server_module.skill('tail')}")
-    assert len(protected) == server_module.PROTECTED_CHARS
-    assert server_module.PROTECTED_CHARS <= server_module.DELIVERY_BUDGET
+    assert len(server_module.instructions(store)) <= server_module.DELIVERY_BUDGET
+    assert len(f"{server_module.NO_README}\n\n{server_module.delivered_text()}") <= (
+        server_module.DELIVERY_BUDGET
+    )
 
 
 def test_a_store_with_no_readme_is_told_the_convention(store):

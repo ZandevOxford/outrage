@@ -244,21 +244,22 @@ def test_a_block_opening_with_neither_predates_the_budget(tmp_path, capsys):
 
 def composed() -> str:
     server = server_constants()
-    return f"{server.READ_README}\n\n{server.static_instructions()}"
+    return f"{server.READ_README}\n\n{server.delivered_text()}"
 
 
-def test_the_delivered_shape_reports_the_essentials_whole(tmp_path, capsys):
-    """The live delivery: cut at the budget, with the tail wearing the loss."""
-    body = composed()[: server_constants().DELIVERY_BUDGET] + TRUNCATION_MARKER
-    out = reported(tmp_path, body, capsys)
+def test_the_delivered_shape_reports_the_instructions_whole(tmp_path, capsys):
+    """The live delivery: the whole composition, inside the budget and uncut."""
+    assert len(composed()) <= server_constants().DELIVERY_BUDGET
+
+    out = reported(tmp_path, composed(), capsys)
 
     assert "readme NAMED" in out
-    assert "essentials WHOLE" in out
+    assert "instructions WHOLE" in out
 
 
-def test_a_cut_that_reaches_the_essentials_is_reported(tmp_path, capsys):
-    """The failure the ordering exists to prevent: the protected part cut."""
-    body = composed()[: server_constants().PROTECTED_CHARS - 100] + TRUNCATION_MARKER
+def test_a_cut_that_reaches_the_instructions_is_reported(tmp_path, capsys):
+    """What a text grown past the budget looks like from the transcript."""
+    body = composed()[:-100] + TRUNCATION_MARKER
     out = reported(tmp_path, body, capsys)
 
-    assert "essentials CUT" in out
+    assert "instructions CUT" in out

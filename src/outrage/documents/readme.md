@@ -28,6 +28,8 @@ If reading this via the MCP server,
   by stage. A snapshot of the project's own progress rather than a manual, and
   the one document here that is about outrage's development instead of its
   use.
+* [instructions](instructions/instructions.md) - the text the MCP server
+  delivers to every session when a client connects.
 * [keys](keys.md) - detailed definition of keys. The short version;
   [design](design.md) argues it.
 * [project files](project.md) - copies of the repository README, licence and
@@ -36,7 +38,6 @@ If reading this via the MCP server,
   folder contains the detailed pages generated from the code.
 * [requirements](requirements.md) - the short human-readable requirements that
   the design and implementation satisfy.
-* [skills](skills.md) - the instructions delivered by the MCP server.
 * [tools](tools.md) - descriptions and schemas of the MCP tools.
 * [workflow](workflow.md) - advice for LLMs for surveying, recording,
   editing and handing over work in a project store.
@@ -45,9 +46,10 @@ If reading this via the MCP server,
 
 * [agents](agents) contains the procedures read by harness-specific agents.
 * [hooks](hooks) contains the prompts emitted by lifecycle-hook commands.
-* [skills](skills) contains the server's instructions, kept as the two
-  documents they are delivered in rather than inline in the server: read
-  `outrage/skills/tail` there for the half a client may have cut off.
+* [instructions](instructions) contains the server's instructions, kept as a
+  document rather than inline in the server: read
+  `outrage/instructions/instructions` there for the whole of what a client may
+  have cut short.
 * [tools](tools) contains the documents that the MCP server sends as tool
   descriptions.
 

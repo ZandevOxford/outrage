@@ -689,89 +689,79 @@ class _InfoResult(_ToolResult):
 #: project's own transcripts and again the day after. Whether the number is
 #: fixed, shared between servers, or really a token count is unestablished -
 #: 2047 characters landing on a power of two is the argument for characters.
-#: Everything ordered before this point survives on that client; everything
-#: after it may not, and nothing may be *only* said after it.
+#: Everything delivered has to fit inside it, which is what
+#: ``test_the_delivered_text_fits_the_budget`` asserts. It used to be an
+#: ordering constraint instead -- the text was split in two so that the half
+#: that had to survive was sent first -- and editing the instructions down to
+#: what fits made the whole apparatus of halves unnecessary.
 DELIVERY_BUDGET = 2048
 
-#: Where the delivered text is kept, below the shipped documentation's root.
-#: Prose in a document rather than a string literal here: it is diffable,
-#: carries a title, and is readable with `read_document` like anything else
-#: -- including by a session that was cut off mid-instructions and wants the
-#: rest of them. The document at `outrage/skills` says which file is which.
-SKILLS = "skills"
+#: Where the delivered text is kept, below the shipped documentation's root,
+#: as the directory holding it and the document itself. Prose in a document
+#: rather than a string literal here: it is diffable, carries a title, and is
+#: readable with `read_document` like anything else -- including by a session
+#: whose client cut the instructions short and wants the whole of them. The
+#: readme beside it says so for whoever edits it.
+INSTRUCTIONS = ("instructions", "instructions")
 
 #: Where the MCP tools' descriptions are kept, below the shipped documentation
-#: root. Like :data:`SKILLS`, these are documents rather than string literals:
-#: they are diffable, readable through the mounted manual, and shipped in the
-#: same package as the code that registers them.
+#: root. Like :data:`INSTRUCTIONS`, these are documents rather than string
+#: literals: they are diffable, readable through the mounted manual, and
+#: shipped in the same package as the code that registers them.
 TOOLS = "tools"
 
 
-#: The documents delivered, in the order they are sent. The split is a delivery
-#: order and not a subject: a client cuts these instructions at a length it does
-#: not announce, so `essentials` is what has to survive the cut -- the grammar of
-#: a key, how one is allocated, and that a listing is a page -- and `tail` is
-#: chosen so that every part of it is recoverable somewhere a session reaches
-#: anyway: a tool description, the packaged agent skill, or a failure that
-#: explains itself. That test is the whole of what decides which document a
-#: sentence belongs in, and `outrage/skills` is where it is written down for
-#: whoever edits them.
-DELIVERED = ("essentials", "tail")
-
-
 @functools.cache
-def skill(name: str) -> str:
-    """The text of one delivered document, read from the installed files.
+def _shipped_text(*parts: str) -> str:
+    """The text of one installed document, read from the files.
 
-    The files rather than the mount, for two reasons. This is needed at import,
-    to size the readme against ``DELIVERY_BUDGET``, which is before any store
-    is opened; and a mount table naming ``outrage`` overrides the shipped
-    documentation silently, which would otherwise let a project's own store
-    decide what this server says about itself.
+    The files rather than the mount, for two reasons. The instructions are
+    needed at import, to size them against ``DELIVERY_BUDGET``, which is before
+    any store is opened; and a mount table naming ``outrage`` overrides the
+    shipped documentation silently, which would otherwise let a project's own
+    store decide what this server says about itself.
     :func:`outrage.shipped.tree` is the same directory the mount reads, so the
     two never disagree about what the text is.
 
-    Read once per process, which is what the text itself promises a session:
-    instructions are sent when a client connects, so a file edited afterwards
+    Read once per process, which is what the instructions themselves promise a
+    session: they are sent when a client connects, so a file edited afterwards
     reaches the next server rather than this one.
 
     A missing file is the build failure :func:`outrage.shipped.available`
-    exists to notice, and is raised rather than served as instructions with a
-    hole in them.
+    exists to notice, and is raised rather than served with a hole in it.
     """
-    path = shipped.tree() / SKILLS / f"{name}.md"
+    *directories, name = parts
+    path = shipped.tree().joinpath(*directories, f"{name}.md")
     try:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
         raise shipped.DocumentsError("documents-not-installed", path=str(path)) from exc
 
 
-@functools.cache
+def delivered_text() -> str:
+    """The instructions document, as the bytes a client that does not truncate gets.
+
+    Public because ``tools/harness_delivery.py`` reads it to check what a
+    session was actually served against what was sent, and the failure that
+    check exists to catch is exactly a copy of this text going stale.
+
+    A function rather than a constant: a module constant holding it is rendered
+    *by value* into the API reference, which put the whole document back into
+    the generated page it had just been taken out of.
+    """
+    return _shipped_text(*INSTRUCTIONS)
+
+
 def tool_description(name: str) -> str:
     """The description of one MCP tool, read from the installed documents.
 
-    The same contract as :func:`skill`: the installed file is read once per
-    process, before the tool is registered, and a build that dropped it fails
-    loudly instead of exposing a tool with an empty or stale description.
-    Keeping the description in the documentation tree also makes the bytes a
-    session receives available at ``outrage/tools/<name>``.
+    The same contract as :func:`delivered_text`: the installed file is read
+    once per process, before the tool is registered, and a build that dropped
+    it fails loudly instead of exposing a tool with an empty or stale
+    description. Keeping the description in the documentation tree also makes
+    the bytes a session receives available at ``outrage/tools/<name>``.
     """
-    path = shipped.tree() / TOOLS / f"{name}.md"
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise shipped.DocumentsError("documents-not-installed", path=str(path)) from exc
-
-
-def static_instructions() -> str:
-    """Every delivered document, in order: what a client that does not truncate gets.
-
-    A function rather than a constant, and not only because the text is read
-    from files now. A module constant holding it is rendered *by value* into
-    the API reference, which put the whole of both documents back into the
-    generated page they had just been taken out of.
-    """
-    return "\n".join(skill(name) for name in DELIVERED)
+    return _shipped_text(TOOLS, name)
 
 
 #: The key whose document introduces the store. One name, so that a session
@@ -796,32 +786,8 @@ NO_README = (
 )
 
 
-def _compose(opening: str) -> str:
-    """The delivered text: the opening block, then the essentials, then the tail.
-
-    One function so that what is measured against ``DELIVERY_BUDGET`` is built
-    the same way as the string actually sent, rather than by a second estimate
-    of it that can drift out of step.
-    """
-    return f"{opening}\n\n{static_instructions()}"
-
-
-def _protected(opening: str) -> str:
-    """The part of a composition that has to survive the cut: everything but the tail."""
-    return _compose(opening).removesuffix(f"\n{skill(DELIVERED[-1])}")
-
-
-#: What is delivered ahead of the tail, and so everything that has to survive
-#: the client's cut: the readme line and the essentials. Measured from the real
-#: strings rather than estimated, so editing either moves it, and
-#: ``test_the_delivered_text_fits_the_budget`` fails when it passes
-#: ``DELIVERY_BUDGET``. It no longer varies with the store: what the readme
-#: costs here is the length of the sentence naming it.
-PROTECTED_CHARS = len(_protected(READ_README))
-
-
 def instructions(store: Store) -> str:
-    """A line naming the root store's readme, then the essentials, then the tail.
+    """A line naming the root store's readme, then the instructions document.
 
     The readme is **named, not carried**. The argument for inlining it holds as
     far as it goes: a line telling a session to go and read a key is a line that
@@ -841,14 +807,15 @@ def instructions(store: Store) -> str:
 
     So the cost is fixed and small, the readme can be whatever the project needs,
     and what makes the line hard to read past is that it is first and the
-    session has not yet done anything. Two things carry the risk that it is
-    read past anyway: the `tail` document says what a readme is for, and a
-    host that loads project instructions of its own can say it a second time.
+    session has not yet done anything. What carries the risk that it is read
+    past anyway is that the instructions themselves say what a readme is for,
+    and a host that loads project instructions of its own can say it a second
+    time.
 
-    The order still decides what survives. A client cuts this text at some
-    length it does not announce, so what is written first is what a session
-    gets, and the `tail` document is last because it is the recoverable half.
-    ``PROTECTED_CHARS`` is what everything ahead of it costs.
+    The readme line is still first, because a session that gets one sentence
+    should get that one. It is no longer an ordering that decides what
+    *survives*, though: the whole composition fits ``DELIVERY_BUDGET``, so
+    nothing here is written off as the half that can be cut.
 
     The **root** store's readme, when there is a mount table. A mounted store's
     own is not named either: a session that has not yet read the root's cannot
@@ -864,9 +831,8 @@ def instructions(store: Store) -> str:
     # `exists` rather than a read: the text no longer depends on the content,
     # only on whether there is any. It is also the container case -- a key with
     # documents beneath it and nothing of its own introduces nothing.
-    if not root.exists(README_KEY):
-        return _compose(NO_README)
-    return _compose(READ_README)
+    opening = READ_README if root.exists(README_KEY) else NO_README
+    return f"{opening}\n\n{delivered_text()}"
 
 
 class RequestLog:
@@ -2517,21 +2483,18 @@ __all__ = [
     "DEFAULT_ITEM_LIMIT",
     "DEFAULT_PAGE_CHARS",
     "DEFAULT_SEARCH_SCAN_LIMIT",
-    "DELIVERED",
     "DELIVERY_BUDGET",
+    "INSTRUCTIONS",
     "NO_README",
-    "PROTECTED_CHARS",
     "READ_README",
     "README_KEY",
-    "SKILLS",
     "TOOLS",
     "WITHOUT_META_SAMPLE",
     "RequestLog",
     "build_server",
+    "delivered_text",
     "instructions",
     "main",
     "parse_args",
-    "skill",
-    "static_instructions",
     "tool_description",
 ]

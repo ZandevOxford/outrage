@@ -60,18 +60,6 @@ whatever the item count still allows.
 
 Candidate documents one search call examines before returning a cursor.
 
-### outrage.server.DELIVERED *= ('essentials', 'tail')*
-
-The documents delivered, in the order they are sent. The split is a delivery
-order and not a subject: a client cuts these instructions at a length it does
-not announce, so essentials is what has to survive the cut -- the grammar of
-a key, how one is allocated, and that a listing is a page -- and tail is
-chosen so that every part of it is recoverable somewhere a session reaches
-anyway: a tool description, the packaged agent skill, or a failure that
-explains itself. That test is the whole of what decides which document a
-sentence belongs in, and outrage/skills is where it is written down for
-whoever edits them.
-
 ### outrage.server.DELIVERY_BUDGET *= 2048*
 
 What a client is assumed to deliver of a server's instructions before it
@@ -80,23 +68,26 @@ Code truncates at 2048 characters, measured on 2026-08-19 across this
 project's own transcripts and again the day after. Whether the number is
 fixed, shared between servers, or really a token count is unestablished -
 2047 characters landing on a power of two is the argument for characters.
-Everything ordered before this point survives on that client; everything
-after it may not, and nothing may be *only* said after it.
+Everything delivered has to fit inside it, which is what
+`test_the_delivered_text_fits_the_budget` asserts. It used to be an
+ordering constraint instead -- the text was split in two so that the half
+that had to survive was sent first -- and editing the instructions down to
+what fits made the whole apparatus of halves unnecessary.
+
+### outrage.server.INSTRUCTIONS *= ('instructions', 'instructions')*
+
+Where the delivered text is kept, below the shipped documentation's root,
+as the directory holding it and the document itself. Prose in a document
+rather than a string literal here: it is diffable, carries a title, and is
+readable with read_document like anything else -- including by a session
+whose client cut the instructions short and wants the whole of them. The
+readme beside it says so for whoever edits it.
 
 ### outrage.server.NO_README *= 'This store has no \`readme\` document. Try reading \`outrage/readme\` instead for instructions.'*
 
 What is said when the store has no readme. The empty store is exactly where
 naming the convention is worth most, since the session that goes on to learn
 the layout is the one that can write it down.
-
-### outrage.server.PROTECTED_CHARS *= 863*
-
-What is delivered ahead of the tail, and so everything that has to survive
-the client's cut: the readme line and the essentials. Measured from the real
-strings rather than estimated, so editing either moves it, and
-`test_the_delivered_text_fits_the_budget` fails when it passes
-`DELIVERY_BUDGET`. It no longer varies with the store: what the readme
-costs here is the length of the sentence naming it.
 
 ### outrage.server.READ_README *= 'This store has a \`readme\` document covering project conventions. Read it before starting.'*
 
@@ -110,20 +101,12 @@ The key whose document introduces the store. One name, so that a session
 arriving at a store nobody described to it has somewhere to look, and a
 session that learns how one is organised has somewhere to write it.
 
-### outrage.server.SKILLS *= 'skills'*
-
-Where the delivered text is kept, below the shipped documentation's root.
-Prose in a document rather than a string literal here: it is diffable,
-carries a title, and is readable with read_document like anything else
--- including by a session that was cut off mid-instructions and wants the
-rest of them. The document at outrage/skills says which file is which.
-
 ### outrage.server.TOOLS *= 'tools'*
 
 Where the MCP tools' descriptions are kept, below the shipped documentation
-root. Like [`SKILLS`](#outrage.server.SKILLS), these are documents rather than string literals:
-they are diffable, readable through the mounted manual, and shipped in the
-same package as the code that registers them.
+root. Like [`INSTRUCTIONS`](#outrage.server.INSTRUCTIONS), these are documents rather than string
+literals: they are diffable, readable through the mounted manual, and
+shipped in the same package as the code that registers them.
 
 ### outrage.server.WITHOUT_META_SAMPLE *= 10*
 
@@ -211,9 +194,21 @@ reason and withheld the same way -- the server's `--no-remount`. They are
 MCP-only, which is a decision rather than an omission: the command line
 builds its table from scratch on every run and has nothing to change.
 
+### outrage.server.delivered_text() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+
+The instructions document, as the bytes a client that does not truncate gets.
+
+Public because `tools/harness_delivery.py` reads it to check what a
+session was actually served against what was sent, and the failure that
+check exists to catch is exactly a copy of this text going stale.
+
+A function rather than a constant: a module constant holding it is rendered
+*by value* into the API reference, which put the whole document back into
+the generated page it had just been taken out of.
+
 ### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
-A line naming the root store's readme, then the essentials, then the tail.
+A line naming the root store's readme, then the instructions document.
 
 The readme is **named, not carried**. The argument for inlining it holds as
 far as it goes: a line telling a session to go and read a key is a line that
@@ -233,14 +228,15 @@ fresh session and reads what actually came.
 
 So the cost is fixed and small, the readme can be whatever the project needs,
 and what makes the line hard to read past is that it is first and the
-session has not yet done anything. Two things carry the risk that it is
-read past anyway: the tail document says what a readme is for, and a
-host that loads project instructions of its own can say it a second time.
+session has not yet done anything. What carries the risk that it is read
+past anyway is that the instructions themselves say what a readme is for,
+and a host that loads project instructions of its own can say it a second
+time.
 
-The order still decides what survives. A client cuts this text at some
-length it does not announce, so what is written first is what a session
-gets, and the tail document is last because it is the recoverable half.
-`PROTECTED_CHARS` is what everything ahead of it costs.
+The readme line is still first, because a session that gets one sentence
+should get that one. It is no longer an ordering that decides what
+*survives*, though: the whole composition fits `DELIVERY_BUDGET`, so
+nothing here is written off as the half that can be cut.
 
 The **root** store's readme, when there is a mount table. A mounted store's
 own is not named either: a session that has not yet read the root's cannot
@@ -281,41 +277,12 @@ everything below describes both.
 Separate from [`main()`](#outrage.server.main) so that a test can ask what an argument list
 parses to without opening a store or starting a server.
 
-### outrage.server.skill(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
-
-The text of one delivered document, read from the installed files.
-
-The files rather than the mount, for two reasons. This is needed at import,
-to size the readme against `DELIVERY_BUDGET`, which is before any store
-is opened; and a mount table naming `outrage` overrides the shipped
-documentation silently, which would otherwise let a project's own store
-decide what this server says about itself.
-[`outrage.shipped.tree()`](shipped.md#outrage.shipped.tree) is the same directory the mount reads, so the
-two never disagree about what the text is.
-
-Read once per process, which is what the text itself promises a session:
-instructions are sent when a client connects, so a file edited afterwards
-reaches the next server rather than this one.
-
-A missing file is the build failure [`outrage.shipped.available()`](shipped.md#outrage.shipped.available)
-exists to notice, and is raised rather than served as instructions with a
-hole in them.
-
-### outrage.server.static_instructions() → [str](https://docs.python.org/3/library/stdtypes.html#str)
-
-Every delivered document, in order: what a client that does not truncate gets.
-
-A function rather than a constant, and not only because the text is read
-from files now. A module constant holding it is rendered *by value* into
-the API reference, which put the whole of both documents back into the
-generated page they had just been taken out of.
-
 ### outrage.server.tool_description(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 The description of one MCP tool, read from the installed documents.
 
-The same contract as [`skill()`](#outrage.server.skill): the installed file is read once per
-process, before the tool is registered, and a build that dropped it fails
-loudly instead of exposing a tool with an empty or stale description.
-Keeping the description in the documentation tree also makes the bytes a
-session receives available at `outrage/tools/<name>`.
+The same contract as [`delivered_text()`](#outrage.server.delivered_text): the installed file is read
+once per process, before the tool is registered, and a build that dropped
+it fails loudly instead of exposing a tool with an empty or stale
+description. Keeping the description in the documentation tree also makes
+the bytes a session receives available at `outrage/tools/<name>`.

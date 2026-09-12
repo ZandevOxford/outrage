@@ -6,10 +6,11 @@ can read them the same way it reads anything else. No second retrieval path, no
 second vocabulary: the manual is documents in the namespace.
 
 **Two halves, and only one of them is written by hand.** The documents at the
-top of the tree, ``skills/`` among them, are prose, edited in place like any
-other file in the repository. ``reference/`` is the API documentation, rendered from the
-docstrings in ``src/outrage`` by ``make markdown`` in ``docs/`` and copied in --
-one page per module, reached as ``outrage/reference/<module>``. Editing a page
+top of the tree, ``instructions/`` among them, are prose, edited in place like
+any other file in the repository. ``reference/`` is the API documentation,
+rendered from the docstrings in ``src/outrage`` by ``make markdown`` in
+``docs/`` and copied in -- one page per module, reached as
+``outrage/reference/<module>``. Editing a page
 there is editing build output: the change is lost at the next render, and the
 source is the docstring.
 
@@ -34,12 +35,12 @@ ordinary rule that a later source wins. The only thing special about it is that
 the server mounts it without being asked and the command line does not --
 ``--mount-docs``.
 
-**One directory here is delivered, and it is not the readme.** ``skills/``
-holds the static text :func:`outrage.server.instructions` sends when a client
-connects, as the two documents it is delivered in -- so editing a file there
-edits what every session is told, and the budget arithmetic in
-:mod:`outrage.server` is what bounds it. The server reads those files directly
-rather than through this mount: it needs them at import, and a mount table
+**One document here is delivered, and it is not the readme.**
+``instructions/instructions`` is the static text
+:func:`outrage.server.instructions` sends when a client connects -- so editing
+it edits what every session is told, and ``DELIVERY_BUDGET`` in
+:mod:`outrage.server` is what bounds it. The server reads that file directly
+rather than through this mount: it needs it at import, and a mount table
 naming ``outrage`` would otherwise decide what the server says about itself.
 
 Nothing else here is delivered, the readme included. Only the *root* store's
@@ -65,10 +66,10 @@ MOUNT_POINT = "outrage"
 #: The directory inside the installed package holding the tree. A directory of
 #: files rather than a database, so it is diffable in the repository and
 #: shipped by the same wheel rule that already carries ``src/outrage/skills/``
-#: -- the packaged agent skill, a different thing from the ``skills/``
-#: directory *inside* this tree -- and ``codex/``. Editable without a tool as
-#: well -- but of the hand-written half only, and the module docstring says
-#: which that is.
+#: -- the packaged agent skill, which is a different thing from the
+#: ``instructions/`` directory *inside* this tree -- and ``codex/``. Editable
+#: without a tool as well -- but of the hand-written half only, and the module
+#: docstring says which that is.
 TREE_NAME = "documents"
 
 
@@ -92,9 +93,9 @@ def available() -> bool:
     """Whether this installation actually carries the tree.
 
     A build that dropped it is the failure this exists to notice: 0.1.0 shipped
-    without ``src/outrage/skills/`` and nothing said so. ``test_packaging.py``
-    is where that is guarded; this is what a front end asks before mounting
-    something it was not explicitly told to mount.
+    without ``src/outrage/skills/`` -- the packaged skill -- and nothing said
+    so. ``test_packaging.py`` is where that is guarded; this is what a front end
+    asks before mounting something it was not explicitly told to mount.
     """
     return tree().is_dir()
 

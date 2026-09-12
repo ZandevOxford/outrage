@@ -46,10 +46,9 @@ import document_contents  # noqa: E402
 #: named here like the rest because a build that dropped it should fail, and
 #: only its own key is listed: the pages below it come and go with the modules,
 #: so pinning them would make this a test of what ``src/outrage`` contains.
-#: ``skills`` is the text the server delivers as its instructions, kept as
-#: documents here rather than inline in ``outrage.server``. It is named for the
-#: same reason: a build that dropped it would leave the server with nothing to
-#: say.
+#: ``instructions`` is the text the server delivers, kept as a document here
+#: rather than inline in ``outrage.server``. It is named for the same reason: a
+#: build that dropped it would leave the server with nothing to say.
 EXPECTED = (
     "agents",
     "cli",
@@ -57,12 +56,12 @@ EXPECTED = (
     "design",
     "hooks",
     "implementation",
+    "instructions",
     "keys",
     "project",
     "readme",
     "reference",
     "requirements",
-    "skills",
     "tools",
     "workflow",
 )
@@ -129,21 +128,19 @@ def test_every_index_matches_its_document():
     assert swept.unchanged
 
 
-def test_the_delivered_instructions_are_the_documents_here():
-    """What the server sends is these files, read as documents and unaltered.
+def test_the_delivered_instructions_are_the_document_here():
+    """What the server sends is this file, read as a document and unaltered.
 
-    ``outrage.server`` reads them off the filesystem rather than through this
-    mount -- it needs them at import, before a store exists -- so the two paths
+    ``outrage.server`` reads it off the filesystem rather than through this
+    mount -- it needs it at import, before a store exists -- so the two paths
     to the same bytes are only known to agree by asserting it. A stray heading
     or a stripped trailing newline in either direction shows up here, and the
     delivered text is measured against ``DELIVERY_BUDGET`` to the character.
     """
     with shipped.open_documents() as store:
-        essentials = store.retrieve_document("skills/essentials").content
-        tail = store.retrieve_document("skills/tail").content
+        delivered = store.retrieve_document("instructions/instructions").content
 
-    assert essentials == server.skill("essentials")
-    assert tail == server.skill("tail")
+    assert delivered == server.delivered_text()
 
 
 def test_the_tool_descriptions_are_the_documents_here():

@@ -5,10 +5,9 @@ this project has now been bitten by three of them:
 
 * **`PreCompact` hooks** cannot deliver text at all. Found by trying it.
 * **MCP server instructions** are cut at 2048 characters, found by a bootstrap
-  check a session had to be asked to answer by hand. The cut is permanent and
-  is no longer the question:
-  the text is ordered against it, so what this reports is whether the part that
-  had to survive did.
+  check a session had to be asked to answer by hand. The cut is permanent, and
+  the text is now short enough to fit inside it, so what this reports is
+  whether the whole of what was sent arrived.
 * **`SessionStart` hooks** are reported broken for new conversations in
   claude-code#10373: the hook runs, and its output is discarded.
 
@@ -70,9 +69,9 @@ Usage::
     python3 tools/harness_delivery.py --json     # the same, as records
 
 Run it under the project interpreter to get the whole instructions verdict: the
-readme half is readable from the transcript alone, but checking the essentials
-survived means importing the server's own strings, and a bare `python3` has no
-`mcp`. It says which of the two it managed.
+readme half is readable from the transcript alone, but checking that the
+instructions arrived whole means importing the server's own strings, and a bare
+`python3` has no `mcp`. It says which of the two it managed.
 
 Exit status is 0 when every hook invocation that printed context was delivered
 or accounted for as a repeat, 1 when one was discarded, and 2 when there is no
@@ -492,10 +491,11 @@ def _report(sessions: list[Session], canaries: list[tuple[dict[str, Any], str]])
 def report_instructions(newest: Session) -> None:
     """What the newest session was actually served, and whether that is the fix.
 
-    Truncation on its own is not the question and never was. The composed text
-    is half as long again as the budget, so the marker is always there; the
-    check a fix can pass is whether the *protected* part -- the sentence naming
-    the readme, and the essentials -- landed ahead of the cut.
+    Truncation used to be beside the point: the composed text was half as long
+    again as the budget, the marker was always there, and the question was
+    whether the *protected* part landed ahead of the cut. The instructions are
+    one document now and fit the budget whole, so truncation is the question
+    again -- a marker here means the text has grown past what a client keeps.
     """
     body = newest.mcp_blocks[-1].partition("\n")[2]
     print(f"\nMCP instructions in the newest session ({newest.session_id[:8]}):")
@@ -522,19 +522,20 @@ def report_instructions(newest: Session) -> None:
 
     server = server_constants()
     if server is None:
-        print("  Run under the project interpreter to check the essentials too;")
+        print("  Run under the project interpreter to check the instructions too;")
         print("  a bare python3 has no `mcp` and cannot import the server's strings.")
         return
 
     kept = body.removesuffix(TRUNCATION_MARKER)
-    essentials = server.skill("essentials").rstrip()
-    if essentials in kept:
-        into_tail = len(kept) - kept.index(essentials) - len(essentials)
-        print(f"  essentials WHOLE -- the cut fell {into_tail} chars past them,")
-        print("  inside the tail, which is what the tail is for.")
+    delivered = server.delivered_text().rstrip()
+    if delivered in kept:
+        spare = server.DELIVERY_BUDGET - len(body)
+        print(f"  instructions WHOLE -- all of them arrived, {spare} chars inside")
+        print(f"  the {server.DELIVERY_BUDGET}-character budget.")
     else:
-        print("  essentials CUT -- the budget is wrong, or something ahead of them")
-        print("  grew. Nothing may be said only in the tail: it is past the cut.")
+        print("  instructions CUT -- the text has grown past what the client keeps,")
+        print("  or the session was served an older server's. Nothing is written off")
+        print("  as the half that may be lost any more: all of it has to fit.")
 
 
 def server_constants() -> Any | None:
