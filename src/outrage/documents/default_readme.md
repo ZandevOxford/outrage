@@ -4,7 +4,9 @@ This store keeps decisions, findings and task state that would otherwise be
 lost between sessions. Do not duplicate in bulk what the files or git history
 already say; do record what was done and why.
 
-For more guidance, read `outrage/workflow`.
+Documents in `outrage/` are the documentation for Outrage itself.
+You can read `outrage/workflow` for more advice on using the store,
+and `outrage/agents` contains the default agent/skill definitions.
 
 ## Working with the store
 
@@ -25,6 +27,9 @@ state, and check that new documents have titles.
 Keep one facet per document and about 8k characters or less, so it can be read
 in one `read_document` call. Add a numbered subdocument for further detail
 instead of making one document answer several questions.
+
+Documents that are read often, particularly status and routing documents,
+should be as terse as possible.
 
 **A document is not finished until there is a route to it**. The conventions
 live in `readme`; the subject matter lives in `contents`. The routing may be

@@ -2,7 +2,7 @@
 0 0
 
 ## Working with the store
-275 275
+432 432
 
 ## Where to store information
-1508 1508
+1772 1772
