@@ -567,6 +567,26 @@ def test_building_validates_every_key_the_way_a_writing_backend_does(tmp_path):
     assert not (tmp_path / "out.parquet").exists()
 
 
+def test_a_directory_part_streams_in_source_order_and_replaces_atomically(tmp_path):
+    """A part is bounded-memory output for DuckDB, not a sorted single-file store."""
+    target = tmp_path / "part.parquet"
+    rows = [
+        ("z", "last alphabetically", "markdown", "2026-09-01T00:00:00Z"),
+        ("a", "first alphabetically", "markdown", "2026-09-01T00:00:01Z"),
+    ]
+    assert ParquetStore.build_part(target, iter(rows)) == 2
+    assert _column(target, "key") == ["z", "a"]
+
+    def broken():
+        yield "b", "new", None, None
+        yield "bad\x00key", "never valid", None, None
+
+    with pytest.raises(keys.InvalidKeyError):
+        ParquetStore.build_part(target, broken(), overwrite=True)
+    assert _column(target, "key") == ["z", "a"]
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
 def test_the_file_is_written_in_key_order_and_says_so(tmp_path):
     """The sort is what every bound above bisects, and the footer records it.
 
