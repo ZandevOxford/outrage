@@ -169,7 +169,7 @@ def test_the_wheel_carries_every_data_file(wheel_names):
     assert not missing, f"the wheel dropped {missing}"
 
 
-def test_the_sdist_leaves_out_the_dogfood_config(sdist_names):
+def test_the_sdist_leaves_out_the_dogfood_config_and_sibling_distribution(sdist_names):
     # `.claude` is this project's own configuration, of no use to anyone
     # installing outrage - and excluding it is half of what stops the symlink
     # from eating the skill. The other half is `skip-excluded-dirs`, without
@@ -178,7 +178,13 @@ def test_the_sdist_leaves_out_the_dogfood_config(sdist_names):
     # `.mcp.json` is the same file's neighbour: this repository registering the
     # server for itself, naming a conda environment and a OneDrive folder that
     # exist on one machine. It shipped in 0.3.0 and in the first 0.4.0 build.
-    intruders = [name for name in sdist_names if name.startswith(".claude") or name == ".mcp.json"]
+    # `import/` is a separate distribution with its own dependencies and
+    # release cycle; installing outrage must not carry a second source tree.
+    intruders = [
+        name
+        for name in sdist_names
+        if name.startswith((".claude", "import/")) or name == ".mcp.json"
+    ]
     assert not intruders, intruders
 
 

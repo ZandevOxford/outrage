@@ -2,6 +2,19 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## 0.12.0 - 2026-09-12
+
+`ParquetStore.build_part` streams an arbitrary-order part for a
+directory-backed DuckDB store, holding one row group rather than the whole
+source and publishing the completed part atomically. It is the writing path
+for producers whose corpora arrive in independent pieces; `ParquetStore.build`
+remains the sorted, single-file path.
+
+The repository now also contains the separately packaged
+`outrage-wikiimport` command under `import/`. It resolves completed Wikimedia
+content dumps, downloads and verifies pieces resumably, and converts each one
+as it arrives into a part of a readable DuckDB-backed Outrage store.
+
 ## 0.11.0 - 2026-09-11
 
 A reference base can now be a directory of parquet files rather than one. The

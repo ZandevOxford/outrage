@@ -1,0 +1,45 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "outrage-wikiimport"
+dynamic = ["version"]
+description = "Import Wikimedia content dumps into an Outrage Parquet store"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "mwparserfromhell>=0.7",
+    "outrage[duckdb,parquet]>=0.12.0",
+]
+
+[project.scripts]
+wiki-import = "wikiimport.cli:main"
+
+[tool.hatch.version]
+path = "src/wikiimport/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wikiimport"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# `wikiimport` is only importable from `src`, and the suite has to run without
+# an install so a checkout can be tested before it is packaged. Which copy of
+# `outrage` the same run tests is the other half, and is settled in conftest.py.
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.omnidep]
+# This repository develops outrage as an editable sibling, so omnidep sees its
+# module on sys.path rather than as managed metadata. The dependency above is
+# still explicit; ignoring both sides only avoids diagnosing that local layout
+# as an unmanaged import followed by an unused dependency.
+ignore-imports = ["outrage"]
+ignore-dependencies = ["outrage"]

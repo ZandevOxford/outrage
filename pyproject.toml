@@ -110,7 +110,7 @@ core-metadata-version = "2.4"
 # into a conda environment on one machine and a `--dir` under one OneDrive
 # folder. It is `outrage config` output, it is documented in the README as
 # machine specific, and it is of no use to anybody installing this.
-exclude = [".claude", ".mcp.json"]
+exclude = [".claude", ".mcp.json", "import"]
 skip-excluded-dirs = true
 
 [tool.hatch.build.targets.wheel]

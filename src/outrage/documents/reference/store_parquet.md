@@ -492,3 +492,19 @@ them. For the corpus this is for -- tens of thousands of small
 documents -- that is a few hundred megabytes at worst and one pass; a
 corpus past that wants an external sort, and this should say so rather
 than quietly swapping.
+
+#### *classmethod* build_part(path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], documents: [Iterable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]], \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False, byte_lengths: [bool](https://docs.python.org/3/library/functions.html#bool) = BYTE_LENGTHS) → [int](https://docs.python.org/3/library/functions.html#int)
+
+Stream one arbitrary-order part of a directory-backed store.
+
+`documents` has the same shape and validation as [`build()`](#outrage.store_parquet.ParquetStore.build), but
+rows are written in the order they arrive and only one row group is
+held at a time.  The result is therefore a part for
+[`outrage.store_duckdb.DuckdbStore`](store_duckdb.md#outrage.store_duckdb.DuckdbStore), whose contract permits
+overlapping, independently produced parts in arbitrary order.  It is
+not a standalone [`ParquetStore`](#outrage.store_parquet.ParquetStore): that reader bisects one
+globally sorted file, while a part deliberately makes no such claim.
+
+This is the bounded-memory path for producers whose source naturally
+arrives in pieces.  A caller that needs one standalone parquet file
+uses [`build()`](#outrage.store_parquet.ParquetStore.build), or externally sorts before writing it.

@@ -67,6 +67,7 @@ import os
 import shutil
 import sys
 import threading
+import uuid
 from array import array
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -1846,6 +1847,85 @@ class ParquetStore(FileStore):
             ],
         )
         return table.num_rows
+
+    @classmethod
+    def build_part(
+        cls,
+        path: str | os.PathLike[str],
+        documents: Iterable[tuple[str, str, str | None, str | None]],
+        *,
+        overwrite: bool = False,
+        byte_lengths: bool = BYTE_LENGTHS,
+    ) -> int:
+        """Stream one arbitrary-order part of a directory-backed store.
+
+        ``documents`` has the same shape and validation as :meth:`build`, but
+        rows are written in the order they arrive and only one row group is
+        held at a time.  The result is therefore a part for
+        :class:`outrage.store_duckdb.DuckdbStore`, whose contract permits
+        overlapping, independently produced parts in arbitrary order.  It is
+        not a standalone :class:`ParquetStore`: that reader bisects one
+        globally sorted file, while a part deliberately makes no such claim.
+
+        This is the bounded-memory path for producers whose source naturally
+        arrives in pieces.  A caller that needs one standalone parquet file
+        uses :meth:`build`, or externally sorts before writing it.
+        """
+        pa, pq = _arrow()
+        target = cls.check_target(path, overwrite=overwrite)
+        schema = _schema(pa, byte_lengths=byte_lengths)
+        names = schema.names
+        columns: dict[str, list[object]] = {name: [] for name in names}
+        count = 0
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        writer = None
+        try:
+            writer = pq.ParquetWriter(temporary, schema, compression=COMPRESSION)
+            for key, content, format, updated_at in documents:
+                parsed, decoded, resolved, _, _, stamped = cls._validated(
+                    key,
+                    content,
+                    format,
+                    title=None,
+                    contents=None,
+                    encoding=None,
+                    updated_at=updated_at,
+                )
+                if parsed.has_wildcard:
+                    raise BackendError("parquet-build-wildcard", key=key)
+                values: dict[str, object] = {
+                    "key": parsed.key,
+                    "doc_key": parsed.doc_key,
+                    "meta_name": parsed.meta_name,
+                    "meta_path": parsed.meta_path,
+                    "parent": parsed.parent,
+                    "content": decoded,
+                    "format": resolved,
+                    "updated_at": stamped or _now(),
+                    "sort_key": keys.sort_form(parsed.key),
+                    "chars": len(decoded),
+                }
+                if byte_lengths:
+                    values["bytes"] = _utf8_length(decoded)
+                for name in names:
+                    columns[name].append(values[name])
+                count += 1
+                if len(columns["key"]) == ROW_GROUP_SIZE:
+                    writer.write_table(pa.table(columns, schema=schema))
+                    columns = {name: [] for name in names}
+            if columns["key"]:
+                writer.write_table(pa.table(columns, schema=schema))
+            writer.close()
+            writer = None
+            os.replace(temporary, target)
+        except BaseException:
+            if writer is not None:
+                writer.close()
+            temporary.unlink(missing_ok=True)
+            raise
+        return count
 
 
 def _utf8_length(content: str) -> int:
