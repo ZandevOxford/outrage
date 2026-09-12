@@ -65,3 +65,4 @@ path segment. Create these as needed.
   File notes do not need routing, as they can be found by name.
 * `scratch/?`: temporary notes and mailboxes between simultaneous agents.
   Scratch documents do not need routing.
+* `agents/`: agents and skills specific to this project.
