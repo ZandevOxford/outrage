@@ -16,6 +16,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 from dataclasses import replace
 from pathlib import Path
 
@@ -23,6 +24,7 @@ import pytest
 import yaml
 
 from conftest import raises_rendered
+from outrage import config as config_module
 from outrage import install as install_module
 from outrage.config import ConfigError
 from outrage.install import (
@@ -612,6 +614,17 @@ def test_init_writes_the_three_things(tmp_path):
     assert done.writes
 
 
+def test_init_writes_the_server_for_codex_too_and_marks_it(tmp_path):
+    """Codex reads no .mcp.json, so without this its hook names tools it lacks."""
+    done = init(tmp_path, log=Path(tmp_path / "events.jsonl"))
+
+    codex = tomllib.loads((tmp_path / ".codex" / "config.toml").read_text())
+    entry = codex["mcp_servers"]["outrage"]
+    assert entry == done.codex_server.entry
+    assert entry["args"][0] == config_module.SERVER_MARKER
+    assert entry["args"][1:] == servers(tmp_path / ".mcp.json")["outrage"]["args"]
+
+
 def test_init_records_the_store_directory_it_is_given(tmp_path):
     done = init(tmp_path, tmp_path / "elsewhere")
 
@@ -675,6 +688,7 @@ def test_a_second_init_changes_nothing_anywhere(tmp_path):
 
     assert not done.writes
     assert done.server.action == "unchanged"
+    assert done.codex_server.action == "unchanged"
     assert [h.action for h in done.hooks] == ["unchanged"] * len(HOOK_TARGETS)
     assert actions(list(done.assets)) == {"unchanged"}
     assert actions(list(done.codex_assets)) == {"unchanged"}
@@ -691,6 +705,7 @@ def test_init_dry_run_writes_nothing_and_agrees_with_the_real_run(tmp_path):
 
     done = init(tmp_path)
     assert preview.server.action == done.server.action
+    assert preview.codex_server.action == done.codex_server.action
     assert [h.action for h in preview.hooks] == [h.action for h in done.hooks]
     assert actions(list(preview.assets)) == actions(list(done.assets))
     assert actions(list(preview.codex_assets)) == actions(list(done.codex_assets))
@@ -707,6 +722,7 @@ def test_a_refusal_stops_the_whole_run(tmp_path):
         init(tmp_path)
 
     assert not (tmp_path / ".mcp.json").exists(), "the server entry was not written either"
+    assert not (tmp_path / ".codex" / "config.toml").exists()
     assert not installed(tmp_path, "skills/outrage/SKILL.md").exists()
     assert not codex_installed(tmp_path, "skills/outrage/SKILL.md").exists()
     assert not copilot_installed(tmp_path, "agents/outrage-search.agent.md").exists()
@@ -991,3 +1007,15 @@ def test_the_codex_file_is_merged_not_claimed(tmp_path):
     assert written["description"] == "mine"
     assert written["hooks"]["PreToolUse"] == [theirs]
     assert written["hooks"][CODEX_HOOK.event] == [theirs, template_entry(CODEX_HOOK)]
+
+
+def test_a_codex_config_that_does_not_parse_stops_the_whole_run(tmp_path):
+    path = tmp_path / ".codex" / "config.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text("[broken\n", encoding="utf-8")
+
+    with raises_rendered(ConfigError, "not valid TOML"):
+        init(tmp_path)
+
+    assert path.read_text() == "[broken\n"
+    assert not (tmp_path / ".mcp.json").exists()

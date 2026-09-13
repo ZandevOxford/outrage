@@ -1510,6 +1510,21 @@ def _config_server_not_an_object(name: Namer, /, *, path: str, server: str, **_:
     return f"{path} has a {server!r} server that is not an object; leaving it alone"
 
 
+@template("config-not-toml")
+def _config_not_toml(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
+    return f"{path} is not valid TOML ({reason}); leaving it alone"
+
+
+@template("config-field-not-a-table")
+def _config_field_not_a_table(name: Namer, /, *, path: str, field: str, **_: Any) -> str:
+    return f"{path} has a {field!r} that is not a table; leaving it alone"
+
+
+@template("config-server-not-a-table")
+def _config_server_not_a_table(name: Namer, /, *, path: str, server: str, **_: Any) -> str:
+    return f"{path} has a {server!r} server that is not a table; leaving it alone"
+
+
 # -- installation ----------------------------------------------------------
 
 

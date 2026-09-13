@@ -1,9 +1,11 @@
 # outrage.install
 
-Setting a project up: the MCP entry, hooks, and harness-specific skills.
+Setting a project up: the MCP entries, hooks, and harness-specific skills.
 
 `init` is the whole of `outrage init` and the three parts are separable: the
-server entry is [`outrage.config`](config.md#module-outrage.config)'s and is called rather than repeated, the
+server entries - `.mcp.json`, and `.codex/config.toml` for Codex, which
+does not read the other - are [`outrage.config`](config.md#module-outrage.config)'s and are called rather
+than repeated, the
 session-start hooks are written here, and packaged assets are copied into the
 directories their harness reads. Most of what follows is about the hooks,
 because they are the part with something to say.
@@ -294,7 +296,7 @@ Bases: [`ConfigError`](config.md#outrage.config.ConfigError)
 
 Settings that cannot safely be updated.
 
-### *class* outrage.install.Installation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], copilot_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], table: [Starter](mountfile.md#outrage.mountfile.Starter))
+### *class* outrage.install.Installation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), server: [Change](config.md#outrage.config.Change), codex_server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], copilot_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], table: [Starter](mountfile.md#outrage.mountfile.Starter))
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -303,6 +305,10 @@ Everything `outrage init` does to a project, or would do.
 #### project_dir *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
 #### server *: [Change](config.md#outrage.config.Change)*
+
+#### codex_server *: [Change](config.md#outrage.config.Change)*
+
+The same server in `.codex/config.toml`, which is where Codex reads it.
 
 #### hooks *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...]*
 
@@ -340,7 +346,11 @@ Every packaged Copilot agent, as a source and path below `.github`.
 
 ### outrage.install.init(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = False, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Installation](#outrage.install.Installation)
 
-Set a project up: the MCP server entry, hooks, and packaged skills.
+Set a project up: the MCP server entries, hooks, and packaged skills.
+
+The server entry is written twice, to `.mcp.json` and to Codex's
+`.codex/config.toml`, from the same options; the Codex one carries a
+marker, [`outrage.config.plan_codex()`](config.md#outrage.config.plan_codex) says why.
 
 The whole of it is planned before any of it is written, so a refusal - a
 settings file that does not parse, a `.mcp.json` that does not - stops

@@ -117,7 +117,9 @@ def argument_parser() -> argparse.ArgumentParser:
         help="set a project up: MCP server, session hooks, skill and agents",
         description=(
             "Arrange everything a project needs to use outrage: the MCP server "
-            "entry in .mcp.json, a session-start hook for each harness - "
+            "entry in .mcp.json and, for Codex, in .codex/config.toml, where it "
+            "carries a marker so a re-run finds it; a session-start hook for "
+            "each harness - "
             ".claude/settings.json for Claude Code, .github/hooks/outrage.json "
             "for Copilot CLI, .codex/hooks.json for Codex - and the packaged "
             "skill and agents in .claude/, Copilot agents in .github/agents/, "
@@ -1349,6 +1351,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
     )
 
     _report(done.server, out, dry_run=args.dry_run)
+    _report(done.codex_server, out, dry_run=args.dry_run, label="Codex")
     _report_table(done.table, out, dry_run=args.dry_run)
     for hook in done.hooks:
         _report_hook(hook, out, dry_run=args.dry_run)
@@ -2691,17 +2694,22 @@ def _said(action: str, dry_run: bool) -> str:
     return _ACTIONS[action][0 if dry_run else 1]
 
 
-def _report(change: config_module.Change, out: TextIO, *, dry_run: bool) -> None:
+def _report(
+    change: config_module.Change, out: TextIO, *, dry_run: bool, label: str | None = None
+) -> None:
     """Say what is about to change, in enough detail to notice a wrong answer.
 
     The whole command is a guess at two paths, so printing them is not a
     courtesy: an entry point in the wrong environment or a store directory
     beside the wrong project both produce a server that starts cleanly and
     talks to nothing anyone meant.
+
+    ``label`` names the client in place of the scope, where one run writes the
+    same scope for two of them.
     """
     verb = _said(change.action, dry_run)
 
-    print(f"{change.scope} configuration: {change.path}", file=out)
+    print(f"{label or change.scope} configuration: {change.path}", file=out)
     print(f"  {change.name}: {verb}", file=out)
     if change.previous is not None and change.action == "updated":
         _print_command("  was:", change.previous, out)

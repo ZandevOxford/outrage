@@ -1407,6 +1407,14 @@ def test_parse_args():
     assert parse_args(["--dir", "/tmp/x"]).directory == "/tmp/x"
 
 
+@pytest.mark.parametrize("marker", ["outrage-managed:mcp-server:v1", "rage-managed:mcp-server:v9"])
+def test_a_configuration_marker_is_accepted_and_means_nothing(marker, tmp_path):
+    """Codex's entry carries one first, and --mount-docs is spliced in ahead of it."""
+    marked = parse_args([marker, "--dir", str(tmp_path), "--log"])
+    plain = parse_args(["--dir", str(tmp_path), "--log"])
+    assert vars(marked) == vars(plain)
+
+
 def test_parse_args_leaves_logging_off():
     assert parse_args([]).log is None
     assert parse_args(["--log"]).log is eventlog.DEFAULT

@@ -1824,6 +1824,7 @@ def test_init_arranges_the_whole_project(tmp_path):
     assert (tmp_path / ".claude" / "skills" / "outrage" / "SKILL.md").is_file()
     assert (tmp_path / ".codex" / "skills" / "outrage" / "SKILL.md").is_file()
     assert (tmp_path / ".github" / "agents" / "outrage-search.agent.md").is_file()
+    assert "outrage-managed:mcp-server" in (tmp_path / ".codex" / "config.toml").read_text()
     assert "added" in output
 
 
@@ -1840,6 +1841,7 @@ def test_init_names_every_path_it_touches(tmp_path):
     _, output = run("init", "--project-dir", str(tmp_path))
 
     assert str(tmp_path / ".mcp.json") in output
+    assert f"Codex configuration: {tmp_path / '.codex' / 'config.toml'}" in output
     assert str(tmp_path / ".claude" / "settings.json") in output
     assert "skills/outrage/SKILL.md" in output
     assert str(tmp_path / ".codex") in output

@@ -14,12 +14,56 @@ the configuration is a command rather than something a user does by hand. The
 `.mcp.json` originally written by hand in this repository is the illustration:
 it names one machine's conda prefix and is wrong everywhere else.
 
+## Codex reads TOML, and its entry carries a marker
+
+Codex does not read `.mcp.json`. Its servers are tables in
+`.codex/config.toml` - `[mcp_servers.<name>]` - in a file that also holds
+what Codex writes itself, such as a tool's `approval_mode` below the server's
+own table. So the file is edited with `tomlkit` rather than rebuilt: only
+`command` and `args` of one table change, and every other table, comment
+and blank line is written back as it was.
+
+A JSON entry is found by its name alone. The Codex entry also carries
+[`SERVER_MARKER`](#outrage.config.SERVER_MARKER) as the **first** of its `args`, for the reason the
+session-start hooks carry theirs: a name is something a user can change, and an
+installer that cannot recognise its own entry either duplicates it or has to
+guess. An ordinary argument belongs to the command contract, where a comment
+depends on whoever rewrites the file keeping it and an unknown key on Codex
+tolerating it. First, because `--log` takes an optional value and would
+swallow a marker written after it; the server drops the marker before parsing
+anything, so its position is otherwise free.
+
+A table carrying the marker is ours under whatever name it has. Failing that, a
+table named [`SERVER_NAME`](#outrage.config.SERVER_NAME) is adopted and gains the marker, since that is
+the entry `outrage config` would have replaced in JSON and a TOML file cannot
+hold a second one beside it.
+
 ### outrage.config.CLI_SCRIPT_NAME *= 'outrage'*
 
 Console script for the command line, the other half of the pair. A caller
 told which environment this server runs in wants it to run `outrage` there,
 and there is no module fallback for this one: `python -m outrage` is the
 *server*, so an installation without the script has no second spelling.
+
+### outrage.config.CODEX_CONFIG_NAME *= PosixPath('.codex/config.toml')*
+
+Codex's project scoped configuration, relative to the project root.
+
+### outrage.config.CODEX_SERVERS_FIELD *= 'mcp_servers'*
+
+The table holding Codex's servers.
+
+### outrage.config.MARKER *= 'outrage-managed:mcp-server'*
+
+What marks a server entry as outrage's, minus the `:vN`. Names the server
+entry, not the client that reads it.
+
+### outrage.config.MARKER_MATCH *= '-managed:mcp-server'*
+
+What recognising an entry compares: [`MARKER`](#outrage.config.MARKER) without the product name,
+so a rename does not stop an entry being recognised, and without the version,
+so an upgrade does not either. The rule [`outrage.install`](install.md#module-outrage.install) follows for
+its hooks.
 
 ### outrage.config.PROJECT_CONFIG_NAME *= '.mcp.json'*
 
@@ -41,6 +85,10 @@ scripts directory of which is not where sys.executable lives.
 
 The key holding the servers, in both configuration files. The rest of
 either file belongs to somebody else and is written back untouched.
+
+### outrage.config.SERVER_MARKER *= 'outrage-managed:mcp-server:v1'*
+
+The complete marker written as the first server argument.
 
 ### outrage.config.SERVER_NAME *= 'outrage'*
 
@@ -82,6 +130,10 @@ Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`]
 
 Raised when existing configuration cannot be safely updated.
 
+### outrage.config.codex_config_path(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+
+Where a project's Codex configuration is, whether or not it exists yet.
+
 ### outrage.config.config_path(scope: [str](https://docs.python.org/3/library/stdtypes.html#str), project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Locate the configuration file for `scope`.
@@ -89,6 +141,10 @@ Locate the configuration file for `scope`.
 ### outrage.config.default_store_dir(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where the store goes when the caller does not say.
+
+### outrage.config.is_server_marker(value: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [bool](https://docs.python.org/3/library/functions.html#bool)
+
+Whether `value` is an outrage server marker, of any version or name.
 
 ### outrage.config.launch_command(executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
 
@@ -145,6 +201,21 @@ Work out what writing `entry` into `path` would change.
 Returns the change, the merged configuration, and the file's original text,
 so a caller can report before writing and write without reading twice.
 
+### outrage.config.plan_codex(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], name: [str](https://docs.python.org/3/library/stdtypes.html#str) = SERVER_NAME) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Change](#outrage.config.Change), TOMLDocument, [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+
+Work out what writing `entry` into a Codex `config.toml` would change.
+
+Returns the change, the edited document and the file's original text, the
+shape [`plan()`](#outrage.config.plan) returns, so a caller previews and writes the same way.
+`entry` should be built `marked`; the table it replaces is the one
+carrying a marker, else the one called `name`.
+
+The merge is [`merge_entry()`](#outrage.config.merge_entry)'s, so a re-run keeps an option the old
+table had and this run does not mention. A marker is taken out of the old
+arguments first: the new entry has its own at the front, and an old one
+inherited behind the options could land after `--log` and be read as
+its path.
+
 ### outrage.config.read_config(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
 
 Read a configuration file, returning its content and original text.
@@ -153,6 +224,13 @@ A file that exists but does not parse is an error rather than something to
 overwrite. The user scoped file in particular holds a great deal of
 unrelated state, and replacing it wholesale because one read failed would
 do far more damage than declining to write.
+
+### outrage.config.read_toml(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[TOMLDocument, [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+
+Read a TOML configuration file, returning the document and original text.
+
+A file that does not parse is refused rather than replaced, for the reason
+[`read_config()`](#outrage.config.read_config) gives: it holds settings this command did not write.
 
 ### outrage.config.script_command(script: [str](https://docs.python.org/3/library/stdtypes.html#str), executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None)
 
@@ -168,7 +246,7 @@ property of the script -- the server has one and the command line has none
 -- so the caller who knows that decides, and a report that cannot name a
 command says so.
 
-### outrage.config.server_entry(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], command: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+### outrage.config.server_entry(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], command: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = False, marked: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 Build the configuration entry for the stores in `directory`.
 
@@ -212,6 +290,10 @@ versions. Written here rather than left to a hand edit for the reason the
 others are, and because [`merge_entry()`](#outrage.config.merge_entry) keeps an option it does not
 recognise but has no way to *write* one `init` was asked for.
 
+`marked` puts [`SERVER_MARKER`](#outrage.config.SERVER_MARKER) ahead of every option, which is what
+the Codex entry needs to be recognised by a later run. See the module
+docstring on why it goes first.
+
 ### outrage.config.split_args(args: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]]]
 
 Take an argument list apart into `(flag, values)` pairs, in order.
@@ -232,3 +314,10 @@ an interrupted write cannot truncate a file holding configuration this
 command did not create. Indentation and permissions follow the existing
 file where there is one: the point is to change one key, and a wholesale
 reformat or a loosened mode is a change nobody asked for.
+
+### outrage.config.write_toml(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), document: TOMLDocument, original: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [None](https://docs.python.org/3/library/constants.html#None)
+
+Write `document` to `path`, atomically and keeping its permissions.
+
+The one normalisation is the end of the file: a table added last would
+otherwise leave a blank line there that the file did not have.

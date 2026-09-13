@@ -49,6 +49,7 @@ from pydantic import (
 from . import (
     __version__,
     bulk,
+    config,
     eventlog,
     ingest,
     keys,
@@ -2204,6 +2205,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parses to without opening a store or starting a server.
     """
     argv = list(sys.argv[1:] if argv is None else argv)
+    # A configuration entry's marker says who wrote the entry and means nothing
+    # to the server. Dropped rather than declared as a positional, since an
+    # optional positional behind a leading option - and the splice below always
+    # puts one first - is parsed differently by some argparse releases.
+    argv = [token for token in argv if not config.is_server_marker(token)]
     # The list as it was *written*, kept because the splice is what flattens
     # several sources into one and a report of which files were read is the
     # one thing the flattened list can no longer say.

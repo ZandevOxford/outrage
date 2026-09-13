@@ -11,6 +11,30 @@ inside that environment - which is where this code runs, and is why writing
 the configuration is a command rather than something a user does by hand. The
 ``.mcp.json`` originally written by hand in this repository is the illustration:
 it names one machine's conda prefix and is wrong everywhere else.
+
+## Codex reads TOML, and its entry carries a marker
+
+Codex does not read ``.mcp.json``. Its servers are tables in
+``.codex/config.toml`` - ``[mcp_servers.<name>]`` - in a file that also holds
+what Codex writes itself, such as a tool's ``approval_mode`` below the server's
+own table. So the file is edited with ``tomlkit`` rather than rebuilt: only
+``command`` and ``args`` of one table change, and every other table, comment
+and blank line is written back as it was.
+
+A JSON entry is found by its name alone. The Codex entry also carries
+:data:`SERVER_MARKER` as the **first** of its ``args``, for the reason the
+session-start hooks carry theirs: a name is something a user can change, and an
+installer that cannot recognise its own entry either duplicates it or has to
+guess. An ordinary argument belongs to the command contract, where a comment
+depends on whoever rewrites the file keeping it and an unknown key on Codex
+tolerating it. First, because ``--log`` takes an optional value and would
+swallow a marker written after it; the server drops the marker before parsing
+anything, so its position is otherwise free.
+
+A table carrying the marker is ours under whatever name it has. Failing that, a
+table named :data:`SERVER_NAME` is adopted and gains the marker, since that is
+the entry ``outrage config`` would have replaced in JSON and a TOML file cannot
+hold a second one beside it.
 """
 
 from __future__ import annotations
@@ -19,10 +43,13 @@ import json
 import os
 import sys
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import tomlkit
+import tomlkit.exceptions
 
 from .errors import OutrageError
 from .eventlog import DEFAULT as LOG_BESIDE_STORE
@@ -58,6 +85,25 @@ SCRIPT_NAME = "outrage-server"
 #: and there is no module fallback for this one: ``python -m outrage`` is the
 #: *server*, so an installation without the script has no second spelling.
 CLI_SCRIPT_NAME = "outrage"
+
+#: Codex's project scoped configuration, relative to the project root.
+CODEX_CONFIG_NAME = Path(".codex") / "config.toml"
+
+#: The table holding Codex's servers.
+CODEX_SERVERS_FIELD = "mcp_servers"
+
+#: What marks a server entry as outrage's, minus the ``:vN``. Names the server
+#: entry, not the client that reads it.
+MARKER = "outrage-managed:mcp-server"
+
+#: What recognising an entry compares: :data:`MARKER` without the product name,
+#: so a rename does not stop an entry being recognised, and without the version,
+#: so an upgrade does not either. The rule :mod:`outrage.install` follows for
+#: its hooks.
+MARKER_MATCH = "-managed:mcp-server"
+
+#: The complete marker written as the first server argument.
+SERVER_MARKER = f"{MARKER}:v1"
 
 _DEFAULT_INDENT = 2
 
@@ -139,6 +185,7 @@ def server_entry(
     no_info: bool = False,
     no_remount: bool = False,
     no_versioning: bool = False,
+    marked: bool = False,
 ) -> dict[str, Any]:
     """Build the configuration entry for the stores in ``directory``.
 
@@ -181,10 +228,15 @@ def server_entry(
     versions. Written here rather than left to a hand edit for the reason the
     others are, and because :func:`merge_entry` keeps an option it does not
     recognise but has no way to *write* one ``init`` was asked for.
+
+    ``marked`` puts :data:`SERVER_MARKER` ahead of every option, which is what
+    the Codex entry needs to be recognised by a later run. See the module
+    docstring on why it goes first.
     """
     argv = list(command) if command is not None else launch_command()
     command_name = _path_text(argv[0])
-    args = [*argv[1:], "--dir", _path_text(Path(directory).expanduser().resolve())]
+    args = [*argv[1:], *([SERVER_MARKER] if marked else [])]
+    args += ["--dir", _path_text(Path(directory).expanduser().resolve())]
     if log is not None:
         args.append("--log")
         # Absolute for the same reason the store directory is.
@@ -379,9 +431,13 @@ def write_config(path: Path, config: dict[str, Any], original: str | None = None
     file where there is one: the point is to change one key, and a wholesale
     reformat or a loosened mode is a change nobody asked for.
     """
-    path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(config, indent=_indent_of(original), ensure_ascii=False) + "\n"
+    _replace_text(path, text)
 
+
+def _replace_text(path: Path, text: str) -> None:
+    """Move ``text`` into place at ``path`` through a temporary file beside it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name, suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -420,25 +476,169 @@ def _mode_for(path: Path) -> int:
         return 0o644 if path.name == PROJECT_CONFIG_NAME else 0o600
 
 
+# -- Codex ----------------------------------------------------------------
+
+
+def is_server_marker(value: Any) -> bool:
+    """Whether ``value`` is an outrage server marker, of any version or name."""
+    return isinstance(value, str) and MARKER_MATCH in value
+
+
+def codex_config_path(project_dir: str | os.PathLike[str] | None = None) -> Path:
+    """Where a project's Codex configuration is, whether or not it exists yet."""
+    return Path(project_dir or Path.cwd()).expanduser().resolve() / CODEX_CONFIG_NAME
+
+
+def read_toml(path: Path) -> tuple[tomlkit.TOMLDocument, str | None]:
+    """Read a TOML configuration file, returning the document and original text.
+
+    A file that does not parse is refused rather than replaced, for the reason
+    :func:`read_config` gives: it holds settings this command did not write.
+    """
+    if not path.exists():
+        return tomlkit.document(), None
+    text = path.read_text(encoding="utf-8")
+    try:
+        return tomlkit.parse(text), text
+    except tomlkit.exceptions.ParseError as exc:
+        raise ConfigError("config-not-toml", path=str(path), reason=str(exc)) from exc
+
+
+def plan_codex(
+    path: Path,
+    entry: dict[str, Any],
+    name: str = SERVER_NAME,
+) -> tuple[Change, tomlkit.TOMLDocument, str | None]:
+    """Work out what writing ``entry`` into a Codex ``config.toml`` would change.
+
+    Returns the change, the edited document and the file's original text, the
+    shape :func:`plan` returns, so a caller previews and writes the same way.
+    ``entry`` should be built ``marked``; the table it replaces is the one
+    carrying a marker, else the one called ``name``.
+
+    The merge is :func:`merge_entry`'s, so a re-run keeps an option the old
+    table had and this run does not mention. A marker is taken out of the old
+    arguments first: the new entry has its own at the front, and an old one
+    inherited behind the options could land after ``--log`` and be read as
+    its path.
+    """
+    document, original = read_toml(path)
+    servers = document.get(CODEX_SERVERS_FIELD)
+    if servers is not None and not isinstance(servers, Mapping):
+        raise ConfigError("config-field-not-a-table", path=str(path), field=CODEX_SERVERS_FIELD)
+
+    found = _marked_server(servers or {}) or name
+    table = servers.get(found) if servers is not None else None
+    if table is not None and not isinstance(table, Mapping):
+        raise ConfigError("config-server-not-a-table", path=str(path), server=found)
+
+    previous = _launch_of(table)
+    inherited = previous
+    if previous and _is_string_list(previous.get("args")):
+        kept = [arg for arg in previous["args"] if not is_server_marker(arg)]
+        inherited = previous | {"args": kept}
+    merged = merge_entry(inherited, entry)
+
+    if not previous:
+        action = "created"
+    elif previous == merged:
+        action = "unchanged"
+    else:
+        action = "updated"
+
+    if servers is None:
+        document[CODEX_SERVERS_FIELD] = tomlkit.table(is_super_table=True)
+        servers = document[CODEX_SERVERS_FIELD]
+    new_table = table is None
+    if new_table:
+        servers[found] = tomlkit.table()
+        table = servers[found]
+    table["command"] = merged["command"]
+    arguments = tomlkit.array()
+    arguments.extend(merged["args"])
+    table["args"] = arguments.multiline(True)
+    if new_table:
+        # Otherwise a table after this one starts on the very next line.
+        table.add(tomlkit.nl())
+
+    change = Change(
+        path=path,
+        scope="project",
+        name=found,
+        action=action,
+        entry=merged,
+        previous=previous or None,
+    )
+    return change, document, original
+
+
+def write_toml(path: Path, document: tomlkit.TOMLDocument, original: str | None = None) -> None:
+    """Write ``document`` to ``path``, atomically and keeping its permissions.
+
+    The one normalisation is the end of the file: a table added last would
+    otherwise leave a blank line there that the file did not have.
+    """
+    text = tomlkit.dumps(document)
+    if original is None or not original.endswith("\n\n"):
+        text = text.rstrip("\n") + "\n"
+    _replace_text(path, text)
+
+
+def _marked_server(servers: Mapping[str, Any]) -> str | None:
+    """The name of the first server table carrying a marker, if any does."""
+    for key, table in servers.items():
+        if isinstance(table, Mapping) and _is_string_list(args := _plain(table).get("args")):
+            if any(is_server_marker(arg) for arg in args):
+                return key
+    return None
+
+
+def _launch_of(table: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    """The ``command`` and ``args`` of a server table, as plain values.
+
+    Only those two: the rest of the table - Codex's own tool approvals among it -
+    is not outrage's to compare or to report.
+    """
+    if table is None:
+        return None
+    plain = _plain(table)
+    return {key: plain[key] for key in ("command", "args") if key in plain}
+
+
+def _plain(table: Mapping[str, Any]) -> dict[str, Any]:
+    unwrap = getattr(table, "unwrap", None)
+    return unwrap() if callable(unwrap) else dict(table)
+
+
 __all__ = [
     "CLI_SCRIPT_NAME",
+    "CODEX_CONFIG_NAME",
+    "CODEX_SERVERS_FIELD",
+    "MARKER",
+    "MARKER_MATCH",
     "PROJECT_CONFIG_NAME",
     "SCOPES",
     "SCRIPT_NAME",
     "SERVERS_FIELD",
+    "SERVER_MARKER",
     "SERVER_NAME",
     "USER_CONFIG_NAME",
     "Change",
     "ConfigError",
+    "codex_config_path",
     "config_path",
     "default_store_dir",
+    "is_server_marker",
     "launch_command",
     "merge_entry",
     "mounts_in",
     "plan",
+    "plan_codex",
     "read_config",
+    "read_toml",
     "script_command",
     "server_entry",
     "split_args",
     "write_config",
+    "write_toml",
 ]

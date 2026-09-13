@@ -1,7 +1,9 @@
-"""Setting a project up: the MCP entry, hooks, and harness-specific skills.
+"""Setting a project up: the MCP entries, hooks, and harness-specific skills.
 
 ``init`` is the whole of ``outrage init`` and the three parts are separable: the
-server entry is :mod:`outrage.config`'s and is called rather than repeated, the
+server entries - ``.mcp.json``, and ``.codex/config.toml`` for Codex, which
+does not read the other - are :mod:`outrage.config`'s and are called rather
+than repeated, the
 session-start hooks are written here, and packaged assets are copied into the
 directories their harness reads. Most of what follows is about the hooks,
 because they are the part with something to say.
@@ -680,6 +682,9 @@ class Installation:
 
     project_dir: Path
     server: config.Change
+    codex_server: config.Change
+    """The same server in ``.codex/config.toml``, which is where Codex reads it."""
+
     hooks: tuple[HookChange, ...]
     """One per :data:`HOOK_TARGETS`, in that order."""
 
@@ -699,6 +704,7 @@ class Installation:
     def writes(self) -> bool:
         return (
             self.server.writes
+            or self.codex_server.writes
             or self.table.writes
             or any(h.writes for h in self.hooks)
             or any(a.writes for a in self.assets)
@@ -721,7 +727,11 @@ def init(
     read_only_mounts: Sequence[str] = (),
     dry_run: bool = False,
 ) -> Installation:
-    """Set a project up: the MCP server entry, hooks, and packaged skills.
+    """Set a project up: the MCP server entries, hooks, and packaged skills.
+
+    The server entry is written twice, to ``.mcp.json`` and to Codex's
+    ``.codex/config.toml``, from the same options; the Codex one carries a
+    marker, :func:`outrage.config.plan_codex` says why.
 
     The whole of it is planned before any of it is written, so a refusal - a
     settings file that does not parse, a ``.mcp.json`` that does not - stops
@@ -764,6 +774,17 @@ def init(
         no_versioning=no_versioning,
     )
     server, servers, servers_text = config.plan(server_path, "project", entry)
+    codex_path = config.codex_config_path(project)
+    codex_entry = config.server_entry(
+        store_dir,
+        log=log,
+        log_content=log_content,
+        no_info=no_info,
+        no_remount=no_remount,
+        no_versioning=no_versioning,
+        marked=True,
+    )
+    codex_server, codex_document, codex_text = config.plan_codex(codex_path, codex_entry)
     table = mountfile.plan_starter(
         store_dir,
         root_mount=root_mount,
@@ -774,6 +795,8 @@ def init(
     if not dry_run:
         if server.writes:
             config.write_config(server_path, servers, servers_text)
+        if codex_server.writes:
+            config.write_toml(codex_path, codex_document, codex_text)
         if table.writes:
             mountfile.write_starter(table)
         for path, hook, settings, settings_text in hooks:
@@ -786,6 +809,7 @@ def init(
     return Installation(
         project_dir=project,
         server=server,
+        codex_server=codex_server,
         table=table,
         hooks=tuple(hook for _, hook, _, _ in hooks),
         assets=tuple(assets),

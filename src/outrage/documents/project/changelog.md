@@ -4,6 +4,19 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+`outrage init` now registers the MCP server for Codex as well, in
+`.codex/config.toml`. Codex does not read `.mcp.json`, so a project set up by
+earlier releases got the Codex session-start hook and skills but no server, and
+the hook told the session to read a store it had no tools for. The entry is the
+same one `.mcp.json` gets, with `outrage-managed:mcp-server:v1` as its first
+argument so that a re-run recognises it under any name; the server ignores that
+argument. An existing `[mcp_servers.outrage]` table is adopted and gains the
+marker. Only its `command` and `args` change, and the rest of the file is left
+exactly as it was, including the tool approvals Codex keeps there. Codex reads a
+project's own configuration only once the project is trusted, and it asks for
+each project hook to be reviewed before running it. `outrage` now depends on
+`tomlkit`.
+
 A SQLite store now keeps what a write replaces and what a delete takes. The old
 row is copied into a new `document_archive` table in the same transaction as
 the change, metadata included, so a document that leaves the store is still in

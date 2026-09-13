@@ -41,16 +41,16 @@ outrage [-h] [--version]
 
 ## `init`
 
-Arrange everything a project needs to use outrage: the MCP server entry in .mcp.json, a
-session-start hook for each harness - .claude/settings.json for Claude Code,
-.github/hooks/outrage.json for Copilot CLI, .codex/hooks.json for Codex - and the packaged skill and
-agents in .claude/, Copilot agents in .github/agents/, and the Codex skills in .codex/. Only the
-entries outrage owns are written; anything else in those files is left as it was, and a file already
-holding the current content is not rewritten. Mounts go in mounts.toml in the store directory, which
-is written once and maintained by hand thereafter; an option already on an existing server entry -
---log, or a mount an older release wrote there - is kept even when this run does not mention it.
-Safe to re-run, which is how a project is repaired after outrage is upgraded or the environment
-moves.
+Arrange everything a project needs to use outrage: the MCP server entry in .mcp.json and, for Codex,
+in .codex/config.toml, where it carries a marker so a re-run finds it; a session-start hook for each
+harness - .claude/settings.json for Claude Code, .github/hooks/outrage.json for Copilot CLI,
+.codex/hooks.json for Codex - and the packaged skill and agents in .claude/, Copilot agents in
+.github/agents/, and the Codex skills in .codex/. Only the entries outrage owns are written;
+anything else in those files is left as it was, and a file already holding the current content is
+not rewritten. Mounts go in mounts.toml in the store directory, which is written once and maintained
+by hand thereafter; an option already on an existing server entry - --log, or a mount an older
+release wrote there - is kept even when this run does not mention it. Safe to re-run, which is how a
+project is repaired after outrage is upgraded or the environment moves.
 
 ### Usage
 

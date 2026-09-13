@@ -12,6 +12,7 @@ import json
 import os
 import stat
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -602,3 +603,193 @@ def test_split_args_keeps_a_leading_bare_token():
     split = config_module.split_args(["-m", "outrage", "--log"])
     assert split == [("-m", ["outrage"]), ("--log", [])]
     assert config_module.split_args(["bare", "--log"]) == [("", ["bare"]), ("--log", [])]
+
+
+# -- Codex ----------------------------------------------------------------
+#
+# Codex reads servers from TOML, in a file it also writes itself: a tool's
+# approval lands in a table below the server's. So the risks are the JSON ones
+# plus the marker - an entry a re-run cannot find is an entry that is never
+# repaired.
+
+CODEX_BY_HAND = """\
+model = "gpt"
+
+[mcp_servers.outrage]
+command = "/old/env/bin/outrage-server"
+args = [
+    "--dir",
+    "/project/.outrage",
+    "--mount",
+    "lib=lib.sqlite",
+    "--log",
+]
+
+[mcp_servers.outrage.tools.store_document]
+approval_mode = "approve"
+
+[tui]
+theme = "dark"
+"""
+
+
+def codex_entry(tmp_path: Path, **options) -> dict:
+    return server_entry(tmp_path / ".outrage", ["/env/bin/outrage-server"], marked=True, **options)
+
+
+def apply_codex(path: Path, entry: dict) -> Change:
+    change, document, original = config_module.plan_codex(path, entry)
+    if change.writes:
+        config_module.write_toml(path, document, original)
+    return change
+
+
+def test_the_marker_is_the_first_argument_so_no_option_can_take_it(tmp_path):
+    # `--log` takes an optional path, and would read a marker after it as one.
+    entry = codex_entry(tmp_path, log=eventlog.DEFAULT)
+    assert entry["args"][0] == config_module.SERVER_MARKER
+    assert entry["args"][-1] == "--log"
+
+
+def test_the_json_entry_carries_no_marker(tmp_path):
+    entry = server_entry(tmp_path / ".outrage", ["/env/bin/outrage-server"])
+    assert not any(config_module.is_server_marker(arg) for arg in entry["args"])
+
+
+def test_a_codex_file_is_created_with_one_marked_table(tmp_path):
+    path = config_module.codex_config_path(tmp_path)
+
+    change = apply_codex(path, codex_entry(tmp_path))
+
+    assert change.action == "created"
+    assert path.read_text().startswith("[mcp_servers.outrage]\n")
+    assert path.read_text().endswith('",\n]\n'), "no blank line added at the end"
+    written = tomllib.loads(path.read_text())["mcp_servers"]["outrage"]
+    assert written == codex_entry(tmp_path)
+
+
+def test_a_second_codex_run_changes_nothing(tmp_path):
+    path = config_module.codex_config_path(tmp_path)
+    apply_codex(path, codex_entry(tmp_path))
+    before = path.read_text()
+
+    change = apply_codex(path, codex_entry(tmp_path))
+
+    assert change.action == "unchanged"
+    assert path.read_text() == before
+
+
+def test_an_unmarked_table_of_that_name_is_adopted_and_everything_else_kept(tmp_path):
+    """The hand-written entry this feature was found beside, near enough."""
+    path = tmp_path / "config.toml"
+    path.write_text(CODEX_BY_HAND, encoding="utf-8")
+
+    change = apply_codex(path, codex_entry(tmp_path))
+
+    assert change.action == "updated"
+    assert change.previous["command"] == "/old/env/bin/outrage-server"
+    text = path.read_text()
+    loaded = tomllib.loads(text)
+    table = loaded["mcp_servers"]["outrage"]
+    assert table["command"] == "/env/bin/outrage-server"
+    assert table["args"] == [
+        config_module.SERVER_MARKER,
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "--mount",
+        "lib=lib.sqlite",
+        "--log",
+    ], "the directory is replaced, the mount and the log inherited"
+    assert table["tools"] == {"store_document": {"approval_mode": "approve"}}
+    assert loaded["model"] == "gpt"
+    assert loaded["tui"] == {"theme": "dark"}
+    # Only the two changed lines differ, so nothing was reformatted.
+    changed = set(CODEX_BY_HAND.splitlines()) ^ set(text.splitlines())
+    assert changed == {
+        'command = "/old/env/bin/outrage-server"',
+        'command = "/env/bin/outrage-server"',
+        '    "/project/.outrage",',
+        f'    "{tmp_path / ".outrage"}",',
+        f'    "{config_module.SERVER_MARKER}",',
+    }
+
+
+def test_a_marked_table_is_found_under_another_name(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[mcp_servers.store]\ncommand = "/old"\n'
+        'args = ["outrage-managed:mcp-server:v1", "--dir", "/d"]\n\n'
+        '[mcp_servers.outrage]\ncommand = "somebody-else"\n',
+        encoding="utf-8",
+    )
+
+    change = apply_codex(path, codex_entry(tmp_path))
+
+    assert change.name == "store"
+    loaded = tomllib.loads(path.read_text())["mcp_servers"]
+    assert loaded["store"]["command"] == "/env/bin/outrage-server"
+    assert loaded["outrage"] == {"command": "somebody-else"}
+
+
+@pytest.mark.parametrize(
+    "old_marker", ["outrage-managed:mcp-server:v0", "rage-managed:mcp-server:v1"]
+)
+def test_a_marker_of_another_version_or_name_is_replaced_not_kept(tmp_path, old_marker):
+    """An old marker inherited behind `--log` would become the log's path."""
+    path = tmp_path / "config.toml"
+    path.write_text(
+        f'[mcp_servers.outrage]\ncommand = "/old"\nargs = ["--log", "{old_marker}"]\n',
+        encoding="utf-8",
+    )
+
+    apply_codex(path, codex_entry(tmp_path))
+
+    args = tomllib.loads(path.read_text())["mcp_servers"]["outrage"]["args"]
+    assert [a for a in args if config_module.is_server_marker(a)] == [config_module.SERVER_MARKER]
+    assert args[0] == config_module.SERVER_MARKER
+
+
+def test_a_new_table_among_others_keeps_the_blank_line_before_the_next(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text('[mcp_servers.other]\ncommand = "o"\n\n[tui]\na = 1\n', encoding="utf-8")
+
+    apply_codex(path, codex_entry(tmp_path))
+
+    text = path.read_text()
+    assert "]\n\n[tui]" in text
+    assert tomllib.loads(text)["mcp_servers"]["other"] == {"command": "o"}
+
+
+def test_an_unparseable_codex_file_is_left_alone(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text("[broken\n", encoding="utf-8")
+
+    with raises_rendered(ConfigError, "not valid TOML"):
+        config_module.plan_codex(path, codex_entry(tmp_path))
+
+    assert path.read_text() == "[broken\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "said"),
+    [
+        ('mcp_servers = "outrage"\n', "'mcp_servers' that is not a table"),
+        ('[mcp_servers]\noutrage = "outrage-server"\n', "'outrage' server that is not a table"),
+    ],
+)
+def test_a_codex_file_shaped_wrongly_is_left_alone(tmp_path, text, said):
+    path = tmp_path / "config.toml"
+    path.write_text(text, encoding="utf-8")
+
+    with raises_rendered(ConfigError, said):
+        config_module.plan_codex(path, codex_entry(tmp_path))
+
+
+def test_a_codex_file_keeps_its_permissions(tmp_path):
+    path = tmp_path / "config.toml"
+    path.write_text(CODEX_BY_HAND, encoding="utf-8")
+    path.chmod(0o640)
+
+    apply_codex(path, codex_entry(tmp_path))
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
