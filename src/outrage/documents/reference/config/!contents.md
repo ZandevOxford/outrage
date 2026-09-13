@@ -73,11 +73,11 @@
 ### outrage.config.script_command(script: str, executable: str | PathLike[str] | None = None) → list[str] | None
 10933 10947
 
-### outrage.config.server_entry(directory: str | PathLike[str], command: list[str] | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False) → dict[str, Any]
+### outrage.config.server_entry(directory: str | PathLike[str], command: list[str] | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False) → dict[str, Any]
 12045 12061
 
 ### outrage.config.split_args(args: Sequence[str]) → list[tuple[str, list[str]]]
-15174 15192
+15567 15585
 
 ### outrage.config.write_config(path: Path, config: dict[str, Any], original: str | None = None) → None
-16179 16199
+16572 16592

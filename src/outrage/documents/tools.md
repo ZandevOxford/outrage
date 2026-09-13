@@ -589,6 +589,7 @@ server; write it into the mount configuration file to keep it.
 - `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
 - `kind` (string; required) — 'root', 'mount' or 'read-only mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
+- `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to
 
 ## `unmount`
 
@@ -629,6 +630,7 @@ this server; a mount configuration file is what survives a restart.
 - `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
 - `kind` (string; required) — 'root', 'mount' or 'read-only mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
+- `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to
 
 ## `info`
 
@@ -676,3 +678,4 @@ None.
 - `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
 - `kind` (string; required) — 'root', 'mount' or 'read-only mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
+- `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to

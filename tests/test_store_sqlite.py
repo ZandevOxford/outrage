@@ -26,7 +26,7 @@ from conftest import in_threads
 from outrage import keys, maintenance
 from outrage import store as store_module
 from outrage import store_sqlite as sqlite_module
-from outrage.store import BoundedSubtree
+from outrage.store import EVERYTHING, BoundedSubtree
 from outrage.store_sqlite import SqliteStore
 
 
@@ -519,7 +519,7 @@ def test_the_cache_does_not_move_the_schema_version(store):
     triggers, because they live in the file rather than in any build.
     """
     store.store_document("long", LONG)
-    assert store.format_version == sqlite_module.SCHEMA_VERSION == 6
+    assert store.format_version == sqlite_module.SCHEMA_VERSION == 7
 
 
 def test_a_shortened_document_loses_its_cached_length(store):
@@ -808,3 +808,231 @@ def test_check_reports_a_cached_length_that_no_longer_describes_its_document(sto
     assert not [
         p for p in maintenance.check(store).problems if p.code == maintenance.LENGTH_CACHE_STALE
     ]
+
+
+# -- the archive ---------------------------------------------------------
+
+
+def _archived(store) -> list[tuple]:
+    """What the archive holds, as (key, content, updated_at), in the order written."""
+    return [
+        tuple(row)
+        for row in store._conn.execute(
+            f"SELECT key, content, updated_at FROM {sqlite_module.ARCHIVE_TABLE} ORDER BY rowid"
+        )
+    ]
+
+
+def test_a_first_write_archives_nothing(store):
+    store.store_document("a", "one", updated_at="2026-09-13T10:00:00+00:00")
+    assert _archived(store) == []
+
+
+def test_an_overwrite_keeps_the_row_it_replaced(store):
+    store.store_document("a", "one", updated_at="2026-09-13T10:00:00+00:00")
+    store.store_document("a", "two", updated_at="2026-09-13T11:00:00+00:00")
+
+    assert _archived(store) == [("a", "one", "2026-09-13T10:00:00+00:00")]
+    assert store.retrieve_document("a").content == "two"
+
+
+def test_a_write_that_changes_nothing_archives_nothing(store):
+    """Why a repeated copy of an unchanged subtree costs no archive rows."""
+    store.store_document("a", "one", "markdown", updated_at="2026-09-13T10:00:00+00:00")
+    store.store_document("a", "one", "markdown", updated_at="2026-09-13T10:00:00+00:00")
+    assert _archived(store) == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"content": "one", "format": "markdown", "updated_at": "2026-09-13T11:00:00+00:00"},
+        {"content": "one", "format": "text", "updated_at": "2026-09-13T10:00:00+00:00"},
+        {"content": "two", "format": "markdown", "updated_at": "2026-09-13T10:00:00+00:00"},
+    ],
+    ids=["updated_at", "format", "content"],
+)
+def test_any_of_the_three_columns_that_can_differ_is_a_change(store, change):
+    store.store_document("a", "one", "markdown", updated_at="2026-09-13T10:00:00+00:00")
+    store.store_document("a", change["content"], change["format"], updated_at=change["updated_at"])
+    assert _archived(store) == [("a", "one", "2026-09-13T10:00:00+00:00")]
+
+
+def test_metadata_is_archived_by_the_same_statement(store):
+    store.store_document("a", "body", title="Old", updated_at="2026-09-13T10:00:00+00:00")
+    store.store_document("a", "body", title="New", updated_at="2026-09-13T11:00:00+00:00")
+
+    assert _archived(store) == [
+        ("a", "body", "2026-09-13T10:00:00+00:00"),
+        ("a/!title", "Old", "2026-09-13T10:00:00+00:00"),
+    ]
+
+
+def test_two_versions_sharing_a_stamp_are_both_kept(store):
+    """A unique (key, updated_at) would refuse the write for keeping a version."""
+    stamp = "2026-09-13T10:00:00+00:00"
+    store.store_document("a", "one", updated_at=stamp)
+    store.store_document("a", "two", updated_at=stamp)
+    store.store_document("a", "three", updated_at=stamp)
+
+    assert _archived(store) == [("a", "one", stamp), ("a", "two", stamp)]
+
+
+def test_a_delete_archives_every_row_it_takes(store):
+    store.store_document("a", "doc", title="A", updated_at="2026-09-13T10:00:00+00:00")
+    store.store_document("a/b", "child", updated_at="2026-09-13T10:00:00+00:00")
+
+    taken = store.delete("a", recursive=True)
+
+    assert sorted(key for key, _, _ in _archived(store)) == sorted(taken)
+    assert not store.exists("a/b")
+
+
+def test_a_dry_run_delete_archives_nothing(store):
+    store.store_document("a", "doc")
+    store.delete("a", dry_run=True)
+    assert _archived(store) == []
+
+
+def test_with_versioning_off_nothing_is_archived(tmp_path):
+    with SqliteStore(tmp_path, versioning=False) as s:
+        s.store_document("a", "one", updated_at="2026-09-13T10:00:00+00:00")
+        s.store_document("a", "two", updated_at="2026-09-13T11:00:00+00:00")
+        s.delete("a")
+        assert _archived(s) == []
+        # The table is there regardless: a file's schema never depends on a run.
+        assert sqlite_module.ARCHIVE_TABLE in _tables(s)
+
+
+def test_copying_an_unchanged_subtree_again_archives_nothing(tmp_path):
+    """The condition John set on counting ``updated_at`` as a change."""
+    with SqliteStore(tmp_path, filename="source.sqlite") as source:
+        source.store_document("ref/a", "one", title="A")
+        source.store_document("ref/b", "two")
+        with SqliteStore(tmp_path, filename="target.sqlite") as target:
+            list(target.copy_from(source, on_conflict=store_module.OVERWRITE))
+            list(target.copy_from(source, on_conflict=store_module.OVERWRITE))
+            assert _archived(target) == []
+
+
+def test_the_archive_has_the_columns_of_documents_in_their_order(store):
+    """What lets the copy select ``documents`` whole and name no values."""
+
+    def columns(table):
+        return [tuple(row[1:4]) for row in store._conn.execute(f"PRAGMA table_info({table})")]
+
+    documents = columns("documents")
+    archive = columns(sqlite_module.ARCHIVE_TABLE)
+    assert [name for name, _, _ in archive] == [name for name, _, _ in documents]
+    # And not its primary key: many rows for one key is the point of it.
+    primary = [row[1] for row in store._conn.execute("PRAGMA table_info(documents)") if row[5]]
+    assert primary == ["key"]
+    assert not [
+        row
+        for row in store._conn.execute(f"PRAGMA table_info({sqlite_module.ARCHIVE_TABLE})")
+        if row[5]
+    ]
+
+
+def _tables(store) -> set[str]:
+    return {
+        row[0] for row in store._conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+    }
+
+
+def _read_everything(opened) -> list:
+    """Every read the archive must stay out of, over the whole store."""
+    return [
+        [(e.key, e.kind, e.size) for e in opened.list_keys("").items],
+        [(e.key, e.content) for e in opened.get_documents(EVERYTHING).items],
+        opened.retrieve_document("a").content,
+        opened.subtree_totals("a", chars=True),
+        opened.descendant_count("a"),
+        opened.latest_change("a"),
+        [e.key for e in opened.keys_missing_meta(EVERYTHING).items],
+        opened.missing_meta_stats(EVERYTHING),
+        sorted(opened.audit_rows(), key=repr),
+    ]
+
+
+def test_the_archive_is_invisible_to_every_read(tmp_path):
+    """Free rather than arranged -- every query names ``documents`` -- so asserted."""
+    answers = []
+    for versioning in (True, False):
+        with SqliteStore(tmp_path / str(versioning), versioning=versioning) as s:
+            stamp = "2026-09-13T10:00:00+00:00"
+            for key in ("a", "a/b", "a/c", "a/c/d"):
+                s.store_document(key, f"first {key}", title=key, updated_at=stamp)
+            for key in ("a", "a/b", "a/c"):
+                s.store_document(key, f"second {key}", updated_at="2026-09-13T11:00:00+00:00")
+            s.delete("a/c", recursive=True)
+            if versioning:
+                assert _archived(s), "the comparison means nothing over an empty archive"
+            answers.append(_read_everything(s))
+
+    assert answers[0] == answers[1]
+
+
+#: The documents table as schema 6 wrote it, spelled out for the reason
+#: ``_SCHEMA_BEFORE_SORT_KEY`` is.
+_SCHEMA_6 = """
+CREATE TABLE documents (
+  key        TEXT PRIMARY KEY,
+  doc_key    TEXT NOT NULL,
+  meta_name  TEXT,
+  meta_path  TEXT,
+  parent     TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  format     TEXT,
+  updated_at TEXT NOT NULL,
+  sort_key   TEXT NOT NULL
+);
+CREATE INDEX idx_documents_parent ON documents(parent);
+CREATE INDEX idx_documents_meta   ON documents(meta_name, meta_path, doc_key);
+CREATE INDEX idx_documents_sort   ON documents(sort_key);
+"""
+
+
+def test_schema_6_gains_the_archive_and_keeps_every_row(tmp_path):
+    con = sqlite3.connect(tmp_path / "store.sqlite")
+    con.executescript(_SCHEMA_6)
+    con.execute(
+        "INSERT INTO documents VALUES ('a', 'a', NULL, NULL, '', 'body', 'markdown', 'then', ?)",
+        (keys.sort_form("a"),),
+    )
+    con.execute("PRAGMA user_version=6")
+    con.commit()
+    con.close()
+
+    with SqliteStore(tmp_path) as migrated:
+        assert migrated.stored_format_version == 7
+        assert migrated.retrieve_document("a").content == "body"
+        assert _archived(migrated) == []
+        migrated.store_document("a", "changed")
+        assert _archived(migrated) == [("a", "body", "then")]
+
+    with SqliteStore(tmp_path / "fresh") as s:
+        s.store_document("a", "body")
+
+    def shape(directory):
+        conn = sqlite3.connect(directory / "store.sqlite")
+        shaped = {
+            table: (
+                [tuple(row[1:6]) for row in conn.execute(f"PRAGMA table_info({table})")],
+                sorted(row[1] for row in conn.execute(f"PRAGMA index_list({table})")),
+            )
+            for table in ("documents", sqlite_module.ARCHIVE_TABLE)
+        }
+        conn.close()
+        return shaped
+
+    assert shape(tmp_path) == shape(tmp_path / "fresh")
+
+
+def test_an_older_build_refuses_a_store_this_one_opened(tmp_path, monkeypatch):
+    """The price of the bump, taken on purpose: no older build writes unarchived."""
+    with SqliteStore(tmp_path):
+        pass
+    monkeypatch.setattr(sqlite_module, "SCHEMA_VERSION", 6)
+    with pytest.raises(RuntimeError, match="newer version"):
+        SqliteStore(tmp_path)

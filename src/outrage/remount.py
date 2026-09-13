@@ -92,7 +92,9 @@ class Live:
     every mount follows -- relative to the store directory, which is what makes
     a mount configuration relocatable. ``log`` is given to any store opened
     here, so a dynamically mounted store records what it is asked exactly as
-    one named on the command line does.
+    one named on the command line does. ``versioning`` is the run's default, and
+    reaches a store mounted here for the same reason: ``--no-versioning`` is
+    about the run, not about the stores it happened to start with.
 
     Used as a context manager by :func:`outrage.server.main`, in place of the
     ``with open_mounts(...) as table:`` it would otherwise use: that would close
@@ -106,6 +108,7 @@ class Live:
         *,
         directory: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
+        versioning: bool = True,
     ) -> None:
         self._table = table
         # What a restart would mount again, as far as this process can know:
@@ -116,6 +119,7 @@ class Live:
         # about where it is, and asking twice is how they come to disagree.
         self._directory = store_module.resolve_directory(directory)
         self._log = log
+        self._versioning = versioning
         self._lock = threading.Lock()
 
     @property
@@ -242,6 +246,7 @@ class Live:
             filename=file,
             backend=type,
             extensions=extensions,
+            versioning_default=self._versioning,
             log=self._log,
             mount_point=prefix,
         )

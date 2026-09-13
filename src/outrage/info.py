@@ -53,6 +53,14 @@ class MountInfo:
     read_only: bool
     """Whether this process refuses writes routed here."""
 
+    versioned: bool | None = None
+    """Whether this store keeps what a write replaces and a delete takes, or
+    None for a backend with no such thing.
+
+    Three states rather than two because a front end reports only False. A
+    flat bool would make every parquet and tree mount say versioning was off,
+    which reads as *switched* off -- as though it could be on."""
+
 
 @dataclass(frozen=True, slots=True)
 class Info:
@@ -152,7 +160,15 @@ def _mount(mount: mounts_module.Mount) -> MountInfo:
         ),
         kind=mounts_module.ROOT_KIND if mount.is_root else mount.kind,
         read_only=mount.read_only,
+        versioned=_versioned(mount.store),
     )
+
+
+def _versioned(store: Store) -> bool | None:
+    """Whether ``store`` is keeping earlier versions, where it could."""
+    if not store.versioned:
+        return None
+    return bool(getattr(store, "versioning", True))
 
 
 def _absolute(path: str | os.PathLike[str]) -> str:

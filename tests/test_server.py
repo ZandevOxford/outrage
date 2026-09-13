@@ -1419,6 +1419,28 @@ def test_parse_args_offers_the_info_tool_unless_told_not_to():
     assert parse_args(["--no-info"]).no_info is True
 
 
+def test_parse_args_keeps_versions_unless_told_not_to():
+    assert parse_args([]).no_versioning is False
+    assert parse_args(["--no-versioning"]).no_versioning is True
+
+
+def test_info_says_versioning_only_where_it_is_off(tmp_path):
+    """John's call: on is the default, and a backend with none has nothing to say.
+
+    So one field on one mount, and the tree -- which cannot version -- reports
+    nothing rather than a versioning that reads as switched off.
+    """
+    (tmp_path / "tree").mkdir()
+    with mounts_module.open_mounts(
+        tmp_path,
+        ["off=off.sqlite,versioning=off", "on=on.sqlite", "tree=tree,type=files"],
+    ) as table:
+        result = call(build_server(table, directory=tmp_path), "info")
+
+    versioned = {one["mount"]: one.get("versioned", "absent") for one in result["mounts"]}
+    assert versioned == {"/": "absent", "off": False, "on": "absent", "tree": "absent"}
+
+
 def test_parse_args_reports_the_configuration_files_it_read(tmp_path):
     """The splice flattens the sources away, so the list is kept as it goes.
 

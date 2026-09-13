@@ -138,6 +138,7 @@ def server_entry(
     log_content: str | None = None,
     no_info: bool = False,
     no_remount: bool = False,
+    no_versioning: bool = False,
 ) -> dict[str, Any]:
     """Build the configuration entry for the stores in ``directory``.
 
@@ -175,6 +176,11 @@ def server_entry(
     mounts while the server runs. Same shape, same reason, and it is the one
     place the decision can be recorded: those tools are the server's, so there
     is no command line run to pass a flag to.
+
+    ``no_versioning`` adds ``--no-versioning``, so the server keeps no earlier
+    versions. Written here rather than left to a hand edit for the reason the
+    others are, and because :func:`merge_entry` keeps an option it does not
+    recognise but has no way to *write* one ``init`` was asked for.
     """
     argv = list(command) if command is not None else launch_command()
     command_name = _path_text(argv[0])
@@ -190,6 +196,8 @@ def server_entry(
         args.append("--no-info")
     if no_remount:
         args.append("--no-remount")
+    if no_versioning:
+        args.append("--no-versioning")
     return {"command": command_name, "args": args}
 
 

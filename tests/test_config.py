@@ -156,6 +156,17 @@ def test_a_valueless_flag_survives_a_re_run_that_does_not_mention_it(tmp_path):
     assert "--no-info" in merged["args"]
 
 
+def test_an_entry_records_no_versioning_and_a_re_run_keeps_it(tmp_path):
+    """What `outrage init` has to preserve, or the edit is lost on the next run."""
+    assert "--no-versioning" not in server_entry(tmp_path, command=["outrage-server"])["args"]
+    previous = server_entry(tmp_path, command=["outrage-server"], no_versioning=True)
+    assert previous["args"][-1] == "--no-versioning"
+
+    merged = config_module.merge_entry(previous, server_entry(tmp_path, command=["outrage-server"]))
+
+    assert "--no-versioning" in merged["args"]
+
+
 # -- scopes --------------------------------------------------------------
 
 

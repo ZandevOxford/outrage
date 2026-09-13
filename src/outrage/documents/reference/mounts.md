@@ -64,7 +64,7 @@ none of the three: it may hold content, and it always has a store behind it.
 A caller that does not know the word still learns that the key exists, which
 is the part that matters for navigating to it.
 
-### outrage.mounts.OPTIONS *= ('type', 'extensions')*
+### outrage.mounts.OPTIONS *= ('type', 'extensions', 'versioning')*
 
 Every option a spec may carry. Anything else is refused rather than ignored,
 which is the rule `mounts.toml` already follows for a field it does not
@@ -133,6 +133,18 @@ is not a second vocabulary for the same three classes.
 the store file's extension, and a directory of files has no extension to
 read: without a way to say so, a tree is not mountable and a mount table
 cannot describe one. See `outrage.store._BY_EXTENSION`.
+
+### outrage.mounts.VERSIONING_OPTION *= 'versioning'*
+
+The option that says whether this store keeps what a write replaces and a
+delete takes: [`outrage.store.VERSIONING_ON`](store.md#outrage.store.VERSIONING_ON) or
+[`outrage.store.VERSIONING_OFF`](store.md#outrage.store.VERSIONING_OFF).
+
+**A statement about one store**, where `--no-versioning` is a default for
+the whole run, so the option wins over the flag in either direction: a
+reference mount can opt out while the project store keeps its versions, and
+the other way round. Only a backend that can version takes it, and every
+other refuses it -- [`outrage.store.FileStore.in_directory()`](store.md#outrage.store.FileStore.in_directory).
 
 ### *class* outrage.mounts.Mount(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), store: [Store](store.md#outrage.store.Store), read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False, lent: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
 
@@ -819,7 +831,7 @@ an answer rather than an empty result. Such a segment is still
 *counted* -- totals describe the whole collection and have never
 depended on where the reader had got to.
 
-### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -846,7 +858,12 @@ How file names line up with keys, when the argument said; else the
 backend's own default. Only a tree has an answer -- see
 [`EXTENSIONS_OPTION`](#outrage.mounts.EXTENSIONS_OPTION).
 
-#### opened(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [FileStore](store.md#outrage.store.FileStore)
+#### versioning *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+
+Whether this store keeps earlier versions, when the argument said; else
+whatever the run defaults to. See [`VERSIONING_OPTION`](#outrage.mounts.VERSIONING_OPTION).
+
+#### opened(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [FileStore](store.md#outrage.store.FileStore)
 
 The store this spec names, opened in `directory`.
 
@@ -859,6 +876,8 @@ the mount succeeds, and the store opens under something nobody asked
 for. Nothing raises and no suite goes red, so the only thing that finds
 it is somebody reading the keys.
 
+`versioning` is the run's default, which the spec's own option beats.
+
 ### outrage.mounts.mount_point(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
 Validate a mount point, however it was written down.
@@ -870,7 +889,7 @@ the same namespace, and the project has one. `spec` is what the reader
 wrote, when there is a spec to quote back at them; a file quotes the key it
 used as its own field name.
 
-### outrage.mounts.open_mounts(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None), specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), \*, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [Spec](#outrage.mounts.Spec) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, attached: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({})) → [MountedStore](#outrage.mounts.MountedStore)
+### outrage.mounts.open_mounts(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None), specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), \*, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [Spec](#outrage.mounts.Spec) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, attached: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [MountedStore](#outrage.mounts.MountedStore)
 
 Open every store in `directory`, as one table.
 
@@ -917,6 +936,10 @@ which of two claims at one point survives is settled before this, in
 A store passed here is closed with the table, like every other, so a caller
 hands one over and does not close it twice -- and a failure part way
 through closes it as well.
+
+`versioning` is the run's default for every store opened here, and a
+spec's own `versioning=` beats it. A lent store is not opened here, so it
+is not reached.
 
 ### outrage.mounts.parse_options(value: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Spec](#outrage.mounts.Spec)
 

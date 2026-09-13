@@ -24,6 +24,7 @@ def test_a_lone_store_is_the_root_of_a_namespace_of_one(tmp_path):
             path=str((tmp_path / "store.sqlite").resolve()),
             kind=mounts.ROOT_KIND,
             read_only=False,
+            versioned=True,
         ),
     )
 

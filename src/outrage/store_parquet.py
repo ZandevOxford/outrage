@@ -704,6 +704,7 @@ class ParquetStore(FileStore):
     backend_name = "parquet"
     format_version = FORMAT_VERSION
     writable = False
+    versioned = False
 
     def __init__(
         self,

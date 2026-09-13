@@ -26,6 +26,28 @@ Nothing here is imported by a caller that only wants to read and write
 documents: [`outrage.store.default_store()`](store.md#outrage.store.default_store) is what chooses this class, and it
 is the one place in the package that names a backend.
 
+### outrage.store_sqlite.ARCHIVE_TABLE *= 'document_archive'*
+
+Where a row goes when it leaves `documents`, overwritten or deleted.
+
+**Inside the schema version, unlike the length cache below**: this is data
+rather than a cache, and a build too old to know the table would go on
+writing the store, archive nothing, and leave nothing able to say where the
+gaps are. Refusing that build is the louder failure, chosen over the quiet
+one.
+
+The columns of `documents` in the same order, so a copy names no values
+and cannot drift from `_row_values()` -- but **not its primary key**,
+since the archive holds many rows for one key. Nor `(key, updated_at)`:
+`_now()` stamps to the second and a copy carries caller-supplied stamps,
+so two versions can share one, and a unique constraint there would be a
+write failing because a version was worth keeping. So a plain rowid table.
+
+One index, not the three `documents` has: nothing reads the archive yet,
+so each would be write cost against no read. This one is what a reader
+wants first, and is here from the start because adding it later is a
+migration.
+
 ### outrage.store_sqlite.BUSY_TIMEOUT_MS *= 5000*
 
 How long a writer waits for another writer to finish before giving up, in
@@ -78,7 +100,7 @@ the text. Notably it is not the page size, so the tempting derivation from
 `PRAGMA page_size` would have been wrong: counting characters decodes the
 whole string whether or not the row spilled onto an overflow page.
 
-### outrage.store_sqlite.SCHEMA_VERSION *= 6*
+### outrage.store_sqlite.SCHEMA_VERSION *= 7*
 
 The schema this code writes, and the version a store is migrated up to when
 it is opened. Every bump needs a migration that reads the version below it;
@@ -91,7 +113,7 @@ When the sidecar is worth reporting. A WAL always holds something between
 checkpoints; it is only interesting once it holds more than the database it
 belongs to, which is the state that makes a file copy lose real content.
 
-### *class* outrage.store_sqlite.SqliteStore(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store_sqlite.SqliteStore(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = True)
 
 Bases: [`FileStore`](store.md#outrage.store.FileStore)
 
@@ -111,7 +133,7 @@ What this backend is called where a report or a refusal has to name it.
 A short lowercase word, matching the store file's extension, so that a
 sentence about a store and the name of its file agree.
 
-#### format_version *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[int](https://docs.python.org/3/library/functions.html#int)]* *= 6*
+#### format_version *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[int](https://docs.python.org/3/library/functions.html#int)]* *= 7*
 
 The version of its own on-disk format this build writes. Compared
 against [`stored_format_version`](#outrage.store_sqlite.SqliteStore.stored_format_version) by [`outrage.maintenance.check()`](maintenance.md#outrage.maintenance.check),
@@ -125,6 +147,11 @@ Stated rather than inherited. The default is True, so a backend that
 forgets reports itself writable -- which is the wrong way round for a
 mistake to fall, and test_every_backend_states_whether_it_can_be_written
 is why this is here rather than left to the base.
+
+#### versioned *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= True*
+
+Stated for the same reason as `writable`, from the other direction:
+the base says False, so a backend that forgets reports keeping nothing.
 
 #### *property* connection *: [Connection](https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection)*
 

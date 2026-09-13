@@ -420,6 +420,7 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     _store_option(set_)
     _table_options(set_)
+    _versioning_option(set_)
     set_.add_argument(
         "key",
         help=(
@@ -459,6 +460,7 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     _store_option(ingest_)
     _table_options(ingest_)
+    _versioning_option(ingest_)
     ingest_.add_argument("source", metavar="SOURCE", help="Local regular file to convert.")
     ingest_.add_argument("key", metavar="KEY", help="Destination key for the Markdown document.")
     ingest_.add_argument(
@@ -488,6 +490,7 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     _store_option(make_contents)
     _table_options(make_contents)
+    _versioning_option(make_contents)
     make_contents.add_argument("key", metavar="KEY", help="Markdown or HTML document key to index.")
     make_contents.add_argument(
         "--metadata-name",
@@ -605,6 +608,7 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     _store_option(copy)
     _table_options(copy)
+    _versioning_option(copy)
     copy.add_argument("source", help="Key whose subtree to copy, or / for the root.")
     copy.add_argument(
         "target",
@@ -689,6 +693,7 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     _store_option(import_)
     _table_options(import_)
+    _versioning_option(import_)
     import_.add_argument("source", metavar="DIRECTORY", help="Directory to read documents from.")
     import_.add_argument(
         "key",
@@ -799,6 +804,7 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     _store_option(rm)
     _table_options(rm)
+    _versioning_option(rm)
     rm.add_argument("key", help="Key to delete, ?last for the newest.")
     rm.add_argument(
         "--recursive", "-r", action="store_true", help="Also delete everything beneath the key."
@@ -1074,6 +1080,17 @@ def _log_options(parser: argparse.ArgumentParser) -> None:
             "change. Added by a re-run, never removed by one."
         ),
     )
+    parser.add_argument(
+        "--no-versioning",
+        dest="no_versioning",
+        action="store_true",
+        help=(
+            "Record --no-versioning on the server entry, so the server keeps "
+            "no earlier version of what it overwrites or deletes. On by "
+            "default there, in SQLite stores only. Added by a re-run, never "
+            "removed by one."
+        ),
+    )
 
 
 def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
@@ -1192,6 +1209,26 @@ def _extensions_option(parser: argparse.ArgumentParser, about: str) -> None:
     )
 
 
+def _versioning_option(parser: argparse.ArgumentParser) -> None:
+    """Turn versioning off for a command that writes.
+
+    Only on the commands that write. A reader has nothing to keep, and a flag
+    it accepted and could not act on is the silent no-op the option grammar
+    refuses everywhere else.
+    """
+    parser.add_argument(
+        "--no-versioning",
+        dest="no_versioning",
+        action="store_true",
+        help=(
+            "Do not keep the earlier version of what this command overwrites "
+            "or deletes. On by default, in SQLite stores only. It removes "
+            "nothing kept already, and a store's own "
+            f"{mounts.VERSIONING_OPTION}= option wins over it."
+        ),
+    )
+
+
 def _table_options(parser: argparse.ArgumentParser) -> None:
     """The mounts a command acts *across*, spelled once for every command that can.
 
@@ -1222,7 +1259,9 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
             f"A tree also takes {mounts.EXTENSIONS_OPTION}=, one of "
             f"{', '.join(bulk.EXTENSION_MODES)}: `keep` makes a file name and "
             "a key the same string, for a bundle whose documents link to each "
-            "other by name. Repeatable. Reads, writes, surveys and recursive "
+            f"other by name. A SQLite store also takes {mounts.VERSIONING_OPTION}=, "
+            f"one of {', '.join(store.VERSIONING_SETTINGS)}, over the run's "
+            "default. Repeatable. Reads, writes, surveys and recursive "
             "deletes cross mount boundaries."
         ),
     )
@@ -1302,6 +1341,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
         log_content=args.log_content,
         no_info=args.no_info,
         no_remount=args.no_remount,
+        no_versioning=args.no_versioning,
         root_mount=args.root_mount,
         mounts=args.mounts,
         read_only_mounts=args.read_only_mounts,
@@ -1367,6 +1407,7 @@ def _config_command(args: argparse.Namespace, out: TextIO) -> int:
         log_content=args.log_content,
         no_info=args.no_info,
         no_remount=args.no_remount,
+        no_versioning=args.no_versioning,
     )
     table = mountfile.plan_starter(
         directory,
@@ -2461,9 +2502,21 @@ def _info_command(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def _info_rows(described: info.Info) -> list[tuple[str, str, str]]:
-    """The mounts as columns: where it is mounted, the file, and what it is."""
-    return [(mount.mount, mount.path or "", mount.kind) for mount in described.mounts]
+def _info_rows(described: info.Info) -> list[tuple[str, str, str, str]]:
+    """The mounts as columns: where it is mounted, the file, and what it is.
+
+    Versioning is a fourth column written only where it is off, as the tool
+    reports it: on is the default, and a backend with none has nothing to say.
+    """
+    return [
+        (
+            mount.mount,
+            mount.path or "",
+            mount.kind,
+            "versioning off" if mount.versioned is False else "",
+        )
+        for mount in described.mounts
+    ]
 
 
 def _check_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -2539,6 +2592,14 @@ def _print_report(report: maintenance.Report, out: TextIO) -> None:
         print("  nothing wrong", file=out)
 
 
+def _versioning(args: argparse.Namespace) -> bool:
+    """The run's versioning default: on, unless a command that writes said otherwise.
+
+    Asked of every command, since only the ones that write carry the flag.
+    """
+    return not getattr(args, "no_versioning", False)
+
+
 def _open_existing(args: argparse.Namespace):
     """Open a store that is already there, refusing to create one.
 
@@ -2549,7 +2610,7 @@ def _open_existing(args: argparse.Namespace):
     """
     root = _root(args)
     directory = maintenance.require_store(store.resolve_directory(args.directory), root.path)
-    return contextlib.closing(root.opened(directory))
+    return contextlib.closing(root.opened(directory, versioning=_versioning(args)))
 
 
 @contextlib.contextmanager
@@ -2577,7 +2638,7 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
     if not create:
         maintenance.require_store(directory, root.path)
     if not (args.mounts or args.read_only_mounts or args.mount_docs):
-        with contextlib.closing(root.opened(directory)) as opened:
+        with contextlib.closing(root.opened(directory, versioning=_versioning(args))) as opened:
             yield opened
         return
     with mounts.open_mounts(
@@ -2589,6 +2650,7 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
         # the server: here somebody typed the flag, and a mount that silently
         # was not made is the failure `--mount-ro` refuses for.
         attached=shipped.attached() if args.mount_docs else {},
+        versioning=_versioning(args),
     ) as table:
         for mount in table.shadowing():
             # The server's warning, in the same words and for the same reason:

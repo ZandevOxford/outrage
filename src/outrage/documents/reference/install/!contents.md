@@ -160,38 +160,38 @@
 ### outrage.install.copilot_asset_sources() → list[tuple[Path, Path]]
 19150 19162
 
-### outrage.install.init(project_dir: str | Path, directory: str | Path | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, root_mount: str | None = None, mounts: Sequence[str] = (), read_only_mounts: Sequence[str] = (), dry_run: bool = False) → Installation
+### outrage.install.init(project_dir: str | Path, directory: str | Path | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False, root_mount: str | None = None, mounts: Sequence[str] = (), read_only_mounts: Sequence[str] = (), dry_run: bool = False) → Installation
 19529 19543
 
 ### outrage.install.install(project_dir: str | Path, dry_run: bool = False, \*, target: HookTarget = CLAUDE_HOOK) → HookChange
-22180 22196
+22283 22299
 
 ### outrage.install.is_ours(entry: Any) → bool
-22742 22760
+22845 22863
 
 ### outrage.install.plan(path: Path, entry: dict[str, Any] | None = None, \*, target: HookTarget = CLAUDE_HOOK) → tuple[HookChange, dict[str, Any], str | None]
-23526 23546
+23629 23649
 
 ### outrage.install.plan_assets(project_dir: str | Path) → list[FileChange]
-24674 24696
+24777 24799
 
 ### outrage.install.plan_codex_assets(project_dir: str | Path) → list[FileChange]
-25033 25057
+25136 25160
 
 ### outrage.install.plan_copilot_assets(project_dir: str | Path) → list[FileChange]
-25396 25422
+25499 25525
 
 ### outrage.install.settings_path(project_dir: str | Path) → Path
-25763 25791
+25866 25894
 
 ### outrage.install.sessionstart_command(executable: str | PathLike[str] | None = None, \*, copilot: bool = False) → str
-26077 26107
+26180 26210
 
 ### outrage.install.sessionstart_payload(\*, copilot: bool = False) → dict[str, Any]
-27134 27166
+27237 27269
 
 ### outrage.install.template_entry(target: HookTarget = CLAUDE_HOOK) → dict[str, Any]
-27516 27550
+27619 27653
 
 ### outrage.install.write_assets(changes: list[FileChange]) → None
-28176 28212
+28279 28315

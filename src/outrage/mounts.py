@@ -132,11 +132,22 @@ TYPE_OPTION = "type"
 #: this rather than ignoring it -- :meth:`outrage.store.FileStore.in_directory`.
 EXTENSIONS_OPTION = "extensions"
 
+#: The option that says whether this store keeps what a write replaces and a
+#: delete takes: :data:`outrage.store.VERSIONING_ON` or
+#: :data:`outrage.store.VERSIONING_OFF`.
+#:
+#: **A statement about one store**, where ``--no-versioning`` is a default for
+#: the whole run, so the option wins over the flag in either direction: a
+#: reference mount can opt out while the project store keeps its versions, and
+#: the other way round. Only a backend that can version takes it, and every
+#: other refuses it -- :meth:`outrage.store.FileStore.in_directory`.
+VERSIONING_OPTION = "versioning"
+
 #: Every option a spec may carry. Anything else is refused rather than ignored,
 #: which is the rule ``mounts.toml`` already follows for a field it does not
 #: know: a mount that quietly did something other than what it says is the
 #: failure a mount configuration is least able to notice.
-OPTIONS = (TYPE_OPTION, EXTENSIONS_OPTION)
+OPTIONS = (TYPE_OPTION, EXTENSIONS_OPTION, VERSIONING_OPTION)
 
 #: The ``kind`` a listing reports for a key that is a mount point. A fourth
 #: kind beside 'document', 'metadata' and 'implicit', because a mount point is
@@ -1837,6 +1848,9 @@ class Spec:
     """How file names line up with keys, when the argument said; else the
     backend's own default. Only a tree has an answer -- see
     :data:`EXTENSIONS_OPTION`."""
+    versioning: str | None = None
+    """Whether this store keeps earlier versions, when the argument said; else
+    whatever the run defaults to. See :data:`VERSIONING_OPTION`."""
 
     def opened(
         self,
@@ -1844,6 +1858,7 @@ class Spec:
         *,
         log: EventLog | None = None,
         mount_point: str | None = None,
+        versioning: bool = True,
     ) -> store_module.FileStore:
         """The store this spec names, opened in ``directory``.
 
@@ -1855,12 +1870,16 @@ class Spec:
         the mount succeeds, and the store opens under something nobody asked
         for. Nothing raises and no suite goes red, so the only thing that finds
         it is somebody reading the keys.
+
+        ``versioning`` is the run's default, which the spec's own option beats.
         """
         return store_module.default_store(
             directory,
             filename=self.path,
             backend=self.type,
             extensions=self.extensions,
+            versioning=self.versioning,
+            versioning_default=versioning,
             log=log,
             mount_point=mount_point,
         )
@@ -1907,7 +1926,12 @@ def parse_options(value: str, *, spec: str | None = None) -> Spec:
         if name in options:
             raise MountError("mount-option-repeated", spec=quoted, option=name)
         options[name] = setting
-    return Spec(Path(file), options.get(TYPE_OPTION), options.get(EXTENSIONS_OPTION))
+    return Spec(
+        Path(file),
+        options.get(TYPE_OPTION),
+        options.get(EXTENSIONS_OPTION),
+        options.get(VERSIONING_OPTION),
+    )
 
 
 def unparse(spec: Spec) -> str:
@@ -1931,7 +1955,11 @@ def unparse(spec: Spec) -> str:
     # which a parsed spec no longer knows: what has to round-trip is what the
     # options *say*, and one settled order is what makes two specs meaning the
     # same thing render the same way.
-    written = [(TYPE_OPTION, spec.type), (EXTENSIONS_OPTION, spec.extensions)]
+    written = [
+        (TYPE_OPTION, spec.type),
+        (EXTENSIONS_OPTION, spec.extensions),
+        (VERSIONING_OPTION, spec.versioning),
+    ]
     return file + "".join(
         f"{OPTION_DELIMITER}{name}{OPTION_ASSIGNMENT}{value}"
         for name, value in written
@@ -2010,6 +2038,7 @@ def open_mounts(
     root_mount: str | os.PathLike[str] | Spec | None = None,
     log: EventLog | None = None,
     attached: Mapping[str, Store] = MappingProxyType({}),
+    versioning: bool = True,
 ) -> MountedStore:
     """Open every store in ``directory``, as one table.
 
@@ -2056,6 +2085,10 @@ def open_mounts(
     A store passed here is closed with the table, like every other, so a caller
     hands one over and does not close it twice -- and a failure part way
     through closes it as well.
+
+    ``versioning`` is the run's default for every store opened here, and a
+    spec's own ``versioning=`` beats it. A lent store is not opened here, so it
+    is not reached.
     """
     writable = [parse_spec(spec) for spec in specs]
     refusing = [parse_spec(spec) for spec in read_only_specs]
@@ -2086,14 +2119,16 @@ def open_mounts(
         # backend, which is what a bare `Spec(Path(...))` would not say: the
         # filename has to stay None for `default_store` to answer it.
         opened[keys.ROOT] = (
-            store_module.default_store(base, log=log, mount_point=keys.ROOT)
+            store_module.default_store(
+                base, versioning_default=versioning, log=log, mount_point=keys.ROOT
+            )
             if root is None
-            else root.opened(base, log=log, mount_point=keys.ROOT)
+            else root.opened(base, log=log, mount_point=keys.ROOT, versioning=versioning)
         )
         for prefix, spec in [*writable, *refusing]:
             if prefix in opened:
                 raise MountError("mount-duplicate", mount=prefix)
-            opened[prefix] = spec.opened(base, log=log, mount_point=prefix)
+            opened[prefix] = spec.opened(base, log=log, mount_point=prefix, versioning=versioning)
         return MountedStore(opened, read_only=[prefix for prefix, _ in refusing], lent=list(lent))
     except Exception:
         for store in opened.values():
@@ -2111,6 +2146,7 @@ __all__ = [
     "ROOT_KIND",
     "SPEC_DELIMITER",
     "TYPE_OPTION",
+    "VERSIONING_OPTION",
     "Mount",
     "MountError",
     "MountedStore",

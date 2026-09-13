@@ -202,6 +202,7 @@ class FilesystemStore(FileStore):
     backend_name = "files"
     format_version = FORMAT_VERSION
     writable = True
+    versioned = False
 
     def __init__(
         self,
@@ -1202,6 +1203,7 @@ class FilesystemStore(FileStore):
         *,
         filename: str | os.PathLike[str] | None = None,
         extensions: str | None = None,
+        versioning: bool | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
     ) -> Self:
@@ -1221,7 +1223,11 @@ class FilesystemStore(FileStore):
         takes it: it names how a file name and a key segment line up, which is
         a question a store kept in one file does not have. None is the
         constructor's default rather than a third mode.
+
+        ``versioning`` is refused as the base refuses it: a tree keeps no
+        earlier versions, and a statement about them is a mistake to report.
         """
+        cls._refuse_versioning(filename, versioning)
         return cls(
             store_file(
                 resolve_directory(directory),

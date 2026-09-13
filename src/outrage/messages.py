@@ -1607,6 +1607,28 @@ def _backend_takes_no_extensions(
     )
 
 
+@template("backend-takes-no-versioning")
+def _backend_takes_no_versioning(
+    name: Namer, /, *, backend: str, filename: str, versioning: str, **_: Any
+) -> str:
+    about = f" {filename!r}" if filename else ""
+    return (
+        f"the {backend} store{about} cannot be asked for versioning={versioning}: "
+        f"only a SQLite store keeps the versions a write replaces, so this one "
+        f"has none to switch on or off. Drop the option for this store."
+    )
+
+
+@template("versioning-unknown")
+def _versioning_unknown(name: Namer, /, *, versioning: str, known: Any, **_: Any) -> str:
+    listed = ", ".join(str(one) for one in known)
+    return (
+        f"there is no versioning={versioning!r}. There is: {listed}. `off` stops "
+        f"this store keeping what a write replaces or a delete takes; `on` keeps "
+        f"it whatever the run was started with."
+    )
+
+
 @template("parquet-needs-pyarrow")
 def _parquet_needs_pyarrow(name: Namer, /, *, reason: str, **_: Any) -> str:
     return (

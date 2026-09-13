@@ -79,6 +79,14 @@ def mounts(result) -> list[str]:
     return [one["mount"] for one in result["mounts"]]
 
 
+def test_a_store_mounted_later_follows_the_runs_versioning(base):
+    """`--no-versioning` is about the run, not the stores it happened to start with."""
+    root = SqliteStore(base, filename="outrage.sqlite", versioning=False)
+    with Live(MountedStore({keys.ROOT: root}), directory=base, versioning=False) as live:
+        said = call(build_server(live, directory=base), "mount", key="lib", file="other.sqlite")
+        assert [one.get("versioned") for one in said["mounts"]] == [False, False]
+
+
 # -- the table, through the tools -------------------------------------------
 
 

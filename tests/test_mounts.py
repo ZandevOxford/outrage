@@ -1074,6 +1074,70 @@ def test_a_backend_kept_in_a_file_refuses_a_mapping_it_has_no_question_about(tmp
             pass
 
 
+def _versioning_of(table: MountedStore) -> dict[str, bool | None]:
+    """Each mount's store, as whether it keeps versions -- None where it cannot."""
+    return {
+        mount.name: getattr(mount.store, "versioning", None) if mount.store.versioned else None
+        for mount in table
+    }
+
+
+def test_a_spec_carries_versioning_and_renders_it_back():
+    spec = Spec(Path("ref.sqlite"), None, None, "off")
+    assert parse_options("ref.sqlite,versioning=off") == spec
+    assert unparse(spec) == "ref.sqlite,versioning=off"
+    assert unparse(Spec(Path("docs"), "files", "keep", "on")) == (
+        "docs,type=files,extensions=keep,versioning=on"
+    )
+
+
+@pytest.mark.parametrize(
+    ("default", "spec", "expected"),
+    [
+        (True, "ref=ref.sqlite", True),
+        (False, "ref=ref.sqlite", False),
+        (False, "ref=ref.sqlite,versioning=on", True),
+        (True, "ref=ref.sqlite,versioning=off", False),
+    ],
+    ids=["neither", "flag-only", "flag-off-option-on", "flag-on-option-off"],
+)
+def test_a_statement_about_a_store_beats_the_runs_default(tmp_path, default, spec, expected):
+    """The flag is the background, the option is what somebody typed about one store."""
+    with open_mounts(tmp_path, [spec], versioning=default) as table:
+        assert _versioning_of(table) == {"/": default, "ref": expected}
+
+
+def test_the_runs_default_reaches_the_root_whichever_way_it_was_named(tmp_path):
+    with open_mounts(tmp_path, versioning=False) as table:
+        assert _versioning_of(table) == {"/": False}
+    with open_mounts(tmp_path, root_mount="root.sqlite", versioning=False) as table:
+        assert _versioning_of(table) == {"/": False}
+    with open_mounts(tmp_path, root_mount="root.sqlite,versioning=on", versioning=False) as table:
+        assert _versioning_of(table) == {"/": True}
+
+
+def test_a_store_that_cannot_version_refuses_the_option_in_either_direction(tmp_path):
+    """The case a change to ``OPTIONS`` can quietly break: accepting is one line."""
+    (tmp_path / "tree").mkdir()
+    for setting in ("off", "on"):
+        with raises_rendered(BackendError, f"cannot be asked for versioning={setting}"):
+            with open_mounts(tmp_path, [f"docs=tree,type=files,versioning={setting}"]):
+                pass
+
+
+def test_the_runs_default_does_not_refuse_a_store_that_cannot_version(tmp_path):
+    """Otherwise a table holding a tree could never be run without versioning."""
+    (tmp_path / "tree").mkdir()
+    with open_mounts(tmp_path, ["docs=tree,type=files"], versioning=False) as table:
+        assert _versioning_of(table) == {"/": False, "docs": None}
+
+
+def test_a_versioning_value_that_is_neither_word_is_refused(tmp_path):
+    with raises_rendered(BackendError, "there is no versioning='no'"):
+        with open_mounts(tmp_path, ["ref=ref.sqlite,versioning=no"]):
+            pass
+
+
 def test_a_named_backend_that_does_not_exist_is_refused(tmp_path):
     """Unlike an unrecognised extension, which falls back to the default.
 

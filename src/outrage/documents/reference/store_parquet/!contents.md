@@ -49,65 +49,68 @@
 #### writable *: ClassVar[bool]* *= False*
 12035 12035
 
-#### close() → None
+#### versioned *: ClassVar[bool]* *= False*
 12644 12644
 
+#### close() → None
+13179 13179
+
 #### store_document(key: str, content: str, format: str | None = None, \*, title: str | None = None, contents: str | None = None, encoding: str | None = None, updated_at: str | None = None) → str
-13092 13094
+13627 13629
 
 #### delete(key: str, recursive: bool = False, \*, key_range: KeyRange = UNBOUNDED, unchanged_since: str | None = None, dry_run: bool = False) → list[str]
-14877 14881
+15412 15416
 
 #### exists(key: str) → bool
-15976 15982
+16511 16517
 
 #### level_entry(key: str) → Entry | None
-16168 16176
+16703 16711
 
 #### descendant_count(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → int
-16565 16575
+17100 17110
 
 #### subtree_totals(key: str, \*, key_range: KeyRange = UNBOUNDED, chars: bool = False) → SubtreeTotals
-17252 17264
+17787 17799
 
 #### latest_change(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → str | None
-18734 18748
+19269 19283
 
 #### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
-19509 19525
+20044 20060
 
 #### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
-20941 20959
+21476 21494
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-22772 22792
+23307 23327
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
-24387 24409
+24922 24944
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-25569 25593
+26104 26128
 
 #### backup(destination: str | PathLike[str] | None = None, \*, overwrite: bool = False) → Backup
-26736 26762
+27271 27297
 
 #### *property* stored_format_version *: int*
-27844 27872
+28379 28407
 
 #### audit_rows() → Iterator[AuditRow]
-28273 28301
+28808 28836
 
 #### check_file(report: Report) → None
-29540 29570
+30075 30105
 
 #### repair() → list[Repaired]
-30256 30288
+30791 30823
 
 #### *classmethod* check_target(path: str | PathLike[str], \*, overwrite: bool = False) → Path
-31035 31069
+31570 31604
 
 #### *classmethod* build(path: str | PathLike[str], documents: Iterable[tuple[str, str, str | None, str | None]], \*, overwrite: bool = False, byte_lengths: bool = BYTE_LENGTHS) → int
-31930 31966
+32465 32501
 
 #### *classmethod* build_part(path: str | PathLike[str], documents: Iterable[tuple[str, str, str | None, str | None]], \*, overwrite: bool = False, byte_lengths: bool = BYTE_LENGTHS) → int
-34178 34216
+34713 34751

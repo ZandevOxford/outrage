@@ -212,6 +212,7 @@ class DuckdbStore(FileStore):
     backend_name = "duckdb"
     format_version = FORMAT_VERSION
     writable = False
+    versioned = False
 
     def __init__(
         self,

@@ -204,6 +204,15 @@ anyway gets `ReadOnlyStoreError` from the backend, since a class
 var nobody consulted must not be the only thing standing between a
 corpus and a half-written file.
 
+#### versioned *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= False*
+
+Whether this backend can keep what a write replaces or a delete takes.
+A capability, not whether a particular store is doing it: a store that
+can is told whether to by the `versioning` option. False on the base,
+the opposite of `writable`, because a backend that forgets to say
+should report itself as keeping nothing rather than as keeping history
+it does not have.
+
 #### close() → [None](https://docs.python.org/3/library/constants.html#None)
 
 Drop the file handle and the index built over it.

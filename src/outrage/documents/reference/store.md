@@ -205,6 +205,21 @@ The whole of the order, bounded at neither end: the default for a call that
 names no stretch. Distinct from [`EVERYTHING`](#outrage.store.EVERYTHING) on purpose -- one bounds
 the hierarchy and the other the order, and a subtree read needs both.
 
+### outrage.store.VERSIONING_OFF *= 'off'*
+
+The `versioning` value that stops a store keeping what it replaces.
+
+### outrage.store.VERSIONING_ON *= 'on'*
+
+The two values of the `versioning` store option. A word rather than a
+flag because the option grammar is `NAME=VALUE` throughout, and `on`
+is worth having beside `off`: under `--no-versioning` it is how one
+store keeps its versions while the rest of the run does not.
+
+### outrage.store.VERSIONING_SETTINGS *= ('on', 'off')*
+
+Both values, in the order a refusal lists them.
+
 ### outrage.store.WROTE *= 'wrote'*
 
 The outcome recorded on a [`Transfer`](#outrage.store.Transfer): it crossed.
@@ -482,7 +497,7 @@ which is why the comparison is written once rather than per backend --
 "written by a newer outrage than this" is the same fault whatever wrote it,
 even though each backend records the number somewhere different.
 
-#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
+#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/library/functions.html#bool) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
 This backend's store, named as a file inside a store directory.
 
@@ -508,6 +523,13 @@ rather than ignored, because that is the rule the option grammar it
 comes from already follows: an option that silently did nothing is the
 failure a mount configuration is least able to notice, and a caller who
 wrote `extensions=keep` on a database meant something by it.
+
+`versioning` is the same shape from the other side: only a backend
+that is [`versioned`](#outrage.store.Store.versioned) takes it, and every other refuses it
+**in both directions**. `versioning=off` on a store that never kept a
+version is still a statement about that store, and whoever typed it
+meant something by it. None is no statement, and a store that can
+version then does.
 
 #### opened_at(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
@@ -922,6 +944,15 @@ deciding whether to offer a write reads this; a caller that writes
 anyway gets [`ReadOnlyStoreError`](#outrage.store.ReadOnlyStoreError) from the backend, since a class
 var nobody consulted must not be the only thing standing between a
 corpus and a half-written file.
+
+#### versioned *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= False*
+
+Whether this backend can keep what a write replaces or a delete takes.
+A capability, not whether a particular store is doing it: a store that
+can is told whether to by the `versioning` option. False on the base,
+the opposite of `writable`, because a backend that forgets to say
+should report itself as keeping nothing rather than as keeping history
+it does not have.
 
 #### writes_deferred *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= False*
 
@@ -1529,7 +1560,7 @@ two is set.
 
 #### error *: [OutrageError](errors.md#outrage.errors.OutrageError) | [None](https://docs.python.org/3/library/constants.html#None)*
 
-### outrage.store.default_store(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, backend: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [FileStore](#outrage.store.FileStore)
+### outrage.store.default_store(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, backend: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning_default: [bool](https://docs.python.org/3/library/functions.html#bool) = True, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [FileStore](#outrage.store.FileStore)
 
 A store of the backend this build opens when nobody names one.
 
@@ -1549,6 +1580,14 @@ the one thing a backend whose store is a directory spells differently.
 for the same reason `backend` is: it is what an argument said, and the
 backend it reaches either takes it or refuses it --
 [`FileStore.in_directory()`](#outrage.store.FileStore.in_directory) is where that happens.
+
+`versioning` is the mount option too, as typed -- [`VERSIONING_ON`](#outrage.store.VERSIONING_ON),
+[`VERSIONING_OFF`](#outrage.store.VERSIONING_OFF) or None -- and `versioning_default` is what a run
+was started with, which is `--no-versioning` or its absence. They are
+two kinds of thing and meet here rather than in the backend: **a statement
+beats a default**, and only a statement is refused by a backend that
+cannot version. The default is only passed on to a backend that can, so a
+run whose table holds a parquet store can still turn versioning off.
 
 ### outrage.store.default_store_file() → [str](https://docs.python.org/3/library/stdtypes.html#str)
 
@@ -1595,7 +1634,7 @@ metadata namespace only when scoped inside one lives** for the backends
 that hold their rows in memory; `store_sqlite._meta_clauses` is the same
 rule as SQL.
 
-### outrage.store.open_store(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, backend: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[FileStore](#outrage.store.FileStore)]
+### outrage.store.open_store(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, backend: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning_default: [bool](https://docs.python.org/3/library/functions.html#bool) = True, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[FileStore](#outrage.store.FileStore)]
 
 Open a store, closing it on exit.
 

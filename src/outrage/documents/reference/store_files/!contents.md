@@ -28,62 +28,65 @@
 #### writable *: ClassVar[bool]* *= True*
 8949 8949
 
-#### close() → None
+#### versioned *: ClassVar[bool]* *= False*
 9557 9557
 
+#### close() → None
+10092 10092
+
 #### located(key: str, format: str | None = None) → Path | None
-9839 9841
+10374 10376
 
 #### store_document(key: str, content: str, format: str | None = None, \*, title: str | None = None, contents: str | None = None, encoding: str | None = None, updated_at: str | None = None) → str
-11057 11061
+11592 11596
 
 #### delete(key: str, recursive: bool = False, \*, key_range: KeyRange = UNBOUNDED, unchanged_since: str | None = None, dry_run: bool = False) → list[str]
-12433 12439
+12968 12974
 
 #### exists(key: str) → bool
-14075 14083
+14610 14618
 
 #### level_entry(key: str) → Entry | None
-14422 14432
+14957 14967
 
 #### descendant_count(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → int
-14886 14898
+15421 15433
 
 #### subtree_totals(key: str, \*, key_range: KeyRange = UNBOUNDED, chars: bool = False) → SubtreeTotals
-15695 15709
+16230 16244
 
 #### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
-17021 17037
+17556 17572
 
 #### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
-18298 18316
+18833 18851
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-19796 19816
+20331 20351
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
-21109 21131
+21644 21666
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-22235 22259
+22770 22794
 
-#### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
-23387 23413
+#### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
+23922 23948
 
 #### opened_at(path: Path) → Self
-25345 25373
+26160 26188
 
 #### *property* stored_format_version *: int*
-26618 26648
+27433 27463
 
 #### audit_rows() → Iterator[AuditRow]
-27246 27276
+28061 28091
 
 #### check_file(report: Report) → None
-27787 27819
+28602 28634
 
 #### repair() → list[Repaired]
-28351 28385
+29166 29200
 
 ### *exception* outrage.store_files.NotTextError(code: str, \*\*details: Any)
-28907 28943
+29722 29758

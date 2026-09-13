@@ -4,6 +4,29 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+A SQLite store now keeps what a write replaces and what a delete takes. The old
+row is copied into a new `document_archive` table in the same transaction as
+the change, metadata included, so a document that leaves the store is still in
+the file. A write that changes nothing -- the same content, format and
+timestamp, which is what copying an unchanged subtree again produces -- keeps
+nothing. There is no way to read the archive yet other than `sqlite3` on the
+file, and nothing prunes it. Every read ignores it, and `pack` and `export` do
+not carry it out.
+
+It is on by default. `--no-versioning` turns it off for a server run, or for
+one of the command line's writing commands (`set`, `ingest`, `make_contents`,
+`copy`, `rm`, `import`), and `outrage init` and `outrage config` record it on
+the server entry. A mount or `--store` can say `versioning=off` or
+`versioning=on` for one store, which wins over the flag either way. Only SQLite
+stores take the option; a tree, parquet or DuckDB store refuses it. `info`
+mentions versioning only for a store where it is off.
+
+**The SQLite schema moves to version 7**, so a store opened by this release can
+no longer be opened by 0.12.0 or earlier, read-only included. That is on
+purpose: an older build writing the store would keep no versions and nothing
+would show the gap. Turning versioning off does not remove what is already kept,
+so it saves space and write time, but it does not make anything private.
+
 The instructions the MCP server delivers are now one document rather than two,
 and the text itself is edited down: it says the same things in fewer words, and
 tells a session to read the store's `readme` first rather than noting that one

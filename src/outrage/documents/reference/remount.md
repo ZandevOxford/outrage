@@ -65,7 +65,7 @@ one thing a report of a change must not be.
 
 #### notes *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Note](notes.md#outrage.notes.Note), ...]*
 
-### *class* outrage.remount.Live(table: [MountedStore](mounts.md#outrage.mounts.MountedStore), \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.remount.Live(table: [MountedStore](mounts.md#outrage.mounts.MountedStore), \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = True)
 
 Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
 
@@ -80,7 +80,9 @@ that two changes cannot each clone the table the other is about to replace.
 every mount follows -- relative to the store directory, which is what makes
 a mount configuration relocatable. `log` is given to any store opened
 here, so a dynamically mounted store records what it is asked exactly as
-one named on the command line does.
+one named on the command line does. `versioning` is the run's default, and
+reaches a store mounted here for the same reason: `--no-versioning` is
+about the run, not about the stores it happened to start with.
 
 Used as a context manager by [`outrage.server.main()`](server.md#outrage.server.main), in place of the
 `with open_mounts(...) as table:` it would otherwise use: that would close

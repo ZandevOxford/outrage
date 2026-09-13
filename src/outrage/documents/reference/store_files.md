@@ -143,6 +143,15 @@ anyway gets `ReadOnlyStoreError` from the backend, since a class
 var nobody consulted must not be the only thing standing between a
 corpus and a half-written file.
 
+#### versioned *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= False*
+
+Whether this backend can keep what a write replaces or a delete takes.
+A capability, not whether a particular store is doing it: a store that
+can is told whether to by the `versioning` option. False on the base,
+the opposite of `writable`, because a backend that forgets to say
+should report itself as keeping nothing rather than as keeping history
+it does not have.
+
 #### close() → [None](https://docs.python.org/3/library/constants.html#None)
 
 Nothing to release: a file is opened per read and closed by it.
@@ -313,7 +322,7 @@ share theirs: the survey, its count and the list of what it could not
 see have to agree about what was in range, and two expressions of one
 predicate are two chances to disagree.
 
-#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
+#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/library/functions.html#bool) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
 The tree `filename` names inside a store directory.
 
@@ -331,6 +340,9 @@ This is the backend `extensions` is *for*, and the only one that
 takes it: it names how a file name and a key segment line up, which is
 a question a store kept in one file does not have. None is the
 constructor's default rather than a third mode.
+
+`versioning` is refused as the base refuses it: a tree keeps no
+earlier versions, and a statement about them is a mistake to report.
 
 #### opened_at(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 

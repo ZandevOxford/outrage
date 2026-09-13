@@ -809,6 +809,14 @@ class Store(ABC):
     #: corpus and a half-written file.
     writable: ClassVar[bool] = True
 
+    #: Whether this backend can keep what a write replaces or a delete takes.
+    #: A capability, not whether a particular store is doing it: a store that
+    #: can is told whether to by the ``versioning`` option. False on the base,
+    #: the opposite of ``writable``, because a backend that forgets to say
+    #: should report itself as keeping nothing rather than as keeping history
+    #: it does not have.
+    versioned: ClassVar[bool] = False
+
     #: Whether a write here is only visible once the whole store is written.
     #: True for a store built in one pass, where nothing exists until all of it
     #: does -- so a transfer into one reports :data:`READ` rather than
@@ -1744,6 +1752,7 @@ class FileStore(Store):
         *,
         filename: str | os.PathLike[str] | None = None,
         extensions: str | None = None,
+        versioning: bool | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
     ) -> Self:
@@ -1771,6 +1780,13 @@ class FileStore(Store):
         comes from already follows: an option that silently did nothing is the
         failure a mount configuration is least able to notice, and a caller who
         wrote ``extensions=keep`` on a database meant something by it.
+
+        ``versioning`` is the same shape from the other side: only a backend
+        that is :attr:`~Store.versioned` takes it, and every other refuses it
+        **in both directions**. ``versioning=off`` on a store that never kept a
+        version is still a statement about that store, and whoever typed it
+        meant something by it. None is no statement, and a store that can
+        version then does.
         """
         if extensions is not None:
             raise BackendError(
@@ -1779,7 +1795,31 @@ class FileStore(Store):
                 filename="" if filename is None else str(filename),
                 extensions=extensions,
             )
-        return cls(directory, filename=filename, log=log, mount_point=mount_point)
+        cls._refuse_versioning(filename, versioning)
+        return cls(
+            directory,
+            filename=filename,
+            log=log,
+            mount_point=mount_point,
+            **({} if versioning is None else {"versioning": versioning}),
+        )
+
+    @classmethod
+    def _refuse_versioning(
+        cls, filename: str | os.PathLike[str] | None, versioning: bool | None
+    ) -> None:
+        """Refuse a ``versioning`` statement this backend cannot act on.
+
+        Its own method because a backend that overrides :meth:`in_directory`
+        has to make the same refusal, in the same words, and not a second one.
+        """
+        if versioning is not None and not cls.versioned:
+            raise BackendError(
+                "backend-takes-no-versioning",
+                backend=cls.backend_name,
+                filename="" if filename is None else str(filename),
+                versioning=VERSIONING_ON if versioning else VERSIONING_OFF,
+            )
 
     def opened_at(self, path: Path) -> Self:
         """Another store of this class, kept at ``path``.
@@ -2014,6 +2054,18 @@ _BY_EXTENSION: dict[str, str] = {
 #: fallback is a fallback rather than a refusal.
 DEFAULT_BACKEND = "sqlite"
 
+#: The two values of the ``versioning`` store option. A word rather than a
+#: flag because the option grammar is ``NAME=VALUE`` throughout, and ``on``
+#: is worth having beside ``off``: under ``--no-versioning`` it is how one
+#: store keeps its versions while the rest of the run does not.
+VERSIONING_ON = "on"
+
+#: The ``versioning`` value that stops a store keeping what it replaces.
+VERSIONING_OFF = "off"
+
+#: Both values, in the order a refusal lists them.
+VERSIONING_SETTINGS = (VERSIONING_ON, VERSIONING_OFF)
+
 
 def _backend() -> type[FileStore]:
     """The backend class this build uses when nobody names one."""
@@ -2109,6 +2161,8 @@ def default_store(
     filename: str | os.PathLike[str] | None = None,
     backend: str | None = None,
     extensions: str | None = None,
+    versioning: str | None = None,
+    versioning_default: bool = True,
     log: EventLog | None = None,
     mount_point: str | None = None,
 ) -> FileStore:
@@ -2130,14 +2184,36 @@ def default_store(
     for the same reason ``backend`` is: it is what an argument said, and the
     backend it reaches either takes it or refuses it --
     :meth:`FileStore.in_directory` is where that happens.
+
+    ``versioning`` is the mount option too, as typed -- :data:`VERSIONING_ON`,
+    :data:`VERSIONING_OFF` or None -- and ``versioning_default`` is what a run
+    was started with, which is ``--no-versioning`` or its absence. They are
+    two kinds of thing and meet here rather than in the backend: **a statement
+    beats a default**, and only a statement is refused by a backend that
+    cannot version. The default is only passed on to a backend that can, so a
+    run whose table holds a parquet store can still turn versioning off.
     """
-    return _backend_for(filename, backend).in_directory(
+    opener = _backend_for(filename, backend)
+    stated = _versioning_setting(versioning)
+    if stated is None and not versioning_default and opener.versioned:
+        stated = False
+    return opener.in_directory(
         directory,
         filename=filename,
         extensions=extensions,
+        versioning=stated,
         log=log,
         mount_point=mount_point,
     )
+
+
+def _versioning_setting(value: str | None) -> bool | None:
+    """The ``versioning`` option's value as a setting, or say why it is not one."""
+    if value is None:
+        return None
+    if value not in VERSIONING_SETTINGS:
+        raise BackendError("versioning-unknown", versioning=value, known=list(VERSIONING_SETTINGS))
+    return value == VERSIONING_ON
 
 
 @contextmanager
@@ -2147,6 +2223,8 @@ def open_store(
     filename: str | os.PathLike[str] | None = None,
     backend: str | None = None,
     extensions: str | None = None,
+    versioning: str | None = None,
+    versioning_default: bool = True,
     log: EventLog | None = None,
     mount_point: str | None = None,
 ) -> Iterator[FileStore]:
@@ -2156,6 +2234,8 @@ def open_store(
         filename=filename,
         backend=backend,
         extensions=extensions,
+        versioning=versioning,
+        versioning_default=versioning_default,
         log=log,
         mount_point=mount_point,
     )
@@ -3160,6 +3240,9 @@ __all__ = [
     "STOP",
     "STOPPED",
     "UNBOUNDED",
+    "VERSIONING_OFF",
+    "VERSIONING_ON",
+    "VERSIONING_SETTINGS",
     "WROTE",
     "AuditRow",
     "Backup",

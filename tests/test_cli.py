@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import io
 import json
+import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -1851,6 +1852,67 @@ def test_init_records_the_store_directory_and_the_log(tmp_path):
     args = servers(tmp_path / ".mcp.json")["outrage"]["args"]
     assert str(tmp_path / "store") in args
     assert "--log" in args
+
+
+def test_init_records_no_versioning_on_the_server_entry(tmp_path):
+    status, _ = run("init", "--project-dir", str(tmp_path), "--no-versioning")
+    assert status == 0
+    assert "--no-versioning" in servers(tmp_path / ".mcp.json")["outrage"]["args"]
+
+
+def test_a_write_keeps_the_version_it_replaces_unless_told_not_to(tmp_path):
+    directory = str(tmp_path / ".outrage")
+
+    def archived() -> int:
+        conn = sqlite3.connect(tmp_path / ".outrage" / "store.sqlite")
+        try:
+            return conn.execute("SELECT count(*) FROM document_archive").fetchone()[0]
+        finally:
+            conn.close()
+
+    assert run("set", "--dir", directory, "a", "--content", "one")[0] == 0
+    assert run("set", "--dir", directory, "a", "--content", "two")[0] == 0
+    assert archived() == 1
+    assert run("set", "--dir", directory, "--no-versioning", "a", "--content", "three")[0] == 0
+    assert run("rm", "--dir", directory, "--no-versioning", "a")[0] == 0
+    assert archived() == 1
+    # A store's own statement beats the flag.
+    assert run("set", "--dir", directory, "b", "--content", "one")[0] == 0
+    assert (
+        run(
+            "set",
+            "--dir",
+            directory,
+            "--store",
+            "store.sqlite,versioning=on",
+            "--no-versioning",
+            "b",
+            "--content",
+            "two",
+        )[0]
+        == 0
+    )
+    assert archived() == 2
+
+
+def test_a_command_that_only_reads_does_not_take_no_versioning():
+    """An accepted flag that could do nothing is the silent no-op the grammar refuses."""
+    with pytest.raises(SystemExit):
+        parse_args(["ls", "--no-versioning"])
+
+
+def test_info_marks_a_store_whose_versioning_is_off(tmp_path):
+    a_mounted_project(
+        tmp_path / ".outrage",
+        config='[mount]\nteam = "team.sqlite,versioning=off"\n',
+    )
+
+    status, output = run("info", "--dir", str(tmp_path / ".outrage"))
+
+    assert status == 0
+    rows = {line.split()[0]: line for line in output.splitlines() if line.startswith(("/", "team"))}
+    assert rows["team"].endswith("versioning off")
+    assert "versioning" not in rows["/"]
 
 
 def test_init_says_when_there_is_nothing_to_do(tmp_path):

@@ -624,6 +624,15 @@ class _MountInfoResult(_ToolResult):
     ]
     kind: Annotated[str, Field(description="'root', 'mount' or 'read-only mount'")]
     read_only: Annotated[bool, Field(description="Whether this server refuses writes routed here")]
+    versioned: Annotated[
+        bool,
+        Field(
+            description=(
+                "Present, and false, only where this store could keep the earlier "
+                "versions of what is overwritten or deleted and has been told not to"
+            )
+        ),
+    ] = True
 
 
 class _MountsResult(_ToolResult):
@@ -1982,18 +1991,29 @@ def build_server(
             # Asked per call rather than built with the server, so that what is
             # reported is the table as it is now and the answer cannot outlive
             # what it describes.
-            return _InfoResult.model_validate(
-                dataclasses.asdict(
-                    info_module.describe(
-                        live.table,
-                        directory=directory,
-                        mount_config=mount_config,
-                        log=log,
-                    )
+            described = dataclasses.asdict(
+                info_module.describe(
+                    live.table,
+                    directory=directory,
+                    mount_config=mount_config,
+                    log=log,
                 )
             )
+            described["mounts"] = [_mount_info(one) for one in described["mounts"]]
+            return _InfoResult.model_validate(described)
 
     return server
+
+
+def _mount_info(mount: dict[str, Any]) -> dict[str, Any]:
+    """One mount for a tool result, saying versioning only where it is off.
+
+    John's call: a report that named versioning on every SQLite mount, and
+    none on the backends that have none, would be information nobody needed.
+    """
+    if mount.get("versioned") is not False:
+        mount.pop("versioned", None)
+    return mount
 
 
 def _mounts_result(changed: remount.Changed) -> _MountsResult:
@@ -2005,7 +2025,9 @@ def _mounts_result(changed: remount.Changed) -> _MountsResult:
     not be.
     """
     result: dict[str, Any] = {
-        "mounts": [dataclasses.asdict(one) for one in info_module.mount_infos(changed.table)]
+        "mounts": [
+            _mount_info(dataclasses.asdict(one)) for one in info_module.mount_infos(changed.table)
+        ]
     }
     _say(result, list(changed.notes))
     return _MountsResult.model_validate(result)
@@ -2354,6 +2376,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "long as this server, whatever it is."
         ),
     )
+    parser.add_argument(
+        "--no-versioning",
+        dest="no_versioning",
+        action="store_true",
+        help=(
+            "Do not keep the earlier version of a document a write replaces or "
+            "a delete removes. On by default, in SQLite stores only: a store "
+            "then loses nothing it has held. Turn it off where the space or "
+            "the write time matters more; it removes nothing already kept. A "
+            "mount's own versioning=on or versioning=off wins over this."
+        ),
+    )
     args = parser.parse_args(argv)
     # Answered here rather than in `main` for the reason this function is
     # separate at all: what an argument list means is decided in one place, and
@@ -2432,9 +2466,11 @@ def main(argv: list[str] | None = None) -> int:
                 root_mount=args.root_mount,
                 log=log,
                 attached=_documents(args.mount_docs, log),
+                versioning=not args.no_versioning,
             ),
             directory=directory,
             log=log,
+            versioning=not args.no_versioning,
         ) as live:
             for mount in live.table.shadowing():
                 # Stderr, not a refusal: the configuration is usable, and the

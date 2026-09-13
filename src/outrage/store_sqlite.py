@@ -99,7 +99,7 @@ DEFAULT_STORE_FILE = "store.sqlite"
 #: it is opened. Every bump needs a migration that reads the version below it;
 #: an older store is upgraded in place, and a newer one is refused rather than
 #: read with the wrong shape assumed.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 _TABLE = """
 CREATE TABLE IF NOT EXISTS {name} (
@@ -121,7 +121,69 @@ CREATE INDEX IF NOT EXISTS idx_documents_meta   ON documents(meta_name, meta_pat
 CREATE INDEX IF NOT EXISTS idx_documents_sort   ON documents(sort_key);
 """
 
-_SCHEMA = _TABLE.format(name="documents") + _INDEXES
+#: Where a row goes when it leaves ``documents``, overwritten or deleted.
+#:
+#: **Inside the schema version, unlike the length cache below**: this is data
+#: rather than a cache, and a build too old to know the table would go on
+#: writing the store, archive nothing, and leave nothing able to say where the
+#: gaps are. Refusing that build is the louder failure, chosen over the quiet
+#: one.
+#:
+#: The columns of ``documents`` in the same order, so a copy names no values
+#: and cannot drift from :func:`_row_values` -- but **not its primary key**,
+#: since the archive holds many rows for one key. Nor ``(key, updated_at)``:
+#: :func:`_now` stamps to the second and a copy carries caller-supplied stamps,
+#: so two versions can share one, and a unique constraint there would be a
+#: write failing because a version was worth keeping. So a plain rowid table.
+#:
+#: One index, not the three ``documents`` has: nothing reads the archive yet,
+#: so each would be write cost against no read. This one is what a reader
+#: wants first, and is here from the start because adding it later is a
+#: migration.
+ARCHIVE_TABLE = "document_archive"
+
+_ARCHIVE = f"""
+CREATE TABLE IF NOT EXISTS {ARCHIVE_TABLE} (
+  key        TEXT NOT NULL,
+  doc_key    TEXT NOT NULL,
+  meta_name  TEXT,
+  meta_path  TEXT,
+  parent     TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  format     TEXT,
+  updated_at TEXT NOT NULL,
+  sort_key   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_archive_key ON {ARCHIVE_TABLE}(key, updated_at);
+"""
+
+#: Copy the live row for one key into the archive, where a write would change it.
+#:
+#: Only ``content``, ``format`` and ``updated_at`` can differ: the other six
+#: columns are derived from the key, and the write is an upsert on the key. A
+#: key with no row selects nothing, so a first write archives nothing without a
+#: branch. ``format`` is nullable, hence ``IS NOT``.
+#:
+#: ``updated_at`` counts as a change on purpose. A copy carries its source's
+#: stamps across, so copying an unchanged subtree again writes identical rows
+#: and archives none of them, which is what keeps the wide rule cheap.
+_ARCHIVE_CHANGED = f"""
+INSERT INTO {ARCHIVE_TABLE}
+SELECT key, doc_key, meta_name, meta_path, parent, content, format, updated_at, sort_key
+  FROM documents
+ WHERE key = ?
+   AND (content <> ? OR format IS NOT ? OR updated_at <> ?)
+"""
+
+#: Copy the live row for one key into the archive unconditionally, ahead of a delete.
+_ARCHIVE_ROW = f"""
+INSERT INTO {ARCHIVE_TABLE}
+SELECT key, doc_key, meta_name, meta_path, parent, content, format, updated_at, sort_key
+  FROM documents
+ WHERE key = ?
+"""
+
+_SCHEMA = _TABLE.format(name="documents") + _INDEXES + _ARCHIVE
 
 #: Where the cache of document lengths lives, and the columns it holds. Not
 #: part of :data:`_SCHEMA` and not behind a schema version: it is a cache, so a
@@ -229,6 +291,9 @@ class SqliteStore(FileStore):
     #: mistake to fall, and `test_every_backend_states_whether_it_can_be_written`
     #: is why this is here rather than left to the base.
     writable = True
+    #: Stated for the same reason as ``writable``, from the other direction:
+    #: the base says False, so a backend that forgets reports keeping nothing.
+    versioned = True
 
     def __init__(
         self,
@@ -237,6 +302,7 @@ class SqliteStore(FileStore):
         filename: str | os.PathLike[str] | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
+        versioning: bool = True,
     ) -> None:
         # Where the file is, and the directory around it, are the base's
         # business: they are the same question for every backend, and the
@@ -256,6 +322,10 @@ class SqliteStore(FileStore):
         # What `PRAGMA encoding` said, once it has been asked. A property of
         # the file rather than of a connection, so it is not thread-local.
         self._encoding: str | None = None
+        # Whether a write copies what it replaces into the archive. Only the
+        # two write statements read it: the table exists either way, so the
+        # schema of a file never depends on how one run was started.
+        self.versioning = versioning
         # Migrating here, on the constructing thread, is what lets every later
         # connection assume the schema is already current: two threads can
         # never race to apply the same migration, because only this one ever
@@ -322,6 +392,8 @@ class SqliteStore(FileStore):
                     self._migrate_sort_form()
                 if version < 6:
                     self._migrate_meta_namespace()
+                if version < 7:
+                    self._migrate_add_archive()
             if version != SCHEMA_VERSION:
                 self._conn.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
         # After the branch above, not inside it and not in `_SCHEMA`, for two
@@ -515,6 +587,19 @@ class SqliteStore(FileStore):
         """
         self._conn.execute("UPDATE documents SET sort_key = sort_form(key)")
 
+    def _migrate_add_archive(self) -> None:
+        """Schema 6 to 7: a row leaving ``documents`` is kept in :data:`ARCHIVE_TABLE`.
+
+        The one migration that rewrites no existing row, and the reason it
+        still takes a version: an older build would open this store, write to
+        it and archive nothing. See :data:`ARCHIVE_TABLE`.
+
+        Statement by statement, for the reason :meth:`_rebuild_table` gives:
+        ``executescript`` would commit the transaction the migrations share.
+        """
+        for statement in filter(str.strip, _ARCHIVE.split(";")):
+            self._conn.execute(statement)
+
     @property
     def connection(self) -> sqlite3.Connection:
         """The open database, for asking questions about the file itself.
@@ -602,7 +687,16 @@ class SqliteStore(FileStore):
     def _write(
         self, parsed: keys.Key, content: str, format: str, updated_at: str | None = None
     ) -> None:
-        """Insert or replace one row. Caller holds the transaction."""
+        """Insert or replace one row. Caller holds the transaction.
+
+        The row being replaced goes to the archive first, when versioning is
+        on and the write changes it. Metadata rows are ordinary rows, so a
+        title or an index is versioned by the same statement.
+        """
+        updated_at = updated_at or _now()
+        if self.versioning:
+            # Before the upsert, never after: afterwards the old row is gone.
+            self._conn.execute(_ARCHIVE_CHANGED, (parsed.key, content, format, updated_at))
         self._conn.execute(
             """
             INSERT INTO documents (key, doc_key, meta_name, meta_path, parent, content,
@@ -613,7 +707,7 @@ class SqliteStore(FileStore):
                 format = excluded.format,
                 updated_at = excluded.updated_at
             """,
-            _row_values(parsed, content, format, updated_at or _now()),
+            _row_values(parsed, content, format, updated_at),
         )
         if len(content) > LENGTH_THRESHOLD:
             # After the write, never before: the triggers have just emptied
@@ -757,6 +851,12 @@ class SqliteStore(FileStore):
 
         if not dry_run:
             with self._conn:
+                # Every row taken is archived, in the same transaction and
+                # ahead of the delete. A recursive delete therefore writes each
+                # row twice, which is the accepted price of `rm` not being the
+                # one way left to lose a document.
+                if self.versioning:
+                    self._conn.executemany(_ARCHIVE_ROW, [(k,) for k in targets])
                 self._conn.executemany(
                     "DELETE FROM documents WHERE key = ?", [(k,) for k in targets]
                 )
@@ -1984,6 +2084,7 @@ def _below(column: str, doc_key: str) -> tuple[str, list[object]]:
 
 
 __all__ = [
+    "ARCHIVE_TABLE",
     "BUSY_TIMEOUT_MS",
     "CHILD_BATCH",
     "CHILD_BATCH_CEILING",

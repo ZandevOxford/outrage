@@ -56,6 +56,7 @@ from .mounts import (
     OPTIONS,
     SPEC_DELIMITER,
     TYPE_OPTION,
+    VERSIONING_OPTION,
     MountError,
     Spec,
     mount_point,
@@ -624,7 +625,12 @@ def _spec(value: object, *, field: str, path: Path) -> Spec | None:
         # spelling that reads back as itself. Refused where it is written
         # rather than where it is rendered, which is a splice away from here.
         raise MountError("mount-file-unspellable", file=file, delimiter=OPTION_DELIMITER)
-    return Spec(Path(file), value.get(TYPE_OPTION), value.get(EXTENSIONS_OPTION))
+    return Spec(
+        Path(file),
+        value.get(TYPE_OPTION),
+        value.get(EXTENSIONS_OPTION),
+        value.get(VERSIONING_OPTION),
+    )
 
 
 def directory_in(argv: Sequence[str]) -> str | None:
