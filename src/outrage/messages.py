@@ -307,7 +307,8 @@ MCP = NoteTable("the MCP tools")
 def _overwrote_a_change(name: Namer, /, *, changed_at: str | None, **_: Any) -> str:
     return (
         f"the document had changed since it was exported and has been "
-        f"overwritten anyway; what was written at {changed_at} is gone."
+        f"overwritten anyway; no tool can recover what was written at "
+        f"{changed_at}."
     )
 
 
@@ -327,7 +328,7 @@ def _write_not_checked(
     return (
         f"this write was not checked against the document ({reason}), so "
         f"if somebody else had written {name(key)!r} since it was "
-        f"exported, their work is now gone."
+        f"exported, no tool can recover their work."
     )
 
 
@@ -355,7 +356,7 @@ def _stored_a_copy(name: Namer, /, *, copied_from: str, **_: Any) -> str:
 def _document_shrank(name: Namer, /, *, previous: int, stored: int, **_: Any) -> str:
     return (
         f"the document shrank from {previous} to {stored} characters; if "
-        f"that was not intended, the previous content is gone."
+        f"that was not intended, no tool can recover the previous content."
     )
 
 

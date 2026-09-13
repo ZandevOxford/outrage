@@ -1987,7 +1987,8 @@ def _notes_on_what_a_check_allowed(
     notes: list[Note] = []
     if overwritten:
         # Said at all because what it means is that somebody else's write is
-        # now gone, and the person who lost it is not reading this.
+        # now out of every tool's reach, and the person who lost it is not
+        # reading this.
         notes.append(Note("overwrote-a-change", changed_at=changed_at))
     if unchecked_code is not None:
         # A code and the key it came from, not the sentence. The reason used to

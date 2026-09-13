@@ -1855,7 +1855,7 @@ def build_server(
                     "there is no record naming `key` to check against. Only for "
                     "a caller who has looked and means to replace it: the "
                     "refusal is there because another agent's write is about to "
-                    "be lost"
+                    "be replaced, and no tool can recover it"
                 )
             ),
         ] = False,

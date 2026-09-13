@@ -48,7 +48,8 @@ def _document_shrank(name: Namer, /, *, previous: int, stored: int, **_: Any) ->
     # went in, and nothing said how many had been there.
     return (
         f"the document shrank from {previous} to {stored} characters; "
-        f"if that was not intended, the previous content is gone"
+        f"if that was not intended, no outrage command can recover the "
+        f"previous content"
     )
 
 

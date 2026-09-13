@@ -11,7 +11,9 @@ the file. A write that changes nothing -- the same content, format and
 timestamp, which is what copying an unchanged subtree again produces -- keeps
 nothing. There is no way to read the archive yet other than `sqlite3` on the
 file, and nothing prunes it. Every read ignores it, and `pack` and `export` do
-not carry it out.
+not carry it out. So the notes beside a write that shrank a document or went
+past a check no longer say the old content is gone; they say no tool, or no
+command, can recover it, which holds whether or not the store keeps it.
 
 It is on by default. `--no-versioning` turns it off for a server run, or for
 one of the command line's writing commands (`set`, `ingest`, `make_contents`,
