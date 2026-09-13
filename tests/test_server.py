@@ -1829,6 +1829,16 @@ def test_the_delivered_text_fits_the_budget(store):
     )
 
 
+@pytest.mark.parametrize(
+    "name", ["SKILLS", "DELIVERED", "PROTECTED_CHARS", "skill", "static_instructions"]
+)
+def test_the_names_that_served_the_split_instructions_are_gone(name):
+    # The changelog says these left `outrage.server` with the second document.
+    # A removal the tests do not assert is one an import can quietly undo, as
+    # 0.9.0's `WAL_UNCHECKPOINTED` was: absent in intent, resolving in fact.
+    assert not hasattr(server_module, name)
+
+
 def test_a_store_with_no_readme_is_told_the_convention(store):
     text = server_module.instructions(store)
 

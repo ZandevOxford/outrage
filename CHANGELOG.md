@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.13.0 - 2026-09-13
 
 `outrage init` now registers the MCP server for Codex as well, in
 `.codex/config.toml`. Codex does not read `.mcp.json`, so a project set up by
