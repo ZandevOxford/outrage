@@ -16,8 +16,11 @@
 ## Parquet stores
 4691 4692
 
-## Development
+## Importing a MediaWiki dump
 5247 5248
 
+## Development
+5688 5689
+
 ## Development environment
-5460 5461
+5901 5902

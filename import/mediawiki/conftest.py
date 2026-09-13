@@ -1,6 +1,6 @@
 """Decide which copy of ``outrage`` this suite tests, before anything imports it.
 
-``wikiimport`` is a separate distribution that depends on a released
+``outrage_mediawiki`` is a separate distribution that depends on a released
 ``outrage``, but it is developed here as a sibling of the checkout that
 produces it -- and it is the first real consumer of ``ParquetStore.build_part``,
 so a run that silently tested an *installed* ``outrage`` instead of the one
@@ -18,8 +18,8 @@ This mirrors the repository root's ``conftest.py``, deliberately -- the two
 answer the same question for the two distributions, and the switch is spelled
 the same way so one environment variable settles both.
 
-``wikiimport`` itself is not handled here. It comes from ``pythonpath`` in
-``pyproject.toml``, which is static and always the same answer; only the
+``outrage_mediawiki`` itself is not handled here. It comes from ``pythonpath``
+in ``pyproject.toml``, which is static and always the same answer; only the
 question above needs a switch, which is why that one cannot be a setting.
 """
 
@@ -29,7 +29,7 @@ import os
 import sys
 from pathlib import Path
 
-OUTRAGE_SRC = Path(__file__).resolve().parent.parent / "src"
+OUTRAGE_SRC = Path(__file__).resolve().parents[2] / "src"
 
 TEST_INSTALLED = bool(os.environ.get("OUTRAGE_TEST_INSTALLED"))
 

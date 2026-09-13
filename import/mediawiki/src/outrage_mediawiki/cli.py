@@ -1,4 +1,4 @@
-"""The ``wiki-import`` command line."""
+"""The ``mediawiki-import`` command line."""
 
 from __future__ import annotations
 
@@ -16,21 +16,94 @@ from .source import DEFAULT_SOURCE, Dump, Part, resolve
 def parser() -> argparse.ArgumentParser:
     """Build the argument parser separately so its contract is testable."""
     out = argparse.ArgumentParser(
-        prog="wiki-import",
-        description="Import a Wikimedia content dump into a directory of Parquet parts.",
+        prog="mediawiki-import",
+        description=(
+            "Import a Wikimedia content dump into a directory of Parquet parts. The newest "
+            "completed mediawiki_content_current dump of one wiki is resolved, each compressed "
+            "XML piece is downloaded and checked against the dump's SHA256SUMS, and each is "
+            "converted into one Parquet part as soon as it is verified, while the next one "
+            "downloads. The target directory opens as an Outrage DuckDB store, readable part "
+            "by part as the parts complete. Downloads resume, and a verified download or a "
+            "part whose conversion receipt matches is reused, so an interrupted run is "
+            "finished by running it again."
+        ),
     )
-    out.add_argument("--download-dir", required=True, type=Path)
-    out.add_argument("--source-url", default=DEFAULT_SOURCE)
-    out.add_argument("--wiki", default="enwiki")
-    out.add_argument("--month")
-    out.add_argument("--files", type=int)
-    out.add_argument("--target", type=Path)
-    out.add_argument("--namespace", dest="namespaces", type=int, action="append")
-    out.add_argument("--redirects", action=argparse.BooleanOptionalAction, default=True)
-    out.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
-    out.add_argument("--stage", choices=("resolve", "fetch", "convert", "all"), default="all")
-    out.add_argument("--dry-run", action="store_true")
-    out.add_argument("--overwrite", action="store_true")
+    out.add_argument(
+        "--download-dir",
+        required=True,
+        type=Path,
+        metavar="DIR",
+        help="where downloads and conversion receipts are kept; the store goes inside it "
+        "unless --target says otherwise",
+    )
+    out.add_argument(
+        "--source-url",
+        default=DEFAULT_SOURCE,
+        metavar="URL",
+        help="the dump index to resolve against (default: %(default)s)",
+    )
+    out.add_argument(
+        "--wiki",
+        default="enwiki",
+        help="the wiki's database name, such as simplewiki (default: %(default)s)",
+    )
+    out.add_argument(
+        "--month",
+        help="the dump to use, as YYYY-MM for that month's newest or YYYY-MM-DD for one "
+        "exact dump (default: the newest)",
+    )
+    out.add_argument(
+        "--files",
+        type=int,
+        metavar="N",
+        help="only the first N pieces in page-id order (default: every piece)",
+    )
+    out.add_argument(
+        "--target",
+        type=Path,
+        metavar="DIR",
+        help="the store directory the Parquet parts are written to (default: a directory "
+        "named after --wiki inside --download-dir)",
+    )
+    out.add_argument(
+        "--namespace",
+        dest="namespaces",
+        type=int,
+        action="append",
+        metavar="ID",
+        help="a MediaWiki namespace number to import; repeat for several (default: 0, "
+        "the articles)",
+    )
+    out.add_argument(
+        "--redirects",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="store each redirect as an alias of the page it points at (default: on)",
+    )
+    out.add_argument(
+        "--jobs",
+        type=int,
+        default=os.cpu_count() or 1,
+        metavar="N",
+        help="how many pieces to convert at once (default: the number of CPUs)",
+    )
+    out.add_argument(
+        "--stage",
+        choices=("resolve", "fetch", "convert", "all"),
+        default="all",
+        help="run only one step: resolve the dump, fetch its pieces, or convert pieces "
+        "already downloaded (default: %(default)s)",
+    )
+    out.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="resolve the dump and list its pieces without downloading anything",
+    )
+    out.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="replace a Parquet part that has no matching conversion receipt rather than refusing",
+    )
     return out
 
 
@@ -178,7 +251,7 @@ def run(arguments: argparse.Namespace) -> None:
         return
 
     namespaces = frozenset(arguments.namespaces or [0])
-    receipts = download_dir / ".wikiimport" / dump.wiki / dump.date
+    receipts = download_dir / ".mediawiki-import" / dump.wiki / dump.date
     if arguments.stage == "all":
         _fetch_and_convert(
             dump,
@@ -209,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         arguments = parser().parse_args(argv)
         run(arguments)
     except (OSError, RuntimeError, ValueError) as exc:
-        print(f"wiki-import: {exc}", file=sys.stderr)
+        print(f"mediawiki-import: {exc}", file=sys.stderr)
         return 1
     return 0
 

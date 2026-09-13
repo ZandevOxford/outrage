@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "outrage-wikiimport"
+name = "outrage-mediawiki"
 dynamic = ["version"]
 description = "Import Wikimedia content dumps into an Outrage Parquet store"
 readme = "README.md"
@@ -15,19 +15,20 @@ dependencies = [
 ]
 
 [project.scripts]
-wiki-import = "wikiimport.cli:main"
+mediawiki-import = "outrage_mediawiki.cli:main"
 
 [tool.hatch.version]
-path = "src/wikiimport/__init__.py"
+path = "src/outrage_mediawiki/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/wikiimport"]
+packages = ["src/outrage_mediawiki"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# `wikiimport` is only importable from `src`, and the suite has to run without
-# an install so a checkout can be tested before it is packaged. Which copy of
-# `outrage` the same run tests is the other half, and is settled in conftest.py.
+# `outrage_mediawiki` is only importable from `src`, and the suite has to run
+# without an install so a checkout can be tested before it is packaged. Which
+# copy of `outrage` the same run tests is the other half, and is settled in
+# conftest.py.
 pythonpath = ["src"]
 
 [tool.ruff]

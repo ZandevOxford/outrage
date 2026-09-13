@@ -48,7 +48,7 @@ class Dump:
 
 
 def _read(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "outrage-wikiimport/0.1"})
+    request = urllib.request.Request(url, headers={"User-Agent": "outrage-mediawiki/0.1"})
     with urllib.request.urlopen(request) as response:  # noqa: S310 - caller chooses source URL
         return response.read()
 

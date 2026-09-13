@@ -68,7 +68,7 @@ def fetch_part(
         digest = hashlib.sha256()
         offset = 0
 
-    headers = {"User-Agent": "outrage-wikiimport/0.1"}
+    headers = {"User-Agent": "outrage-mediawiki/0.1"}
     if offset:
         headers["Range"] = f"bytes={offset}-"
     request = urllib.request.Request(part.url, headers=headers)

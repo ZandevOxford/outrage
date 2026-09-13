@@ -20,7 +20,7 @@ covered the day it appears instead of the day somebody remembers this file.
 **``tests/`` is exempt, deliberately**, John's call of 2026-09-05: not
 published, and a test naming the thread that produced it is close to a
 citation. About 151 comments there name a key. That exemption is by directory
-name, so ``import/tests/`` gets it for the same reason.
+name, so ``import/mediawiki/tests/`` gets it for the same reason.
 
 **``.claude/`` and ``.codex/`` are exempt** because they are neither committed
 nor source: ``outrage init`` renders them from ``src/outrage/``, which this
@@ -96,7 +96,8 @@ def test_the_sweep_reaches_every_tree_that_holds_source():
     tops = {path.parts[0] for path in swept_paths if len(path.parts) > 1}
     assert {"src", "tools", "import", "docs"} <= tops, tops
     assert pathlib.Path("conftest.py") in swept_paths
-    assert any(path.parts[:2] == ("import", "src") for path in swept_paths), "import/src missed"
+    importer = ("import", "mediawiki", "src")
+    assert any(path.parts[:3] == importer for path in swept_paths), "import/mediawiki/src missed"
 
     # The exemptions, which are as much of the contract as the walk is.
     assert not [path for path in swept_paths if "tests" in path.parts]

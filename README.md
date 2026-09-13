@@ -108,6 +108,15 @@ second optional extra, and the directory is named as one when it is mounted:
 
 `outrage-server --mount-ro ref=parts,type=duckdb`
 
+## Importing a MediaWiki dump
+
+**[The MediaWiki importer](import/mediawiki/README.md)** turns a Wikimedia
+content dump - Wikipedia, or any other wiki Wikimedia publishes - into exactly
+that: a directory of Parquet parts, one per dump piece, readable as each one
+completes. It is a separate distribution, `outrage-mediawiki`, with its own
+command, `mediawiki-import`, and [its command line](import/mediawiki/cli.md) is
+documented beside it.
+
 ## Development
 
 Outrage itself has been developed using Outrage as a memory store.

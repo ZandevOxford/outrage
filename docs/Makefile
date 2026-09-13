@@ -80,6 +80,14 @@ markdown: check-env
 # `tests/test_project_documents.py` are what fail when a source changes without
 # its generated document following it.
 #
+# `render_cli.py` runs a second time for the MediaWiki importer, whose
+# `cli.md` sits beside its README rather than in the shipped tree: it is a
+# separate distribution, and nothing installing outrage wants its manual. Its
+# `src` goes on `PYTHONPATH` because the importer is not installed here, and
+# importing its parser imports the converter, so this environment needs
+# `mwparserfromhell` as well. `import/mediawiki/tests` is what fails when the
+# document goes stale.
+#
 # They run before the sweeps below rather than after, because the sweeps index
 # what is on disk: a page rewritten afterwards would carry the offsets of the
 # page it replaced.
@@ -94,6 +102,9 @@ markdown: check-env
 documents: check-env markdown
 	@$(PYTHON) ../tools/render_reference.py "$(BUILDDIR)/markdown" ../src/outrage/documents
 	@$(PYTHON) ../tools/render_cli.py ../src/outrage/documents/cli.md
+	@PYTHONPATH=../import/mediawiki/src $(PYTHON) ../tools/render_cli.py \
+		--parser outrage_mediawiki.cli:parser --title "The mediawiki-import command line" \
+		../import/mediawiki/cli.md
 	@$(PYTHON) ../tools/render_tools.py ../src/outrage/documents/tools.md
 	@$(PYTHON) ../tools/copy_project_documents.py ../src/outrage/documents/project
 	@$(PYTHON) ../tools/document_titles.py ../src/outrage/documents

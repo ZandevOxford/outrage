@@ -11,14 +11,14 @@ import pytest
 from outrage.store import BoundedSubtree
 from outrage.store_duckdb import DuckdbStore
 
-from wikiimport import cli
-from wikiimport import source as source_module
-from wikiimport.convert import Conversion, convert_part
-from wikiimport.fetch import FetchError, fetch_part
-from wikiimport.markdown import to_markdown
-from wikiimport.pages import read_pages
-from wikiimport.source import _PART, _SUM, Part, SourceError, _chosen_date, _links
-from wikiimport.titles import TitleError, link_to_key, title_to_key
+from outrage_mediawiki import cli
+from outrage_mediawiki import source as source_module
+from outrage_mediawiki.convert import Conversion, convert_part
+from outrage_mediawiki.fetch import FetchError, fetch_part
+from outrage_mediawiki.markdown import to_markdown
+from outrage_mediawiki.pages import read_pages
+from outrage_mediawiki.source import _PART, _SUM, Part, SourceError, _chosen_date, _links
+from outrage_mediawiki.titles import TitleError, link_to_key, title_to_key
 
 
 def test_titles_are_mapped_injectively_without_flattening_subpages():
