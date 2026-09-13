@@ -1813,12 +1813,19 @@ def _routed(key: str) -> tuple[str, str]:
     return owner, key if not owner else key[len(owner) + 1 :]
 
 
+#: One stamp for every row in both fixtures. Left to the clock, each write is
+#: stamped to the second, so a second boundary falling between the two fixtures
+#: made ``latest_change`` and every read disagree between two stores that hold
+#: the same corpus.
+_SPLIT_STAMP = "2026-09-13T12:00:00+00:00"
+
+
 @pytest.fixture
 def whole(tmp_path):
     """The corpus in one store."""
     with SqliteStore(tmp_path / "one") as store:
         for key, content in _SPLIT_CORPUS:
-            store.store_document(key, content)
+            store.store_document(key, content, updated_at=_SPLIT_STAMP)
         yield store
 
 
@@ -1831,7 +1838,7 @@ def split(tmp_path):
         stores[point] = SqliteStore(tmp_path / "many", filename=f"{name}.sqlite")
     for key, content in _SPLIT_CORPUS:
         owner, inner = _routed(key)
-        stores[owner].store_document(inner, content)
+        stores[owner].store_document(inner, content, updated_at=_SPLIT_STAMP)
     with MountedStore(stores) as table:
         yield table
 
