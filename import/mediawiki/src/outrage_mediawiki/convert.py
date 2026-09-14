@@ -9,11 +9,7 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-try:
-    from outrage.store_pyarrow import PyarrowStore
-except ImportError:
-    # outrage 0.13.0 and earlier call the same class by its old name.
-    from outrage.store_parquet import ParquetStore as PyarrowStore
+from outrage.store_pyarrow import PyarrowStore
 
 from . import __version__
 from .markdown import to_markdown

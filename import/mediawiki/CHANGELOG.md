@@ -14,3 +14,6 @@ repository; it was `outrage-wikiimport`, `wikiimport` and `wiki-import` in
 `import/` before it was ever published. Conversion receipts moved with the
 name, from `.wikiimport` to `.mediawiki-import` in the download directory.
 Every option now has help, and `cli.md` documents the command line.
+
+Requires `outrage[parquet]>=0.14.0`, whose `parquet` extra installs duckdb as
+well as pyarrow and whose pyarrow backend is `outrage.store_pyarrow`.
