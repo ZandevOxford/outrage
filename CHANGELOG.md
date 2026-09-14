@@ -19,8 +19,12 @@ the corpus. A listing costs the subtree below the key rather than the level.
 file is sorted. A format version 1 file, written before 0.4.0, is refused until
 it is repacked. `type=parquet` still opens any single file with pyarrow, which
 is also the way to repack one: `outrage pack new.parquet --from-store
-old.parquet,type=parquet`. The `parquet` extra now installs duckdb as well as
-pyarrow; `duckdb` alone is enough to read parquet stores without packing them.
+old.parquet,type=parquet`.
+
+The `duckdb` extra is gone: the `parquet` extra now installs duckdb as well as
+pyarrow, and `all` names only `parquet` and `documents`. Installing
+`outrage[duckdb]` still works, with a warning that the extra does not exist, but
+installs neither library.
 
 A part whose file name holds `[`, `*` or `?` is now read as that file. duckdb
 had been expanding it as a pattern of its own.

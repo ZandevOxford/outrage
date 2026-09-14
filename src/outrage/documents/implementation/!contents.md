@@ -20,28 +20,28 @@
 9236 9239
 
 ### 3. MCP server - `src/outrage/server.py` - done
-12070 12073
+12050 12053
 
 ### 3a. Mounted stores - `src/outrage/mounts.py` - done
-13221 13224
+13201 13204
 
 ### 4. Integration with Claude Code - done
-23804 23807
+23784 23787
 
 #### Getting a changed server to the agent
-24516 24519
+24496 24499
 
 #### What the session use changed
-25406 25409
+25386 25389
 
 ### 5. Skills - done
-28725 28728
+28705 28708
 
 #### Delivery
-30619 30622
+30599 30602
 
 ### 8. Event log - `src/outrage/eventlog.py` - done
-31720 31723
+31700 31703
 
 ## Planned work
-33791 33794
+33771 33774

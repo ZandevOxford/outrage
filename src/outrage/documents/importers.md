@@ -16,10 +16,10 @@ completes. It is the distribution `outrage-mediawiki`, with the command
 `mediawiki-import`, and
 [its command line](../../../import/mediawiki/cli.md) is documented beside it.
 
-A directory of parts is mounted through DuckDB, which needs the `duckdb` or
-`parquet` extra, either as the directory or as a pattern over its parts:
+A directory of parts is mounted through DuckDB, which the `parquet` extra
+installs, either as the directory or as a pattern over its parts:
 
-`pip install "outrage[duckdb]"`
+`pip install "outrage[parquet]"`
 
 `outrage-server --mount-ro ref=parts,type=duckdb`
 

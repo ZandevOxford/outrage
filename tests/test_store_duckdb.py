@@ -54,7 +54,7 @@ from outrage.store import (
 )
 from outrage.store_sqlite import SqliteStore
 
-pytest.importorskip("duckdb", reason="the duckdb backend is an optional extra")
+pytest.importorskip("duckdb", reason="reading a parquet store needs the parquet extra")
 pytest.importorskip("pyarrow", reason="building a part needs the parquet extra")
 
 import pyarrow as pa  # noqa: E402 - only once the skip above has had its say

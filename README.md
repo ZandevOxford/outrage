@@ -119,5 +119,4 @@ in any order:
 The last reads every `.parquet` file directly inside a directory, which has no
 extension to say which backend it needs. `type=parquet` reads a single file with
 pyarrow instead, which is also what still opens a file written by `outrage`
-before 0.4.0. `pip install "outrage[duckdb]"` is enough to read Parquet stores
-without being able to pack them.
+before 0.4.0.

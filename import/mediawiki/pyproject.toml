@@ -11,7 +11,10 @@ requires-python = ">=3.12"
 license = "MIT"
 dependencies = [
     "mwparserfromhell>=0.7",
-    "outrage[duckdb,parquet]>=0.12.0",
+    # duckdb is named itself rather than through outrage's `parquet` extra,
+    # which carries it only from the release after 0.13.0.
+    "duckdb>=1.5",
+    "outrage[parquet]>=0.12.0",
 ]
 
 [project.scripts]

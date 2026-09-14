@@ -186,8 +186,8 @@ directory into one file - is what removes the repeats.
 
 Every part must be in this build's format version; an older part is refused
 with the advice to repack it, and a directory mixing versions is refused naming
-both. duckdb is carried by both the `parquet` and `duckdb` extras, and reading a
-store needs no pyarrow.
+both. duckdb comes with the `parquet` extra, and reading a store imports no
+pyarrow.
 
 **It is what a `.parquet` store file opens as**, and the store file may name one
 file, a directory of parts, or a pattern over them - `ref=parts/*.parquet` - with

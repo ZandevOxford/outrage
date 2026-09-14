@@ -4,9 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "outrage"
-# One source for the version: `src/outrage/__init__.py`, which is what the
-# server, the CLI and the docs already read. Carrying it here as well gave two
-# strings that nothing checked against each other.
+# One source for the version: `src/outrage/__init__.py`, which the server, the
+# CLI and the docs read. A second copy here would be a string nothing checks.
 dynamic = ["version"]
 authors = [
     { name="John M Reynolds", email="zandev@gmail.com" },
@@ -18,50 +17,37 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
-# PEP 639: an SPDX expression rather than a classifier, and the file named so
-# that it is carried in the wheel and the sdist rather than only in the repo.
+# PEP 639: an SPDX expression rather than a classifier, and the licence file
+# named so that the wheel and the sdist carry it.
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = ["mcp>=1.2", "pydantic>=2", "tomlkit>=0.13"]
 
 [project.urls]
-# Homepage and Issues are the same repository; both are named because they are
-# separate rows in a package index's sidebar, and "where do I report this" is
-# not a question a reader should have to answer by editing a URL.
+# The same repository twice, because a package index shows them as separate
+# links and somebody looking for where to report a problem should find one.
 Homepage = "https://github.com/ZandevOxford/outrage"
 Issues = "https://github.com/ZandevOxford/outrage/issues"
 
 [project.optional-dependencies]
-# Optional on purpose: parquet stores are for the reference-base case, and a
-# base install that only ever holds session context should not pay 36 MB of
-# wheel for them. Both halves, because a `.parquet` store is read through duckdb
-# and written by pyarrow -- `outrage pack`, and `type=parquet` when a mount asks
-# for that reader. Each module imports its library inside itself, and
-# `outrage.store._backend_for` imports a module only when a store asks for it,
-# so nothing here is touched until something does.
+# Every extra is optional because a store that only holds session context needs
+# none of them. Each library is imported inside the module that uses it, so an
+# install without one is untouched until something asks for it.
+#
+# Parquet stores, both halves: duckdb reads them, and pyarrow writes them for
+# `outrage pack` and reads one for a mount that says `type=parquet`. Together
+# they are well over 100 MB installed. duckdb's floor is the version its backend
+# was measured and built against.
 parquet = ["pyarrow>=18", "duckdb>=1.5"]
-# Reading alone. It needs no pyarrow -- the parts' footers are read through
-# duckdb itself -- so an install that only ever mounts parquet somebody else
-# built can leave pyarrow out. The floor is the version the backend was
-# measured and built against.
-duckdb = ["duckdb>=1.5"]
-# MarkItDown and the format-specific readers needed by the local document
-# ingestion path. Kept out of the base installation so a store that only holds
-# hand-written context does not import or install a conversion stack.
+# Converting other document formats for `outrage ingest`.
 documents = ["markitdown[docx,pdf,pptx,xlsx]>=0.1.7,<0.2"]
-# Every extra a user of outrage might want, since an extra cannot be installed
-# by default: the install the README recommends. Not `dev` or `docs`, which are
-# for working on outrage itself. It names the others rather than repeating
-# their requirements, so each is written once; tests/test_packaging.py fails if
-# a new one is left out.
-all = ["outrage[parquet,duckdb,documents]"]
-# hatchling and build are here because the suite builds the sdist and the wheel
-# and asserts what is in them - tests/test_packaging.py. Without them that
-# check skips, and a release can drop a file the way 0.1.0 did.
-# `twine` is here for the release process rather than the suite:
-# `reference/distribution` in the store has `twine check` as a step before
-# every upload, and nothing declared it, so preparing a release meant finding
-# an environment that happened to have it.
+# What the README recommends: every extra a user might want, named rather than
+# repeated so each requirement is written once. Not `dev` or `docs`, which are
+# for working on outrage itself; tests/test_packaging.py fails if one is missing.
+all = ["outrage[parquet,documents]"]
+# build and hatchling let the suite build the sdist and the wheel and check what
+# they contain, which it otherwise skips: a build can drop a file silently, as
+# 0.1.0 did. twine is for releases, which run `twine check` before uploading.
 dev = [
     "build>=1",
     "hatchling",
@@ -71,9 +57,8 @@ dev = [
     "ruff>=0.6",
     "twine>=5",
 ]
-# `sphinx-markdown-builder` is not optional within this extra even though only
-# `make markdown` uses it: `docs/conf.py` names it in `extensions`, so an
-# install without it cannot build the HTML either.
+# `sphinx-markdown-builder` is needed even for the HTML build, because
+# `docs/conf.py` names it in `extensions`.
 docs = ["sphinx>=8", "furo", "sphinx-markdown-builder>=0.6.11"]
 
 [project.scripts]
@@ -84,33 +69,19 @@ outrage-server = "outrage.server:main"
 path = "src/outrage/__init__.py"
 
 [tool.hatch.build.targets.sdist]
-# PyPI rejected the 0.3.0 candidate when Hatchling's moving default emitted
-# Core Metadata 2.5. Pin the newest version needed here: 2.4 carries the PEP
-# 639 licence fields above and is accepted by the publication endpoint.
+# Hatchling's default metadata version moves, and PyPI rejected 2.5. 2.4 carries
+# the PEP 639 licence fields above and is accepted.
 core-metadata-version = "2.4"
-# Both lines exist for one bug, which shipped as 0.1.0: the sdist, and so the
-# wheel built from it, silently lost `src/outrage/skills/`.
+# `.claude/skills/outrage` is a symlink into `src/outrage/skills/`, and hatchling's
+# walk visits each inode once. `.claude` sorts first, so without these two lines
+# the sdist - and the wheel built from it - loses the real directory, which is
+# how 0.1.0 shipped. `exclude` alone does not stop the walk descending;
+# `skip-excluded-dirs` does. The wheel target is unaffected because `packages`
+# starts its walk at `src/outrage`.
 #
-# hatchling walks the project with `safe_walk`, which follows symlinks and
-# refuses to visit the same (st_dev, st_ino) twice. `.claude/skills/outrage` is a
-# symlink to a directory inside `src/`, for dogfooding, and `.claude` sorts
-# before `src` - so the walk claimed that inode under `.claude` and then
-# skipped the real directory as already seen. `exclude` alone does not help:
-# hatchling only prunes a directory from the walk when `skip-excluded-dirs` is
-# set, so without it the walk still descends and still claims the inode.
-#
-# The wheel target never hit this because `packages` roots its walk at
-# `src/outrage`, which is why `pip wheel` produced a correct wheel from the
-# same commit that `python -m build` did not.
-#
-# Excluding the dogfooding config is right anyway: nothing installing outrage
-# wants this project's own `.claude`.
-#
-# `.mcp.json` is the same thing outside that directory: this repository
-# registering the server for itself, with a `command` that is an absolute path
-# into a conda environment on one machine and a `--dir` under one OneDrive
-# folder. It is `outrage config` output, it is documented in the README as
-# machine specific, and it is of no use to anybody installing this.
+# The excluded paths are also of no use to anybody installing outrage:
+# `.claude` is this repository's own harness configuration, `.mcp.json` names
+# a server command on one machine, and `import` holds separate distributions.
 exclude = [".claude", ".mcp.json", "import"]
 skip-excluded-dirs = true
 
@@ -119,11 +90,9 @@ core-metadata-version = "2.4"
 packages = ["src/outrage"]
 
 [tool.omnidep]
-# Omnidep 0.4 does not read PEP 621 optional dependencies, so it otherwise
-# reports the imports in store_parquet.py, store_duckdb.py and ingest.py despite
-# the `parquet`, `duckdb` and `documents` extras above. One entry per extra, so
-# adding an extra without adding its import here fails the check rather than
-# passing quietly.
+# omnidep 0.4 does not read PEP 621 optional dependencies, so it would report
+# the optional imports despite the extras above. One entry per optional import,
+# so adding one without listing it here fails the check.
 ignore-imports = ["pyarrow", "duckdb", "markitdown"]
 
 [tool.pytest.ini_options]

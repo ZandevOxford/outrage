@@ -78,11 +78,10 @@ with the advice to repack it -- or, for a single file, to open it with
 `type=parquet`, which still reads one -- and parts mixing versions, a repack
 left half done, are refused naming both.
 
-duckdb is an optional dependency, carried by both the `parquet` and the
-`duckdb` extras. It is imported inside this module, and this module only when
-something opens a parquet store, so an install without it is unaffected until
-then. pyarrow is not needed to read a store; only building a part is its
-business.
+duckdb is an optional dependency, installed by the `parquet` extra. It is
+imported inside this module, and this module only when something opens a
+parquet store, so an install without it is unaffected until then. pyarrow is
+not imported to read a store; only building a part is its business.
 
 ### outrage.store_duckdb.AUDIT_CHUNK *= 8192*
 
