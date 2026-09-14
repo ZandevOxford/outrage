@@ -5,28 +5,28 @@
 543 543
 
 #### source_key *: str*
-1168 1168
+1175 1175
 
 #### metadata_key *: str*
-1297 1297
+1305 1305
 
 #### headings *: int*
-1439 1439
+1448 1448
 
 #### source_characters *: int*
-1549 1549
+1559 1559
 
 #### source_bytes *: int*
-1695 1695
+1706 1706
 
 #### characters *: int*
-1907 1907
+1919 1919
 
 ### outrage.contents.make_contents(opened: Store, key: str, \*, metadata_name: str = 'contents', strip_links: bool = True) → ContentsResult
-2057 2057
+2070 2070
 
 ### outrage.contents.render_contents(markdown: str, \*, strip_links: bool = True) → str
-3265 3267
+3281 3283
 
 ### outrage.contents.render_html_contents(html: str) → str
-4325 4329
+4344 4348

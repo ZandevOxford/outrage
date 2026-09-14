@@ -767,6 +767,15 @@ def _store_file_escapes(name: Namer, /, *, filename: str, **_: Any) -> str:
     return f"store file {filename!r} climbs out of the store directory with '..'"
 
 
+@template("store-file-pattern")
+def _store_file_pattern(name: Namer, /, *, filename: str, backend: str, **_: Any) -> str:
+    return (
+        f"store file {filename!r} is a pattern, and a {backend} store is not read "
+        f"through one: only parquet parts are. Nothing of that literal name is "
+        f"created, since a mistyped wildcard would become an empty store."
+    )
+
+
 # -- store: backup ---------------------------------------------------------
 
 
@@ -1574,13 +1583,14 @@ def _store_read_only(
     #
     # The backend is named by the raise site because the reason differs
     # between the stores that refuse, and so does what to do instead: a
-    # sentence about one file written whole is wrong about a directory of them.
+    # sentence about one file written whole is wrong about a store that grows
+    # by gaining parts.
     if backend == "duckdb":
         return (
-            f"cannot {action} {name(key)!r}: it is in a duckdb store, a directory "
-            f"of parquet parts that is read and never written through. No way of "
-            f"starting the server allows a write here; a part is added by putting "
-            f"a new file in the directory, which `outrage pack` can write. ({path})"
+            f"cannot {action} {name(key)!r}: it is in a duckdb store, parquet read "
+            f"through duckdb and never written through. No way of starting the "
+            f"server allows a write here; build a new file with `outrage pack`, or "
+            f"add one as a part beside the others. ({path})"
         )
     return (
         f"cannot {action} {name(key)!r}: it is in a {backend} store, which is "
@@ -1687,26 +1697,26 @@ def _parquet_target_exists(name: Namer, /, *, path: str, **_: Any) -> str:
 @template("duckdb-needs-duckdb")
 def _duckdb_needs_duckdb(name: Namer, /, *, reason: str, **_: Any) -> str:
     return (
-        f"a duckdb store needs duckdb, which is not installed: {reason}. "
-        f"Install it with `pip install 'outrage[duckdb]'`."
+        f"a parquet store is read through duckdb, which is not installed: {reason}. "
+        f"Install it with `pip install 'outrage[parquet]'`."
     )
 
 
 @template("duckdb-store-missing")
 def _duckdb_store_missing(name: Namer, /, *, path: str, **_: Any) -> str:
     return (
-        f"there is no directory of parquet parts at {path}. A duckdb store is "
-        f"not created empty: nothing writes to it, so an empty one could only "
-        f"ever read back empty. Put the parts in a directory and name that."
+        f"there is no parquet store at {path}: no file and no directory of parts. "
+        f"A duckdb store is not created empty: nothing writes to it, so an empty "
+        f"one could only ever read back empty."
     )
 
 
-@template("duckdb-not-a-directory")
-def _duckdb_not_a_directory(name: Namer, /, *, path: str, **_: Any) -> str:
+@template("duckdb-pattern-matches-nothing")
+def _duckdb_pattern_matches_nothing(name: Namer, /, *, path: str, **_: Any) -> str:
     return (
-        f"{path} is a file, and a duckdb store is a directory of parquet parts. "
-        f"A single parquet file is read by the parquet backend, which its "
-        f"extension already chooses: drop `type=duckdb`."
+        f"the pattern {path} matches no files, so there are no parquet parts to "
+        f"read. A wildcard does not match a hidden name. A pattern matching nothing "
+        f"would mount as a store that is simply empty, so it is refused instead."
     )
 
 
@@ -1722,7 +1732,7 @@ def _duckdb_no_parts(name: Namer, /, *, path: str, **_: Any) -> str:
 @template("duckdb-part-unreadable")
 def _duckdb_part_unreadable(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
     return (
-        f"a part in {path} cannot be read as parquet, so the directory is not "
+        f"a part in {path} cannot be read as parquet, so the store is not "
         f"opened at all rather than read without it: {reason}"
     )
 
@@ -1732,7 +1742,7 @@ def _duckdb_part_not_a_store(name: Namer, /, *, path: str, **_: Any) -> str:
     return (
         f"{path} is a parquet file but not an outrage store: it carries no format "
         f"version, so its columns are somebody else's and mean something else. "
-        f"Every part in the directory has to be one `outrage pack` could have written."
+        f"Every part has to be one `outrage pack` could have written."
     )
 
 
@@ -1768,8 +1778,8 @@ def _duckdb_format_older(name: Namer, /, *, path: str, found: int, expected: int
     return (
         f"the parts in {path} are written in parquet store format {found}, and a "
         f"duckdb store reads only format {expected}: the older format's metadata "
-        f"columns would have to be re-derived from every key. The parquet backend "
-        f"still reads a single file of it; repack the parts to read them here."
+        f"columns would have to be re-derived from every key. A single file of it "
+        f"still opens with `type=parquet`; repack the parts to read them here."
     )
 
 

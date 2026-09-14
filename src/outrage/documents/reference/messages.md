@@ -91,11 +91,11 @@ no longer fixed to one store, since a table renders for whoever is reading.
 
 How a key is named when nobody says otherwise: as one store sees it.
 
-alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/library/stdtypes.html#str)], [`str`](https://docs.python.org/3/library/stdtypes.html#str)]
+alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str)], [`str`](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
-### *class* outrage.messages.NoteTable(audience: [str](https://docs.python.org/3/library/stdtypes.html#str))
+### *class* outrage.messages.NoteTable(audience: [str](https://docs.python.org/3/builtins/stdtypes.html#str))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What one audience is told about a [`Note`](notes.md#outrage.notes.Note), if anything.
 
@@ -121,7 +121,7 @@ Who this table words notes for, as a sentence would name them. It
 is only ever read by a failure -- here or in the guards -- so it is
 a phrase that can be read out in one, not an identifier.
 
-#### template(code: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]], [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]]
+#### template(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/builtins/stdtypes.html#str)]], [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/builtins/stdtypes.html#str)]]
 
 Register how this audience says `code`.
 
@@ -129,7 +129,7 @@ The function takes the namer **positionally** and the note's details by
 keyword, exactly as [`template()`](#outrage.messages.template) does above and for the same
 reason: a detail may be called `name` without colliding with it.
 
-#### silent(code: [str](https://docs.python.org/3/library/stdtypes.html#str), reason: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [None](https://docs.python.org/3/library/constants.html#None)
+#### silent(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), reason: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Declare that this audience says nothing about `code`, and why.
 
@@ -137,7 +137,7 @@ The reason is required and is the point of the call. "Not written yet"
 is a legitimate one; what is not legitimate is the empty set entry that
 reads the same whether somebody decided or nobody looked.
 
-#### render(note: [Note](notes.md#outrage.notes.Note), name: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/library/stdtypes.html#str)], [str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+#### render(note: [Note](notes.md#outrage.notes.Note), name: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 `note` as one line for this audience, or `None` where it is silent.
 
@@ -147,11 +147,11 @@ the way [`render()`](#outrage.messages.render) does for an error, because a note
 for want of an entry is indistinguishable from one deliberately not
 said, which is the distinction the whole table exists to keep.
 
-#### sentences() → [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]]
+#### sentences() → [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/builtins/stdtypes.html#str)]]
 
 The codes this audience has words for, for the guards that check them.
 
-#### silences() → [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### silences() → [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 The codes it means not to mention, and why, for the same.
 
@@ -174,13 +174,13 @@ on_conflict='overwrite-unchanged'", which is not a flag.
 Called with the argument's name, and its value where naming the value is
 what the sentence is about.
 
-alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [`str`](https://docs.python.org/3/library/stdtypes.html#str)]
+alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [`str`](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
-### outrage.messages.codes() → [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]]
+### outrage.messages.codes() → [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/builtins/stdtypes.html#str)]]
 
 The whole table, for the test that checks it against the raise sites.
 
-### outrage.messages.flag(argument: [str](https://docs.python.org/3/library/stdtypes.html#str), value: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.messages.flag(argument: [str](https://docs.python.org/3/builtins/stdtypes.html#str), value: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 An argument as a command line writes it: what a person types in a shell.
 
@@ -201,7 +201,7 @@ written, because two front ends spell flags: the command line, and
 [`outrage.server.main()`](server.md#outrage.server.main), whose refusals about a bad `--mount` go to an
 operator's stderr and not to a tool call.
 
-### outrage.messages.keyword(argument: [str](https://docs.python.org/3/library/stdtypes.html#str), value: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.messages.keyword(argument: [str](https://docs.python.org/3/builtins/stdtypes.html#str), value: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 An argument as a keyword call writes it: what an MCP tool is passed.
 
@@ -210,7 +210,7 @@ has -- a sentence naming `unchanged_since` is right for anything calling
 Python or the tools, and only a front end whose arguments are spelled some
 other way has to say so.
 
-### outrage.messages.render(error: [OutrageError](errors.md#outrage.errors.OutrageError), name: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/library/stdtypes.html#str)], [str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, spell: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.messages.render(error: [OutrageError](errors.md#outrage.errors.OutrageError), name: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, spell: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `error` as one line, named the way `name` and `spell` say.
 
@@ -223,6 +223,6 @@ reading a sentence that is not about their problem.
 an argument declare it and the rest go on absorbing it in `**_`. That is
 why no error detail may be called `spell`, which `test_messages` pins.
 
-### outrage.messages.template(code: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]], [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/library/stdtypes.html#str)]]
+### outrage.messages.template(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/builtins/stdtypes.html#str)]], [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/builtins/stdtypes.html#str)]]
 
 Register the sentence for `code`.

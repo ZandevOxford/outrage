@@ -46,9 +46,9 @@ both of them are allowed to import. Read off
 Why a write could not be checked: the record names the key the file was
 exported *from*, so it is a claim about that key and not about this one.
 
-### *class* outrage.notes.Note(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *class* outrage.notes.Note(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One situation worth remarking on, named by `code` and carrying its facts.
 
@@ -60,8 +60,8 @@ Equality is by code and details, so a test can say which notes an operation
 produced without reading anybody's prose. There is no hash: a detail is
 whatever the situation held, and some of them are lists.
 
-#### details *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
+#### details *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
 
-#### \_\_str_\_() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### \_\_str_\_() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Return str(self).

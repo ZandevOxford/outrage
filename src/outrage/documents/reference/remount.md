@@ -39,7 +39,7 @@ layer: this is the layer that knows what the change did, and it carries facts
 rather than sentences. What the tools say about them is
 [`outrage.messages.MCP`](messages.md#outrage.messages.MCP).
 
-### outrage.remount.SHIPPED *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [Store](store.md#outrage.store.Store)]]* *= mappingproxy({'outrage': <function open_documents>})*
+### outrage.remount.SHIPPED *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [Store](store.md#outrage.store.Store)]]* *= mappingproxy({'outrage': <function open_documents>})*
 
 The stores outrage ships, by the mount point each answers for, as the
 openers that produce them. This is what lets a mount be spelled without a
@@ -50,9 +50,9 @@ reason unmounting the manual would otherwise be a one-way door.
 A mapping rather than a special case for `outrage`, because the shape is
 the point: a second shipped store would be an entry here and nothing else.
 
-### *class* outrage.remount.Changed(table: [MountedStore](mounts.md#outrage.mounts.MountedStore), notes: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Note](notes.md#outrage.notes.Note), ...] = ())
+### *class* outrage.remount.Changed(table: [MountedStore](mounts.md#outrage.mounts.MountedStore), notes: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Note](notes.md#outrage.notes.Note), ...] = ())
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 A change, as the table it produced and what is worth remarking on.
 
@@ -63,11 +63,11 @@ one thing a report of a change must not be.
 
 #### table *: [MountedStore](mounts.md#outrage.mounts.MountedStore)*
 
-#### notes *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Note](notes.md#outrage.notes.Note), ...]*
+#### notes *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Note](notes.md#outrage.notes.Note), ...]*
 
-### *class* outrage.remount.Live(table: [MountedStore](mounts.md#outrage.mounts.MountedStore), \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = True)
+### *class* outrage.remount.Live(table: [MountedStore](mounts.md#outrage.mounts.MountedStore), \*, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 The table this process is serving, and the only thing that may replace it.
 
@@ -93,11 +93,11 @@ served, and would close stores the live table still shares.
 
 The table as it is now. Read it once, at the start of a call.
 
-#### *property* directory *: [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
+#### *property* directory *: [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
 
 The store directory a mounted file is named relative to.
 
-#### mount(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Changed](#outrage.remount.Changed)
+#### mount(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, file: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, type: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Changed](#outrage.remount.Changed)
 
 Open a store and mount it at `key`, replacing whatever is there.
 
@@ -123,7 +123,7 @@ mistyped name would be *created*, mount as an empty store, and read as
 though the reference base were simply empty, while the flag that was
 supposed to protect it made that impossible to notice by writing.
 
-#### unmount(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Changed](#outrage.remount.Changed)
+#### unmount(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Changed](#outrage.remount.Changed)
 
 Drop the mount at `key`, and close its store once nothing serves it.
 
@@ -132,11 +132,11 @@ the one consequence a caller is unlikely to have in mind: a mount
 *shadows*, so keys the outer store holds at the mount point have been
 unreachable for as long as it was mounted.
 
-#### close() → [None](https://docs.python.org/3/library/constants.html#None)
+#### close() → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Close every store the live table holds.
 
-### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/library/functions.html#bool), shipped: [bool](https://docs.python.org/3/library/functions.html#bool) = False, created: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/builtins/functions.html#bool), shipped: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, created: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What a mount is worth remarking on, as codes and facts.
 
@@ -162,7 +162,7 @@ the reason it can be mounted by name -- and needs no entry, because it is
 mounted by default. Telling that caller to write it down named a file they
 could not name.
 
-### outrage.remount.notes_for_unmount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, started: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.remount.notes_for_unmount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, started: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What an unmount is worth remarking on.
 

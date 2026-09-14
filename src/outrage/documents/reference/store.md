@@ -22,13 +22,14 @@ The vocabulary is the interesting part, and it is worth reading in this order:
 
 [`Store`](#outrage.store.Store) itself is abstract, and it says only what a store *does*.
 [`FileStore`](#outrage.store.FileStore) is the half of that which needs a file to answer -- where it
-lives, what version wrote it, how it is copied and checked -- and the three
+lives, what version wrote it, how it is copied and checked -- and the four
 backends are its implementations:
 [`outrage.store_sqlite.SqliteStore`](store_sqlite.md#outrage.store_sqlite.SqliteStore) is a read-write database accumulated a
 document at a time, [`outrage.store_parquet.ParquetStore`](store_parquet.md#outrage.store_parquet.ParquetStore) is one
 columnar file written whole and read many times, for a reference base of tens
-of thousands of documents, and
-[`outrage.store_files.FilesystemStore`](store_files.md#outrage.store_files.FilesystemStore) is a directory of files, whose
+of thousands of documents, [`outrage.store_duckdb.DuckdbStore`](store_duckdb.md#outrage.store_duckdb.DuckdbStore) reads the
+same files -- one, or many named by a directory or a pattern -- through duckdb,
+and [`outrage.store_files.FilesystemStore`](store_files.md#outrage.store_files.FilesystemStore) is a directory of files, whose
 "file" is that directory. They share none of the storage and every word of
 the vocabulary below, which is the point of the split.
 [`outrage.mounts.MountedStore`](mounts.md#outrage.mounts.MountedStore) is a [`Store`](#outrage.store.Store) and not a
@@ -74,7 +75,7 @@ The backend a store is kept in when nobody says otherwise, and so the one an
 unrecognised extension falls back to. See `_backend_for()` for why the
 fallback is a fallback rather than a refusal.
 
-### outrage.store.backend_names() → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...]
+### outrage.store.backend_names() → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...]
 
 Every backend a store may be opened as, by name.
 
@@ -82,7 +83,7 @@ What a `type=` option may say, for the front ends that document it and
 the refusal that lists it -- one answer from the registry rather than a
 list retyped in each place that needs to name them.
 
-### outrage.store.check_read_position(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int), byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), occurrence: [int](https://docs.python.org/3/library/functions.html#int)) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.store.check_read_position(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int), byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), occurrence: [int](https://docs.python.org/3/builtins/functions.html#int)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Refuse a read that names its position twice, or names it impossibly.
 
@@ -92,7 +93,7 @@ question the store has no answer to. `offset=0` beside a byte offset is
 not that pair -- it cannot be told from silence, and does not need to be,
 since both spell the start of the document.
 
-### outrage.store.check_unchanged(opened: [Store](#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), \*, action: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'write over', subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = True, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.store.check_unchanged(opened: [Store](#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), \*, action: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = 'write over', subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Refuse, before anything is written, if `key` moved since the watermark.
 
@@ -134,7 +135,7 @@ Default directory name, relative to the working directory, when neither
 Cap on a single retrieve, so one oversized document cannot flood an agent's
 context window. The caller pages with the returned next_offset.
 
-### outrage.store.ENCODINGS *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...]* *= ('json-string',)*
+### outrage.store.ENCODINGS *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...]* *= ('json-string',)*
 
 The same, as a tuple. See [`FORMATS`](#outrage.store.FORMATS) for why it is derived.
 
@@ -153,7 +154,7 @@ no bound of its own on which part of the hierarchy it reads.
 
 This one could not cross, and the rest were still tried. `reason` says why.
 
-### outrage.store.FORMATS *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...]* *= ('markdown', 'json', 'text', 'html')*
+### outrage.store.FORMATS *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...]* *= ('markdown', 'json', 'text', 'html')*
 
 The same four as a tuple, for membership tests and for argparse `choices`.
 Derived from [`Format`](#outrage.store.Format) rather than written twice: a front end validates
@@ -224,9 +225,9 @@ Both values, in the order a refusal lists them.
 
 The outcome recorded on a [`Transfer`](#outrage.store.Transfer): it crossed.
 
-### *class* outrage.store.AuditRow(key: [str](https://docs.python.org/3/library/stdtypes.html#str), doc_key: [str](https://docs.python.org/3/library/stdtypes.html#str), meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), parent: [str](https://docs.python.org/3/library/stdtypes.html#str), chars: [int](https://docs.python.org/3/library/functions.html#int))
+### *class* outrage.store.AuditRow(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), doc_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), parent: [str](https://docs.python.org/3/builtins/stdtypes.html#str), chars: [int](https://docs.python.org/3/builtins/functions.html#int))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One stored row as its backend actually holds it, bookkeeping included.
 
@@ -240,58 +241,58 @@ So this is the audit surface and not a second way to read. It yields every
 row, metadata included, in one pass and in no promised order, and it is the
 only place a backend's own bookkeeping is named outside the backend.
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### doc_key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### doc_key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The document this row belongs to: itself, or the document its metadata
 is attached to.
 
-#### meta_name *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### meta_name *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 None for a document, the metadata name otherwise.
 
-#### parent *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### parent *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The parent this row is *stored* under, which is the value being checked
 and not the one [`outrage.keys.parse()`](keys.md#outrage.keys.parse) would derive.
 
-#### chars *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### chars *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-### *class* outrage.store.Backup(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), bytes: [int](https://docs.python.org/3/library/functions.html#int), documents: [int](https://docs.python.org/3/library/functions.html#int), integrity: [str](https://docs.python.org/3/library/stdtypes.html#str))
+### *class* outrage.store.Backup(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), bytes: [int](https://docs.python.org/3/builtins/functions.html#int), documents: [int](https://docs.python.org/3/builtins/functions.html#int), integrity: [str](https://docs.python.org/3/builtins/stdtypes.html#str))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 A copy of a store, and the evidence that it is a real one.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-#### bytes *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### bytes *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### documents *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### documents *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Rows copied, checked against the source rather than assumed.
 
-#### integrity *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### integrity *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 What SQLite's own integrity_check said. 'ok' when sound.
 
-### *exception* outrage.store.BackendError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.store.BackendError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/library/exceptions.html#RuntimeError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/builtins/exceptions.html#RuntimeError)
 
 Raised when a backend cannot be used: absent, or asked for a file it
 did not write.
 
-### *exception* outrage.store.BackupError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.store.BackupError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/library/exceptions.html#RuntimeError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/builtins/exceptions.html#RuntimeError)
 
 Raised when a backup cannot be taken, or cannot be shown to be good.
 
-### *class* outrage.store.BoundedSubtree(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, depth: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store.BoundedSubtree(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, depth: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 A key and how far below it to descend: what a subtree read is *about*.
 
@@ -305,13 +306,13 @@ a traversal stepping over a mounted store needs.
 `key` of None is the root, which is every key. `depth` is counted in
 segments from `key`, and None is unlimited.
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### depth *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### depth *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-### *exception* outrage.store.ChangedSinceError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.store.ChangedSinceError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 Raised when what a write was about to land on moved since the caller looked.
 
@@ -326,15 +327,15 @@ window from the length of the run to the gap between the check and the
 write. And it sees **edits, not deletions** -- a key removed since the
 watermark leaves no row to carry a timestamp.
 
-### *class* outrage.store.DocumentMatch(document: [Entry](#outrage.store.Entry), witnesses: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[MatchWitness](#outrage.store.MatchWitness), ...])
+### *class* outrage.store.DocumentMatch(document: [Entry](#outrage.store.Entry), witnesses: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[MatchWitness](#outrage.store.MatchWitness), ...])
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 A selected document and the bounded evidence that selected it.
 
 #### document *: [Entry](#outrage.store.Entry)*
 
-#### witnesses *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[MatchWitness](#outrage.store.MatchWitness), ...]*
+#### witnesses *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[MatchWitness](#outrage.store.MatchWitness), ...]*
 
 ### outrage.store.Encoding
 
@@ -344,9 +345,9 @@ always decoded back to plain text before it is written. See `_decode`.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['json-string']
 
-### *class* outrage.store.Entry(key: [str](https://docs.python.org/3/library/stdtypes.html#str), kind: [str](https://docs.python.org/3/library/stdtypes.html#str), size: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), descendants: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, descendant_documents: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, descendant_chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store.Entry(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), kind: [str](https://docs.python.org/3/builtins/stdtypes.html#str), size: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), descendants: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, descendant_documents: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, descendant_chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One key immediately below some other key.
 
@@ -354,26 +355,26 @@ The first five fields are the key's **own** row. The last three describe
 what lies *below* it and are None unless a listing was asked for them --
 see [`Store.list_keys()`](#outrage.store.Store.list_keys).
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### kind *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### kind *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 'document', 'metadata', or 'implicit' for a key that exists only because
 something beneath it does.
 
-#### size *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### size *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### format *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### format *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### updated_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### updated_at *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### descendants *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### descendants *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Stored keys strictly below this one, metadata included -- and *stored*,
 so an implicit key is not one of them. A level can show more children than
 the number below their parent.
 
-#### descendant_documents *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### descendant_documents *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Those of them that are documents. **A key with a metadata segment
 anywhere in its path is metadata**, at any depth, so `a/!x/y` is not one
@@ -382,25 +383,25 @@ is decided by the last segment alone, so `a/!x/y` *lists* inside `a/!x`
 as the ordinary document it is and is still metadata as far as `a` is
 concerned. Comparing this against a count of listed kinds will disagree.
 
-#### descendant_chars *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### descendant_chars *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Characters held across everything strictly below this one.
 
-### *class* outrage.store.Excerpt(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str), offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), returned: [int](https://docs.python.org/3/library/functions.html#int), total: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), next_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), byte_offset: [int](https://docs.python.org/3/library/functions.html#int), total_bytes: [int](https://docs.python.org/3/library/functions.html#int), next_byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None))
+### *class* outrage.store.Excerpt(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str), offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), returned: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), next_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int), total_bytes: [int](https://docs.python.org/3/builtins/functions.html#int), next_byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 Some or all of one document's content.
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### content *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### content *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### format *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### format *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### updated_at *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### updated_at *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### offset *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### offset *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Character offset within the document at which content starts, or None
 when the read was addressed in bytes. A caller gets the unit they asked
@@ -409,40 +410,40 @@ offset exists to avoid, so it is reported unknown rather than paid for
 unasked. Both numbers for one position come from `!contents`, where they
 are already a pair.
 
-#### returned *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### returned *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Number of characters returned.
 
-#### total *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### total *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Total length of the document in characters, or None when the read was
 addressed in bytes and the backend would have to scan the whole document
 to count them. `total_bytes` is the size such a read reports.
 
-#### next_offset *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### next_offset *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Where to resume in characters, or None if this excerpt reached the end
 -- and None throughout a byte-addressed read, which resumes at
 `next_byte_offset`.
 
-#### byte_offset *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### byte_offset *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Byte offset within the document's UTF-8 at which content starts, always
 known. Where the read *actually* began: a byte offset landing inside a
 character is snapped back to that character's first byte, so this differing
 from what was asked for is normal and is not an error.
 
-#### total_bytes *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### total_bytes *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Total length of the document in UTF-8 bytes.
 
-#### next_byte_offset *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### next_byte_offset *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Where to resume in bytes, or None if this excerpt reached the end.
 Always on a character boundary, so paging by it reassembles the document
 exactly.
 
-#### *property* truncated *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* truncated *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether part of the document was left unread.
 
@@ -455,7 +456,7 @@ characters were the only unit: a byte-addressed read leaves that None
 while the document plainly continues, so the old definition reported
 every one of them as complete.
 
-### *class* outrage.store.FileStore(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store.FileStore(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`Store`](#outrage.store.Store)
 
@@ -481,7 +482,7 @@ and `directory` to its parent, so a backup of it lands beside the
 corpus rather than inside it. The name means the same thing -- the one
 place on disk this store *is* -- and only its kind differs.
 
-#### default_filename *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
+#### default_filename *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
 
 What this backend calls its store file when a caller names none. Set by
 every concrete backend, and the only thing about the file a backend
@@ -489,7 +490,7 @@ decides: that it *is* a file inside a directory is settled above, by
 [`store_file()`](#outrage.store.store_file). [`default_store_file()`](#outrage.store.default_store_file) is how the rest of the
 package asks for it without naming a backend to ask.
 
-#### format_version *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[int](https://docs.python.org/3/library/functions.html#int)]*
+#### format_version *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[int](https://docs.python.org/3/builtins/functions.html#int)]*
 
 The version of its own on-disk format this build writes. Compared
 against [`stored_format_version`](#outrage.store.FileStore.stored_format_version) by [`outrage.maintenance.check()`](maintenance.md#outrage.maintenance.check),
@@ -497,7 +498,14 @@ which is why the comparison is written once rather than per backend --
 "written by a newer outrage than this" is the same fault whatever wrote it,
 even though each backend records the number somewhere different.
 
-#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/library/functions.html#bool) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
+#### reads_patterns *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= False*
+
+Whether a store file may be a glob pattern naming several files, which
+only a backend reading a store out of many files can mean. Every other
+backend refuses one that matches nothing on disk, rather than creating a
+store literally called `*.sqlite`.
+
+#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
 This backend's store, named as a file inside a store directory.
 
@@ -545,7 +553,7 @@ in the override, because only the backend knows what that is -- and a
 copy opened under a different policy from the store it was copied from
 would compare short against it for a reason that is not a fault.
 
-#### backup(destination: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Backup](#outrage.store.Backup)
+#### backup(destination: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, overwrite: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Backup](#outrage.store.Backup)
 
 Copy the store to `destination`, and verify the copy.
 
@@ -593,7 +601,7 @@ better to ask.
 there is no second opinion to report. A backend whose storage has one
 says what it said.
 
-#### backup_path(destination: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None), \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+#### backup_path(destination: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None), \*, overwrite: [bool](https://docs.python.org/3/builtins/functions.html#bool)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Settle where the copy goes, and refuse the destinations that destroy.
 
@@ -607,7 +615,7 @@ refusals are the point of it, and neither is about storage: a
 destination that is the store itself destroys what it was copying, and
 one that already exists destroys whatever was there.
 
-#### *abstract property* stored_format_version *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### *abstract property* stored_format_version *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 The format version recorded *in the file this store opened*.
 
@@ -631,7 +639,7 @@ worth checking is large enough for a second pass to be felt.
 Order is not promised. Nothing auditing rows one at a time depends on
 it, and a backend held in key order should not have to pay to prove it.
 
-#### *abstractmethod* check_file(report: [Report](maintenance.md#outrage.maintenance.Report)) → [None](https://docs.python.org/3/library/constants.html#None)
+#### *abstractmethod* check_file(report: [Report](maintenance.md#outrage.maintenance.Report)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Add what only this backend can say about its own file.
 
@@ -645,7 +653,7 @@ Fills in [`details`](maintenance.md#outrage.maintenance.Report.details) with the
 worth printing whether or not anything is wrong, and appends to
 `problems` for anything that is.
 
-#### *abstractmethod* repair() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Repaired](maintenance.md#outrage.maintenance.Repaired)]
+#### *abstractmethod* repair() → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Repaired](maintenance.md#outrage.maintenance.Repaired)]
 
 Fix what [`check_file()`](#outrage.store.FileStore.check_file) found and this backend can act on.
 
@@ -670,9 +678,9 @@ for, never inferred. See `_detect_format()`.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['markdown', 'json', 'text', 'html']
 
-### *exception* outrage.store.InvalidArgumentError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.store.InvalidArgumentError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 Raised when an argument's *value* is one the caller can correct.
 
@@ -693,15 +701,15 @@ Kept a `ValueError` too, so `except ValueError` around a store call
 goes on working. That matters more here than elsewhere, because the mcp
 SDK's own boundary catches on the class.
 
-### *exception* outrage.store.KeyNotFoundError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.store.KeyNotFoundError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`LookupError`](https://docs.python.org/3/library/exceptions.html#LookupError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`LookupError`](https://docs.python.org/3/builtins/exceptions.html#LookupError)
 
 Raised when a key holds no content.
 
-### *class* outrage.store.KeyRange(after: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, after_inclusive: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, after_subtree: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, before: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, before_inclusive: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, final_subtree: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store.KeyRange(after: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, after_inclusive: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, after_subtree: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, before: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, before_inclusive: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, final_subtree: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 A stretch of the key order, named by keys rather than by positions.
 
@@ -737,17 +745,17 @@ had got to.
 
 Nothing set means no bound at all, so `KeyRange()` is every key.
 
-#### after *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### after *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### after_inclusive *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### after_inclusive *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### after_subtree *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### after_subtree *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### before *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### before *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### before_inclusive *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### before_inclusive *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### final_subtree *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### final_subtree *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 ### outrage.store.MatchMode
 
@@ -755,32 +763,32 @@ How one search criterion compares its pattern with a stored value.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['contains', 'line', 'regex']
 
-### *class* outrage.store.MatchWitness(criterion: [int](https://docs.python.org/3/library/functions.html#int), source_key: [str](https://docs.python.org/3/library/stdtypes.html#str), source: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata'], start: [int](https://docs.python.org/3/library/functions.html#int), end: [int](https://docs.python.org/3/library/functions.html#int))
+### *class* outrage.store.MatchWitness(criterion: [int](https://docs.python.org/3/builtins/functions.html#int), source_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), source: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata'], start: [int](https://docs.python.org/3/builtins/functions.html#int), end: [int](https://docs.python.org/3/builtins/functions.html#int))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 The first stored span satisfying one search criterion.
 
-#### criterion *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### criterion *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### source_key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### source_key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 #### source *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata']*
 
-#### start *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### start *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### end *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### end *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 ### outrage.store.MetaReader
 
 What [`meta_reader()`](#outrage.store.meta_reader) returns: a row's key and its stored metadata split,
 in; the split as the scope sees it, out.
 
-alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None)], [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None)]]
+alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)], [`tuple`](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)]]
 
-### *class* outrage.store.MissingMeta(total: [int](https://docs.python.org/3/library/functions.html#int), total_chars: [int](https://docs.python.org/3/library/functions.html#int), sample: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)])
+### *class* outrage.store.MissingMeta(total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), sample: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)])
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 Documents one page of a metadata survey could not show, over its window.
 
@@ -788,20 +796,20 @@ Stats about a window rather than a page of one, so there is no cursor:
 the window is already bounded at both ends by the page it describes, and a
 cursor here would name a position in a collection no argument resumes.
 
-#### total *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### total *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Documents in the window carrying none of the names asked for.
 
-#### total_chars *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### total_chars *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Characters stored across those documents, which is the other half of
 what a caller needs to decide whether to go and look.
 
-#### sample *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
+#### sample *: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
 
 Up to a requested number of their keys. The count is exact; this is not.
 
-### *class* outrage.store.Page(items: [list](https://docs.python.org/3/library/stdtypes.html#list)[T], returned: [int](https://docs.python.org/3/library/functions.html#int), total: [int](https://docs.python.org/3/library/functions.html#int), total_chars: [int](https://docs.python.org/3/library/functions.html#int), next_cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None))
+### *class* outrage.store.Page(items: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[T], returned: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None))
 
 Bases: [`Generic`](https://docs.python.org/3/library/typing.html#typing.Generic)
 
@@ -813,28 +821,28 @@ does not state the size of the whole is not actionable: 20 keys of 22 is a
 listing, 20 keys of 40000 is a sample, and a caller that cannot tell them
 apart treats them the same.
 
-#### items *: [list](https://docs.python.org/3/library/stdtypes.html#list)[T]*
+#### items *: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[T]*
 
-#### returned *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### returned *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Items in this page.
 
-#### total *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### total *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Items in the whole collection, which is what this page is part of.
 
-#### total_chars *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### total_chars *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Characters stored across that whole collection. Named apart from
 `total` deliberately: 12000 documents beneath a key is a different
 prospect from 40 MB beneath it, and no caller should be able to read one
 number as the other.
 
-#### next_cursor *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### next_cursor *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Key to resume after, or None when the page reached the end.
 
-#### *property* truncated *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* truncated *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether the collection continues past this page.
 
@@ -843,15 +851,15 @@ selection and `returned` only this page, so that comparison is true
 of every page but the last *and* of a page that ended exactly at the
 end. The cursor is the one that knows.
 
-### *exception* outrage.store.PatternNotFoundError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.store.PatternNotFoundError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`LookupError`](https://docs.python.org/3/library/exceptions.html#LookupError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`LookupError`](https://docs.python.org/3/builtins/exceptions.html#LookupError)
 
 Raised when a search pattern does not occur in a document.
 
-### *exception* outrage.store.ReadOnlyStoreError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.store.ReadOnlyStoreError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`PermissionError`](https://docs.python.org/3/library/exceptions.html#PermissionError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`PermissionError`](https://docs.python.org/3/builtins/exceptions.html#PermissionError)
 
 Raised when a store is asked to write and its backend cannot.
 
@@ -868,23 +876,23 @@ Whether any criterion or every criterion selects a document.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['any', 'all']
 
-### *class* outrage.store.SearchCriterion(pattern: [str](https://docs.python.org/3/library/stdtypes.html#str), match: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['contains', 'line', 'regex'], target: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata'], meta_name: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...] | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store.SearchCriterion(pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str), match: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['contains', 'line', 'regex'], target: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata'], meta_name: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...] | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One targeted condition in a document search.
 
-#### pattern *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### pattern *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 #### match *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['contains', 'line', 'regex']*
 
 #### target *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata']*
 
-#### meta_name *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), ...] | [None](https://docs.python.org/3/library/constants.html#None)*
+#### meta_name *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...] | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-### *class* outrage.store.SearchPage(matches: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[DocumentMatch](#outrage.store.DocumentMatch), ...], matched: [int](https://docs.python.org/3/library/functions.html#int), matched_chars: [int](https://docs.python.org/3/library/functions.html#int), scanned: [int](https://docs.python.org/3/library/functions.html#int), total_candidates: [int](https://docs.python.org/3/library/functions.html#int), total_candidate_chars: [int](https://docs.python.org/3/library/functions.html#int), next_cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None))
+### *class* outrage.store.SearchPage(matches: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[DocumentMatch](#outrage.store.DocumentMatch), ...], matched: [int](https://docs.python.org/3/builtins/functions.html#int), matched_chars: [int](https://docs.python.org/3/builtins/functions.html#int), scanned: [int](https://docs.python.org/3/builtins/functions.html#int), total_candidates: [int](https://docs.python.org/3/builtins/functions.html#int), total_candidate_chars: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 Matches from one bounded candidate window.
 
@@ -892,19 +900,19 @@ Unlike [`Page`](#outrage.store.Page), the totals describe the candidate selectio
 than the filtered matches. Discovering a global match total would require
 searching the whole selection and defeat the scan bound.
 
-#### matches *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[DocumentMatch](#outrage.store.DocumentMatch), ...]*
+#### matches *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[DocumentMatch](#outrage.store.DocumentMatch), ...]*
 
-#### matched *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### matched *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### matched_chars *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### matched_chars *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### scanned *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### scanned *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### total_candidates *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### total_candidates *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### total_candidate_chars *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### total_candidate_chars *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### next_cursor *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### next_cursor *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 ### outrage.store.SearchTarget
 
@@ -912,7 +920,7 @@ Which part of a document one search criterion examines.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata']
 
-### *class* outrage.store.Store(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store.Store(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`ABC`](https://docs.python.org/3/library/abc.html#abc.ABC)
 
@@ -935,7 +943,7 @@ them.
 [`default_store()`](#outrage.store.default_store) is what a caller uses to get one of these without
 naming a backend.
 
-#### writable *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= True*
+#### writable *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= True*
 
 Whether this backend can be written at all. False says the *storage*
 refuses, which is not the same as a store that was mounted read-only:
@@ -945,7 +953,7 @@ anyway gets [`ReadOnlyStoreError`](#outrage.store.ReadOnlyStoreError) from the b
 var nobody consulted must not be the only thing standing between a
 corpus and a half-written file.
 
-#### versioned *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= False*
+#### versioned *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= False*
 
 Whether this backend can keep what a write replaces or a delete takes.
 A capability, not whether a particular store is doing it: a store that
@@ -954,7 +962,7 @@ the opposite of `writable`, because a backend that forgets to say
 should report itself as keeping nothing rather than as keeping history
 it does not have.
 
-#### writes_deferred *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= False*
+#### writes_deferred *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= False*
 
 Whether a write here is only visible once the whole store is written.
 True for a store built in one pass, where nothing exists until all of it
@@ -962,13 +970,13 @@ does -- so a transfer into one reports [`READ`](#outrage.store.READ) rather than
 [`WROTE`](#outrage.store.WROTE), because an interrupted run wrote nothing and a report
 saying otherwise would be one the interruption made untrue.
 
-#### backend_name *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/library/stdtypes.html#str)]*
+#### backend_name *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
 
 What this backend is called where a report or a refusal has to name it.
 A short lowercase word, matching the store file's extension, so that a
 sentence about a store and the name of its file agree.
 
-#### *abstractmethod* close() → [None](https://docs.python.org/3/library/constants.html#None)
+#### *abstractmethod* close() → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Release whatever this store holds open.
 
@@ -977,7 +985,7 @@ released is the backend's business -- a store that holds nothing open
 has nothing to do here -- but a caller is entitled to say it is
 finished, and to have that mean something.
 
-#### *abstractmethod* store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, contents: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### *abstractmethod* store_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, contents: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, encoding: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Store `content` at `key`, overwriting anything already there.
 
@@ -1023,7 +1031,7 @@ legitimately restamp are copying something that was already stamped.
 Every refusal above is `_validated()`'s, which an implementation
 calls before it writes anything.
 
-#### copy_from(source: [Store](#outrage.store.Store), subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Generator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Generator)[[Transfer](#outrage.store.Transfer), [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+#### copy_from(source: [Store](#outrage.store.Store), subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, reroot: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, on_conflict: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = SKIP, unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Generator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Generator)[[Transfer](#outrage.store.Transfer), [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 
 Write every document `source` holds in `subtree` into this store.
 
@@ -1090,7 +1098,7 @@ rather than at the top of this module: a store's own reads are pages,
 deliberately, and the caller that legitimately wants all of it lives
 there. A copy is that caller.
 
-#### located(key: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None)
+#### located(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The file this store keeps `key` in, when there is one to name.
 
@@ -1104,7 +1112,7 @@ returns. A copy into a directory of files is worth reading as key to
 path, and the store on the far end is the only thing that knows which
 path, so [`Transfer`](#outrage.store.Transfer) carries it and this is where it comes from.
 
-#### *abstractmethod* delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### *abstractmethod* delete(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 Delete `key`, returning the keys actually removed.
 
@@ -1147,7 +1155,7 @@ moved can look at it and run the delete again, and a caller handed half
 a subtree cannot put it back. See [`check_unchanged()`](#outrage.store.check_unchanged), and note
 that what it cannot see is a key somebody else *deleted* since.
 
-#### *abstractmethod* descendant_count(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [int](https://docs.python.org/3/library/functions.html#int)
+#### *abstractmethod* descendant_count(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [int](https://docs.python.org/3/builtins/functions.html#int)
 
 How many stored keys lie strictly below `key`.
 
@@ -1177,7 +1185,7 @@ See [`outrage.keys.meta_range()`](keys.md#outrage.keys.meta_range).
 that includes keys a mount has made unreachable tells a caller to pass
 `recursive` to remove keys that are not there to remove.
 
-#### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+#### latest_change(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The newest `updated_at` below `key`, or None where nothing is.
 
@@ -1209,7 +1217,7 @@ which is every store's answer until it has a better one: a database
 has `max()`, a sorted file has a row range, and a directory of files
 has the walk this does.
 
-#### subtree_totals(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [SubtreeTotals](#outrage.store.SubtreeTotals)
+#### subtree_totals(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [SubtreeTotals](#outrage.store.SubtreeTotals)
 
 What lies strictly below `key`, counted and optionally measured.
 
@@ -1255,7 +1263,7 @@ The default walks, which is every store's answer until it has a better
 one, and it is the answer [`MountedStore`](mounts.md#outrage.mounts.MountedStore) would
 otherwise have no way to give for a store spliced under a prefix.
 
-#### *abstractmethod* exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
+#### *abstractmethod* exists(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether `key` itself holds a document.
 
@@ -1266,7 +1274,7 @@ nothing itself is free for a document to be written to.
 Deliberately cheaper than a read, since the answer is wanted for every
 file in an import and the content is not.
 
-#### *abstractmethod* level_entry(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Entry](#outrage.store.Entry) | [None](https://docs.python.org/3/library/constants.html#None)
+#### *abstractmethod* level_entry(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Entry](#outrage.store.Entry) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 How `key` appears in its parent's listing, or None if it does not.
 
@@ -1281,7 +1289,7 @@ descendants -- gets one corner wrong: metadata sits *at* a key rather
 than below it, so a key holding only metadata has no document and no
 descendants and still appears in the listing.
 
-#### *abstractmethod* retrieve_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, length: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/library/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](#outrage.store.Excerpt)
+#### *abstractmethod* retrieve_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, length: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](#outrage.store.Excerpt)
 
 Read the content stored at `key`.
 
@@ -1301,7 +1309,7 @@ cannot converts and slices -- and that contract is what makes a byte
 offset something a caller can carry between stores, and out of the
 store altogether to a file [`bulk()`](bulk.md#module-outrage.bulk) exported.
 
-#### *abstractmethod* list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, descendant_counts: [bool](https://docs.python.org/3/library/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Page](#outrage.store.Page)[[Entry](#outrage.store.Entry)]
+#### *abstractmethod* list_keys(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, descendant_counts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Page](#outrage.store.Page)[[Entry](#outrage.store.Entry)]
 
 List the keys immediately below `key`, or below the root.
 
@@ -1348,7 +1356,7 @@ Concrete where a backend has nothing faster: [`subtree_totals()`](#outrage.store
 the one call each of these needs, and `_with_descendants()` fills a
 page from it.
 
-#### last_child(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+#### last_child(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The final segment of the last key immediately below `key`.
 
@@ -1378,7 +1386,7 @@ actually reaches and the wrong shape if one ever holds thousands: the
 fix then is an override selecting one row in descending order, not a
 second definition of what "last" means.
 
-#### *abstractmethod* get_documents(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](#outrage.store.Page)[[Excerpt](#outrage.store.Excerpt)]
+#### *abstractmethod* get_documents(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Page](#outrage.store.Page)[[Excerpt](#outrage.store.Excerpt)]
 
 Read everything `subtree` names, in key order.
 
@@ -1404,7 +1412,7 @@ the two axes multiply, and a hundred documents at two thousand
 characters each honours both stated bounds while returning two hundred
 thousand characters.
 
-#### find_documents(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, criteria: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[SearchCriterion](#outrage.store.SearchCriterion)], combine: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['any', 'all'] = 'any', key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, scan_limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [SearchPage](#outrage.store.SearchPage)
+#### find_documents(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, criteria: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[SearchCriterion](#outrage.store.SearchCriterion)], combine: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['any', 'all'] = 'any', key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, scan_limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [SearchPage](#outrage.store.SearchPage)
 
 Search one bounded window of documents and their direct metadata.
 
@@ -1417,7 +1425,7 @@ backend and [`MountedStore`](mounts.md#outrage.mounts.MountedStore) shares one b
 implementation. A backend override is only an optimization and can be
 checked against this method as its oracle.
 
-#### *abstractmethod* missing_meta_stats(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/library/functions.html#int) = 0) → [MissingMeta](#outrage.store.MissingMeta)
+#### *abstractmethod* missing_meta_stats(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/builtins/functions.html#int) = 0) → [MissingMeta](#outrage.store.MissingMeta)
 
 What a metadata survey could not see, over exactly one page's window.
 
@@ -1442,7 +1450,7 @@ the position of `doc/!name`. That is part of the contract rather than
 an implementation detail -- it is what decides which window a document
 is counted in, and so what makes a caller's windows tile.
 
-#### *abstractmethod* keys_missing_meta(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = 'title', limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](#outrage.store.Page)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### *abstractmethod* keys_missing_meta(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Page](#outrage.store.Page)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 Document keys in `subtree` carrying none of `meta_name`.
 
@@ -1454,9 +1462,9 @@ for the same reason: the two have to be askable over one stretch of the
 store, and to agree about what was in range, or they stop describing
 the same one.
 
-### *exception* outrage.store.StoreFileError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.store.StoreFileError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 A store file that does not name a file inside its directory.
 
@@ -1466,9 +1474,9 @@ free of absolute paths that stop being true when a project moves. An
 absolute path, or one climbing out with `..`, is refused here rather than
 quietly opening a database somewhere nobody was looking.
 
-### *class* outrage.store.SubtreeTotals(keys: [int](https://docs.python.org/3/library/functions.html#int), documents: [int](https://docs.python.org/3/library/functions.html#int), chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None))
+### *class* outrage.store.SubtreeTotals(keys: [int](https://docs.python.org/3/builtins/functions.html#int), documents: [int](https://docs.python.org/3/builtins/functions.html#int), chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 How much lies strictly below one key, in the three numbers a map needs.
 
@@ -1482,7 +1490,7 @@ question about the territory.
 What [`Store.subtree_totals()`](#outrage.store.Store.subtree_totals) answers, and what fills in the last three
 fields of an [`Entry`](#outrage.store.Entry).
 
-#### keys *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### keys *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Every **stored** key below, metadata included.
 
@@ -1493,7 +1501,7 @@ number below their parent, and that is the same arithmetic
 [`Store.descendant_count()`](#outrage.store.Store.descendant_count) has always done. The alternative is a second
 definition of "how many", which is the thing this is here to avoid.
 
-#### documents *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### documents *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Those of them that are documents. **A key with a metadata segment
 anywhere in its path is metadata**, at any depth, so `a/!x/y` is not one
@@ -1503,7 +1511,7 @@ the ordinary document it is, and is still metadata as far as `a` is
 concerned. Two questions, two answers, and a caller comparing this against
 a count of listed kinds will find they disagree.
 
-#### chars *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### chars *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Characters stored across all of them, or None when they were not asked
 for. Separated from the counts because it is the expensive half: a count
@@ -1512,9 +1520,9 @@ cache does not save them -- it holds only documents over
 [`LENGTH_THRESHOLD`](store_sqlite.md#outrage.store_sqlite.LENGTH_THRESHOLD), and the cost here is the
 many small rows.
 
-### *class* outrage.store.Transfer(action: [str](https://docs.python.org/3/library/stdtypes.html#str), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None), reason: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, characters: [int](https://docs.python.org/3/library/functions.html#int) = 0, error: [OutrageError](errors.md#outrage.errors.OutrageError) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.store.Transfer(action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None), reason: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, characters: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, error: [OutrageError](errors.md#outrage.errors.OutrageError) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One document crossing from one store to another, or not, and why not.
 
@@ -1548,19 +1556,19 @@ document written again since the caller looked, and what the operating
 system said about a file, which has no code to carry. Exactly one of the
 two is set.
 
-#### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### reason *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### reason *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-#### characters *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### characters *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### error *: [OutrageError](errors.md#outrage.errors.OutrageError) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### error *: [OutrageError](errors.md#outrage.errors.OutrageError) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-### outrage.store.default_store(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, backend: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning_default: [bool](https://docs.python.org/3/library/functions.html#bool) = True, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [FileStore](#outrage.store.FileStore)
+### outrage.store.default_store(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, backend: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning_default: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [FileStore](#outrage.store.FileStore)
 
 A store of the backend this build opens when nobody names one.
 
@@ -1589,7 +1597,7 @@ beats a default**, and only a statement is refused by a backend that
 cannot version. The default is only passed on to a backend that can, so a
 run whose table holds a parquet store can still turn versioning off.
 
-### outrage.store.default_store_file() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.store.default_store_file() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 What the default backend calls its store file.
 
@@ -1603,7 +1611,7 @@ having to name one to print a default.
 It is the root mount when `--root-mount` names nothing else, and the file
 a bare `--dir` opens.
 
-### outrage.store.entry_kind(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.store.entry_kind(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Whether `key` lists as `"metadata"` or as `"document"`.
 
@@ -1616,7 +1624,16 @@ turns to metadata, which is a different question and the wrong one here.
 Shared by all three backends, so a listing cannot mean one thing in SQL and
 another on a filesystem.
 
-### outrage.store.meta_reader(scope: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)], [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]]
+### outrage.store.is_pattern(filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
+
+Whether `filename` would be read as a glob pattern where a pattern is read.
+
+Only a *would*: a name that exists on disk is that file whatever characters
+it holds, so `notes[old].sqlite` goes on opening as itself. That half is
+decided where there is a directory to look in -- [`store_present()`](#outrage.store.store_present) and
+the backend -- and this is the half that needs none.
+
+### outrage.store.meta_reader(scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)], [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]]
 
 How to read a row's metadata split from inside `scope`.
 
@@ -1634,11 +1651,23 @@ metadata namespace only when scoped inside one lives** for the backends
 that hold their rows in memory; `store_sqlite._meta_clauses` is the same
 rule as SQL.
 
-### outrage.store.open_store(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, backend: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning_default: [bool](https://docs.python.org/3/library/functions.html#bool) = True, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[FileStore](#outrage.store.FileStore)]
+### outrage.store.open_store(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, backend: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning_default: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[FileStore](#outrage.store.FileStore)]
 
 Open a store, closing it on exit.
 
-### outrage.store.read_all(store: [Store](#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Excerpt](#outrage.store.Excerpt)
+### outrage.store.pattern_matches(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]
+
+The files a store-file pattern names, inside `directory`, in path order.
+
+Matched against the name *relative* to the directory, so a store directory
+whose own path holds a `[` is not read as part of the pattern. `**`
+crosses directories. A wildcard does not match a hidden name, which is what
+lets a producer write a part under a dotted name and rename it into place
+without the half-written file being read; a dotted name written out in the
+pattern is matched, because somebody asked for it. Only files: a directory
+the pattern happens to name is not a store's contents.
+
+### outrage.store.read_all(store: [Store](#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Excerpt](#outrage.store.Excerpt)
 
 Read a whole document, following `next_offset` until there is no more.
 
@@ -1654,14 +1683,14 @@ Asked for the whole document, the result reports it with `next_offset` of
 That is the point. Asked for a `length`, the result stops there and
 carries a continuation offset, exactly as a single capped read does.
 
-### outrage.store.resolve_directory(explicit: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.store.resolve_directory(explicit: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Locate the store directory: explicit path, then OUTRAGE_DIR, then ./.outrage.
 
 A directory rather than a file, so that other files can live beside the
 database later.
 
-### outrage.store.store_file(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.store.store_file(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 The file a store keeps, from a name relative to its directory.
 
@@ -1686,3 +1715,14 @@ name a different backend chose.
 >>> store_file("/srv/project/.outrage", "ref.sqlite").name
 'ref.sqlite'
 ```
+
+### outrage.store.store_present(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
+
+Whether a store file names something already there, a pattern included.
+
+What every caller asking "does this store exist" before opening it asks,
+rather than `store_file(...).exists()`: a pattern is not a path on disk,
+so that question is always no for one, and a read-only mount of
+`parts/*.parquet` would be refused as missing while its parts sat there.
+A pattern is present when it matches a file; whether those files make a
+store is the backend's to say when it opens them.

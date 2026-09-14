@@ -91,15 +91,15 @@ More of the store is in the write-ahead log than in the database file, so
 anything copying that file alone gets a store missing recent writes. The one
 problem `repair` acts on.
 
-### *exception* outrage.maintenance.CheckError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.maintenance.CheckError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/library/exceptions.html#RuntimeError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/builtins/exceptions.html#RuntimeError)
 
 Raised when a store cannot be checked at all.
 
-### *class* outrage.maintenance.Problem(code: [str](https://docs.python.org/3/library/stdtypes.html#str), severity: [str](https://docs.python.org/3/library/stdtypes.html#str), summary: [str](https://docs.python.org/3/library/stdtypes.html#str), detail: [str](https://docs.python.org/3/library/stdtypes.html#str) = '', repairable: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
+### *class* outrage.maintenance.Problem(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), severity: [str](https://docs.python.org/3/builtins/stdtypes.html#str), summary: [str](https://docs.python.org/3/builtins/stdtypes.html#str), detail: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = '', repairable: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 Something wrong, or worth knowing, about the store rather than a document.
 
@@ -126,19 +126,19 @@ only place the answer is known: a backend appending this from
 defaults to False so that a problem nobody thought about cannot claim to
 be fixable.
 
-#### code *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### code *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### severity *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### severity *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### summary *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### summary *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### detail *: [str](https://docs.python.org/3/library/stdtypes.html#str)* *= ''*
+#### detail *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)* *= ''*
 
-#### repairable *: [bool](https://docs.python.org/3/library/functions.html#bool)* *= False*
+#### repairable *: [bool](https://docs.python.org/3/builtins/functions.html#bool)* *= False*
 
-### *class* outrage.maintenance.Repaired(action: [str](https://docs.python.org/3/library/stdtypes.html#str), before: [int](https://docs.python.org/3/library/functions.html#int), after: [int](https://docs.python.org/3/library/functions.html#int), unit: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'bytes')
+### *class* outrage.maintenance.Repaired(action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), before: [int](https://docs.python.org/3/builtins/functions.html#int), after: [int](https://docs.python.org/3/builtins/functions.html#int), unit: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = 'bytes')
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What a repair actually did, measured rather than claimed.
 
@@ -149,37 +149,37 @@ compaction, and stopped being true for one that drops rows: a count of
 three rows printed as "3 bytes" is a sentence that reads correctly and
 says something false.
 
-#### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### before *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### before *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### after *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### after *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-#### unit *: [str](https://docs.python.org/3/library/stdtypes.html#str)* *= 'bytes'*
+#### unit *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)* *= 'bytes'*
 
-### *class* outrage.maintenance.Report(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), backend: [str](https://docs.python.org/3/library/stdtypes.html#str) = '', format_version: [int](https://docs.python.org/3/library/functions.html#int) = 0, documents: [int](https://docs.python.org/3/library/functions.html#int) = 0, metadata: [int](https://docs.python.org/3/library/functions.html#int) = 0, characters: [int](https://docs.python.org/3/library/functions.html#int) = 0, details: dict[str, str]=<factory>, problems: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)] = <factory>)
+### *class* outrage.maintenance.Report(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), backend: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = '', format_version: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, documents: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, metadata: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, characters: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, details: dict[str, str]=<factory>, problems: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)] = <factory>)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What a check found. Empty `problems` is a sound store.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-#### backend *: [str](https://docs.python.org/3/library/stdtypes.html#str)* *= ''*
+#### backend *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)* *= ''*
 
 What kept the file: 'sqlite', 'parquet'. Named because the rest of the
 report reads differently depending on the answer, and because a report that
 did not say would look identical for a store nothing could check.
 
-#### format_version *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
+#### format_version *: [int](https://docs.python.org/3/builtins/functions.html#int)* *= 0*
 
-#### documents *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
+#### documents *: [int](https://docs.python.org/3/builtins/functions.html#int)* *= 0*
 
-#### metadata *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
+#### metadata *: [int](https://docs.python.org/3/builtins/functions.html#int)* *= 0*
 
-#### characters *: [int](https://docs.python.org/3/library/functions.html#int)* *= 0*
+#### characters *: [int](https://docs.python.org/3/builtins/functions.html#int)* *= 0*
 
-#### details *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str)]*
+#### details *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
 
 What this backend says about its own storage, label to value, in the
 order it is worth printing. Filled by
@@ -188,13 +188,13 @@ that the numbers SQLite has and parquet does not are absent rather than
 zero -- a report reading `0 bytes in the log` for a store that has no log
 is a wrong answer delivered as a clean bill of health.
 
-#### problems *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)]*
+#### problems *: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)]*
 
-#### *property* sound *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* sound *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 No errors and no warnings. Notes do not make a store unsound.
 
-#### *property* repairable *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)]*
+#### *property* repairable *: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Problem](#outrage.maintenance.Problem)]*
 
 The problems `--repair` would actually act on, in the order found.
 
@@ -212,7 +212,7 @@ rather than a path because the invariants being checked are the ones the
 backend writes rows under, and opening through it is also what proves the
 file opens at all.
 
-### outrage.maintenance.repair(store: [FileStore](store.md#outrage.store.FileStore)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Repaired](#outrage.maintenance.Repaired)]
+### outrage.maintenance.repair(store: [FileStore](store.md#outrage.store.FileStore)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Repaired](#outrage.maintenance.Repaired)]
 
 Fix what a check found and the backend can act on.
 
@@ -222,7 +222,7 @@ Returns what was done, which is an empty list for a backend whose storage
 cannot get into a repairable state -- see
 [`repair()`](store.md#outrage.store.FileStore.repair).
 
-### outrage.maintenance.require_store(directory: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), filename: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.maintenance.require_store(directory: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Refuse a store file that is not there, rather than creating one.
 

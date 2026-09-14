@@ -40,7 +40,7 @@ from pathlib import Path
 
 from . import keys
 from .errors import OutrageError
-from .store import FileStore, entry_kind, store_file
+from .store import FileStore, entry_kind, store_file, store_present
 
 
 class CheckError(OutrageError, RuntimeError):
@@ -429,7 +429,7 @@ def require_store(directory: Path, filename: str | None = None) -> Path:
     stores, "no store in .outrage" would be the wrong sentence as often as it was
     the right one.
     """
-    if not store_file(directory, filename).exists():
+    if not store_present(directory, filename):
         raise CheckError("check-no-store", path=str(store_file(directory, filename)))
     return directory
 

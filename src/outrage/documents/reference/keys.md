@@ -144,9 +144,9 @@ and only as a whole segment: past the first character it is ordinary text,
 so `notes/where?.md` is a perfectly good key. A segment that *begins* with
 one is reserved -- see [`RESERVED_PREFIX`](#outrage.keys.RESERVED_PREFIX).
 
-### *exception* outrage.keys.InvalidKeyError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.keys.InvalidKeyError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 Raised when a key does not match the grammar.
 
@@ -154,30 +154,30 @@ A `OutrageError` because a malformed key is *about the request*, so a front
 end should render it as one line rather than a traceback. Still a
 `ValueError` as well, so existing callers catching that go on working.
 
-### *class* outrage.keys.Key(key: [str](https://docs.python.org/3/library/stdtypes.html#str), doc_key: [str](https://docs.python.org/3/library/stdtypes.html#str), meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), meta_path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), parent: [str](https://docs.python.org/3/library/stdtypes.html#str), wildcard_parent: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.keys.Key(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), doc_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), meta_path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), parent: [str](https://docs.python.org/3/builtins/stdtypes.html#str), wildcard_parent: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 A parsed key, with the columns derived from it.
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The full key, normalised, including any metadata segments. Delimiters
 are tidied and numeric segments have lost their leading zeros, so this may
 differ from the string that was parsed.
 
-#### doc_key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### doc_key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The key up to but excluding its first metadata segment.
 
-#### meta_name *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### meta_name *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The first metadata segment, without the leading `!`, or None if the
 key names a document. **One segment.** A metadata name is a name, so
 `a/!changelog/22` says that `a` carries `changelog`; the `22` is a
 document kept inside that namespace and belongs to [`meta_path`](#outrage.keys.Key.meta_path).
 
-#### meta_path *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### meta_path *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 What follows the first metadata segment, or None when nothing does.
 `a/!changelog/22/!title` has a `meta_name` of `changelog` and a
@@ -188,22 +188,22 @@ this may hold documents, their own metadata and whole subtrees. It is what
 tells the metadata *value* from something kept inside it, which is the
 distinction [`is_meta_value`](#outrage.keys.Key.is_meta_value) names.
 
-#### parent *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### parent *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The enclosing key: this key without its last segment. A document's
 metadata therefore has that document as its parent, and lists alongside its
 subkeys. The root is its own parent, which is what makes an ancestor walk
 terminate and what every listing of a level has to allow for.
 
-#### wildcard_parent *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### wildcard_parent *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The key enclosing the `?` segment, or None if there is no wildcard.
 ROOT when the wildcard is the first segment. This is the key whose children
 the allocated segment has to be unique among.
 
-#### *property* is_metadata *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* is_metadata *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-#### *property* is_meta_value *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* is_meta_value *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether this key is a metadata value, not something kept inside one.
 
@@ -212,9 +212,9 @@ used to supply: when everything below a `!` was folded into the name
 there was nothing to tell `a/!title` from `a/!changelog/22`, and
 the surveys that asked `meta_name is not None` were asking this.
 
-#### *property* has_wildcard *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* has_wildcard *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-#### *property* has_last *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* has_last *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether any segment is `?last` and still waiting to be resolved.
 
@@ -231,9 +231,9 @@ A *segment*, not a key, because the caller already knows the part above it
 and joining the two here is what keeps a mounted store's answer -- which is
 named from inside that store -- usable in the namespace it was asked in.
 
-alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/library/stdtypes.html#str)], [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None)]
+alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str)], [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)]
 
-### outrage.keys.ancestors(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.keys.ancestors(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 The enclosing keys of `key`, outermost first.
 
@@ -252,7 +252,7 @@ every key in the store.
 ([], [])
 ```
 
-### outrage.keys.depth(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [int](https://docs.python.org/3/library/functions.html#int)
+### outrage.keys.depth(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [int](https://docs.python.org/3/builtins/functions.html#int)
 
 The number of segments in the document part of `key`.
 
@@ -265,7 +265,7 @@ segment to count.
 (2, 2, 0, 0)
 ```
 
-### outrage.keys.displayed(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.displayed(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 How a key is written for a person to read. The root is spelled `/`.
 
@@ -279,7 +279,7 @@ is also what can be typed in again.
 ('a/b', '/')
 ```
 
-### outrage.keys.fits(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
+### outrage.keys.fits(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether `key` is a valid key in the joined namespace a mount table shows.
 
@@ -297,11 +297,11 @@ halved to abolish.
 True
 ```
 
-### outrage.keys.is_valid(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, allow_wildcard: [bool](https://docs.python.org/3/library/functions.html#bool) = False, allow_last: [bool](https://docs.python.org/3/library/functions.html#bool) = False, max_segments: [int](https://docs.python.org/3/library/functions.html#int) = MAX_SEGMENTS) → [bool](https://docs.python.org/3/library/functions.html#bool)
+### outrage.keys.is_valid(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, allow_wildcard: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, allow_last: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, max_segments: [int](https://docs.python.org/3/builtins/functions.html#int) = MAX_SEGMENTS) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether `key` matches the grammar.
 
-### outrage.keys.meta_range(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.keys.meta_range(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 Half open bounds on `key`'s own metadata subtree.
 
@@ -324,7 +324,7 @@ an ordinary contiguous stretch of the order like anyone else's.
 (('a/!', 'a/"'), ('!', '"'))
 ```
 
-### outrage.keys.meta_sort_suffix(meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.meta_sort_suffix(meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 What to append to `sort_form(doc)` to get `sort_form(doc/!meta_name)`.
 
@@ -344,7 +344,7 @@ silently wrong for the multi-segment names the old grammar allowed.
 True
 ```
 
-### outrage.keys.migrate_legacy(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.migrate_legacy(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 The current spelling of a key written with the pre-schema-4 `:` suffix.
 
@@ -357,7 +357,7 @@ caller supplied -- it would rewrite one they meant literally.
 'context/5/state/!title'
 ```
 
-### outrage.keys.normalise_key(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.normalise_key(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `key` with its delimiters tidied: no leading, trailing or repeated `/`.
 
@@ -371,7 +371,7 @@ a filesystem path ought to do.
 ('a/b', 'a/b', '')
 ```
 
-### outrage.keys.normalise_segment(segment: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.normalise_segment(segment: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 A numeric segment without its leading zeros; anything else unchanged.
 
@@ -384,7 +384,7 @@ meant to name, and what keeps the sort form injective.
 ('7', '0', 'x0')
 ```
 
-### outrage.keys.parse(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, allow_wildcard: [bool](https://docs.python.org/3/library/functions.html#bool) = False, allow_last: [bool](https://docs.python.org/3/library/functions.html#bool) = False, max_segments: [int](https://docs.python.org/3/library/functions.html#int) = MAX_SEGMENTS) → [Key](#outrage.keys.Key)
+### outrage.keys.parse(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, allow_wildcard: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, allow_last: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, max_segments: [int](https://docs.python.org/3/builtins/functions.html#int) = MAX_SEGMENTS) → [Key](#outrage.keys.Key)
 
 Parse and validate `key`.
 
@@ -410,7 +410,7 @@ direction.
 
 Raises InvalidKeyError if it does not match the grammar.
 
-### outrage.keys.relative(key: [str](https://docs.python.org/3/library/stdtypes.html#str), scope: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Key](#outrage.keys.Key)
+### outrage.keys.relative(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Key](#outrage.keys.Key)
 
 `key` parsed as it is named from inside `scope`.
 
@@ -450,7 +450,7 @@ itself metadata.
 False
 ```
 
-### outrage.keys.remaining_depth(budget: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), key: [str](https://docs.python.org/3/library/stdtypes.html#str), below: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.keys.remaining_depth(budget: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), below: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 What is left of a depth budget measured from `key` once it reaches `below`.
 
@@ -473,7 +473,7 @@ Zero is in scope and means only that row is.
 (None, -1)
 ```
 
-### outrage.keys.resolve_last(key: [str](https://docs.python.org/3/library/stdtypes.html#str), last_child: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/library/stdtypes.html#str)], [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)], \*, max_segments: [int](https://docs.python.org/3/library/functions.html#int) = MAX_SEGMENTS) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.resolve_last(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), last_child: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)], \*, max_segments: [int](https://docs.python.org/3/builtins/functions.html#int) = MAX_SEGMENTS) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `key` with every `?last` segment replaced by the last key at that point.
 
@@ -510,7 +510,7 @@ question.
 'a/b'
 ```
 
-### outrage.keys.sort_form(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.sort_form(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `key` encoded for ordering only, never stored in place of the key.
 
@@ -548,7 +548,7 @@ True
 True
 ```
 
-### outrage.keys.sort_subtree_end(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.sort_subtree_end(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 The sort form immediately past everything at and below `key`.
 
@@ -577,7 +577,7 @@ True
 True
 ```
 
-### outrage.keys.strip_prefix(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.keys.strip_prefix(prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 `key` as named from inside `prefix`, or None if it is not below it.
 
@@ -597,7 +597,7 @@ route a key to a store that has never heard of it.
 (None, 'a')
 ```
 
-### outrage.keys.substitute_wildcard(key: [str](https://docs.python.org/3/library/stdtypes.html#str), segment: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.substitute_wildcard(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), segment: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Return `key` with its `?` segment replaced by `segment`.
 
@@ -606,7 +606,7 @@ Return `key` with its `?` segment replaced by `segment`.
 'context/7/design'
 ```
 
-### outrage.keys.subtree_range(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.keys.subtree_range(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 Half open bounds on the document keys strictly beneath `key`.
 
@@ -621,7 +621,7 @@ to `"0"` -- match nothing at all: a caller that forgot to check would get
 a confident zero from a store full of documents. Select with no range
 predicate instead, which is what `store` does.
 
-### outrage.keys.with_prefix(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.keys.with_prefix(prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `key`, as seen from a namespace that holds it under `prefix`.
 

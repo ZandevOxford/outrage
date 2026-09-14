@@ -116,7 +116,7 @@ at any size; at reference scale the list would *be* the corpus.
 
 ### *class* outrage.server.RequestLog(log: [EventLog](eventlog.md#outrage.eventlog.EventLog))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 Record every inbound message, from the layer that can still see the failures.
 
@@ -138,7 +138,7 @@ risk is accepted on the same terms as `extra="forbid"`: what a change
 would cost is logging silently ceasing to happen, and
 `test_the_middleware_is_reached` fails loudly rather than letting it.
 
-### outrage.server.build_server(store: [Store](store.md#outrage.store.Store) | [Live](remount.md#outrage.remount.Live), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/library/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/library/functions.html#bool) = True, remount_tool: [bool](https://docs.python.org/3/library/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → MCPServer
+### outrage.server.build_server(store: [Store](store.md#outrage.store.Store) | [Live](remount.md#outrage.remount.Live), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, remount_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ()) → MCPServer
 
 Build a server exposing `store`, which may be one store or a mount table.
 
@@ -194,7 +194,7 @@ reason and withheld the same way -- the server's `--no-remount`. They are
 MCP-only, which is a decision rather than an omission: the command line
 builds its table from scratch on every run and has nothing to change.
 
-### outrage.server.delivered_text() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.server.delivered_text() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 The instructions document, as the bytes a client that does not truncate gets.
 
@@ -206,7 +206,7 @@ A function rather than a constant: a module constant holding it is rendered
 *by value* into the API reference, which put the whole document back into
 the generated page it had just been taken out of.
 
-### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 A line naming the root store's readme, then the instructions document.
 
@@ -243,7 +243,7 @@ own is not named either: a session that has not yet read the root's cannot
 act on a second, and a mount announces itself in a listing instead, where
 it costs nothing until somebody looks.
 
-### outrage.server.main(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
+### outrage.server.main(argv: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [int](https://docs.python.org/3/builtins/functions.html#int)
 
 Open the configured stores and serve them over stdio until the client
 stops.
@@ -256,7 +256,7 @@ shadows keys already held, and hands it to [`build_server()`](#outrage.server.bu
 
 Returns rather than exits, for the same reason [`outrage.cli.main()`](cli.md#outrage.cli.main) does.
 
-### outrage.server.parse_args(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Namespace](https://docs.python.org/3/library/argparse.html#argparse.Namespace)
+### outrage.server.parse_args(argv: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Namespace](https://docs.python.org/3/library/argparse.html#argparse.Namespace)
 
 The server's command line: which stores to serve, and what to record.
 
@@ -277,7 +277,7 @@ everything below describes both.
 Separate from [`main()`](#outrage.server.main) so that a test can ask what an argument list
 parses to without opening a store or starting a server.
 
-### outrage.server.tool_description(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.server.tool_description(name: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 The description of one MCP tool, read from the installed documents.
 

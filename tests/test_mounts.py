@@ -1632,7 +1632,8 @@ def test_a_parquet_mount_refuses_a_write_without_offering_a_flag(tmp_path):
 
 def test_a_parquet_mount_reads_through_the_server(tmp_path):
     """The point of the whole piece: a reference base behind a prefix."""
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="packing needs the parquet extra")
+    pytest.importorskip("duckdb", reason="reading a parquet store needs duckdb")
     a_packed_store(tmp_path / "base")
     SqliteStore(tmp_path / "base", filename="store.sqlite").close()
 
@@ -1651,7 +1652,7 @@ def test_a_parquet_mount_reads_through_the_server(tmp_path):
         ]
 
         refused = call_expecting_error(server, "store_document", key="ref/python/new", content="x")
-        assert "written whole rather than updated in place" in refused
+        assert "parquet read through duckdb and never written through" in refused
         # The key is named as the *caller* sees it, through the mount prefix.
         assert "'ref/python/new'" in refused
 
@@ -1660,7 +1661,8 @@ def test_a_parquet_store_cannot_be_the_root_mount(tmp_path):
     """The root owns every key no mount claims, so nothing would have anywhere
     to go. Reading one directly is a different question, and the command line's.
     """
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="packing needs the parquet extra")
+    pytest.importorskip("duckdb", reason="reading a parquet store needs duckdb")
     a_packed_store(tmp_path / "base", "root.parquet")
 
     with raises_rendered(MountError, "nothing would have anywhere to go") as raised:
@@ -1670,8 +1672,8 @@ def test_a_parquet_store_cannot_be_the_root_mount(tmp_path):
     # command line reaching this already opened the store directly, so the
     # advice names what put a table around it.
     said = messages.render(raised.value)
-    assert "a parquet store" in said
-    assert "ParquetStore" not in said
+    assert "a duckdb store" in said
+    assert "DuckdbStore" not in said
     assert "--no-mount-config" in said
 
 

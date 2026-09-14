@@ -51,7 +51,7 @@ from . import store as store_module
 from .eventlog import EventLog
 from .mounts import MountedStore, MountError
 from .notes import Note
-from .store import Store, store_file
+from .store import Store, store_file, store_present
 
 #: The stores outrage ships, by the mount point each answers for, as the
 #: openers that produce them. This is what lets a mount be spelled without a
@@ -168,7 +168,7 @@ class Live:
         prefix = keys.parse(key).key
         with self._lock:
             mount_path = None if file is None else store_file(self._directory, file)
-            created = mount_path is not None and not mount_path.exists()
+            created = file is not None and not store_present(self._directory, file)
             store = self._opened(prefix, file, type, extensions, read_only)
             # Everything up to the swap is inside this, `open_mounts`'s own
             # shape: a failure anywhere closes what was opened and leaves the
@@ -238,8 +238,8 @@ class Live:
                 raise MountError("mount-shipped-takes-no-extensions", mount=prefix)
             return opener(log=self._log)
         if read_only:
-            database = store_file(self._directory, file)
-            if not database.exists():
+            if not store_present(self._directory, file):
+                database = store_file(self._directory, file)
                 raise MountError("mount-read-only-missing", mount=prefix, path=str(database))
         return store_module.default_store(
             self._directory,

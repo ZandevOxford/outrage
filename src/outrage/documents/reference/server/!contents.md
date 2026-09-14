@@ -41,19 +41,19 @@
 5821 5821
 
 ### outrage.server.build_server(store: Store | Live, log: EventLog | None = None, directory: str | PathLike[str] | None = None, \*, all_tools: bool = False, info_tool: bool = True, remount_tool: bool = True, mount_config: Sequence[str] = ()) → MCPServer
-7127 7127
+7128 7128
 
 ### outrage.server.delivered_text() → str
-11015 11017
+11024 11026
 
 ### outrage.server.instructions(store: Store) → str
-11600 11604
+11610 11614
 
 ### outrage.server.main(argv: list[str] | None = None) → int
-13728 13734
+13739 13745
 
 ### outrage.server.parse_args(argv: list[str] | None = None) → Namespace
-14606 14614
+14621 14629
 
 ### outrage.server.tool_description(name: str) → str
-15934 15944
+15952 15962

@@ -30,7 +30,7 @@ question only worth asking of the same list every other one of these gets.
 Read by [`parse_args()`](#outrage.cli.parse_args) to decide whether a mount configuration file is
 spliced in, and by the loop that adds the options, so the two cannot drift.
 
-### *exception* outrage.cli.ConflictingSourceError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.cli.ConflictingSourceError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError)
 
@@ -46,7 +46,7 @@ command line is written down. It returns a new parser on every call, making
 the interface available to documentation and other introspection without
 parsing `sys.argv` or reading a mount configuration.
 
-### outrage.cli.main(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, out: [TextIO](https://docs.python.org/3/library/typing.html#typing.TextIO) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
+### outrage.cli.main(argv: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, out: [TextIO](https://docs.python.org/3/library/typing.html#typing.TextIO) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [int](https://docs.python.org/3/builtins/functions.html#int)
 
 Run one command and return its exit status.
 
@@ -59,7 +59,7 @@ Returns rather than exits, so that a caller in the same process -- which is
 every test of this module -- gets the status without the interpreter
 stopping.
 
-### outrage.cli.parse_args(argv: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Namespace](https://docs.python.org/3/library/argparse.html#argparse.Namespace)
+### outrage.cli.parse_args(argv: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Namespace](https://docs.python.org/3/library/argparse.html#argparse.Namespace)
 
 Parse an argument list and attach the selected command's handler.
 

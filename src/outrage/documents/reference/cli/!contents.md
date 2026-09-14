@@ -8,10 +8,10 @@
 1877 1877
 
 ### outrage.cli.argument_parser() → ArgumentParser
-2212 2212
+2213 2213
 
 ### outrage.cli.main(argv: list[str] | None = None, out: TextIO | None = None) → int
-2741 2743
+2742 2744
 
 ### outrage.cli.parse_args(argv: list[str] | None = None) → Namespace
-3688 3692
+3694 3698

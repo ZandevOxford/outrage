@@ -1,10 +1,12 @@
-"""The duckdb backend: a directory of parquet parts, read as one store.
+"""The duckdb backend: parquet stores read through duckdb, one file or many.
 
-The fourth implementation of :class:`outrage.store.Store`, and the one for a
-reference base **too large for one file, or that arrives in pieces**. Each part
-is a file ``outrage pack`` could have written -- the same columns and the same
-format stamp as :mod:`outrage.store_parquet` -- and the store is every part
-together. Nothing about the file format is redefined here.
+The fourth implementation of :class:`outrage.store.Store`, and the one a
+``.parquet`` store file opens with unless a mount names another. It reads **one
+file, or a reference base too large for one file or that arrives in pieces**.
+Each part is a file ``outrage pack`` could have written -- the same columns and
+the same format stamp as :mod:`outrage.store_parquet` -- and the store is every
+part together. Nothing about the file format is redefined here, and the pyarrow
+backend is still what writes one.
 
 **The parts may be in any order.** Not sorted, not disjoint. A store is in sort
 order, but the source it was made from need not be: a producer holding its
@@ -19,13 +21,22 @@ slower than the parquet backend's -- several milliseconds where a bisect is
 microseconds -- and every one of them is still far below the round trip of the
 tool call carrying it.
 
-**A directory names it**, and has no extension to name its backend, so it is
-always asked for: ``ref=refbase,type=duckdb``. The parts are the ``.parquet``
-files directly inside it, less dotfiles, which is what a producer writing a
-part under a temporary name and renaming it into place needs. **The list is
-taken when the store is opened**, and the store is those parts until it is
-opened again: a part appearing later is picked up by the next open, and a part
-half written while a store is being read is never read at all.
+**The store file names the parts in one of three ways**, tried in this order:
+
+* **a file**, ``ref.parquet``, which is the one part;
+* **a directory**, ``ref=refbase,type=duckdb``, whose parts are the
+  ``.parquet`` files directly inside it. A directory has no extension to name
+  its backend, so this one form has to ask for it;
+* **a pattern**, ``ref=refbase/*.parquet`` or ``refbase/**/*.parquet``, whose
+  parts are the files it matches -- see :func:`outrage.store.pattern_matches`.
+
+A name that exists on disk is taken as that file or directory, whatever
+characters it holds, so a pattern is only ever what matches nothing literally.
+Dotfiles are passed over by both of the last two, which is what a producer
+writing a part under a temporary name and renaming it into place needs. **The
+list is taken when the store is opened**, and the store is those parts until it
+is opened again: a part appearing later is picked up by the next open, and a
+part half written while a store is being read is never read at all.
 
 **A key held in more than one part is held more than once**, and nothing
 resolves it. The store is the concatenation of its parts: reading the rows --
@@ -35,7 +46,7 @@ reachable. Reading the *key* -- :meth:`DuckdbStore.retrieve_document`,
 :meth:`DuckdbStore.exists`, :meth:`DuckdbStore.level_entry` -- answers with the
 newest of them, and so does a listing, since a listing entry is by contract
 what :meth:`~DuckdbStore.level_entry` says about that key. What removes the
-repeats is compaction, which is packing the directory into one file, and not
+repeats is compaction, which is packing the parts into one file, and not
 anything here.
 
 What repeated rows do need is a rule about pages, because **a cursor names a
@@ -51,9 +62,9 @@ is a page that cannot move. A mount table pages across stores by asking each
 for its own pages and never cutting one, so the rule holds through a mount with
 nothing there knowing about it.
 
-**It does not write**, like the parquet backend and for a related reason: the
-directory changes by gaining a part, which is a file somebody else writes, and
-nothing here updates a part in place. So :meth:`~DuckdbStore.store_document`
+**It does not write**, like the parquet backend and for a related reason: a
+store of parts changes by gaining one, which is a file somebody else writes,
+and nothing here updates a part in place. So :meth:`~DuckdbStore.store_document`
 and :meth:`~DuckdbStore.delete` refuse, and the refusal is the storage's rather
 than a mount's.
 
@@ -61,17 +72,20 @@ than a mount's.
 A version 1 part carries no ``meta_path`` column and splits ``meta_name``
 under an older rule; reading one would mean re-deriving that split in SQL,
 which is a second definition of the key grammar. So an older part is refused
-with the advice to repack it, and a directory mixing versions -- a repack left
-half done -- is refused naming both.
+with the advice to repack it -- or, for a single file, to open it with
+``type=parquet``, which still reads one -- and parts mixing versions, a repack
+left half done, are refused naming both.
 
-duckdb is an optional dependency: ``pip install "outrage[duckdb]"``. It is
-imported inside this module, and this module only when something names the
-backend, so an install without it is unaffected until then. pyarrow is not
-needed to read a directory; only building a part is its business.
+duckdb is an optional dependency, carried by both the ``parquet`` and the
+``duckdb`` extras. It is imported inside this module, and this module only when
+something opens a parquet store, so an install without it is unaffected until
+then. pyarrow is not needed to read a store; only building a part is its
+business.
 """
 
 from __future__ import annotations
 
+import glob
 import os
 import shutil
 import tempfile
@@ -117,17 +131,20 @@ from .store import (
     _with_descendants,
     check_read_position,
     entry_kind,
+    is_pattern,
+    pattern_matches,
 )
 from .store_parquet import FORMAT_VERSION, VERSION_KEY
 from .store_sqlite import _below, _meta_clauses, _range_clauses, _subtree_clauses
 
 #: What a duckdb store's directory is called when a caller names none. It has
-#: no extension because a directory has none to give, which is why this backend
-#: is always named rather than inferred.
+#: no extension because a directory has none to give, which is why a directory
+#: of parts is the one form of this store that has to be named.
 DEFAULT_STORE_DIR = "parts"
 
-#: What a part's file name ends with. The only files in the directory that are
-#: read; anything else there is left alone.
+#: What a part's file name ends with. The only files in a directory of parts
+#: that are read; anything else there is left alone. A pattern says for itself
+#: which files it means.
 PART_SUFFIX = ".parquet"
 
 #: The ceiling on what duckdb may hold in memory. Set because its own default
@@ -197,22 +214,28 @@ def _duckdb() -> Any:
 
 
 def _quoted(path: Path) -> str:
-    """``path`` as a SQL string literal.
+    """``path`` as a SQL string literal naming exactly that file.
 
     The part list is written into the view's definition, because a view cannot
-    take parameters. Doubling a quote is the whole of SQL string escaping.
+    take parameters. Doubling a quote is the whole of SQL string escaping. The
+    glob escape comes first because duckdb expands every path it reads as a
+    pattern, so a part called ``ref[1].parquet`` would otherwise be read as
+    ``ref1.parquet``; the patterns a store file may be have already been
+    expanded by then, and each part is one file. duckdb reports the real path
+    back, which is what the version check matches on.
     """
-    return "'" + str(path).replace("'", "''") + "'"
+    return "'" + glob.escape(str(path)).replace("'", "''") + "'"
 
 
 class DuckdbStore(FileStore):
-    """A document store held as a directory of parquet parts, read only."""
+    """A document store held as parquet parts, read only: one file, a directory, or a pattern."""
 
     default_filename = DEFAULT_STORE_DIR
     backend_name = "duckdb"
     format_version = FORMAT_VERSION
     writable = False
     versioned = False
+    reads_patterns = True
 
     def __init__(
         self,
@@ -222,21 +245,27 @@ class DuckdbStore(FileStore):
         log: EventLog | None = None,
         mount_point: str | None = None,
     ) -> None:
-        # The directory of parts is `path`, named inside the store directory
-        # like any other store, and the store directory is where the event log
-        # and a backup go -- beside the parts rather than among them.
+        # The parts are named by `path`, inside the store directory like any
+        # other store, and the store directory is where the event log and a
+        # backup go -- beside the parts rather than among them.
         super().__init__(directory, filename=filename, log=log, mount_point=mount_point)
-        if not self.path.exists():
+        relative = self.path.relative_to(self.directory)
+        if self.path.is_file():
+            self._parts = [self.path]
+        elif self.path.is_dir():
+            self._parts = _parts_in(self.path)
+            if not self._parts:
+                raise BackendError("duckdb-no-parts", path=str(self.path))
+        elif is_pattern(relative):
+            self._parts = pattern_matches(self.directory, relative)
+            if not self._parts:
+                raise BackendError("duckdb-pattern-matches-nothing", path=str(self.path))
+        else:
             # Refused rather than created, for the reason a missing parquet
             # file is: nothing here writes, so an empty store could only ever
             # read back empty, and a mistyped name would mount as a reference
             # base that is simply missing.
             raise BackendError("duckdb-store-missing", path=str(self.path))
-        if not self.path.is_dir():
-            raise BackendError("duckdb-not-a-directory", path=str(self.path))
-        self._parts = _parts_in(self.path)
-        if not self._parts:
-            raise BackendError("duckdb-no-parts", path=str(self.path))
 
         # One database per store and a cursor per thread, which is duckdb's
         # model for concurrency and the same rule the other two backends are
@@ -950,26 +979,45 @@ class DuckdbStore(FileStore):
         *,
         overwrite: bool = False,
     ) -> Backup:
-        """A copy of every part into a directory of its own, and a re-read of it.
+        """A copy of every part in the shape the store named them, and a re-read of it.
 
         The parts are the store, so copying them is the whole copy, and the
         parts copied are the ones this store opened -- not whatever the
-        directory holds by now. The copy is then opened as a store of its own,
-        which checks every part's format, and its rows counted against these.
+        directory holds by now. A single file is copied as a file, and a
+        directory as a directory. A pattern's parts keep their paths below the
+        part of the pattern that has no wildcard in it, so the copy is read
+        back through the rest of the same pattern and two parts of one name in
+        different directories stay two parts. The copy is then opened as a
+        store of its own, which checks every part's format, and its rows
+        counted against these.
         """
         target = self.backup_path(destination, overwrite=overwrite)
         _clear(target)
+        relative = self.path.relative_to(self.directory)
+        pattern = not self.path.exists() and is_pattern(relative)
+        base, rest = _split_pattern(relative) if pattern else (relative, None)
+        base = self.directory / base
         try:
-            target.mkdir(parents=True)
-            for part in self._parts:
-                shutil.copyfile(part, target / part.name)
+            if self.path.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(self.path, target)
+            else:
+                target.mkdir(parents=True)
+                for part in self._parts:
+                    copied = target / (part.relative_to(base) if pattern else part.name)
+                    copied.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(part, copied)
         except OSError as exc:
-            shutil.rmtree(target, ignore_errors=True)
+            _clear(target)
             raise BackupError("backup-unwritable", target=str(target), reason=str(exc)) from exc
 
         expected = self._totals("true", [])[0]
         try:
-            with self.opened_at(target) as copy:
+            # A pattern is reopened inside the copy rather than through
+            # `opened_at`, which splits a path at its last segment and would
+            # take the wildcard directory above it for the store directory.
+            reopened = self.opened_at(target) if rest is None else type(self)(target, filename=rest)
+            with reopened as copy:
                 documents = copy._totals("true", [])[0]
                 written = copy.stored_format_version
         except BackendError as exc:
@@ -1026,7 +1074,7 @@ class DuckdbStore(FileStore):
         backend checks its file is sorted since every read of it bisects, and
         every read here is a query. A repeated key is not a problem either --
         it is legal, and a listing shows it -- so it is reported as the number
-        of rows compacting the directory into one file would remove.
+        of rows compacting the parts into one file would remove.
         """
         row = self._one("SELECT count(*), count(DISTINCT key) FROM parts")
         assert row is not None  # noqa: S101 - an aggregate always returns a row
@@ -1043,8 +1091,8 @@ class DuckdbStore(FileStore):
 
         A part is never updated in place, so there is no state a repair could
         move bytes about to fix. A part that is wrong is rebuilt from a source
-        that is still right, and a directory with repeated keys is compacted by
-        packing it into one file.
+        that is still right, and parts with repeated keys are compacted by
+        packing them into one file.
         """
         return []
 
@@ -1066,6 +1114,19 @@ def _parts_in(directory: Path) -> list[Path]:
         for path in directory.iterdir()
         if path.suffix == PART_SUFFIX and not path.name.startswith(".") and path.is_file()
     )
+
+
+def _split_pattern(path: Path) -> tuple[Path, Path]:
+    """A relative pattern as the directory it starts from and the wildcard part below.
+
+    ``refbase/2026-*/p*.parquet`` is ``refbase`` and ``2026-*/p*.parquet``: every
+    match lies below the first, and its path below it is what the second
+    matched. What a backup keeps of a part's path, so the copy reads back
+    through the same wildcards.
+    """
+    parts = path.parts
+    first = next(n for n, part in enumerate(parts) if is_pattern(part))
+    return Path(*parts[:first]), Path(*parts[first:])
 
 
 def _names(meta_name: str | Sequence[str]) -> list[str]:

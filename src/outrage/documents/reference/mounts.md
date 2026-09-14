@@ -146,19 +146,19 @@ reference mount can opt out while the project store keeps its versions, and
 the other way round. Only a backend that can version takes it, and every
 other refuses it -- [`outrage.store.FileStore.in_directory()`](store.md#outrage.store.FileStore.in_directory).
 
-### *class* outrage.mounts.Mount(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), store: [Store](store.md#outrage.store.Store), read_only: [bool](https://docs.python.org/3/library/functions.html#bool) = False, lent: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
+### *class* outrage.mounts.Mount(prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), store: [Store](store.md#outrage.store.Store), read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, lent: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One store, and the prefix it answers for.
 
-#### prefix *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### prefix *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The key this store is mounted at, normalised. The root mount's is `""`.
 
 #### store *: [Store](store.md#outrage.store.Store)*
 
-#### read_only *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### read_only *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether this server refuses writes routed here.
 
@@ -166,7 +166,7 @@ Defaults to False so that every existing construction of a `Mount` means
 what it meant before, and so the single store case cannot become read-only
 by accident.
 
-#### lent *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### lent *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether the store was lent to the table already open, which makes it
 read-only whatever it is mounted with.
@@ -177,21 +177,21 @@ it read-only however it is asked. So the remedy for an ordinary read-only
 mount, mounting it again writable, is one nobody can take here, and a
 refusal has to know which of the two it is looking at to say so.
 
-#### *property* kind *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### *property* kind *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 What a listing calls this mount point.
 
-#### *property* name *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### *property* name *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The mount point as written for a person to read; the root is `/`.
 
-#### *property* is_root *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* is_root *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-#### inner(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+#### inner(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 `key` as this store names it, or None if this mount does not hold it.
 
-#### outer(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### outer(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `key` as the whole namespace names it. Total, by construction.
 
@@ -209,13 +209,13 @@ string that will not parse would fail one layer away, which is the
 failure this project keeps finding. `outrage check` reports such keys
 before anything mounts the store.
 
-### *exception* outrage.mounts.MountError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.mounts.MountError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 Raised when a mount table cannot be built as described.
 
-### *class* outrage.mounts.MountedStore(stores: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)], \*, read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ())
+### *class* outrage.mounts.MountedStore(stores: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)], \*, read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ())
 
 Bases: [`Store`](store.md#outrage.store.Store)
 
@@ -233,14 +233,14 @@ nothing to back up and nothing to repair, and it says so rather than
 answering for its root mount: a check of a three-store table that silently
 reported one store would be worse than a refusal.
 
-#### writable *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/library/functions.html#bool)]* *= True*
+#### writable *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= True*
 
 A table can be written when its root mount can, which
 `__init__()` requires of every table -- so this is always true, and
 stated rather than inherited because a backend that forgets to say
 inherits `True` and would be reporting it by accident.
 
-#### backend_name *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/library/stdtypes.html#str)]* *= 'mounts'*
+#### backend_name *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]* *= 'mounts'*
 
 What a refusal calls this when it has to name what it is talking to.
 Not an extension, because no file is kept here; see the class docstring.
@@ -253,7 +253,7 @@ The single store case stated as a mount table rather than as a separate
 path through the server, so there is one set of behaviour to test and
 no second code path that only runs when nothing is mounted.
 
-#### remounted(\*, mount: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), unmount: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → [MountedStore](#outrage.mounts.MountedStore)
+#### remounted(\*, mount: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), unmount: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ()) → [MountedStore](#outrage.mounts.MountedStore)
 
 This table with mounts removed and added, as a new table.
 
@@ -298,15 +298,15 @@ one whose `readme` is delivered and the only one a caller can reach
 without naming a mount. Its prefix being empty is what makes
 [`resolve()`](#outrage.mounts.MountedStore.resolve) total: there is always a longest match.
 
-#### *property* read_only *: [list](https://docs.python.org/3/library/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]*
+#### *property* read_only *: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]*
 
 The mounts that refuse writes, in key order.
 
-#### *property* multiple *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* multiple *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether anything is mounted besides the root.
 
-#### resolve(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), \*, allow_wildcard: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Resolved](#outrage.mounts.Resolved)
+#### resolve(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), \*, allow_wildcard: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Resolved](#outrage.mounts.Resolved)
 
 The store owning `key`, and the name it knows it by.
 
@@ -323,7 +323,7 @@ no handling of its own: a mount prefix is literal text, so a `?`
 segment can never match one, and a key allocating a segment routes by
 the segments around it exactly as the finished key will.
 
-#### below(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]
+#### below(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]
 
 The mounts strictly beneath `key`, in key order.
 
@@ -332,7 +332,7 @@ this the wrong list to traverse with: use `directly_below`, or
 `segments`, which is built on it. This one answers "which stores does
 this subtree touch", for a caller reporting rather than reading.
 
-#### directly_below(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]
+#### directly_below(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]
 
 The mounts beneath `key` that no other mount beneath it contains.
 
@@ -347,7 +347,7 @@ sorts immediately before its descendants, so a mount is nested exactly
 when the last one kept is a prefix of it, and nothing further back can
 contain it.
 
-#### segments(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), depth: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Segment](#outrage.mounts.Segment)]
+#### segments(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), depth: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Segment](#outrage.mounts.Segment)]
 
 `key`'s subtree as the stretches of each store that make it up.
 
@@ -368,7 +368,7 @@ A mount past the depth budget is stepped over but not descended into:
 its stretch is still cut out of the store above, since those rows are
 unreachable whether or not anything asked for them.
 
-#### children(parent: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Entry](store.md#outrage.store.Entry)]
+#### children(parent: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Entry](store.md#outrage.store.Entry)]
 
 The keys immediately below `parent` that exist because a mount does.
 
@@ -379,7 +379,7 @@ Without this a mounted store is invisible to anyone who does not
 already know its prefix, which is the same failure as a document with
 no title.
 
-#### last_child(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+#### last_child(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The final segment of the last key immediately below `key`.
 
@@ -394,7 +394,7 @@ namespaces: routing changes what lies *above* a level, never the name
 of a key within it, so the answering store's last child is spelled the
 same from outside as from in.
 
-#### shadowing() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]
+#### shadowing() → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]
 
 The mounts whose mount point the store beneath them already holds.
 
@@ -410,7 +410,7 @@ key rather than below it, so neither question finds it. Worth naming
 rather than chasing -- both are misconfigurations, and this catches the
 ones anybody actually creates.
 
-#### read_only_below(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### read_only_below(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 The mounts below `key` that refuse a write, in key order.
 
@@ -420,7 +420,7 @@ that refused is not a key. This is what a front end needs in order to
 say *which* part of a subtree a delete will never reach -- which is a
 sentence, and a sentence is the front end's business.
 
-#### read_only_at_or_below(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### read_only_at_or_below(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 The mounts that refuse a write anywhere at or below `key`, in key order.
 
@@ -436,7 +436,7 @@ twenty failures and named no mount at all while it asked the other
 question -- each failure carrying the whole read-only refusal, so the
 one fact arrived five times as a sample and never once as a sentence.
 
-#### unwritable(prefixes: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### unwritable(prefixes: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 Those of `prefixes` whose store cannot be written however it is mounted.
 
@@ -447,7 +447,7 @@ because its backend is never written through, and a lent store because
 nothing can mount it any other way, so no remount changes either.
 Advice written for the first is wrong about the other two.
 
-#### store_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, contents: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, encoding: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### store_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, contents: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, encoding: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Store `content` at `key`, overwriting anything already there.
 
@@ -493,7 +493,7 @@ legitimately restamp are copying something that was already stamped.
 Every refusal above is `_validated()`'s, which an implementation
 calls before it writes anything.
 
-#### retrieve_document(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/library/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, length: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, pattern: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/library/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
+#### retrieve_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, length: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
 
 Read the content stored at `key`.
 
@@ -513,7 +513,7 @@ cannot converts and slices -- and that contract is what makes a byte
 offset something a caller can carry between stores, and out of the
 store altogether to a file [`bulk()`](bulk.md#module-outrage.bulk) exported.
 
-#### exists(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [bool](https://docs.python.org/3/library/functions.html#bool)
+#### exists(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether `key` itself holds a document.
 
@@ -524,7 +524,7 @@ nothing itself is free for a document to be written to.
 Deliberately cheaper than a read, since the answer is wanted for every
 file in an import and the content is not.
 
-#### level_entry(key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Entry](store.md#outrage.store.Entry) | [None](https://docs.python.org/3/library/constants.html#None)
+#### level_entry(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Entry](store.md#outrage.store.Entry) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 As [`level_entry()`](store.md#outrage.store.Store.level_entry), mount points included.
 
@@ -533,7 +533,7 @@ it would answer about whatever the mount shadows -- which is exactly the
 row a listing has just declined to show. Answered here instead, from the
 inner store's root, the same way [`children()`](#outrage.mounts.MountedStore.children) describes one.
 
-#### descendant_count(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [int](https://docs.python.org/3/library/functions.html#int)
+#### descendant_count(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [int](https://docs.python.org/3/builtins/functions.html#int)
 
 How many stored keys lie strictly below `key`.
 
@@ -563,7 +563,7 @@ See [`outrage.keys.meta_range()`](keys.md#outrage.keys.meta_range).
 that includes keys a mount has made unreachable tells a caller to pass
 `recursive` to remove keys that are not there to remove.
 
-#### subtree_totals(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [SubtreeTotals](store.md#outrage.store.SubtreeTotals)
+#### subtree_totals(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [SubtreeTotals](store.md#outrage.store.SubtreeTotals)
 
 The three totals summed over the segments, as the count is.
 
@@ -587,7 +587,7 @@ mount at `lib/ref` puts `lib` in a listing, and no store holds a row
 there; [`descendant_count()`](#outrage.mounts.MountedStore.descendant_count) has never counted those either, and
 answering differently here is precisely the disagreement above.
 
-#### latest_change(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+#### latest_change(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The newest change any mount the range touches holds below `key`.
 
@@ -601,7 +601,7 @@ maximum needs.
 None when no mount the range touches holds anything, which is what
 every empty selection answers here.
 
-#### delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### delete(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 As [`delete()`](store.md#outrage.store.Store.delete), and it **crosses**.
 
@@ -631,7 +631,7 @@ though it were all of it. A read-only mount is skipped in a preview
 exactly as it is skipped in the delete, which is what makes the two
 lists the same list.
 
-#### list_keys(key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, descendant_counts: [bool](https://docs.python.org/3/library/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
+#### list_keys(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, descendant_counts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
 
 As [`list_keys()`](store.md#outrage.store.Store.list_keys), with the mounts spliced in.
 
@@ -651,7 +651,7 @@ store mounted there holds rather than the nothing its own row says.
 
 Filled after the cut, so a level wider than the page costs the page.
 
-#### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Excerpt](store.md#outrage.store.Excerpt)]
+#### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Excerpt](store.md#outrage.store.Excerpt)]
 
 Read everything `subtree` names, in key order.
 
@@ -677,7 +677,7 @@ the two axes multiply, and a hundred documents at two thousand
 characters each honours both stated bounds while returning two hundred
 thousand characters.
 
-#### keys_missing_meta(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = 'title', limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### keys_missing_meta(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 Document keys in `subtree` carrying none of `meta_name`.
 
@@ -689,7 +689,7 @@ for the same reason: the two have to be askable over one stretch of the
 store, and to agree about what was in range, or they stop describing
 the same one.
 
-#### missing_meta_stats(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/library/functions.html#int) = 0) → [MissingMeta](store.md#outrage.store.MissingMeta)
+#### missing_meta_stats(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/builtins/functions.html#int) = 0) → [MissingMeta](store.md#outrage.store.MissingMeta)
 
 What a metadata survey could not see, summed across the boundary.
 
@@ -699,13 +699,13 @@ stretch. `window` crosses like any other range -- a segment it
 excludes is not asked at all, which is what makes a caller's windows
 tile as they page.
 
-#### close() → [None](https://docs.python.org/3/library/constants.html#None)
+#### close() → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Close this thread's connection to every mounted store.
 
-### *exception* outrage.mounts.ReadOnlyMountError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.mounts.ReadOnlyMountError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`PermissionError`](https://docs.python.org/3/library/exceptions.html#PermissionError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`PermissionError`](https://docs.python.org/3/builtins/exceptions.html#PermissionError)
 
 Raised when a write is routed to a mount that was mounted read-only.
 
@@ -717,19 +717,19 @@ configured.
 `errors.py` that each subclass keeps the builtin it already inherited --
 a caller that catches `OSError` around a write goes on working.
 
-### *class* outrage.mounts.Resolved(mount: [Mount](#outrage.mounts.Mount), key: [str](https://docs.python.org/3/library/stdtypes.html#str), outer: [str](https://docs.python.org/3/library/stdtypes.html#str))
+### *class* outrage.mounts.Resolved(mount: [Mount](#outrage.mounts.Mount), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), outer: [str](https://docs.python.org/3/builtins/stdtypes.html#str))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 Which store owns a key, and what that store calls it.
 
 #### mount *: [Mount](#outrage.mounts.Mount)*
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The key inside the mounted store.
 
-#### outer *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### outer *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The key as it was asked for, normalised.
 
@@ -743,11 +743,11 @@ this store for [`key`](#outrage.mounts.Resolved.key), which is the inner spellin
 the key the caller passed would be asking for a key it has never heard
 of.
 
-#### *property* read_only *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* read_only *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether the mount that owns the key refuses writes.
 
-#### writable(action: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'write') → [Resolved](#outrage.mounts.Resolved)
+#### writable(action: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = 'write') → [Resolved](#outrage.mounts.Resolved)
 
 This, or raise if the mount that owns the key refuses writes.
 
@@ -778,7 +778,7 @@ live test is for.
 
 ### *class* outrage.mounts.Segment(mount: [Mount](#outrage.mounts.Mount), subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree), key_range: [KeyRange](store.md#outrage.store.KeyRange))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One stretch of one store, as part of reading across a mount boundary.
 
@@ -807,7 +807,7 @@ A segment is a stretch of *one* store, and a traversal crossing a mount
 boundary produces several. `subtree` and `key_range` beside it are
 in this store's own namespace, never the outer one.
 
-#### resume_from(after: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [bool](https://docs.python.org/3/library/functions.html#bool)]
+#### resume_from(after: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), [bool](https://docs.python.org/3/builtins/functions.html#bool)]
 
 This segment's own cursor, and whether the page already passed it.
 
@@ -831,9 +831,9 @@ an answer rather than an empty result. Such a segment is still
 *counted* -- totals describe the whole collection and have never
 depended on where the reader had got to.
 
-### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 A store as an argument names it: which file, and how to open it.
 
@@ -848,22 +848,22 @@ this stays a parse of the argument and touches nothing.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-#### type *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### type *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The backend, when the argument named one, else None for the file to say.
 
-#### extensions *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### extensions *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 How file names line up with keys, when the argument said; else the
 backend's own default. Only a tree has an answer -- see
 [`EXTENSIONS_OPTION`](#outrage.mounts.EXTENSIONS_OPTION).
 
-#### versioning *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### versioning *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Whether this store keeps earlier versions, when the argument said; else
 whatever the run defaults to. See [`VERSIONING_OPTION`](#outrage.mounts.VERSIONING_OPTION).
 
-#### opened(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [FileStore](store.md#outrage.store.FileStore)
+#### opened(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [FileStore](store.md#outrage.store.FileStore)
 
 The store this spec names, opened in `directory`.
 
@@ -878,7 +878,7 @@ it is somebody reading the keys.
 
 `versioning` is the run's default, which the spec's own option beats.
 
-### outrage.mounts.mount_point(prefix: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.mounts.mount_point(prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Validate a mount point, however it was written down.
 
@@ -889,7 +889,7 @@ the same namespace, and the project has one. `spec` is what the reader
 wrote, when there is a spec to quote back at them; a file quotes the key it
 used as its own field name.
 
-### outrage.mounts.open_mounts(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None), specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), \*, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [Spec](#outrage.mounts.Spec) | [None](https://docs.python.org/3/library/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, attached: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [MountedStore](#outrage.mounts.MountedStore)
+### outrage.mounts.open_mounts(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None), specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), \*, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [Spec](#outrage.mounts.Spec) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, attached: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [MountedStore](#outrage.mounts.MountedStore)
 
 Open every store in `directory`, as one table.
 
@@ -941,7 +941,7 @@ through closes it as well.
 spec's own `versioning=` beats it. A lent store is not opened here, so it
 is not reached.
 
-### outrage.mounts.parse_options(value: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Spec](#outrage.mounts.Spec)
+### outrage.mounts.parse_options(value: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Spec](#outrage.mounts.Spec)
 
 Split `FILE[,NAME=VALUE]...`, or say why it is not one.
 
@@ -963,7 +963,7 @@ refuses in its own words when the store is opened; a second list of
 backend names kept here to refuse it a moment earlier is exactly the
 duplicate vocabulary this grammar is written to avoid.
 
-### outrage.mounts.parse_spec(spec: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](#outrage.mounts.Spec)]
+### outrage.mounts.parse_spec(spec: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Spec](#outrage.mounts.Spec)]
 
 Split a `KEY=FILE[,NAME=VALUE]...` mount argument, or say why it is
 not one.
@@ -984,7 +984,7 @@ mount can say beyond *where* it is goes there. One flag remains one mount,
 which is what keeps overriding an entry from a mount configuration a matter
 of replacing it whole -- see [`OPTION_DELIMITER`](#outrage.mounts.OPTION_DELIMITER).
 
-### outrage.mounts.unparse(spec: [Spec](#outrage.mounts.Spec)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.mounts.unparse(spec: [Spec](#outrage.mounts.Spec)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `spec` as the argument it was read from: the inverse of
 [`parse_options()`](#outrage.mounts.parse_options).

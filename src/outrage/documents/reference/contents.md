@@ -9,38 +9,38 @@ being written out to a file. So an index generated here can drive a seeking
 read of a 20 MB document, and can also drive anything byte-addressed that was
 handed the exported file -- which is what the pair is for.
 
-### *class* outrage.contents.ContentsResult(source_key: [str](https://docs.python.org/3/library/stdtypes.html#str), metadata_key: [str](https://docs.python.org/3/library/stdtypes.html#str), headings: [int](https://docs.python.org/3/library/functions.html#int), source_characters: [int](https://docs.python.org/3/library/functions.html#int), source_bytes: [int](https://docs.python.org/3/library/functions.html#int), characters: [int](https://docs.python.org/3/library/functions.html#int))
+### *class* outrage.contents.ContentsResult(source_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), metadata_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), headings: [int](https://docs.python.org/3/builtins/functions.html#int), source_characters: [int](https://docs.python.org/3/builtins/functions.html#int), source_bytes: [int](https://docs.python.org/3/builtins/functions.html#int), characters: [int](https://docs.python.org/3/builtins/functions.html#int))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 The facts about one generated Markdown contents document.
 
-#### source_key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### source_key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The normalized key of the source document read.
 
-#### metadata_key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### metadata_key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The metadata key where the generated contents were stored.
 
-#### headings *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### headings *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 The number of headings found.
 
-#### source_characters *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### source_characters *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 The number of characters scanned in the source document.
 
-#### source_bytes *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### source_bytes *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 The number of UTF-8 bytes those characters occupy, which is the other
 number a caller needs to make sense of the second column.
 
-#### characters *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### characters *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 The number of characters stored in the generated contents document.
 
-### outrage.contents.make_contents(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, metadata_name: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'contents', strip_links: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [ContentsResult](#outrage.contents.ContentsResult)
+### outrage.contents.make_contents(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, metadata_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = 'contents', strip_links: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [ContentsResult](#outrage.contents.ContentsResult)
 
 Store an offset outline of one Markdown or HTML document as metadata.
 
@@ -57,7 +57,7 @@ with a byte-addressed [`retrieve_document()`](store.md#outrage.store.Store.retri
 random access into a document far too large to read, without splitting it
 into children first.
 
-### outrage.contents.render_contents(markdown: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, strip_links: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.contents.render_contents(markdown: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, strip_links: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Render each Markdown heading followed by its two source offsets.
 
@@ -74,7 +74,7 @@ thing that tells the two formats apart** -- an index written before this
 carries one number per heading. That is why regenerating an index is part
 of adopting this rather than housekeeping to get to later.
 
-### outrage.contents.render_html_contents(html: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.contents.render_html_contents(html: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Render each HTML h1-h6 element as a plain Markdown heading and two offsets.
 

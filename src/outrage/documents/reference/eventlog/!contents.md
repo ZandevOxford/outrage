@@ -26,28 +26,28 @@
 2975 2975
 
 #### *property* enabled *: bool*
-3740 3740
+3748 3748
 
 #### emit(event: str, \*\*fields: Any) → None
-3831 3831
+3840 3840
 
 #### start(\*\*fields: Any) → None
-4083 4085
+4094 4096
 
 #### stop(\*\*fields: Any) → None
-4307 4311
+4319 4323
 
 #### close() → None
-4772 4778
+4785 4791
 
 #### content_field(text: Any) → dict[str, Any]
-5154 5162
+5168 5176
 
 #### arguments(values: dict[str, Any]) → dict[str, Any]
-6049 6059
+6065 6075
 
 ### outrage.eventlog.current_call *: ContextVar* *= <ContextVar name='outrage_current_call' default=None>*
-6518 6530
+6538 6550
 
 ### outrage.eventlog.resolve_path(explicit: str | PathLike[str] | \_BesideTheStore | None, directory: str | PathLike[str]) → Path | None
-7007 7019
+7027 7039

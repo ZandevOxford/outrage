@@ -5,7 +5,7 @@
 87 87
 
 ### outrage.titles.markdown_title(markdown: str) → str | None
-579 581
+582 584
 
 ### outrage.titles.parse_title(content: str, format: str) → str | None
-1089 1093
+1095 1099

@@ -188,9 +188,9 @@ still [`MARKER_MATCH`](#outrage.install.MARKER_MATCH); the version remains infor
 
 The settings file the fragment is merged into, inside [`CLAUDE_DIR`](#outrage.install.CLAUDE_DIR).
 
-### *class* outrage.install.FileChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), source: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/library/stdtypes.html#str))
+### *class* outrage.install.FileChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), source: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What installing one packaged file would do, or did.
 
@@ -198,33 +198,33 @@ What installing one packaged file would do, or did.
 
 #### source *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-#### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 'created', 'updated', 'unchanged' or 'linked'.
 
-#### *property* writes *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-#### describe() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### describe() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
-### *class* outrage.install.HookChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/library/stdtypes.html#str), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None), duplicates: [int](https://docs.python.org/3/library/functions.html#int) = 0, target: [HookTarget](#outrage.install.HookTarget) = HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}))
+### *class* outrage.install.HookChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None), duplicates: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, target: [HookTarget](#outrage.install.HookTarget) = HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What installing the hook would do, or did.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-#### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 'created', 'updated' or 'unchanged'.
 
-#### entry *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
+#### entry *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
 
-#### previous *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None)*
+#### previous *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The entry being replaced, when there was one.
 
-#### duplicates *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### duplicates *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Extra entries of ours removed, from a run that could not identify them.
 
@@ -232,13 +232,13 @@ Extra entries of ours removed, from a run that could not identify them.
 
 Which harness's hook this is, so a report over several can name them.
 
-#### *property* writes *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-#### describe() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### describe() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
-### *class* outrage.install.HookTarget(name: [str](https://docs.python.org/3/library/stdtypes.html#str), template: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), relative: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), event: [str](https://docs.python.org/3/library/stdtypes.html#str), base: dict[str, ~typing.Any]=<factory>)
+### *class* outrage.install.HookTarget(name: [str](https://docs.python.org/3/builtins/stdtypes.html#str), template: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), relative: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), event: [str](https://docs.python.org/3/builtins/stdtypes.html#str), base: dict[str, ~typing.Any]=<factory>)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One harness's session-start hook: where it goes and what shape it is.
 
@@ -247,7 +247,7 @@ supporting a third client is a fourth instance rather than a branch in the
 code below. What is *not* here is deliberate: the merge rule, the marker
 and the refusal to touch what it did not write are the same everywhere.
 
-#### name *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### name *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 What `outrage init` calls this in its output.
 
@@ -267,11 +267,11 @@ then fails for anyone whose clone is somewhere else.
 
 Where the file goes, relative to the project root.
 
-#### event *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### event *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The key below `hooks` this harness fires at session start.
 
-#### base *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
+#### base *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
 
 What a newly created file starts from, before the entry is merged in.
 
@@ -286,19 +286,19 @@ Where [`template`](#outrage.install.HookTarget.template) actually is, inside thi
 A property rather than a field, so it stays out of the `repr` that
 the generated reference renders.
 
-#### path(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+#### path(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where this hook's file is in a project, whether or not it exists yet.
 
-### *exception* outrage.install.InstallError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.install.InstallError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`ConfigError`](config.md#outrage.config.ConfigError)
 
 Settings that cannot safely be updated.
 
-### *class* outrage.install.Installation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), server: [Change](config.md#outrage.config.Change), codex_server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], copilot_assets: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], table: [Starter](mountfile.md#outrage.mountfile.Starter))
+### *class* outrage.install.Installation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), server: [Change](config.md#outrage.config.Change), codex_server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], copilot_assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], table: [Starter](mountfile.md#outrage.mountfile.Starter))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 Everything `outrage init` does to a project, or would do.
 
@@ -310,19 +310,19 @@ Everything `outrage init` does to a project, or would do.
 
 The same server in `.codex/config.toml`, which is where Codex reads it.
 
-#### hooks *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...]*
+#### hooks *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...]*
 
 One per [`HOOK_TARGETS`](#outrage.install.HOOK_TARGETS), in that order.
 
-#### assets *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
+#### assets *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
 
 Claude Code skills and agents.
 
-#### codex_assets *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
+#### codex_assets *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
 
 Codex skills.
 
-#### copilot_assets *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
+#### copilot_assets *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
 
 Copilot CLI agents.
 
@@ -330,21 +330,21 @@ Copilot CLI agents.
 
 The project's mount table: written when there is none, never rewritten.
 
-#### *property* writes *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-### outrage.install.asset_sources() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
+### outrage.install.asset_sources() → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
 
 Every packaged file to install, as a source and a path below `.claude`.
 
-### outrage.install.codex_asset_sources() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
+### outrage.install.codex_asset_sources() → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
 
 Every packaged Codex skill, as a source and path below `.codex`.
 
-### outrage.install.copilot_asset_sources() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
+### outrage.install.copilot_asset_sources() → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
 
 Every packaged Copilot agent, as a source and path below `.github`.
 
-### outrage.install.init(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = False, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Installation](#outrage.install.Installation)
+### outrage.install.init(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Installation](#outrage.install.Installation)
 
 Set a project up: the MCP server entries, hooks, and packaged skills.
 
@@ -371,14 +371,14 @@ meant to install a hook: the flags default to nothing, so the entry was
 rebuilt with nothing. [`outrage.config.merge_entry()`](config.md#outrage.config.merge_entry) is the actual fix
 and it sits in `plan`, where both this and `outrage config` reach it.
 
-### outrage.install.install(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, \*, target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [HookChange](#outrage.install.HookChange)
+### outrage.install.install(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, \*, target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [HookChange](#outrage.install.HookChange)
 
 Install one packaged hook into a project, or say what would change.
 
 The dry run calls the same `plan` the real run does, so it cannot preview
 something different from what a write would produce.
 
-### outrage.install.is_ours(entry: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [bool](https://docs.python.org/3/library/functions.html#bool)
+### outrage.install.is_ours(entry: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether this session-start entry is one outrage wrote.
 
@@ -392,7 +392,7 @@ namespace.
 Compares [`MARKER_MATCH`](#outrage.install.MARKER_MATCH), not [`MARKER`](#outrage.install.MARKER). See the module docstring
 on why neither the version nor the product name is part of it.
 
-### outrage.install.plan(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+### outrage.install.plan(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 
 Work out what installing would change, without writing.
 
@@ -401,23 +401,23 @@ caller can preview and then write without reading twice - and so a dry run
 goes through this same function rather than a second one that could
 disagree with it.
 
-### outrage.install.plan_assets(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]
+### outrage.install.plan_assets(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]
 
 Work out which packaged files a project is missing or has an older copy of.
 
-### outrage.install.plan_codex_assets(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]
+### outrage.install.plan_codex_assets(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]
 
 Work out which Codex skills a project is missing or has an older copy of.
 
-### outrage.install.plan_copilot_assets(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]
+### outrage.install.plan_copilot_assets(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]
 
 Work out which Copilot agents a project is missing or has an older copy of.
 
-### outrage.install.settings_path(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.install.settings_path(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where a project's Claude Code settings file is, existing or not.
 
-### outrage.install.sessionstart_command(executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, copilot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.install.sessionstart_command(executable: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, copilot: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Build the shell command installed for the shared SessionStart payload.
 
@@ -430,11 +430,11 @@ The marker is a real argument understood by the private CLI wiring, not a
 shell comment, so it survives either command language without reaching
 stdout.
 
-### outrage.install.sessionstart_payload(\*, copilot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+### outrage.install.sessionstart_payload(\*, copilot: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 Read the shipped prompt and wrap it in one harness's hook payload.
 
-### outrage.install.template_entry(target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+### outrage.install.template_entry(target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 The entry to install, read from the packaged template.
 
@@ -444,6 +444,6 @@ flag selecting its flat payload. The marker is present before the entry is
 accepted, so a broken template cannot silently become one a later run
 fails to recognise.
 
-### outrage.install.write_assets(changes: [list](https://docs.python.org/3/library/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.install.write_assets(changes: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Copy across the files that differ, atomically and one at a time.

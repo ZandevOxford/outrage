@@ -828,8 +828,10 @@ def argument_parser() -> argparse.ArgumentParser:
             "is its own integrity check and how much of the store is sitting "
             "in the write-ahead log rather than in the database -- invisible "
             "in normal use, and what makes a copy of the database file alone "
-            "lose recent writes. For parquet it is whether the file is still "
-            "in the sort order every read of it bisects."
+            "lose recent writes. For parquet, read through duckdb, it is how "
+            "many parts and rows there are and how many rows repeat a key; "
+            "opened with type=parquet, whether the file is still in the sort "
+            "order every read of it bisects."
         ),
     )
     _store_option(check)
@@ -1129,8 +1131,9 @@ def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
         help=(
             f"{verb} mount in the project's mount table: another store under "
             f"KEY, as in ref=reference.sqlite. FILE is relative to --dir, like "
-            f"--root-mount. Repeatable, and refused here if the mount point is "
-            f"not a valid key."
+            f"--root-mount, and for parquet may be a pattern over parts, as in "
+            f"ref=parts/*.parquet. Repeatable, and refused here if the mount "
+            f"point is not a valid key."
         ),
     )
     parser.add_argument(
@@ -1471,7 +1474,7 @@ def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
     directory = store.resolve_directory(args.directory)
     root = _root(args)
     database = store.store_file(directory, root.path)
-    if not database.exists():
+    if not store.store_present(directory, root.path):
         # Opening one would create it, and backing up a store the caller never
         # had is a success that answers the wrong question.
         raise store.BackupError("check-no-store", path=str(database))
@@ -2432,7 +2435,7 @@ def _mount_row(
     hide the one thing about it that cannot be inferred from the name.
     """
     filename = mounts.unparse(spec)
-    if store.store_file(directory, spec.path).exists():
+    if store.store_present(directory, spec.path):
         state = "ok"
     elif kind == READ_ONLY_MOUNT_KIND:
         # The refusal `open_mounts` would make, said here instead of at the

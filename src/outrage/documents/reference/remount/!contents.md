@@ -5,34 +5,34 @@
 2346 2346
 
 ### *class* outrage.remount.Changed(table: MountedStore, notes: tuple[Note, ...] = ())
-3220 3220
+3221 3221
 
 #### table *: MountedStore*
-3862 3862
+3865 3865
 
 #### notes *: tuple[Note, ...]*
-3932 3932
+3935 3935
 
 ### *class* outrage.remount.Live(table: MountedStore, \*, directory: str | PathLike[str] | None = None, log: EventLog | None = None, versioning: bool = True)
-4053 4053
+4057 4057
 
 #### *property* table *: MountedStore*
-5916 5916
+5926 5926
 
 #### *property* directory *: PathLike[str]*
-6060 6060
+6070 6070
 
 #### mount(key: str, \*, file: str | PathLike[str] | None = None, type: str | None = None, extensions: str | None = None, read_only: bool = False) → Changed
-6275 6275
+6286 6286
 
 #### unmount(key: str) → Changed
-8360 8362
+8380 8382
 
 #### close() → None
-8799 8803
+8820 8824
 
 ### outrage.remount.notes_for_mount(after: MountedStore, prefix: str, \*, replaced: bool, shipped: bool = False, created: str | None = None) → list[Note]
-8918 8924
+8940 8946
 
 ### outrage.remount.notes_for_unmount(after: MountedStore, prefix: str, \*, started: bool = True) → list[Note]
-10767 10775
+10795 10803

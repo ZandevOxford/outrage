@@ -1931,9 +1931,11 @@ def build_server(
                 str | None,
                 Field(
                     description=(
-                        "Store file, relative to the store directory. Omit it to "
-                        "mount the store outrage ships for this key, which is how "
-                        "the 'outrage' manual is put back after unmounting it"
+                        "Store file, relative to the store directory. For parquet "
+                        "it may be a pattern over parts, such as 'parts/*.parquet'. "
+                        "Omit it to mount the store outrage ships for this key, "
+                        "which is how the 'outrage' manual is put back after "
+                        "unmounting it"
                     )
                 ),
             ] = None,
@@ -1943,7 +1945,8 @@ def build_server(
                     description=(
                         "Backend to open `file` with, when the file name does not "
                         "say: 'files' for a directory of files, 'duckdb' for a "
-                        "directory of parquet parts"
+                        "directory of parquet parts, 'parquet' to read one parquet "
+                        "file with pyarrow rather than duckdb"
                     )
                 ),
             ] = None,

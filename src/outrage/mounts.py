@@ -77,6 +77,7 @@ from .store import (
     check_unchanged,
     entry_kind,
     store_file,
+    store_present,
 )
 
 #: Separates a mount point from its store file in a ``--mount`` argument.
@@ -2104,7 +2105,7 @@ def open_mounts(
     base = store_module.resolve_directory(directory)
     for prefix, spec in refusing:
         database = store_file(base, spec.path)
-        if not database.exists():
+        if not store_present(base, spec.path):
             raise MountError("mount-read-only-missing", mount=prefix, path=str(database))
 
     # Lent stores go in first, so that anything opened here is closed by the

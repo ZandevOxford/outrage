@@ -732,8 +732,14 @@ def test_closing_twice_is_allowed_and_reopening_still_reads(tmp_path, packed):
 
 
 def test_the_extension_chooses_the_backend(tmp_path):
-    """The whole of the selection rule, and the reason no new grammar was added."""
-    assert store_module._backend_for("ref.parquet") is ParquetStore
+    """The whole of the selection rule, and the reason no new grammar was added.
+
+    ``.parquet`` is read through duckdb, a pattern over parts included, and
+    this backend is opened only when a mount names it.
+    """
+    assert store_module._backend_for("ref.parquet").backend_name == "duckdb"
+    assert store_module._backend_for("parts/*.parquet").backend_name == "duckdb"
+    assert store_module._backend_for("ref.parquet", "parquet") is ParquetStore
     assert store_module._backend_for("ref.sqlite") is SqliteStore
     assert store_module._backend_for(None) is SqliteStore
     # An unrecognised name is the default backend, not an error: a store file
@@ -761,10 +767,10 @@ def test_a_backend_may_be_named_instead_of_inferred(tmp_path):
         store_module._backend_for("documents", "tree")
 
 
-def test_default_store_opens_a_parquet_file_without_naming_a_backend(tmp_path):
-    """Which is what lets a mount spec say `ref=python.parquet` and mean it."""
+def test_a_parquet_file_opens_with_this_backend_when_it_is_named(tmp_path):
+    """What `ref=python.parquet,type=parquet` says, and what testing this backend needs."""
     ParquetStore.build(tmp_path / "ref.parquet", [("a", "body", None, None)])
-    with store_module.open_store(tmp_path, filename="ref.parquet") as store:
+    with store_module.open_store(tmp_path, filename="ref.parquet", backend="parquet") as store:
         assert isinstance(store, ParquetStore)
         assert store.retrieve_document("a").content == "body"
 

@@ -5,52 +5,52 @@
 1182 1182
 
 #### version *: str*
-2377 2377
+2392 2392
 
 #### python *: str*
-2454 2454
+2470 2470
 
 #### prefix *: str*
-2857 2857
+2874 2874
 
 #### command *: tuple[str, ...]*
-3049 3049
+3067 3067
 
 #### directory *: str | None*
-3382 3382
+3402 3402
 
 #### mount_config *: tuple[str, ...]*
-3723 3723
+3745 3745
 
 #### log *: str | None*
-3940 3940
+3964 3964
 
 #### log_content *: str | None*
-4148 4148
+4174 4174
 
 #### mounts *: tuple[MountInfo, ...]*
-4363 4363
+4391 4391
 
 ### *class* outrage.info.MountInfo(mount: str, path: str | None, kind: str, read_only: bool, versioned: bool | None = None)
-4541 4541
+4570 4570
 
 #### mount *: str*
-5169 5169
+5206 5206
 
 #### path *: str | None*
-5308 5308
+5346 5346
 
 #### kind *: str*
-5618 5618
+5658 5658
 
 #### read_only *: bool*
-5872 5872
+5913 5913
 
 #### versioned *: bool | None*
-6004 6004
+6046 6046
 
 ### outrage.info.describe(opened: Store, \*, directory: str | PathLike[str] | None = None, mount_config: Sequence[str] = (), log: EventLog | None = None) → Info
-6465 6465
+6509 6509
 
 ### outrage.info.mount_infos(opened: Store) → tuple[MountInfo, ...]
-7838 7840
+7887 7889

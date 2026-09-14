@@ -23,11 +23,14 @@ If reading this via the MCP server,
 * [design](design.md) - why outrage is built the way it is. The components,
   the key namespace and its grammar, what text is and how it is encoded, the
   tool semantics and the schema, with the reasoning and the roads not taken.
+* [development](development.md) - the development environment, and the store
+  directory, mounts and logging a checkout runs with. About outrage's
+  development rather than its use.
 * [hooks](hooks.md) - the harness hooks.
 * [implementation](implementation.md) - what is built and what is left, stage
-  by stage. A snapshot of the project's own progress rather than a manual, and
-  the one document here that is about outrage's development instead of its
-  use.
+  by stage. A snapshot of the project's own progress rather than a manual.
+* [importers](importers.md) - separate distributions that turn an outside
+  source into a store Outrage can mount. Only the MediaWiki importer so far.
 * [instructions](instructions/instructions.md) - the text the MCP server
   delivers to every session when a client connects.
 * [keys](keys.md) - detailed definition of keys. The short version;

@@ -56,145 +56,145 @@
 10262 10264
 
 #### path *: Path*
-10651 10653
+10653 10655
 
 #### source *: Path*
-10734 10736
+10736 10738
 
 #### action *: str*
-10819 10821
+10821 10823
 
 #### *property* writes *: bool*
-10943 10945
+10946 10948
 
 #### describe() → str
-11033 11035
+11037 11039
 
 ### *class* outrage.install.HookChange(path: Path, action: str, entry: dict[str, Any], previous: dict[str, Any] | None, duplicates: int = 0, target: HookTarget = HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}))
-11111 11115
+11116 11120
 
 #### path *: Path*
-12143 12147
+12156 12160
 
 #### action *: str*
-12226 12230
+12239 12243
 
 #### entry *: dict[str, Any]*
-12340 12344
+12354 12358
 
 #### previous *: dict[str, Any] | None*
-12542 12546
+12558 12562
 
 #### duplicates *: int*
-12858 12862
+12877 12881
 
 #### target *: HookTarget*
-13012 13016
+13032 13036
 
 #### *property* writes *: bool*
-13142 13146
+13162 13166
 
 #### describe() → str
-13232 13236
+13253 13257
 
 ### *class* outrage.install.HookTarget(name: str, template: Path, relative: Path, event: str, base: dict[str, ~typing.Any]=<factory>)
-13310 13316
+13332 13338
 
 #### name *: str*
-14119 14125
+14144 14150
 
 #### template *: Path*
-14240 14246
+14266 14272
 
 #### relative *: Path*
-14942 14948
+14968 14974
 
 #### event *: str*
-15081 15087
+15107 15113
 
 #### base *: dict[str, Any]*
-15216 15222
+15243 15249
 
 #### *property* fragment *: Path*
-15701 15707
+15730 15736
 
 #### path(project_dir: str | Path) → Path
-15997 16003
+16026 16032
 
 ### *exception* outrage.install.InstallError(code: str, \*\*details: Any)
-16292 16300
+16322 16330
 
 ### *class* outrage.install.Installation(project_dir: Path, server: Change, codex_server: Change, hooks: tuple[HookChange, ...], assets: tuple[FileChange, ...], codex_assets: tuple[FileChange, ...], copilot_assets: tuple[FileChange, ...], table: Starter)
-16585 16593
+16616 16624
 
 #### project_dir *: Path*
-17503 17511
+17539 17547
 
 #### server *: Change*
-17593 17601
+17629 17637
 
 #### codex_server *: Change*
-17652 17660
+17688 17696
 
 #### hooks *: tuple[HookChange, ...]*
-17790 17798
+17826 17834
 
 #### assets *: tuple[FileChange, ...]*
-17990 17998
+18027 18035
 
 #### codex_assets *: tuple[FileChange, ...]*
-18150 18158
+18188 18196
 
 #### copilot_assets *: tuple[FileChange, ...]*
-18299 18307
+18338 18346
 
 #### table *: Starter*
-18456 18464
+18496 18504
 
 #### *property* writes *: bool*
-18595 18603
+18635 18643
 
 ### outrage.install.asset_sources() → list[tuple[Path, Path]]
-18685 18693
+18726 18734
 
 ### outrage.install.codex_asset_sources() → list[tuple[Path, Path]]
-19060 19070
+19103 19113
 
 ### outrage.install.copilot_asset_sources() → list[tuple[Path, Path]]
-19434 19446
+19479 19491
 
 ### outrage.install.init(project_dir: str | Path, directory: str | Path | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False, root_mount: str | None = None, mounts: Sequence[str] = (), read_only_mounts: Sequence[str] = (), dry_run: bool = False) → Installation
-19813 19827
+19860 19874
 
 ### outrage.install.install(project_dir: str | Path, dry_run: bool = False, \*, target: HookTarget = CLAUDE_HOOK) → HookChange
-22791 22807
+22851 22867
 
 ### outrage.install.is_ours(entry: Any) → bool
-23353 23371
+23415 23433
 
 ### outrage.install.plan(path: Path, entry: dict[str, Any] | None = None, \*, target: HookTarget = CLAUDE_HOOK) → tuple[HookChange, dict[str, Any], str | None]
-24137 24157
+24200 24220
 
 ### outrage.install.plan_assets(project_dir: str | Path) → list[FileChange]
-25285 25307
+25356 25378
 
 ### outrage.install.plan_codex_assets(project_dir: str | Path) → list[FileChange]
-25644 25668
+25717 25741
 
 ### outrage.install.plan_copilot_assets(project_dir: str | Path) → list[FileChange]
-26007 26033
+26082 26108
 
 ### outrage.install.settings_path(project_dir: str | Path) → Path
-26374 26402
+26451 26479
 
 ### outrage.install.sessionstart_command(executable: str | PathLike[str] | None = None, \*, copilot: bool = False) → str
-26688 26718
+26766 26796
 
 ### outrage.install.sessionstart_payload(\*, copilot: bool = False) → dict[str, Any]
-27745 27777
+27828 27860
 
 ### outrage.install.template_entry(target: HookTarget = CLAUDE_HOOK) → dict[str, Any]
-28127 28161
+28213 28247
 
 ### outrage.install.write_assets(changes: list[FileChange]) → None
-28787 28823
+28875 28911

@@ -33,9 +33,9 @@ is deliberately not what a user wants: anything that prints an error straight
 at somebody now looks wrong when it is read, rather than looking fine and
 naming a key that does not exist.
 
-### *exception* outrage.errors.OutrageError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.errors.OutrageError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`Exception`](https://docs.python.org/3/library/exceptions.html#Exception)
+Bases: [`Exception`](https://docs.python.org/3/builtins/exceptions.html#Exception)
 
 A failure a caller asked for and should be told about in a sentence.
 
@@ -43,6 +43,6 @@ A failure a caller asked for and should be told about in a sentence.
 what [`outrage.messages`](messages.md#module-outrage.messages) renders. `details` are the facts that message
 needs, by name.
 
-#### \_\_str_\_() → [str](https://docs.python.org/3/library/stdtypes.html#str)
+#### \_\_str_\_() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Return str(self).

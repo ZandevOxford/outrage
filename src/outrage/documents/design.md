@@ -46,9 +46,12 @@ the schema, its migrations, the connection handling, and the SQL - and is what
 a store is opened as when its file says nothing else. `outrage.store_parquet`
 is one columnar file, written whole and read many times, for a reference base
 of tens of thousands of documents; it refuses writes, and `outrage pack` is how
-documents get into one. `outrage.store_duckdb` reads a directory of those files
-in any order as one store, for a reference base too large for one file or that
-arrives in pieces, and refuses writes too. `outrage.store_files` is a directory of files, one per
+documents get into one. `outrage.store_duckdb` reads those files through duckdb
+- one of them, a directory of them, or the ones a pattern matches, in any order
+as one store - and refuses writes too. It is what a `.parquet` store file opens
+as: its cost does not grow with the corpus, where `outrage.store_parquet` holds
+an index over all of it, so the pyarrow reader is opened only when a mount asks
+for it with `type=parquet`. `outrage.store_files` is a directory of files, one per
 key, which is what an export target and a working copy already were - the same
 mapping `outrage.bulk` writes a tree with, expressed as a store, so that moving
 documents between a database and a directory is a copy rather than a fourth
@@ -97,11 +100,23 @@ holding routing code - and it is why `Store` says the operations without saying
 how they are kept.
 
 `store._backend_for` is the single place the package chooses between them, and
-it chooses **by the store file's extension**: `.sqlite` and `.parquet`. So a
-mount spec says `ref=python.parquet` and means it, with no new grammar and no
-`--backend` flag threaded through the server, the command line and the mount
-table. An unrecognised extension is the default backend rather than an error -
-a store file has always been free to be called anything.
+it chooses **by the store file's extension**: `.sqlite`, and `.parquet` for
+duckdb. So a mount spec says `ref=python.parquet` and means it, with no new
+grammar and no `--backend` flag threaded through the server, the command line
+and the mount table. An unrecognised extension is the default backend rather
+than an error - a store file has always been free to be called anything.
+
+**A store file may be a pattern** where the backend reads a store out of many
+files, which only duckdb does: `ref=parts/*.parquet`, or `parts/**/*.parquet`
+across directories. It is still a store file - relative to the store directory,
+refused if absolute or climbing out with `..` - and its extension still names the
+backend, so a pattern needs no `type=`. A name that exists on disk is that file
+whatever characters it holds; a wildcard does not match a hidden name, so a part
+written under a dotted name and renamed into place is never read half written;
+and the files are listed once, when the store opens. Every other backend refuses
+a pattern that matches nothing literally rather than creating a store called
+`*.sqlite`. Code that asks whether a store is there before opening it asks
+`store.store_present`, which answers for a pattern by what it matches.
 
 A **tree is not addressed that way**, and claims no extension: a directory has
 none to read, and reading the name of the directory instead would make

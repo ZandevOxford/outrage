@@ -8,40 +8,40 @@
 5153 5153
 
 ### *class* outrage.messages.NoteTable(audience: str)
-5481 5481
+5483 5483
 
 #### audience
-6746 6746
+6750 6750
 
 #### template(code: str) → Callable[[Callable[[...], str]], Callable[[...], str]]
-6953 6953
+6957 6957
 
 #### silent(code: str, reason: str) → None
-7720 7722
+7727 7729
 
 #### render(note: Note, name: Callable[[str], str] | None = None) → str | None
-8197 8201
+8207 8211
 
 #### sentences() → Mapping[str, Callable[[...], str]]
-9103 9109
+9118 9124
 
 #### silences() → Mapping[str, str]
-9505 9513
+9522 9530
 
 ### outrage.messages.Speller
-10105 10115
+10124 10134
 
 ### outrage.messages.codes() → Mapping[str, Callable[[...], str]]
-10990 11000
+11010 11020
 
 ### outrage.messages.flag(argument: str, value: Any = None) → str
-11403 11415
+11425 11437
 
 ### outrage.messages.keyword(argument: str, value: Any = None) → str
-12677 12691
+12701 12715
 
 ### outrage.messages.render(error: OutrageError, name: Callable[[str], str] | None = None, \*, spell: Callable[[...], str] | None = None) → str
-13234 13250
+13260 13276
 
 ### outrage.messages.template(code: str) → Callable[[Callable[[...], str]], Callable[[...], str]]
-14460 14478
+14492 14510

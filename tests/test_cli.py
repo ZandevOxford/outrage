@@ -1228,9 +1228,35 @@ def test_check_reports_a_parquet_store_without_sqlites_vocabulary(tmp_path):
     The line that matters is the third: printed from the report's ``details``
     rather than from fields, so a store with no write-ahead log says nothing
     about one instead of reporting it as zero bytes -- which would read as a
-    fact somebody had checked.
+    fact somebody had checked. Named with ``type=parquet``, since the extension
+    alone now opens the file through duckdb.
     """
     pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+
+    a_tree(tmp_path / ".outrage")
+    run(
+        "pack",
+        str(tmp_path / "ref.parquet"),
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "--from-store",
+        "store.sqlite",
+    )
+
+    status, output = run("check", "--dir", str(tmp_path), "--store", "ref.parquet,type=parquet")
+
+    assert status == 0
+    assert "(parquet)" in output
+    assert "order sorted" in output
+    assert "integrity" not in output
+    assert "log" not in output
+    assert "nothing wrong" in output
+
+
+def test_check_reads_a_packed_file_through_duckdb_unless_told_otherwise(tmp_path):
+    """What ``ref.parquet`` opens as when nobody names a backend."""
+    pytest.importorskip("pyarrow", reason="packing needs the parquet extra")
+    pytest.importorskip("duckdb", reason="reading a parquet store needs duckdb")
 
     a_tree(tmp_path / ".outrage")
     run(
@@ -1245,10 +1271,8 @@ def test_check_reports_a_parquet_store_without_sqlites_vocabulary(tmp_path):
     status, output = run("check", "--dir", str(tmp_path), "--store", "ref.parquet")
 
     assert status == 0
-    assert "(parquet)" in output
-    assert "order sorted" in output
-    assert "integrity" not in output
-    assert "log" not in output
+    assert "(duckdb)" in output
+    assert "parts 1" in output
     assert "nothing wrong" in output
 
 
@@ -1259,7 +1283,8 @@ def test_repair_of_a_store_with_nothing_to_move_says_so(tmp_path):
     could need, which the user has to be able to tell from a repair that ran
     and did nothing.
     """
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="packing needs the parquet extra")
+    pytest.importorskip("duckdb", reason="reading a parquet store needs duckdb")
 
     a_tree(tmp_path / ".outrage")
     run(
@@ -1274,7 +1299,7 @@ def test_repair_of_a_store_with_nothing_to_move_says_so(tmp_path):
     status, output = run("check", "--repair", "--dir", str(tmp_path), "--store", "ref.parquet")
 
     assert status == 0
-    assert "nothing to repair: a parquet store has no state a repair could move" in output
+    assert "nothing to repair: a duckdb store has no state a repair could move" in output
 
 
 def test_check_refuses_a_directory_with_no_store(tmp_path, capsys):
@@ -2088,7 +2113,8 @@ def test_writing_to_a_parquet_store_is_refused_as_a_message(tmp_path, capsys):
     And the line does not offer a flag, because unlike a read-only *mount*
     there is none that would make the write succeed.
     """
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="packing needs the parquet extra")
+    pytest.importorskip("duckdb", reason="reading a parquet store needs duckdb")
     an_exportable_store(tmp_path / ".outrage")
     run(
         "pack",
@@ -2103,7 +2129,7 @@ def test_writing_to_a_parquet_store_is_refused_as_a_message(tmp_path, capsys):
 
     assert status == 1
     reported = capsys.readouterr().err
-    assert "written whole rather than updated" in reported
+    assert "never written through" in reported
     assert "outrage pack" in reported
 
 

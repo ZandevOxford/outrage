@@ -6,15 +6,15 @@ MarkItDown is an optional dependency and is imported only when conversion is
 requested.  This keeps importing `outrage` and running every unrelated
 command independent of the document-conversion stack.
 
-### *exception* outrage.ingest.IngestError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.ingest.IngestError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/library/exceptions.html#RuntimeError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/builtins/exceptions.html#RuntimeError)
 
 A local document could not be converted or safely stored.
 
-### *class* outrage.ingest.IngestResult(source: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), key: [str](https://docs.python.org/3/library/stdtypes.html#str), title: [str](https://docs.python.org/3/library/stdtypes.html#str), characters: [int](https://docs.python.org/3/library/functions.html#int), format: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['markdown'], title_key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), dry_run: [bool](https://docs.python.org/3/library/functions.html#bool))
+### *class* outrage.ingest.IngestResult(source: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), title: [str](https://docs.python.org/3/builtins/stdtypes.html#str), characters: [int](https://docs.python.org/3/builtins/functions.html#int), format: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['markdown'], title_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 The facts about one converted document, whether previewed or written.
 
@@ -22,15 +22,15 @@ The facts about one converted document, whether previewed or written.
 
 The absolute, resolved local file converted.
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The normalized destination key.
 
-#### title *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### title *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The title chosen for the document.
 
-#### characters *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### characters *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 The number of Markdown characters produced.
 
@@ -38,15 +38,15 @@ The number of Markdown characters produced.
 
 The stored format, always `"markdown"`.
 
-#### title_key *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### title_key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The metadata key written for the title, or `None` for a dry run.
 
-#### dry_run *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### dry_run *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether conversion was performed without writing the document.
 
-### outrage.ingest.available() → [bool](https://docs.python.org/3/library/functions.html#bool)
+### outrage.ingest.available() → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether the optional `documents` extra is installed.
 
@@ -61,7 +61,7 @@ Only whether MarkItDown itself is importable. A reader missing for one
 format is a property of the file being converted, not of the extra, and is
 reported per conversion by `_convert()`.
 
-### outrage.ingest.ingest_document(store: [Store](store.md#outrage.store.Store), source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, title: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [IngestResult](#outrage.ingest.IngestResult)
+### outrage.ingest.ingest_document(store: [Store](store.md#outrage.store.Store), source: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, title: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [IngestResult](#outrage.ingest.IngestResult)
 
 Convert a local file to Markdown and store it at `key`.
 

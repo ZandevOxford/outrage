@@ -186,8 +186,17 @@ directory into one file - is what removes the repeats.
 
 Every part must be in this build's format version; an older part is refused
 with the advice to repack it, and a directory mixing versions is refused naming
-both. duckdb is an optional extra (`pip install 'outrage[duckdb]'`), and reading
-a directory needs no pyarrow.
+both. duckdb is carried by both the `parquet` and `duckdb` extras, and reading a
+store needs no pyarrow.
+
+**It is what a `.parquet` store file opens as**, and the store file may name one
+file, a directory of parts, or a pattern over them - `ref=parts/*.parquet` - with
+the extension choosing the backend in the last case too. The pyarrow backend is
+opened only when a mount says `type=parquet`, which is also the one reader of a
+format version 1 file. Each part is handed to duckdb glob-escaped, because duckdb
+expands every path as a pattern of its own. A backup keeps the store's shape: a
+file for a file, and for a pattern each part's path below the pattern's first
+wildcard.
 
 It is checked the way the parquet backend is, with the same corpus and battery
 dealt at random across shuffled parts, and with a key repeated across parts

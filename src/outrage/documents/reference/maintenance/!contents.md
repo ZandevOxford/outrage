@@ -44,76 +44,76 @@
 4240 4240
 
 ### *class* outrage.maintenance.Problem(code: str, severity: str, summary: str, detail: str = '', repairable: bool = False)
-4625 4625
+4627 4627
 
 #### code *: str*
-6471 6471
+6479 6479
 
 #### severity *: str*
-6545 6545
+6554 6554
 
 #### summary *: str*
-6623 6623
+6633 6633
 
 #### detail *: str* *= ''*
-6700 6700
+6711 6711
 
 #### repairable *: bool* *= False*
-6783 6783
+6795 6795
 
 ### *class* outrage.maintenance.Repaired(action: str, before: int, after: int, unit: str = 'bytes')
-6876 6876
+6889 6889
 
 #### action *: str*
-7713 7713
+7731 7731
 
 #### before *: int*
-7789 7789
+7808 7808
 
 #### after *: int*
-7866 7866
+7886 7886
 
 #### unit *: str* *= 'bytes'*
-7942 7942
+7963 7963
 
 ### *class* outrage.maintenance.Report(path: Path, backend: str = '', format_version: int = 0, documents: int = 0, metadata: int = 0, characters: int = 0, details: dict[str, str]=<factory>, problems: list[Problem] = <factory>)
-8028 8028
+8050 8050
 
 #### path *: Path*
-8818 8818
+8847 8847
 
 #### backend *: str* *= ''*
-8901 8901
+8930 8930
 
 #### format_version *: int* *= 0*
-9199 9199
+9229 9229
 
 #### documents *: int* *= 0*
-9290 9290
+9321 9321
 
 #### metadata *: int* *= 0*
-9376 9376
+9408 9408
 
 #### characters *: int* *= 0*
-9461 9461
+9494 9494
 
 #### details *: dict[str, str]*
-9548 9548
+9582 9582
 
 #### problems *: list[Problem]*
-10152 10152
+10189 10189
 
 #### *property* sound *: bool*
-10273 10273
+10311 10311
 
 #### *property* repairable *: list[Problem]*
-10425 10425
+10464 10464
 
 ### outrage.maintenance.check(store: FileStore) → Report
-10921 10921
+10961 10961
 
 ### outrage.maintenance.repair(store: FileStore) → list[Repaired]
-11331 11333
+11371 11373
 
 ### outrage.maintenance.require_store(directory: Path, filename: str | None = None) → Path
-11916 11920
+11957 11961

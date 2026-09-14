@@ -67,20 +67,20 @@ shipped by the same wheel rule that already carries `src/outrage/skills/`
 without a tool as well -- but of the hand-written half only, and the module
 docstring says which that is.
 
-### *exception* outrage.shipped.DocumentsError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.shipped.DocumentsError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`FileNotFoundError`](https://docs.python.org/3/library/exceptions.html#FileNotFoundError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`FileNotFoundError`](https://docs.python.org/3/builtins/exceptions.html#FileNotFoundError)
 
 Raised when the shipped documentation is not in the installation.
 
-### outrage.shipped.attached(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)]
+### outrage.shipped.attached(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)]
 
 The documentation as the `attached` argument `open_mounts` takes.
 
 One call rather than two lines repeated in each front end, and the mount
 point is spelled once.
 
-### outrage.shipped.available() → [bool](https://docs.python.org/3/library/functions.html#bool)
+### outrage.shipped.available() → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether this installation actually carries the tree.
 
@@ -89,7 +89,7 @@ without `src/outrage/skills/` -- the packaged skill -- and nothing said
 so. `test_packaging.py` is where that is guarded; this is what a front end
 asks before mounting something it was not explicitly told to mount.
 
-### outrage.shipped.open_documents(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/library/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/library/stdtypes.html#str) = MOUNT_POINT) → [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)
+### outrage.shipped.open_documents(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = MOUNT_POINT) → [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)
 
 Open the shipped tree, read-only, refusing if it is not there.
 

@@ -29,9 +29,9 @@ What this is not is a backup. updated_at does not survive the round trip and
 neither does anything else the database holds about a document; `FileStore.backup`
 is the copy that keeps all of it.
 
-### *class* outrage.bulk.Check(file: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), record: [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/library/constants.html#None), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), changed_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked_code: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked_from: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/library/functions.html#bool) = False)
+### *class* outrage.bulk.Check(file: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), record: [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/builtins/constants.html#None), previous: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), changed_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, unchecked_code: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, unchecked_from: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What asking an exported file whether the store still holds it found.
 
@@ -45,31 +45,31 @@ useful apart from the bytes in the file.
 The file whose record was asked, so a caller that got past this can
 renew it -- see [`renew()`](#outrage.bulk.renew).
 
-#### record *: [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### record *: [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The record that answered, or None when there was none to ask and
 `overwrite` allowed the write regardless. None is what stops
 [`renew()`](#outrage.bulk.renew) writing a claim about a key the file did not come from.
 
-#### previous *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### previous *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Characters the key held before the write, or None if it held nothing.
 An empty document and no document are different things to have replaced.
 
-#### changed_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### changed_at *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 `updated_at` of what was there, for the sentence `overwrite` owes.
 
-#### unchecked_code *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### unchecked_code *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Why no comparison was made, as a code, when `overwrite` allowed one to
 be skipped. None when the comparison happened.
 
-#### unchecked_from *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### unchecked_from *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The key the record named, when it named another one.
 
-#### overwritten *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### overwritten *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether `overwrite` allowed a write the staleness refusal would have
 stopped. Separate from `unchecked_code`: this one knows somebody's write
@@ -82,7 +82,7 @@ key, content, the format or None to detect it, and the timestamp or None
 for now. A tuple rather than a class because it is what a build consumes
 and nothing holds one for longer than that.
 
-alias of [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None)]
+alias of [`tuple`](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)]
 
 ### outrage.bulk.DEFAULT_EXTENSIONS *= 'strip'*
 
@@ -185,9 +185,9 @@ that *does* spell one may not contradict the format being stored. The other
 half, a key holding a document *and* the keys below it, is what
 [`CONTAINER_PREFIX`](#outrage.bulk.CONTAINER_PREFIX) answers.
 
-### *class* outrage.bulk.ExportRecord(key: [str](https://docs.python.org/3/library/stdtypes.html#str), content_sha256: [str](https://docs.python.org/3/library/stdtypes.html#str), exported_at: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, store: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.bulk.ExportRecord(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content_sha256: [str](https://docs.python.org/3/builtins/stdtypes.html#str), exported_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, store: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What an export handed out, as the sidecar beside it records it.
 
@@ -207,49 +207,49 @@ covers. **Unknown fields are ignored on read**, so a later writer can
 record more without making the files an older reader must still import
 unreadable.
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The key that was exported. An import to a *different* key is how content
 is copied around the store, not an edit, so the comparison does not apply
 to it -- see [`import_document()`](#outrage.bulk.import_document).
 
-#### content_sha256 *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### content_sha256 *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 Hex sha256 of the exported content as UTF-8. The token that decides.
 Named for its algorithm rather than `hash` so a second one can be added
 beside it rather than replacing it.
 
-#### exported_at *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### exported_at *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 When the export happened, UTC.
 
-#### format *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### format *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The document's stored format.
 
-#### updated_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### updated_at *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 What the document's `updated_at` was. **Recorded for the sentence, not
 for the decision**: it is normalised to second precision, so two writes
 inside one second are indistinguishable. The hash decides; this is what
 makes a refusal readable by a person.
 
-#### store *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### store *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Where the store was, when it could be asked. Recorded and **not
 enforced**: a file exported from one store and imported into another is a
 copy between stores, which is a thing somebody may mean, and the record is
 there so the answer can say it happened.
 
-#### *static* path_for(file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+#### *static* path_for(file: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where the record for the export at `file` is kept.
 
-#### write(file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+#### write(file: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Write this record beside the export at `file`.
 
-#### *classmethod* read(file: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/library/constants.html#None)
+#### *classmethod* read(file: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [ExportRecord](#outrage.bulk.ExportRecord) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The record beside the export at `file`, or None if there is none to read.
 
@@ -259,7 +259,7 @@ file dropped into the export directory is still importable, as it was
 before there were records at all, and an import that cannot read one
 says so and proceeds.
 
-#### followed(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), content: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [ExportRecord](#outrage.bulk.ExportRecord)
+#### followed(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [ExportRecord](#outrage.bulk.ExportRecord)
 
 This record moved on to `content`, which `key` now holds.
 
@@ -274,7 +274,7 @@ into an edit claim on a key it did not come from.
 
 ### *class* outrage.bulk.Exported(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), excerpt: [Excerpt](store.md#outrage.store.Excerpt), record: [ExportRecord](#outrage.bulk.ExportRecord))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What exporting one document did: where it went, and what was recorded.
 
@@ -311,27 +311,27 @@ as they are -- an export never writes one, so an import reads it as part of
 the name. Not to be confused with [`outrage.store.FORMATS`](store.md#outrage.store.FORMATS), which is what
 a document may be *stored* as; this is what a file name says it is.
 
-### *class* outrage.bulk.Imported(key: [str](https://docs.python.org/3/library/stdtypes.html#str), stored: [int](https://docs.python.org/3/library/functions.html#int), previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), unchecked_code: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unchecked_from: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, unedited: [bool](https://docs.python.org/3/library/functions.html#bool) = False, copied_from: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/library/functions.html#bool) = False, changed_at: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, contents_key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.bulk.Imported(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), stored: [int](https://docs.python.org/3/builtins/functions.html#int), previous: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), unchecked_code: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, unchecked_from: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, unedited: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, copied_from: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, overwritten: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, changed_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, contents_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What importing one file did: where it went, and what it displaced.
 
-#### key *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The key written, as it was asked for.
 
-#### stored *: [int](https://docs.python.org/3/library/functions.html#int)*
+#### stored *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 Characters written.
 
-#### previous *: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### previous *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Characters the key held before, or None if it held nothing. The
 distinction is kept because an empty document and no document are different
 things to have overwritten.
 
-#### unchecked_code *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### unchecked_code *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Why the document was not compared with what was exported, as a code --
 [`UNCHECKED_NO_RECORD`](notes.md#outrage.notes.UNCHECKED_NO_RECORD) or
@@ -342,21 +342,21 @@ either way, and the caller is told the check did not.
 A code rather than a sentence, because the layer that noticed does not know
 who is reading. A front end words it: see [`outrage.messages`](messages.md#module-outrage.messages).
 
-#### unchecked_from *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### unchecked_from *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The key the record named when it named another one, which is the fact
 [`UNCHECKED_OTHER_KEY`](notes.md#outrage.notes.UNCHECKED_OTHER_KEY)'s sentence needs. About the *checking* file, so
 it is not `copied_from`: with `against` the two are different files and
 may name different keys.
 
-#### unedited *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### unedited *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether the file is byte-identical to what the export handed out, so the
 edit matched nothing. Not a refusal - storing an unchanged document is
 harmless - but it is a call that looks like a write and stored the document
 the store already had, and the record closes that for free.
 
-#### copied_from *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### copied_from *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The key the content file was exported from, when that is not the key
 written, and None for a round trip. What it is for is `unedited`: an
@@ -364,16 +364,16 @@ unedited file put back where it came from changed nothing, and the same
 file imported to another key is a copy, which changes that key however
 little the file moved. One flag, two true sentences.
 
-#### overwritten *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### overwritten *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 Whether `overwrite` allowed a write this check would have refused.
 
-#### changed_at *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### changed_at *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 What the displaced document's `updated_at` was, for the sentence that
 says what `overwrite` overwrote. None when the key held nothing.
 
-#### contents_key *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### contents_key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Where an automatically generated contents index was stored, or None
 when generation was disabled or did not apply to this key and format.
@@ -392,7 +392,7 @@ itself -- or None where there is nothing to pack, which is a symlink or a
 file that would not read. Paired so a caller can print the walk as it
 happens while the rows accumulate for a file that is written at the end.
 
-alias of [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`Transfer`](store.md#outrage.store.Transfer), [`tuple`](https://docs.python.org/3/library/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None), [`str`](https://docs.python.org/3/library/stdtypes.html#str) | [`None`](https://docs.python.org/3/library/constants.html#None)] | [`None`](https://docs.python.org/3/library/constants.html#None)]
+alias of [`tuple`](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[`Transfer`](store.md#outrage.store.Transfer), [`tuple`](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)] | [`None`](https://docs.python.org/3/builtins/constants.html#None)]
 
 ### outrage.bulk.RECORD_SUFFIX *= '.outrage.json'*
 
@@ -415,31 +415,31 @@ legal segments when the grammar widened to mirror a filesystem; a path
 component of .. does not mirror anything, it climbs out of the directory
 the caller named.
 
-### *exception* outrage.bulk.ExportRootError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.bulk.ExportRootError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError)
 
 Raised when the directory exports would go in is not safely this user's.
 
-### *exception* outrage.bulk.FileMissingError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.bulk.FileMissingError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`FileNotFoundError`](https://docs.python.org/3/library/exceptions.html#FileNotFoundError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`FileNotFoundError`](https://docs.python.org/3/builtins/exceptions.html#FileNotFoundError)
 
 Raised when the file to import one document from is not there.
 
-### *exception* outrage.bulk.OverlappingCopyError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.bulk.OverlappingCopyError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 Raised when a copy would write into the subtree it is still reading.
 
-### *exception* outrage.bulk.SourceMissingError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.bulk.SourceMissingError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`FileNotFoundError`](https://docs.python.org/3/library/exceptions.html#FileNotFoundError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`FileNotFoundError`](https://docs.python.org/3/builtins/exceptions.html#FileNotFoundError)
 
 Raised when the directory to import from is not there.
 
-### *exception* outrage.bulk.StaleImportError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.bulk.StaleImportError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError)
 
@@ -450,7 +450,7 @@ one key are both doing something reasonable, so a guard aimed at them
 cannot be advisory. `overwrite` is what keeps the refusal from being a
 hard bound - the caller who has looked and meant it has one word to say so.
 
-### *exception* outrage.bulk.UncheckedWriteError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.bulk.UncheckedWriteError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError)
 
@@ -465,13 +465,13 @@ Both refusals lift with the same `overwrite`, which says "I have looked,
 write it anyway" once rather than twice. What lifting it costs is different
 in each case, so the message says which refusal it was.
 
-### *exception* outrage.bulk.UnmappableError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.bulk.UnmappableError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 Raised when a key has no file it can be written to, or a file no key.
 
-### outrage.bulk.check_extensions(extensions: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.bulk.check_extensions(extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `extensions` back, or say that it names no mapping.
 
@@ -482,7 +482,7 @@ recognises: a mode is *asked for* rather than guessed at, and one that fell
 back to the default would mount a tree whose keys are not the keys the
 caller asked for and read as simply the wrong store.
 
-### outrage.bulk.check_write(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, storing: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Check](#outrage.bulk.Check)
+### outrage.bulk.check_write(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], \*, storing: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Check](#outrage.bulk.Check)
 
 Refuse a write to `key` unless `path` says what it was made against.
 
@@ -510,7 +510,7 @@ a read and a write, so two writers in the same instant both pass. A real
 precondition would have to live inside `Store.store_document`, and does
 not yet.
 
-### outrage.bulk.contained_file(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.bulk.contained_file(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 `path` as a file inside `root`, refused unless it stays inside it.
 
@@ -520,7 +520,7 @@ arrives with the absolute path an export handed back, so it is relativised
 and then checked by the one rule - rather than by a second containment
 strategy that could disagree with the first.
 
-### outrage.bulk.contained_path(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], relative: [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath), key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.bulk.contained_path(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], relative: [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 `root / relative`, refused unless it stays inside `root`.
 
@@ -540,7 +540,7 @@ reading of a path that does not exist yet: the file being written is
 usually the part that is missing, and it is the *directories* above it that
 a link can redirect.
 
-### outrage.bulk.container_name(segment: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.bulk.container_name(segment: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 What holds the keys below `segment` under `keep`, where nothing is there yet.
 
@@ -562,7 +562,7 @@ and need no third.
 ('guide', '!changelog', '22')
 ```
 
-### outrage.bulk.content_hash(content: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.bulk.content_hash(content: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 The token a record carries: hex sha256 of `content` as UTF-8.
 
@@ -570,7 +570,7 @@ A hash rather than the length, which is a weak token: a substitution that
 keeps the length is exactly the edit a careless script makes. This costs one
 read an import already makes.
 
-### outrage.bulk.copied(source: [Store](store.md#outrage.store.Store), target: [Store](store.md#outrage.store.Store), subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = store.EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = store.UNBOUNDED, prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, limit: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Generator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Generator)[[Transfer](store.md#outrage.store.Transfer), [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+### outrage.bulk.copied(source: [Store](store.md#outrage.store.Store), target: [Store](store.md#outrage.store.Store), subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = store.EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = store.UNBOUNDED, prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, reroot: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, on_conflict: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = SKIP, unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Generator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Generator)[[Transfer](store.md#outrage.store.Transfer), [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 
 Every document `subtree` names, from one store into another.
 
@@ -638,7 +638,7 @@ opposite call to the first: a mid-run refusal leaves the copy half done and
 the caller reasoning about a cursor, where skipping completes the copy,
 loses nothing, and hands the awkward case back.
 
-### outrage.bulk.declared_format(name: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.bulk.declared_format(name: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The format a file name's extension declares, or None for one that does not.
 
@@ -647,7 +647,7 @@ The format a file name's extension declares, or None for one that does not.
 ('markdown', None, None)
 ```
 
-### outrage.bulk.documents_from_store(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)] | [None](https://docs.python.org/3/library/constants.html#None)]]
+### outrage.bulk.documents_from_store(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)] | [None](https://docs.python.org/3/builtins/constants.html#None)]]
 
 Every document at and below `key` in `opened`, beside the report.
 
@@ -661,7 +661,7 @@ make the survey worthless, and so would a pack.
 Timestamps come across too, which is what makes this a compaction rather
 than a copy that quietly restamps the corpus.
 
-### outrage.bulk.documents_from_tree(source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)] | [None](https://docs.python.org/3/library/constants.html#None)]]
+### outrage.bulk.documents_from_tree(source: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, hidden: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)] | [None](https://docs.python.org/3/builtins/constants.html#None)]]
 
 Every file below `source` as a document, beside the report of it.
 
@@ -677,7 +677,7 @@ a file's modification time is not the store's timestamp for the document,
 and inventing one at build time is the honest answer -- see
 [`outrage.store_parquet.ParquetStore.build()`](store_parquet.md#outrage.store_parquet.ParquetStore.build).
 
-### outrage.bulk.export_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Exported](#outrage.bulk.Exported)
+### outrage.bulk.export_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [Exported](#outrage.bulk.Exported)
 
 Write the document at `key` to a fresh file under `root`, whole.
 
@@ -706,7 +706,7 @@ into otherwise. `gettempdir()` is shared between users on a POSIX
 machine, so a directory at a name another user could have pre-created is
 the one new risk moving out of the project took on.
 
-### outrage.bulk.export_tree(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), target: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
+### outrage.bulk.export_tree(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), target: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], \*, on_conflict: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
 
 Write every document at and below `key` into `target`, one per file.
 
@@ -733,7 +733,7 @@ it is written the ordinary way inside [`CONTAINER_PREFIX`](#outrage.bulk.CONTAIN
 because it is written in terms of this one -- the mapping lives here and
 the store is expressed in it, not the other way round.
 
-### outrage.bulk.file_name(segment: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.bulk.file_name(segment: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 What the file holding `segment`'s own document is called, under `keep`.
 
@@ -748,7 +748,7 @@ links to it and a format nothing declares is a format lost.
 '!contents.json'
 ```
 
-### outrage.bulk.import_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, against: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False, generate_contents: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Imported](#outrage.bulk.Imported)
+### outrage.bulk.import_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], \*, against: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, overwrite: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, generate_contents: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Imported](#outrage.bulk.Imported)
 
 Store the content of `path` at `key`, and say what it displaced.
 
@@ -788,7 +788,7 @@ keys and formats without a heading index are left alone. It defaults off
 here because this is a general import API; the editing tool opts in by
 default so an edited document cannot silently keep a stale index.
 
-### outrage.bulk.import_tree(opened: [Store](store.md#outrage.store.Store), source: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, hidden: [bool](https://docs.python.org/3/library/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
+### outrage.bulk.import_tree(opened: [Store](store.md#outrage.store.Store), source: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, on_conflict: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = SKIP, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, hidden: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
 
 Store every file below `source`, keyed by its path under `key`.
 
@@ -822,7 +822,7 @@ and a guarantee that quietly weakens when the source changes is worse than
 one never offered. `--dry-run` is what answers the question that mode was
 reaching for.
 
-### outrage.bulk.key_for_path(relative: [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath) | [str](https://docs.python.org/3/library/stdtypes.html#str), prefix: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+### outrage.bulk.key_for_path(relative: [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath) | [str](https://docs.python.org/3/builtins/stdtypes.html#str), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 
 The key a file at `relative` imports to, and the format it declares.
 
@@ -863,7 +863,7 @@ A final *file* named for that prefix is the symmetric collision spelling:
 directory already holds its children. In an earlier component the same
 spelling is a directory, and therefore the container below that document.
 
-### outrage.bulk.levels(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), \*, descendant_counts: [bool](https://docs.python.org/3/library/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
+### outrage.bulk.levels(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), \*, descendant_counts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
 
 One level, a page at a time, to the end.
 
@@ -878,7 +878,7 @@ The descendant flags are passed through to
 it arrives -- so a listing that streams pays for them a page at a time and
 an interrupted one has paid for what it printed.
 
-### outrage.bulk.new_export_file(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.bulk.new_export_file(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 A file under `root` for one export, and for nothing that came before it.
 
@@ -897,7 +897,7 @@ longer work out where a key's export is. The export result carries the
 path, and [`ExportRecord`](#outrage.bulk.ExportRecord) is what makes a directory of ids readable
 after the fact - every file has one, and it names the key.
 
-### outrage.bulk.notes_for(imported: [Imported](#outrage.bulk.Imported)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.bulk.notes_for(imported: [Imported](#outrage.bulk.Imported)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 Every situation [`import_document()`](#outrage.bulk.import_document) reached that is worth remarking on.
 
@@ -920,7 +920,7 @@ The order is the order a reader meets them, and it is not arbitrary. What
 a write destroyed comes before what it stored, because the first is the
 thing somebody may have to go and recover.
 
-### outrage.bulk.notes_for_checked_write(key: [str](https://docs.python.org/3/library/stdtypes.html#str), check: [Check](#outrage.bulk.Check), stored: [int](https://docs.python.org/3/library/functions.html#int)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.bulk.notes_for_checked_write(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), check: [Check](#outrage.bulk.Check), stored: [int](https://docs.python.org/3/builtins/functions.html#int)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 The same, for a write whose content did not come from a file.
 
@@ -934,7 +934,7 @@ copy or a no-op.
 happens *before* the write, and on the encoded path what was stored is not
 the length of what arrived.
 
-### outrage.bulk.notes_for_copy(landing: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool), on_conflict: [str](https://docs.python.org/3/library/stdtypes.html#str), unchanged_since: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), changed: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], next_cursor: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), limit: [int](https://docs.python.org/3/library/functions.html#int), failed: [int](https://docs.python.org/3/library/functions.html#int), named: [int](https://docs.python.org/3/library/functions.html#int), stopped: [bool](https://docs.python.org/3/library/functions.html#bool), mounts_kept: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], unwritable: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.bulk.notes_for_copy(landing: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool), on_conflict: [str](https://docs.python.org/3/builtins/stdtypes.html#str), unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), changed: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), limit: [int](https://docs.python.org/3/builtins/functions.html#int), failed: [int](https://docs.python.org/3/builtins/functions.html#int), named: [int](https://docs.python.org/3/builtins/functions.html#int), stopped: [bool](https://docs.python.org/3/builtins/functions.html#bool), mounts_kept: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], unwritable: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ()) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 The same for a copy, which has more ways to do less than it was asked.
 
@@ -952,7 +952,7 @@ the advice can be followed as it stands: a watermark refuses to be handed
 to the plain overwrite rule, so a dry run under that rule has to point at
 the narrowed one instead. `unwritable` is what it is for a delete.
 
-### outrage.bulk.notes_for_delete(key: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool), remaining: [int](https://docs.python.org/3/library/functions.html#int), mounts_kept: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], unwritable: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.bulk.notes_for_delete(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool), remaining: [int](https://docs.python.org/3/builtins/functions.html#int), mounts_kept: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], unwritable: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ()) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What a delete has to remark on, which is all about what it left standing.
 
@@ -970,7 +970,7 @@ open to a delete, since the advice for the rest is to remount them. `key`
 is the caller's own spelling, echoed back so that the advice to try again
 names the call they made.
 
-### outrage.bulk.notes_for_export(exported: [Exported](#outrage.bulk.Exported)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.bulk.notes_for_export(exported: [Exported](#outrage.bulk.Exported)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What handing a document out as a file has to remark on.
 
@@ -985,7 +985,7 @@ it may write for itself. The exported document is taken and not read for
 the same reason: this is a note about a result, and a caller should not
 have to know which of these need the result to decide.
 
-### outrage.bulk.notes_for_write(previous: [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None), stored: [int](https://docs.python.org/3/library/functions.html#int)) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.bulk.notes_for_write(previous: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), stored: [int](https://docs.python.org/3/builtins/functions.html#int)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What a write with nothing to check it against has to remark on.
 
@@ -999,7 +999,7 @@ it wrote an empty document over a good one.
 `previous` is [`size_of()`](#outrage.bulk.size_of)'s answer, so `None` means the store could
 not say rather than that there was nothing there.
 
-### outrage.bulk.overlapping(source: [str](https://docs.python.org/3/library/stdtypes.html#str), target: [str](https://docs.python.org/3/library/stdtypes.html#str), \*, reroot: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.bulk.overlapping(source: [str](https://docs.python.org/3/builtins/stdtypes.html#str), target: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, reroot: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Refuse a source and target pair a copy cannot safely stream between.
 
@@ -1024,7 +1024,7 @@ through. Both front ends call this one, because the command line and the
 server disagreeing about which copies are allowed is exactly the split
 `mounts.toml` was made to avoid.
 
-### outrage.bulk.pack(target: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], documents: [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)] | [None](https://docs.python.org/3/library/constants.html#None)]], \*, overwrite: [bool](https://docs.python.org/3/library/functions.html#bool) = False, dry_run: [bool](https://docs.python.org/3/library/functions.html#bool) = False, byte_lengths: [bool](https://docs.python.org/3/library/functions.html#bool) = True) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
+### outrage.bulk.pack(target: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], documents: [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Transfer](store.md#outrage.store.Transfer), [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)] | [None](https://docs.python.org/3/builtins/constants.html#None)]], \*, overwrite: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, byte_lengths: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Transfer](store.md#outrage.store.Transfer)]
 
 Report each document as it is read, then write them all as one file.
 
@@ -1041,7 +1041,7 @@ collide with -- the target is a new file, refused outright if it is already
 there unless `overwrite` -- and two source documents claiming one key is
 resolved by the last one, which is what overwriting means everywhere else.
 
-### outrage.bulk.path_for_key(key: [str](https://docs.python.org/3/library/stdtypes.html#str), format: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, extensions: [str](https://docs.python.org/3/library/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath)
+### outrage.bulk.path_for_key(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = DEFAULT_EXTENSIONS) → [PurePosixPath](https://docs.python.org/3/library/pathlib.html#pathlib.PurePosixPath)
 
 The relative path `key` is written to, extension included.
 
@@ -1084,7 +1084,7 @@ content is another -- which would read back as what the name said.
 The root is the exception in both modes, and has to be: it has no segments
 to be a path, so its file is named by the extension alone.
 
-### outrage.bulk.renew(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str), check: [Check](#outrage.bulk.Check), content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.bulk.renew(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), check: [Check](#outrage.bulk.Check), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Move `check`'s record on to what `key` now holds, after the write.
 
@@ -1101,7 +1101,7 @@ not start claiming it did.
 the document is read back -- which is what a write that transformed what it
 was given needs, since the record hashes what the store holds.
 
-### outrage.bulk.size_of(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str)) → [int](https://docs.python.org/3/library/functions.html#int) | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.bulk.size_of(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 What `key` holds, in characters, or None when it holds nothing.
 
@@ -1111,7 +1111,7 @@ report distinguishes them. `None` also comes back from a store that
 cannot answer without reading the document, so a caller measuring a write
 against what was there has to treat it as "not known" rather than as zero.
 
-### outrage.bulk.sweep_exports(root: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], max_age: [timedelta](https://docs.python.org/3/library/datetime.html#datetime.timedelta) = EXPORT_MAX_AGE, now: [datetime](https://docs.python.org/3/library/datetime.html#datetime.datetime) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [int](https://docs.python.org/3/library/functions.html#int)
+### outrage.bulk.sweep_exports(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], max_age: [timedelta](https://docs.python.org/3/library/datetime.html#datetime.timedelta) = EXPORT_MAX_AGE, now: [datetime](https://docs.python.org/3/library/datetime.html#datetime.datetime) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [int](https://docs.python.org/3/builtins/functions.html#int)
 
 Remove exports and records under `root` older than `max_age`, and count them.
 
@@ -1124,7 +1124,7 @@ alone rather than raising. This runs on the way to an export, and failing
 that export because somebody else's leftovers are unreadable would be a
 worse answer than leaving them there.
 
-### outrage.bulk.walk(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), \*, descendant_counts: [bool](https://docs.python.org/3/library/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
+### outrage.bulk.walk(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), \*, descendant_counts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[Entry](store.md#outrage.store.Entry)]
 
 Every key below `key`, depth first.
 

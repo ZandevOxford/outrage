@@ -56,85 +56,85 @@
 6833 6833
 
 ### *class* outrage.mountfile.MountTable(path: Path, root: Spec | None, mounts: tuple[tuple[str, Spec], ...], read_only: tuple[tuple[str, Spec], ...])
-7242 7242
+7244 7244
 
 #### path *: Path*
-8098 8098
+8108 8108
 
 #### root *: Spec | None*
-8181 8181
+8191 8191
 
 #### mounts *: tuple[tuple[str, Spec], ...]*
-8366 8366
+8377 8377
 
 #### read_only *: tuple[tuple[str, Spec], ...]*
-8665 8665
+8679 8679
 
 #### options() → list[str]
-8946 8946
+8963 8963
 
 ### *class* outrage.mountfile.Origin(mount: str | None, flag: str, value: str, source: str)
-9132 9134
+9151 9153
 
 #### mount *: str | None*
-9956 9958
+9981 9983
 
 #### flag *: str*
-10135 10137
+10162 10164
 
 #### value *: str*
-10209 10211
+10237 10239
 
 #### source *: str*
-10284 10286
+10313 10315
 
 #### *property* read_only *: bool*
-10442 10444
+10472 10474
 
 #### *property* file *: str*
-10535 10537
+10566 10568
 
 #### *property* store *: Spec*
-10947 10949
+10979 10981
 
 ### *class* outrage.mountfile.Starter(path: Path, action: str, text: str, missing: str)
-11069 11071
+11101 11103
 
 #### path *: Path*
-11518 11520
+11554 11556
 
 #### action *: str*
-11601 11603
+11637 11639
 
 #### text *: str*
-11704 11706
+11741 11743
 
 #### missing *: str*
-11844 11846
+11882 11884
 
 #### *property* writes *: bool*
-12125 12127
+12164 12166
 
 ### outrage.mountfile.directory_in(argv: Sequence[str]) → str | None
-12215 12217
+12255 12257
 
 ### outrage.mountfile.origins(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[Origin]
-12759 12763
+12802 12806
 
 ### outrage.mountfile.plan_starter(directory: str | PathLike[str], \*, root_mount: str | None = None, mounts: Sequence[str] = (), read_only_mounts: Sequence[str] = ()) → Starter
-13791 13797
+13841 13847
 
 ### outrage.mountfile.read(path: str | PathLike[str]) → MountTable
-15445 15453
+15501 15509
 
 ### outrage.mountfile.sources(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[str]
-16071 16081
+16129 16139
 
 ### outrage.mountfile.spliced(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[str]
-17628 17640
+17694 17706
 
 ### outrage.mountfile.starter_text(table: MountTable) → str
-20242 20256
+20316 20330
 
 ### outrage.mountfile.write_starter(starter: Starter) → None
-20675 20691
+20750 20766

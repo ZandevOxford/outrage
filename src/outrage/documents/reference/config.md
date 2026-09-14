@@ -100,53 +100,53 @@ replaces, which is what keeps unrelated servers in the file untouched.
 User scoped configuration, in the home directory. Holds a great deal besides
 MCP servers, which is why nothing here rewrites more of it than one key.
 
-### *class* outrage.config.Change(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), scope: [str](https://docs.python.org/3/library/stdtypes.html#str), name: [str](https://docs.python.org/3/library/stdtypes.html#str), action: [str](https://docs.python.org/3/library/stdtypes.html#str), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None))
+### *class* outrage.config.Change(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str), name: [str](https://docs.python.org/3/builtins/stdtypes.html#str), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What writing the configuration would do, or did.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-#### scope *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### scope *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### name *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### name *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 'created', 'updated' or 'unchanged'.
 
-#### entry *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
+#### entry *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
 
-#### previous *: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None)*
+#### previous *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The entry being replaced, when there was one.
 
-#### *property* writes *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-### *exception* outrage.config.ConfigError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.config.ConfigError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/library/exceptions.html#RuntimeError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/builtins/exceptions.html#RuntimeError)
 
 Raised when existing configuration cannot be safely updated.
 
-### outrage.config.codex_config_path(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.config.codex_config_path(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where a project's Codex configuration is, whether or not it exists yet.
 
-### outrage.config.config_path(scope: [str](https://docs.python.org/3/library/stdtypes.html#str), project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.config.config_path(scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str), project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Locate the configuration file for `scope`.
 
-### outrage.config.default_store_dir(project_dir: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+### outrage.config.default_store_dir(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where the store goes when the caller does not say.
 
-### outrage.config.is_server_marker(value: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [bool](https://docs.python.org/3/library/functions.html#bool)
+### outrage.config.is_server_marker(value: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether `value` is an outrage server marker, of any version or name.
 
-### outrage.config.launch_command(executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.config.launch_command(executable: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 Build the absolute command that starts the server.
 
@@ -156,7 +156,7 @@ back to `<python> -m outrage`, which is equivalent and cannot be missing: it
 needs only the interpreter that is already running and the package that is
 already imported.
 
-### outrage.config.merge_entry(previous: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/library/constants.html#None), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+### outrage.config.merge_entry(previous: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 Fold `entry` onto the entry already in the file, keeping what it omits.
 
@@ -184,7 +184,7 @@ Dropping a mount is an edit to the file. That is the right way round for a
 command a user runs to repair a project rather than to redefine it, and
 losing configuration silently is the failure that was actually reported.
 
-### outrage.config.mounts_in(args: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.config.mounts_in(args: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 The mount options an existing server entry still carries, if any.
 
@@ -194,14 +194,14 @@ file. But an entry and a file both describing a table, with only one of
 them the place anybody thinks to look, is worth a sentence - so this is
 what `outrage config` reports.
 
-### outrage.config.plan(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), scope: [str](https://docs.python.org/3/library/stdtypes.html#str), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], name: [str](https://docs.python.org/3/library/stdtypes.html#str) = SERVER_NAME) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Change](#outrage.config.Change), [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+### outrage.config.plan(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = SERVER_NAME) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Change](#outrage.config.Change), [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 
 Work out what writing `entry` into `path` would change.
 
 Returns the change, the merged configuration, and the file's original text,
 so a caller can report before writing and write without reading twice.
 
-### outrage.config.plan_codex(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), entry: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], name: [str](https://docs.python.org/3/library/stdtypes.html#str) = SERVER_NAME) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[Change](#outrage.config.Change), TOMLDocument, [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+### outrage.config.plan_codex(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = SERVER_NAME) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Change](#outrage.config.Change), TOMLDocument, [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 
 Work out what writing `entry` into a Codex `config.toml` would change.
 
@@ -216,7 +216,7 @@ arguments first: the new entry has its own at the front, and an old one
 inherited behind the options could land after `--log` and be read as
 its path.
 
-### outrage.config.read_config(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+### outrage.config.read_config(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 
 Read a configuration file, returning its content and original text.
 
@@ -225,14 +225,14 @@ overwrite. The user scoped file in particular holds a great deal of
 unrelated state, and replacing it wholesale because one read failed would
 do far more damage than declining to write.
 
-### outrage.config.read_toml(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[TOMLDocument, [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)]
+### outrage.config.read_toml(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[TOMLDocument, [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 
 Read a TOML configuration file, returning the document and original text.
 
 A file that does not parse is refused rather than replaced, for the reason
 [`read_config()`](#outrage.config.read_config) gives: it holds settings this command did not write.
 
-### outrage.config.script_command(script: [str](https://docs.python.org/3/library/stdtypes.html#str), executable: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.config.script_command(script: [str](https://docs.python.org/3/builtins/stdtypes.html#str), executable: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The absolute command running `script` beside the given interpreter, or None.
 
@@ -246,7 +246,7 @@ property of the script -- the server has one and the command line has none
 -- so the caller who knows that decides, and a report that cannot name a
 command says so.
 
-### outrage.config.server_entry(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], command: [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/library/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/library/functions.html#bool) = False, marked: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+### outrage.config.server_entry(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], command: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, marked: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 Build the configuration entry for the stores in `directory`.
 
@@ -294,7 +294,7 @@ recognise but has no way to *write* one `init` was asked for.
 the Codex entry needs to be recognised by a later run. See the module
 docstring on why it goes first.
 
-### outrage.config.split_args(args: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]]]
+### outrage.config.split_args(args: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]]]
 
 Take an argument list apart into `(flag, values)` pairs, in order.
 
@@ -305,7 +305,7 @@ by hand, or by a newer one - comes apart the same way and can be put back
 unchanged. A leading token that is not a flag is paired with the empty
 string, so nothing is dropped by a list that does not start with one.
 
-### outrage.config.write_config(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), config: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], original: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.config.write_config(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), config: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], original: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Write `config` to `path`, replacing it atomically.
 
@@ -315,7 +315,7 @@ command did not create. Indentation and permissions follow the existing
 file where there is one: the point is to change one key, and a wholesale
 reformat or a loosened mode is a change nobody asked for.
 
-### outrage.config.write_toml(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), document: TOMLDocument, original: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.config.write_toml(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), document: TOMLDocument, original: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Write `document` to `path`, atomically and keeping its permissions.
 

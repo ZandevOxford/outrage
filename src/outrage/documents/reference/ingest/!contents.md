@@ -5,31 +5,31 @@
 296 296
 
 ### *class* outrage.ingest.IngestResult(source: Path, key: str, title: str, characters: int, format: Literal['markdown'], title_key: str | None, dry_run: bool)
-689 689
+691 691
 
 #### source *: Path*
-1459 1459
+1468 1468
 
 #### key *: str*
-1590 1590
+1599 1599
 
 #### title *: str*
-1696 1696
+1706 1706
 
 #### characters *: int*
-1807 1807
+1818 1818
 
 #### format *: Literal['markdown']*
-1933 1933
+1945 1945
 
 #### title_key *: str | None*
-2075 2075
+2087 2087
 
 #### dry_run *: bool*
-2284 2284
+2298 2298
 
 ### outrage.ingest.available() → bool
-2428 2428
+2443 2443
 
 ### outrage.ingest.ingest_document(store: Store, source: str | PathLike[str], key: str, \*, title: str | None = None, overwrite: bool = False, dry_run: bool = False) → IngestResult
-3208 3210
+3224 3226

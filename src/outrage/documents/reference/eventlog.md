@@ -63,23 +63,23 @@ to log at all.
 The log a store has when nobody gave it one, so that callers never branch on
 whether logging is on.
 
-### *class* outrage.eventlog.EventLog(path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, \*, content: [str](https://docs.python.org/3/library/stdtypes.html#str) = 'excerpt', excerpt_chars: [int](https://docs.python.org/3/library/functions.html#int) = DEFAULT_EXCERPT_CHARS, session: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None)
+### *class* outrage.eventlog.EventLog(path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, content: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = 'excerpt', excerpt_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_EXCERPT_CHARS, session: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 A JSONL sink. `path` of `None` is a log that does nothing.
 
-#### *property* enabled *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* enabled *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-#### emit(event: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/library/constants.html#None)
+#### emit(event: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Append one event. Never raises.
 
-#### start(\*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/library/constants.html#None)
+#### start(\*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Record what this process is, which is what dates every line after it.
 
-#### stop(\*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/library/constants.html#None)
+#### stop(\*\*fields: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Record that this process is finishing, and leave the log open.
 
@@ -88,7 +88,7 @@ the way `start` dates their beginning. Writing continues to work
 afterwards, which is deliberate -- a shutdown that still has something
 to record is exactly when the log matters.
 
-#### close() → [None](https://docs.python.org/3/library/constants.html#None)
+#### close() → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Release the file descriptor and refuse to write again.
 
@@ -97,7 +97,7 @@ recorded, and every later `emit` is silently dropped rather than
 raising, because a log that fails a call it was only observing has
 broken the thing it exists to watch. Idempotent.
 
-#### content_field(text: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+#### content_field(text: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 Render document text under the content policy.
 
@@ -112,7 +112,7 @@ catch. Text short enough to fit in both ends is stored whole instead,
 which is also why the presence of head and tail rather than text
 is itself the signal that something was cut.
 
-#### arguments(values: [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]) → [dict](https://docs.python.org/3/library/stdtypes.html#dict)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+#### arguments(values: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 Apply the content policy to string arguments carrying document text.
 
@@ -123,7 +123,7 @@ to the call that caused them. A context variable rather than an argument
 threaded through every store method: the store would otherwise have to carry
 a parameter that only exists because of a front end it knows nothing about.
 
-### outrage.eventlog.resolve_path(explicit: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | \_BesideTheStore | [None](https://docs.python.org/3/library/constants.html#None), directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.eventlog.resolve_path(explicit: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | \_BesideTheStore | [None](https://docs.python.org/3/builtins/constants.html#None), directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Locate the log file: `--log`, then OUTRAGE_LOG, then off.
 

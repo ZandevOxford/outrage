@@ -2,6 +2,29 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+A `.parquet` store file is now read through DuckDB rather than pyarrow, and it
+may be a single packed file as well as a directory of parts. A store file may
+also be a pattern over parts, such as `ref=parts/*.parquet` or
+`parts/**/*.parquet`, and needs no `type=` since the extension still names the
+backend. A wildcard does not match a hidden file, and the matching files are
+listed when the store is opened. Other backends refuse a pattern rather than
+creating a store with that literal name.
+
+What changes for an existing `.parquet` mount: reads are slower, though far
+below the cost of the tool call carrying them, and memory no longer grows with
+the corpus. A listing costs the subtree below the key rather than the level.
+`outrage check` reports parts, rows and repeated rows instead of whether the
+file is sorted. A format version 1 file, written before 0.4.0, is refused until
+it is repacked. `type=parquet` still opens any single file with pyarrow, which
+is also the way to repack one: `outrage pack new.parquet --from-store
+old.parquet,type=parquet`. The `parquet` extra now installs duckdb as well as
+pyarrow; `duckdb` alone is enough to read parquet stores without packing them.
+
+A part whose file name holds `[`, `*` or `?` is now read as that file. duckdb
+had been expanding it as a pattern of its own.
+
 ## 0.13.0 - 2026-09-13
 
 `outrage init` now registers the MCP server for Codex as well, in

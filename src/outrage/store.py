@@ -20,13 +20,14 @@ The vocabulary is the interesting part, and it is worth reading in this order:
 
 :class:`Store` itself is abstract, and it says only what a store *does*.
 :class:`FileStore` is the half of that which needs a file to answer -- where it
-lives, what version wrote it, how it is copied and checked -- and the three
+lives, what version wrote it, how it is copied and checked -- and the four
 backends are its implementations:
 :class:`outrage.store_sqlite.SqliteStore` is a read-write database accumulated a
 document at a time, :class:`outrage.store_parquet.ParquetStore` is one
 columnar file written whole and read many times, for a reference base of tens
-of thousands of documents, and
-:class:`outrage.store_files.FilesystemStore` is a directory of files, whose
+of thousands of documents, :class:`outrage.store_duckdb.DuckdbStore` reads the
+same files -- one, or many named by a directory or a pattern -- through duckdb,
+and :class:`outrage.store_files.FilesystemStore` is a directory of files, whose
 "file" is that directory. They share none of the storage and every word of
 the vocabulary below, which is the point of the split.
 :class:`outrage.mounts.MountedStore` is a :class:`Store` and not a
@@ -49,6 +50,7 @@ from __future__ import annotations
 
 import codecs
 import functools
+import glob
 import importlib
 import inspect
 import json
@@ -703,6 +705,60 @@ def store_file(
     if ".." in relative.parts:
         raise StoreFileError("store-file-escapes", filename=str(relative))
     return Path(directory) / relative
+
+
+#: The characters that make a store file a pattern rather than a name: the ones
+#: :mod:`glob` gives a meaning to. Braces are not among them, since Python's
+#: glob has none, which is also why a comma in a pattern cannot be mistaken for
+#: the one separating mount options.
+_PATTERN_CHARACTERS = frozenset("*?[")
+
+
+def is_pattern(filename: str | os.PathLike[str] | None) -> bool:
+    """Whether ``filename`` would be read as a glob pattern where a pattern is read.
+
+    Only a *would*: a name that exists on disk is that file whatever characters
+    it holds, so ``notes[old].sqlite`` goes on opening as itself. That half is
+    decided where there is a directory to look in -- :func:`store_present` and
+    the backend -- and this is the half that needs none.
+    """
+    return filename is not None and not _PATTERN_CHARACTERS.isdisjoint(str(filename))
+
+
+def pattern_matches(
+    directory: str | os.PathLike[str], filename: str | os.PathLike[str]
+) -> list[Path]:
+    """The files a store-file pattern names, inside ``directory``, in path order.
+
+    Matched against the name *relative* to the directory, so a store directory
+    whose own path holds a ``[`` is not read as part of the pattern. ``**``
+    crosses directories. A wildcard does not match a hidden name, which is what
+    lets a producer write a part under a dotted name and rename it into place
+    without the half-written file being read; a dotted name written out in the
+    pattern is matched, because somebody asked for it. Only files: a directory
+    the pattern happens to name is not a store's contents.
+    """
+    base = Path(directory)
+    relative = store_file(base, filename).relative_to(base)
+    found = glob.glob(str(relative), root_dir=base, recursive=True)
+    return sorted(base / match for match in found if (base / match).is_file())
+
+
+def store_present(
+    directory: str | os.PathLike[str], filename: str | os.PathLike[str] | None = None
+) -> bool:
+    """Whether a store file names something already there, a pattern included.
+
+    What every caller asking "does this store exist" before opening it asks,
+    rather than ``store_file(...).exists()``: a pattern is not a path on disk,
+    so that question is always no for one, and a read-only mount of
+    ``parts/*.parquet`` would be refused as missing while its parts sat there.
+    A pattern is present when it matches a file; whether those files make a
+    store is the backend's to say when it opens them.
+    """
+    if store_file(directory, filename).exists():
+        return True
+    return is_pattern(filename) and bool(pattern_matches(directory, filename))
 
 
 def resolve_directory(explicit: str | os.PathLike[str] | None = None) -> Path:
@@ -1720,6 +1776,12 @@ class FileStore(Store):
     #: even though each backend records the number somewhere different.
     format_version: ClassVar[int]
 
+    #: Whether a store file may be a glob pattern naming several files, which
+    #: only a backend reading a store out of many files can mean. Every other
+    #: backend refuses one that matches nothing on disk, rather than creating a
+    #: store literally called ``*.sqlite``.
+    reads_patterns: ClassVar[bool] = False
+
     def __init__(
         self,
         directory: str | os.PathLike[str] | None = None,
@@ -1737,13 +1799,19 @@ class FileStore(Store):
         # refused leaves nothing behind to explain. A caller who named no file
         # gets *this* backend's default rather than the package's, so a store
         # constructed directly is never opened under another backend's name.
-        self.path = store_file(
-            self.directory,
-            type(self).default_filename if filename is None else filename,
-        )
+        named = type(self).default_filename if filename is None else filename
+        self.path = store_file(self.directory, named)
+        pattern = is_pattern(named) and not self.path.exists()
+        if pattern and not type(self).reads_patterns:
+            raise StoreFileError(
+                "store-file-pattern", filename=str(named), backend=type(self).backend_name
+            )
         self.directory.mkdir(parents=True, exist_ok=True)
-        # A store file may name a subdirectory, and nothing else creates it.
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        # A store file may name a subdirectory, and nothing else creates it. A
+        # pattern names no directory to create: its parent may itself be a
+        # wildcard, and making it would leave a directory called `*` behind.
+        if not pattern:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
 
     @classmethod
     def in_directory(
@@ -1942,7 +2010,11 @@ class FileStore(Store):
         destination that is the store itself destroys what it was copying, and
         one that already exists destroys whatever was there.
         """
-        default_name = f"store-{time.strftime(BACKUP_STAMP)}{self.path.suffix}"
+        # No extension for a store file that is not itself on disk -- a
+        # pattern -- whose copy is a directory: `store-<stamp>.parquet` as a
+        # directory would be matched by the very wildcard it was copied from.
+        suffix = self.path.suffix if self.path.exists() else ""
+        default_name = f"store-{time.strftime(BACKUP_STAMP)}{suffix}"
         if destination is None:
             target = self.directory / BACKUP_DIR_NAME / default_name
         else:
@@ -2044,9 +2116,17 @@ _BACKENDS: dict[str, tuple[str, str]] = {
 #: directory of files has no extension to read, so ``files`` is nameable and
 #: not inferable -- see :func:`_backend_for` and
 #: ``outrage.mounts.parse_spec``.
+#:
+#: **``.parquet`` is read through duckdb**, whether it names one file or a
+#: pattern over many (``parts/*.parquet``). The pyarrow backend,
+#: :class:`~outrage.store_parquet.ParquetStore`, is what writes a parquet store
+#: and is opened only when a mount names it with ``type=parquet``: duckdb's
+#: cost does not grow with the corpus, where the pyarrow reader holds an index
+#: over all of it, and every read either makes sits below the round trip of the
+#: tool call carrying it.
 _BY_EXTENSION: dict[str, str] = {
     ".sqlite": "sqlite",
-    ".parquet": "parquet",
+    ".parquet": "duckdb",
 }
 
 #: The backend a store is kept in when nobody says otherwise, and so the one an
@@ -2081,7 +2161,8 @@ def _backend_for(
     ``backend`` names one outright, as a mount option does; ``None`` reads it
     from the file. ``filename`` of None with no ``backend`` is the default.
     Everything else is read from the extension: ``ref.parquet`` is a parquet
-    store and ``ref.sqlite`` is a SQLite one.
+    store read through duckdb, and so is ``parts/*.parquet``, and ``ref.sqlite``
+    is a SQLite one.
 
     **An unrecognised extension is the default backend, not an error.** A store
     file has always been free to be called anything -- ``ref.db`` and
@@ -2098,9 +2179,9 @@ def _backend_for(
     cannot: a mount that silently opened under a backend nobody named would
     read as a store that is simply empty.
 
-    The import failing is not a bug here: pyarrow is an optional extra, so a
-    ``.parquet`` mount on an install without it has to say so in a sentence
-    rather than raise ``ModuleNotFoundError`` at whoever is watching.
+    The import failing is not a bug here: pyarrow and duckdb are optional
+    extras, so a parquet mount on an install without one has to say so in a
+    sentence rather than raise ``ModuleNotFoundError`` at whoever is watching.
     """
     if backend is not None:
         if backend not in _BACKENDS:
@@ -3277,9 +3358,12 @@ __all__ = [
     "default_store",
     "default_store_file",
     "entry_kind",
+    "is_pattern",
     "meta_reader",
     "open_store",
+    "pattern_matches",
     "read_all",
     "resolve_directory",
     "store_file",
+    "store_present",
 ]

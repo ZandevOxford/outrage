@@ -67,7 +67,7 @@ outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
 - `--project-dir PATH` - Project directory to set up, and the default store location. Defaults to cwd.
 - `--dir PATH` - Store directory to record. Defaults to .outrage in the project directory. Written absolute, since the server cannot be relied on to start in the project directory.
 - `--root-mount FILE` - Set a root-mount in the project's mount table: the store answering for every key no mount claims, as a file inside --dir (default: store.sqlite). Written only when it is not the default.
-- `--mount KEY=FILE` - Set a mount in the project's mount table: another store under KEY, as in ref=reference.sqlite. FILE is relative to --dir, like --root-mount. Repeatable, and refused here if the mount point is not a valid key.
+- `--mount KEY=FILE` - Set a mount in the project's mount table: another store under KEY, as in ref=reference.sqlite. FILE is relative to --dir, like --root-mount, and for parquet may be a pattern over parts, as in ref=parts/*.parquet. Repeatable, and refused here if the mount point is not a valid key.
 - `--mount-ro KEY=FILE` - Set a read-only mount: as --mount, but every write routed there is refused before it reaches the store. Repeatable.
 - `--log [PATH]` - Record the server's requests and store accesses as JSON lines. Without a path, writes log.jsonl in the store directory. Omitted, and so off, unless asked for.
 - `--log-content {none,excerpt,full}` - How much document text the log keeps. Only used alongside --log.
@@ -120,7 +120,7 @@ outrage config [-h] [--scope {project,user}] [--project-dir PATH]
 - `--path PATH` - Configuration file to write, overriding the one implied by --scope.
 - `--name NAME` - Name to register the server under (default: outrage).
 - `--root-mount FILE` - Record a root-mount in the project's mount table: the store answering for every key no mount claims, as a file inside --dir (default: store.sqlite). Written only when it is not the default.
-- `--mount KEY=FILE` - Record a mount in the project's mount table: another store under KEY, as in ref=reference.sqlite. FILE is relative to --dir, like --root-mount. Repeatable, and refused here if the mount point is not a valid key.
+- `--mount KEY=FILE` - Record a mount in the project's mount table: another store under KEY, as in ref=reference.sqlite. FILE is relative to --dir, like --root-mount, and for parquet may be a pattern over parts, as in ref=parts/*.parquet. Repeatable, and refused here if the mount point is not a valid key.
 - `--mount-ro KEY=FILE` - Record a read-only mount: as --mount, but every write routed there is refused before it reaches the store. Repeatable.
 - `--log [PATH]` - Record the server's requests and store accesses as JSON lines. Without a path, writes log.jsonl in the store directory. Omitted, and so off, unless asked for.
 - `--log-content {none,excerpt,full}` - How much document text the log keeps. Only used alongside --log.
@@ -598,8 +598,9 @@ Ask whether the store is sound: the row invariants and the format version, which
 answers, and then whatever the backend under it can say about its own storage. For SQLite that is
 its own integrity check and how much of the store is sitting in the write-ahead log rather than in
 the database -- invisible in normal use, and what makes a copy of the database file alone lose
-recent writes. For parquet it is whether the file is still in the sort order every read of it
-bisects.
+recent writes. For parquet, read through duckdb, it is how many parts and rows there are and how
+many rows repeat a key; opened with type=parquet, whether the file is still in the sort order every
+read of it bisects.
 
 ### Usage
 

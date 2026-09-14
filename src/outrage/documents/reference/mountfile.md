@@ -141,39 +141,39 @@ Removes a mount some earlier source declared, which is the one thing an
 override cannot do: it can replace an entry or add one, and only this takes
 one away. Command line only -- a file has nothing before it to remove.
 
-### *exception* outrage.mountfile.MountFileError(code: [str](https://docs.python.org/3/library/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+### *exception* outrage.mountfile.MountFileError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
-Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/library/exceptions.html#ValueError)
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 Raised when a mount configuration file cannot be read as a mount table.
 
-### *class* outrage.mountfile.MountTable(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), root: [Spec](mounts.md#outrage.mounts.Spec) | [None](https://docs.python.org/3/library/constants.html#None), mounts: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...], read_only: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...])
+### *class* outrage.mountfile.MountTable(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), root: [Spec](mounts.md#outrage.mounts.Spec) | [None](https://docs.python.org/3/builtins/constants.html#None), mounts: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...], read_only: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...])
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What one file says, parsed, with every mount point already validated.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-#### root *: [Spec](mounts.md#outrage.mounts.Spec) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### root *: [Spec](mounts.md#outrage.mounts.Spec) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 `--root-mount`: the store answering for every key no mount claims.
 
-#### mounts *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...]*
+#### mounts *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...]*
 
 `(mount point, store)` pairs, mounted read-write.
 
-#### read_only *: [tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/library/stdtypes.html#tuple)[[str](https://docs.python.org/3/library/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...]*
+#### read_only *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Spec](mounts.md#outrage.mounts.Spec)], ...]*
 
 The same, mounted read-only.
 
-#### options() → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+#### options() → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 This table as the command line it stands for.
 
-### *class* outrage.mountfile.Origin(mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None), flag: [str](https://docs.python.org/3/library/stdtypes.html#str), value: [str](https://docs.python.org/3/library/stdtypes.html#str), source: [str](https://docs.python.org/3/library/stdtypes.html#str))
+### *class* outrage.mountfile.Origin(mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), flag: [str](https://docs.python.org/3/builtins/stdtypes.html#str), value: [str](https://docs.python.org/3/builtins/stdtypes.html#str), source: [str](https://docs.python.org/3/builtins/stdtypes.html#str))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One mount in a spliced argument list, and where it came from.
 
@@ -183,21 +183,21 @@ what was typed - so "which of them won" became a question the moment there
 was more than one, and the argument list argparse is handed has the answer
 beaten out of it.
 
-#### mount *: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)*
+#### mount *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The mount point, or None for the root.
 
-#### flag *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### flag *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### value *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### value *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### source *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### source *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The file it was read from, or [`TYPED_SOURCE`](#outrage.mountfile.TYPED_SOURCE).
 
-#### *property* read_only *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* read_only *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-#### *property* file *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### *property* file *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The store this names, whichever of the three options it is.
 
@@ -210,32 +210,32 @@ rather than only where it points, so that two entries differing in
 
 The store this names, parsed: its file and its options.
 
-### *class* outrage.mountfile.Starter(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/library/stdtypes.html#str), text: [str](https://docs.python.org/3/library/stdtypes.html#str), missing: [str](https://docs.python.org/3/library/stdtypes.html#str))
+### *class* outrage.mountfile.Starter(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), text: [str](https://docs.python.org/3/builtins/stdtypes.html#str), missing: [str](https://docs.python.org/3/builtins/stdtypes.html#str))
 
-Bases: [`object`](https://docs.python.org/3/library/functions.html#object)
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What writing a project's mount table would do, or did.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
-#### action *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 'created' or 'unchanged'.
 
-#### text *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### text *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The file's content: what a write made, or what is already there.
 
-#### missing *: [str](https://docs.python.org/3/library/stdtypes.html#str)*
+#### missing *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The TOML a run named that the file does not already say, or `""`.
 
 Only ever set beside 'unchanged', and it is how the command stays useful
 when it declines to write: the lines are the ones to paste in.
 
-#### *property* writes *: [bool](https://docs.python.org/3/library/functions.html#bool)*
+#### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-### outrage.mountfile.directory_in(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.mountfile.directory_in(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 `--dir` as the argument list gives it, or None.
 
@@ -243,7 +243,7 @@ The first of the two passes. It cannot be argparse's, because the parser
 that would answer this is the one being handed a list that does not exist
 until the answer is known.
 
-### outrage.mountfile.origins(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, front: [int](https://docs.python.org/3/library/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[Origin](#outrage.mountfile.Origin)]
+### outrage.mountfile.origins(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, front: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Origin](#outrage.mountfile.Origin)]
 
 The mounts `argv` ends up with, each named with where it came from.
 
@@ -251,7 +251,7 @@ The same pass [`spliced()`](#outrage.mountfile.spliced) makes, reported rather t
 entry a later source replaced is not here, because it is not in the table
 either - this is what the command would open, not what it read on the way.
 
-### outrage.mountfile.plan_starter(directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, root_mount: [str](https://docs.python.org/3/library/stdtypes.html#str) | [None](https://docs.python.org/3/library/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)] = ()) → [Starter](#outrage.mountfile.Starter)
+### outrage.mountfile.plan_starter(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], \*, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ()) → [Starter](#outrage.mountfile.Starter)
 
 Work out what writing this table into `directory` would do.
 
@@ -270,7 +270,7 @@ Every spec goes through [`outrage.mounts.parse_spec()`](mounts.md#outrage.mounts
 mount point is refused while somebody is looking at the command that wrote
 it rather than at a server that silently failed to start.
 
-### outrage.mountfile.read(path: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)]) → [MountTable](#outrage.mountfile.MountTable)
+### outrage.mountfile.read(path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [MountTable](#outrage.mountfile.MountTable)
 
 Read one mount configuration file.
 
@@ -280,7 +280,7 @@ goes through, rather than being written a second time here. A file that
 grew its own idea of what a key is would be a second grammar, and the
 project has one.
 
-### outrage.mountfile.sources(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, front: [int](https://docs.python.org/3/library/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.mountfile.sources(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, front: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 The configuration files a splice read, in the order it read them.
 
@@ -298,7 +298,7 @@ splice is for.
 A file named twice appears once: these are sources, and the second naming
 of one is the same source read again.
 
-### outrage.mountfile.spliced(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/library/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/library/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/library/stdtypes.html#str)] | [None](https://docs.python.org/3/library/constants.html#None) = None, front: [int](https://docs.python.org/3/library/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/library/functions.html#bool) = False) → [list](https://docs.python.org/3/library/stdtypes.html#list)[[str](https://docs.python.org/3/library/stdtypes.html#str)]
+### outrage.mountfile.spliced(argv: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], \*, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, front: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, builtin: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
 `argv` with every mount configuration file's options written into it.
 
@@ -332,7 +332,7 @@ because override is settled over this list -- a second claim reaching
 `open_mounts` is a hard duplicate refusal, which is the opposite of what
 overriding a default should do.
 
-### outrage.mountfile.starter_text(table: [MountTable](#outrage.mountfile.MountTable)) → [str](https://docs.python.org/3/library/stdtypes.html#str)
+### outrage.mountfile.starter_text(table: [MountTable](#outrage.mountfile.MountTable)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 A commented mount configuration holding `table`.
 
@@ -341,7 +341,7 @@ nothing rewrites it afterwards. What is not asked for is shown commented
 out, so the shape of every field is on the page whether or not this project
 uses it.
 
-### outrage.mountfile.write_starter(starter: [Starter](#outrage.mountfile.Starter)) → [None](https://docs.python.org/3/library/constants.html#None)
+### outrage.mountfile.write_starter(starter: [Starter](#outrage.mountfile.Starter)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Create the file `starter` planned, and only if it is still not there.
 

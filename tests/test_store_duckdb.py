@@ -12,8 +12,8 @@ file proves nothing about the case it exists for.
 Then the two things this design turns on, which have no counterpart in any
 other backend: a key repeated across parts, paged through at every ``limit``
 and required to come out exactly once per row -- the failure the paging rule
-exists to prevent, and the only one that would be silent -- and the refusals a
-directory has that a file does not.
+exists to prevent, and the only one that would be silent -- and the three ways
+a store file names its parts: a file, a directory, and a pattern.
 """
 
 from __future__ import annotations
@@ -574,7 +574,7 @@ def test_dump_does_not_print_the_newest_row_under_an_older_one(tmp_path):
 
 
 def test_a_write_is_refused_by_the_backend_in_its_own_words(packed):
-    with raises_rendered(ReadOnlyStoreError, "a directory of parquet parts") as raised:
+    with raises_rendered(ReadOnlyStoreError, "parquet read through duckdb") as raised:
         packed.store_document("a/new", "text")
     assert raised.value.code == "store-read-only"
     rendered = messages.render(raised.value)
@@ -601,18 +601,11 @@ def test_a_mount_refuses_a_write_in_the_backend_s_words_not_parquet_s(tmp_path):
         assert table.retrieve_document("ref/x").content == "x"
 
 
-def test_a_missing_directory_is_refused_rather_than_created(tmp_path):
-    with raises_rendered(BackendError, "no directory of parquet parts") as raised:
+def test_a_missing_store_is_refused_rather_than_created(tmp_path):
+    with raises_rendered(BackendError, "no parquet store at") as raised:
         DuckdbStore(tmp_path, filename="nothing")
     assert raised.value.code == "duckdb-store-missing"
     assert not (tmp_path / "nothing").exists()
-
-
-def test_a_single_file_is_pointed_at_the_parquet_backend(tmp_path):
-    ParquetStore.build(tmp_path / "ref.parquet", [("x", "x", None, None)])
-    with raises_rendered(BackendError, "parquet backend") as raised:
-        DuckdbStore(tmp_path, filename="ref.parquet")
-    assert raised.value.code == "duckdb-not-a-directory"
 
 
 def test_a_directory_with_no_parts_is_refused(tmp_path):
@@ -655,6 +648,16 @@ def test_parts_in_an_older_format_are_refused_with_the_way_forward(tmp_path):
     assert raised.value.code == "duckdb-format-older"
 
 
+def test_an_older_single_file_is_refused_by_default_and_opens_when_named_parquet(tmp_path):
+    """The limitation of reading ``.parquet`` through duckdb, and its way round."""
+    rows = _rows([("x", "old", "markdown", "2026-01-01T00:00:00+00:00")])
+    _write_part(rows, tmp_path / "old.parquet", version=b"1")
+    with raises_rendered(BackendError, "opens with `type=parquet`"):
+        store_module.default_store(tmp_path, filename="old.parquet")
+    with store_module.open_store(tmp_path, filename="old.parquet", backend="parquet") as store:
+        assert store.retrieve_document("x").content == "old"
+
+
 def test_parts_from_a_later_build_are_refused(tmp_path):
     rows = _rows([("x", "x", "markdown", "2026-01-01T00:00:00+00:00")])
     _write_part(rows, tmp_path / "ref" / "one.parquet", version=b"99")
@@ -666,6 +669,154 @@ def test_parts_from_a_later_build_are_refused(tmp_path):
 def test_extensions_are_refused_in_words_true_of_a_directory_of_parts(packed):
     with raises_rendered(BackendError, "holds its documents as rows"):
         DuckdbStore.in_directory(packed.directory, filename="ref", extensions="keep")
+
+
+# -- a single file ------------------------------------------------------------
+
+
+def test_a_single_file_is_a_store_of_one_part(tmp_path, sqlite):
+    """``ref.parquet`` itself, the layout ``outrage pack`` writes."""
+    ParquetStore.build(
+        tmp_path / "p" / "ref.parquet",
+        ((key, content, None, _when(sqlite, key)) for key, content in CORPUS),
+    )
+    with DuckdbStore(tmp_path / "p", filename="ref.parquet") as duck:
+        assert duck.path == tmp_path / "p" / "ref.parquet"
+        for key in _KEYS:
+            answers_alike(sqlite, duck, lambda s, k=key: walk_level(s, k))
+        for subtree in _SUBTREES:
+            answers_alike(sqlite, duck, lambda s, t=subtree: walk_documents(s, t, UNBOUNDED, None))
+
+
+def test_the_extension_opens_a_parquet_file_through_duckdb(tmp_path):
+    ParquetStore.build(tmp_path / "ref.parquet", [("x", "hello", None, None)])
+    with store_module.open_store(tmp_path, filename="ref.parquet") as store:
+        assert isinstance(store, DuckdbStore)
+        assert store.retrieve_document("x").content == "hello"
+    with store_module.open_store(tmp_path, filename="ref.parquet", backend="parquet") as store:
+        assert isinstance(store, ParquetStore)
+
+
+def test_a_directory_named_like_a_file_is_still_a_directory_of_parts(tmp_path):
+    ParquetStore.build(tmp_path / "ref.parquet" / "one.parquet", [("x", "x", None, None)])
+    ParquetStore.build(tmp_path / "ref.parquet" / "two.parquet", [("y", "y", None, None)])
+    with store_module.open_store(tmp_path, filename="ref.parquet") as store:
+        assert store.list_keys().total == 2
+
+
+def test_backing_up_a_single_file_copies_a_file(tmp_path):
+    ParquetStore.build(tmp_path / "ref.parquet", [("x", "x", None, None)])
+    with DuckdbStore(tmp_path, filename="ref.parquet") as store:
+        done = store.backup(tmp_path / "copy.parquet")
+    assert done.path.is_file()
+    assert done.documents == 1
+    with DuckdbStore(tmp_path, filename="copy.parquet") as copy:
+        assert copy.retrieve_document("x").content == "x"
+
+
+# -- a pattern ---------------------------------------------------------------
+
+
+@pytest.fixture
+def nested(tmp_path):
+    """Parts in two dated directories, one name in both, and things that are not parts."""
+    base = tmp_path / "d"
+    ParquetStore.build(base / "ref" / "2026-01" / "part.parquet", [("a", "january", None, None)])
+    ParquetStore.build(base / "ref" / "2026-02" / "part.parquet", [("b", "february", None, None)])
+    ParquetStore.build(base / "ref" / "top.parquet", [("c", "top", None, None)])
+    (base / "ref" / "2026-02" / ".late.parquet").write_text("half written")
+    (base / "ref" / "2026-02" / "notes.txt").write_text("not a part")
+    return base
+
+
+def test_a_pattern_names_the_parts_it_matches(nested):
+    with DuckdbStore(nested, filename="ref/*/*.parquet") as store:
+        assert [entry.key for entry in store.list_keys().items] == ["a", "b"]
+    with DuckdbStore(nested, filename="ref/**/*.parquet") as store:
+        assert [entry.key for entry in store.list_keys().items] == ["a", "b", "c"]
+        assert store.path == nested / "ref" / "**" / "*.parquet"
+        assert store.directory == nested
+
+
+def test_a_pattern_needs_no_type_to_be_read_through_duckdb(nested):
+    with store_module.open_store(nested, filename="ref/*/*.parquet") as store:
+        assert isinstance(store, DuckdbStore)
+
+
+def test_a_wildcard_does_not_match_a_hidden_part(nested):
+    """The half-written ``.late.parquet`` would refuse the whole store if it were read."""
+    with DuckdbStore(nested, filename="ref/2026-02/*.parquet") as store:
+        assert store.exists("b")
+
+
+def test_a_pattern_matching_nothing_is_refused_and_creates_nothing(tmp_path):
+    with raises_rendered(BackendError, "matches no files") as raised:
+        DuckdbStore(tmp_path, filename="missing/*/*.parquet")
+    assert raised.value.code == "duckdb-pattern-matches-nothing"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_name_that_exists_is_taken_literally_whatever_it_holds(tmp_path):
+    ParquetStore.build(tmp_path / "ref[1].parquet", [("x", "literal", None, None)])
+    ParquetStore.build(tmp_path / "ref1.parquet", [("x", "matched", None, None)])
+    with DuckdbStore(tmp_path, filename="ref[1].parquet") as store:
+        assert store.retrieve_document("x").content == "literal"
+
+
+def test_a_store_directory_holding_a_wildcard_is_not_read_as_one(tmp_path):
+    base = tmp_path / "odd[dir]"
+    ParquetStore.build(base / "ref" / "one.parquet", [("x", "x", None, None)])
+    with DuckdbStore(base, filename="ref/*.parquet") as store:
+        assert store.exists("x")
+
+
+def test_a_pattern_is_refused_by_a_backend_that_keeps_one_file(tmp_path):
+    with raises_rendered(store_module.StoreFileError, "is a pattern") as raised:
+        store_module.default_store(tmp_path, filename="*.sqlite")
+    assert raised.value.code == "store-file-pattern"
+    assert list(tmp_path.glob("*")) == []
+
+
+def test_a_pattern_is_present_when_it_matches_a_file(nested):
+    assert store_module.store_present(nested, "ref/*/*.parquet")
+    assert not store_module.store_present(nested, "ref/*/*.sqlite")
+    assert not store_module.store_present(nested, "elsewhere/*.parquet")
+
+
+def test_a_read_only_mount_of_a_pattern_is_not_refused_as_missing(nested):
+    SqliteStore(nested).close()
+    with open_mounts(nested, read_only_specs=["ref=ref/**/*.parquet"]) as table:
+        assert table.retrieve_document("ref/c").content == "top"
+
+
+def test_backing_up_a_pattern_keeps_parts_of_one_name_apart(nested, tmp_path):
+    with DuckdbStore(nested, filename="ref/*/*.parquet") as store:
+        done = store.backup(tmp_path / "copy")
+        assert sorted(str(p.relative_to(done.path)) for p in done.path.rglob("*.parquet")) == [
+            "2026-01/part.parquet",
+            "2026-02/part.parquet",
+        ]
+        assert done.documents == 2
+        assert done.integrity == "ok"
+        default = store.backup_path(None, overwrite=False)
+        assert default.suffix == ""
+
+
+def test_the_command_line_reads_a_pattern_as_the_store(nested):
+    out = io.StringIO()
+    status = main(["ls", "--dir", str(nested), "--store", "ref/**/*.parquet"], out)
+    assert status == 0
+    assert "february" not in out.getvalue()
+    assert [line.split()[-1] for line in out.getvalue().splitlines()] == ["a", "b", "c"]
+
+    out = io.StringIO()
+    assert main(["check", "--dir", str(nested), "--store", "ref/**/*.parquet"], out) == 0
+    assert "parts 3" in out.getvalue()
+
+    out = io.StringIO()
+    assert main(["mounts", "--dir", str(nested), "--mount-ro", "ref=ref/*/*.parquet"], out) == 0
+    listed = next(line for line in out.getvalue().splitlines() if line.startswith("ref"))
+    assert " ok " in listed
 
 
 # -- what a directory is ---------------------------------------------------
@@ -796,3 +947,26 @@ def test_check_answers_for_a_duckdb_store_in_its_own_terms(packed):
     assert report.details["parts"] == "2"
     assert report.details["repeated rows"] == "0"
     assert maintenance.repair(packed) == []
+
+
+def test_the_mount_tool_mounts_a_pattern_without_calling_it_created(nested):
+    """A pattern is not a path on disk, so "is it there" has to ask what it matches."""
+    import anyio
+
+    from outrage.mounts import MountedStore
+    from outrage.remount import Live
+    from outrage.server import build_server
+
+    root = SqliteStore(nested)
+    with Live(MountedStore({keys.ROOT: root}), directory=nested) as live:
+        server = build_server(live, directory=nested)
+        for read_only in (True, False):
+            result = anyio.run(
+                server.call_tool,
+                "mount",
+                {"key": "ref", "file": "ref/*/*.parquet", "read_only": read_only},
+            )
+            assert not result.is_error, result.content
+            assert "created" not in result.structured_content["note"]
+        read = anyio.run(server.call_tool, "read_document", {"key": "ref/b"})
+        assert read.structured_content["content"] == "february"
