@@ -39,8 +39,9 @@ ref = "reference.sqlite"      # writes here are refused
 ```
 
 An entry is a store file, or a table saying more about one. `type` is which
-backend keeps it - `sqlite`, `parquet` or `files` - and it is needed only where
-the name cannot say: a directory of files has no extension to read. The same
+backend keeps it - `sqlite`, `duckdb`, `pyarrow` or `files`, with `parquet` as
+another name for `duckdb` - and it is needed only where the name cannot say: a
+directory has no extension to read. The same
 option is written after a comma when it is typed, as `--mount
 docs=docs,type=files` or `--store docs,type=files`, so one mount is still one
 argument and overriding an entry still replaces it whole.

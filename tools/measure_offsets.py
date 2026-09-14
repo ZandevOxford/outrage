@@ -13,7 +13,7 @@ Three questions, each with a different answer:
   whole document and slices it in Python. Measured through the project's own
   class rather than a hand-written SELECT, so what is timed is what ships.
 * **The proposed path.** Incremental blob I/O for SQLite, `seek` for a
-  directory of files, and -- for parquet -- nothing, because a row's value is
+  directory of files, and -- for pyarrow -- nothing, because a row's value is
   decompressed whole out of its row group and there is no sub-value addressing
   to reach for. A backend with no fast path is measured anyway; "no win" is a
   result and the table should have to say it.
@@ -47,7 +47,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from outrage import store
-from outrage.store_parquet import ParquetStore
+from outrage.store_pyarrow import PyarrowStore
 
 #: The text documents are built from. Deliberately not ASCII: where every
 #: character is one byte the two offsets coincide and a measurement cannot tell
@@ -254,20 +254,20 @@ def _seek(path: Path, byte_start: int) -> str:
         return handle.read(TAKE * 4).decode("utf-8", "ignore")[:TAKE]
 
 
-def measure_parquet(directory: Path, text: str, repeats: int) -> list[tuple[str, float]]:
+def measure_pyarrow(directory: Path, text: str, repeats: int) -> list[tuple[str, float]]:
     """Today's read, twice, and no proposed path because there is none to propose.
 
     Both numbers are needed and only together do they say anything true.
-    ``ParquetStore._content`` keeps the last row group it decompressed, per
+    ``PyarrowStore._content`` keeps the last row group it decompressed, per
     thread, so a second read of the same document does no I/O and no decoding
     at all -- it slices a Python string that is already in memory, which is why
-    the warm figure beats every other backend and means nothing about parquet's
+    the warm figure beats every other backend and means nothing about pyarrow's
     seeking. The cold figure is what a first read costs, and it is the one a
     fast path would have to improve on. Reaching into the cache to drop it is
     what makes the two separable; nothing but a measurement should do that.
     """
     path = directory / "store.parquet"
-    ParquetStore.build(path, [(KEY, text, "markdown", None)])
+    PyarrowStore.build(path, [(KEY, text, "markdown", None)])
     rows: list[tuple[str, float]] = []
     with store.open_store(directory, filename=path.name) as opened:
 
@@ -290,7 +290,7 @@ def measure_parquet(directory: Path, text: str, repeats: int) -> list[tuple[str,
 BACKENDS = {
     "sqlite": measure_sqlite,
     "files": measure_files,
-    "parquet": measure_parquet,
+    "pyarrow": measure_pyarrow,
 }
 
 

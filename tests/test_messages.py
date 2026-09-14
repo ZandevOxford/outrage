@@ -33,7 +33,7 @@ def _outrage_errors() -> set[str]:
     second place to remember a new error, and the way it fails is silent: a
     class missing from it makes every raise site invisible to the three tests
     below, so a code with no template, a message composed at the raise site,
-    and a template nothing raises all pass. That happened when the parquet
+    and a template nothing raises all pass. That happened when the pyarrow
     backend added two.
 
     Resolved transitively, so a class inheriting one of the others is counted

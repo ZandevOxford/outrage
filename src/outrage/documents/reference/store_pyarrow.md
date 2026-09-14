@@ -1,6 +1,6 @@
-# outrage.store_parquet
+# outrage.store_pyarrow
 
-The parquet backend: one columnar file, written once and read many times.
+The pyarrow backend: one columnar file, written once and read many times.
 
 The second implementation of [`outrage.store.Store`](store.md#outrage.store.Store), and the one the
 reference-base case is for: tens of thousands of small documents, built in one
@@ -9,8 +9,8 @@ same twelve operations [`SqliteStore`](store_sqlite.md#outrage.store_sqlite.Sqli
 same vocabulary, and shares none of the storage.
 
 **It does not write.** A parquet file is not updated in place, so
-[`store_document()`](#outrage.store_parquet.ParquetStore.store_document) and [`delete()`](#outrage.store_parquet.ParquetStore.delete) refuse
-rather than pretend. Documents get in through [`ParquetStore.build()`](#outrage.store_parquet.ParquetStore.build),
+[`store_document()`](#outrage.store_pyarrow.PyarrowStore.store_document) and [`delete()`](#outrage.store_pyarrow.PyarrowStore.delete) refuse
+rather than pretend. Documents get in through [`PyarrowStore.build()`](#outrage.store_pyarrow.PyarrowStore.build),
 which writes the whole file in one pass, and through `outrage pack`, which is
 the command line over it. That refusal is the backend's own and not a mount's:
 see [`outrage.store.ReadOnlyStoreError`](store.md#outrage.store.ReadOnlyStoreError) for the difference, which is that
@@ -31,7 +31,7 @@ The file is one row per key, carrying the columns
   **every total, and every listing, is answered without the content column
   being opened at all** -- `total_chars` over forty thousand documents costs
   a scan of a small integer column rather than of the corpus, and
-  [`list_keys()`](#outrage.store_parquet.ParquetStore.list_keys) reports each entry's `size` from it.
+  [`list_keys()`](#outrage.store_pyarrow.PyarrowStore.list_keys) reports each entry's `size` from it.
 
   What that does *not* mean is that a survey reads no content. A survey
   returns the title text, and a title is a document like any other, so its
@@ -45,7 +45,7 @@ A [`Page`](store.md#outrage.store.Page) reports `total` and `total_chars` over t
 whole *selection*, and a total over an arbitrary predicate cannot come from
 row-group statistics -- it needs every row the predicate selects. So the
 contract obliges this backend to hold the small columns whole, in memory, and
-only `content` is read lazily. That is why `ParquetStore._index()` is
+only `content` is read lazily. That is why `PyarrowStore._index()` is
 built once per file and `content` never joins it.
 
 **How they are held is what decides how large a store can be.** They are the
@@ -58,31 +58,31 @@ bytes a row on the same corpus, and the eager dictionaries turn out to be
 derivable from the order the file is already in: see `_Index`.
 
 pyarrow is an optional dependency: `pip install "outrage[parquet]"`. It is
-imported inside this module and this module is imported only by
-`outrage.store._backend_for()`, so an install without it is unaffected until
-something names a `.parquet` file.
+imported inside this module, so an install without it is unaffected until
+something packs a store or opens one with `type=pyarrow`; a `.parquet` store
+file opens with [`outrage.store_duckdb`](store_duckdb.md#module-outrage.store_duckdb) instead.
 
-### outrage.store_parquet.CHUNK *= 8192*
+### outrage.store_pyarrow.CHUNK *= 8192*
 
 How many rows a chunked walk converts at a time. Big enough that the
 per-call overhead of `to_pylist` is amortised away, small enough that the
 Python strings it makes are freed long before the walk ends -- which is the
 whole point of walking in chunks rather than converting a column.
 
-### outrage.store_parquet.COMPRESSION *= 'zstd'*
+### outrage.store_pyarrow.COMPRESSION *= 'zstd'*
 
 How the content column is compressed. Reference text compresses very well
 and zstd decompresses fast enough that a row group is cheap to open; it
 ships in the pyarrow wheel, so this costs no further dependency.
 
-### outrage.store_parquet.DEFAULT_STORE_FILE *= 'store.parquet'*
+### outrage.store_pyarrow.DEFAULT_STORE_FILE *= 'store.parquet'*
 
 What a parquet store's file is called when a caller names none. Beside
 [`outrage.store_sqlite.DEFAULT_STORE_FILE`](store_sqlite.md#outrage.store_sqlite.DEFAULT_STORE_FILE), each in its own module, and
 it is the extension of this one that `outrage.store._backend_for()` reads
 to know which backend a file wants.
 
-### outrage.store_parquet.ENCODABLE *= ('format', 'updated_at')*
+### outrage.store_pyarrow.ENCODABLE *= ('format', 'updated_at')*
 
 Columns worth dictionary encoding **if it helps**, tested rather than
 assumed. In a store packed in one pass every row tends to carry the same
@@ -93,7 +93,7 @@ only when it wins. `key` and `sort_key` are never candidates -- they are
 distinct by construction, and encoding them costs more than it saves every
 time.
 
-### outrage.store_parquet.FORMAT_VERSION *= 2*
+### outrage.store_pyarrow.FORMAT_VERSION *= 2*
 
 The layout this build writes, recorded in the file's own key-value metadata
 so a file from a later build is refused rather than read with the wrong
@@ -104,9 +104,9 @@ file is repacked rather than upgraded.
 **Version 1 is still read**, and nothing is rewritten to do it. It has no
 `meta_path` column and a `meta_name` written under the rule that a name
 swallowed everything below the first `!`; both come off `key`, which the
-file carries, so `ParquetStore._build()` derives them on the way in.
+file carries, so `PyarrowStore._build()` derives them on the way in.
 
-### outrage.store_parquet.BYTE_LENGTHS *= True*
+### outrage.store_pyarrow.BYTE_LENGTHS *= True*
 
 Whether a pack writes `bytes`. On by default and omitted by `outrage pack
 --no-byte-lengths`, and the only column here that is optional: `chars` is
@@ -123,29 +123,29 @@ date for nothing. So it is written at the one moment it is cheap, for the
 same reason `doc_key` and `parent` are written and not held: a column a
 reader can recompute is still a column a query engine should not have to.
 
-### outrage.store_parquet.HELD_COLUMNS *= ('key', 'meta_name', 'meta_path', 'format', 'updated_at', 'sort_key', 'chars')*
+### outrage.store_pyarrow.HELD_COLUMNS *= ('key', 'meta_name', 'meta_path', 'format', 'updated_at', 'sort_key', 'chars')*
 
 Of those, the ones actually read into memory. `doc_key` and `parent`
 come off `key`, which the index is holding anyway, and between them they
 were a quarter of what an open store cost. `doc_key` is derived where a
-depth budget asks for it -- `ParquetStore._walked()`, the only question
+depth budget asks for it -- `PyarrowStore._walked()`, the only question
 anything asks of it -- and `parent` turns out not to be read by any read
 at all: it was a denormalisation for listing a level, and a level is now
 found by walking the order instead.
 
 Both are written to the file all the same. The file is read by other things,
 a column a reader can recompute is still a column a query engine should not
-have to, and [`ParquetStore.audit_rows()`](#outrage.store_parquet.ParquetStore.audit_rows) checks the written ones against
+have to, and [`PyarrowStore.audit_rows()`](#outrage.store_pyarrow.PyarrowStore.audit_rows) checks the written ones against
 the keys they claim to describe.
 
-### outrage.store_parquet.INDEX_COLUMNS *= ('key', 'doc_key', 'meta_name', 'meta_path', 'parent', 'format', 'updated_at', 'sort_key', 'chars', 'bytes')*
+### outrage.store_pyarrow.INDEX_COLUMNS *= ('key', 'doc_key', 'meta_name', 'meta_path', 'parent', 'format', 'updated_at', 'sort_key', 'chars', 'bytes')*
 
 The columns held whole once a file is opened: everything except `content`.
 Naming them is what keeps the promise in the module docstring checkable --
 the expensive column is absent from this list, and every read that does not
 return document text stops here.
 
-### outrage.store_parquet.PROBE *= 8*
+### outrage.store_pyarrow.PROBE *= 8*
 
 How far a child walk probes forward before it gives up and bisects. Most
 keys have a handful of rows beneath them -- a document, its title, perhaps a
@@ -154,7 +154,7 @@ step finds it for the cost of one comparison. A bisect costs about twenty.
 Past this many steps the subtree is big enough that the bisect is cheaper,
 and the walk stops guessing. See `_Index.children()`.
 
-### outrage.store_parquet.ROW_GROUP_SIZE *= 2048*
+### outrage.store_pyarrow.ROW_GROUP_SIZE *= 2048*
 
 Rows per row group. The unit parquet reads content in, so it is the unit a
 page's text is paid for in: too large and a five-document read decompresses
@@ -162,11 +162,11 @@ thousands, too small and the per-group statistics and headers outweigh the
 data they describe. Sized for the reference case, where a document is a few
 hundred characters and a page is tens of them.
 
-### outrage.store_parquet.VERSION_KEY *= b'outrage.format-version'*
+### outrage.store_pyarrow.VERSION_KEY *= b'outrage.format-version'*
 
 Where that version is written.
 
-### *class* outrage.store_parquet.ParquetStore(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
+### *class* outrage.store_pyarrow.PyarrowStore(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`FileStore`](store.md#outrage.store.FileStore)
 
@@ -180,7 +180,7 @@ decides: that it *is* a file inside a directory is settled above, by
 `store_file()`. `default_store_file()` is how the rest of the
 package asks for it without naming a backend to ask.
 
-#### backend_name *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]* *= 'parquet'*
+#### backend_name *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]* *= 'pyarrow'*
 
 What this backend is called where a report or a refusal has to name it.
 A short lowercase word, matching the store file's extension, so that a
@@ -189,7 +189,7 @@ sentence about a store and the name of its file agree.
 #### format_version *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[int](https://docs.python.org/3/builtins/functions.html#int)]* *= 2*
 
 The version of its own on-disk format this build writes. Compared
-against [`stored_format_version`](#outrage.store_parquet.ParquetStore.stored_format_version) by [`outrage.maintenance.check()`](maintenance.md#outrage.maintenance.check),
+against [`stored_format_version`](#outrage.store_pyarrow.PyarrowStore.stored_format_version) by [`outrage.maintenance.check()`](maintenance.md#outrage.maintenance.check),
 which is why the comparison is written once rather than per backend --
 "written by a newer outrage than this" is the same fault whatever wrote it,
 even though each backend records the number somewhere different.
@@ -241,12 +241,12 @@ log is for is what a store was *asked* to do, and a refused write is
 one of the more interesting things anyone asks. `_logged` records the
 refusal beside the arguments and re-raises.
 
-[`build()`](#outrage.store_parquet.ParquetStore.build) is the way in, and `outrage pack` is the command line
+[`build()`](#outrage.store_pyarrow.PyarrowStore.build) is the way in, and `outrage pack` is the command line
 over it.
 
 #### delete(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
-Refused, for the reason [`store_document()`](#outrage.store_parquet.ParquetStore.store_document) is.
+Refused, for the reason [`store_document()`](#outrage.store_pyarrow.PyarrowStore.store_document) is.
 
 Before the watermark is looked at rather than after: a store that
 cannot delete anything refuses whether or not the subtree moved, and
@@ -305,7 +305,7 @@ and always on in another is two contracts wearing one name.
 
 #### latest_change(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
-The newest `updated_at` over the rows [`descendant_count()`](#outrage.store_parquet.ParquetStore.descendant_count) counts.
+The newest `updated_at` over the rows [`descendant_count()`](#outrage.store_pyarrow.PyarrowStore.descendant_count) counts.
 
 The same bisected stretch and the same per-row question, taking a
 maximum instead of a total. Two columns are converted rather than one,
@@ -349,7 +349,7 @@ which is how `more` is known without counting the rest twice.
 The characters come from `chars` without any content being read.
 
 The descendant flags are filled over the page afterwards, one
-[`subtree_totals()`](#outrage.store_parquet.ParquetStore.subtree_totals) per child, and are the one part of this that is
+[`subtree_totals()`](#outrage.store_pyarrow.PyarrowStore.subtree_totals) per child, and are the one part of this that is
 linear in the subtree rather than in the level.
 
 #### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Excerpt](store.md#outrage.store.Excerpt)]
@@ -380,7 +380,7 @@ about 6% for it. Here the ordering does the work.
 
 #### keys_missing_meta(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
-The same selection [`missing_meta_stats()`](#outrage.store_parquet.ParquetStore.missing_meta_stats) counts, listed.
+The same selection [`missing_meta_stats()`](#outrage.store_pyarrow.PyarrowStore.missing_meta_stats) counts, listed.
 
 Shared rather than reimplemented, for the reason the SQLite backend
 shares its `NOT EXISTS`: the survey, its count and the list of what
@@ -440,7 +440,7 @@ never opens `content` either.
 
 Whether the file is still in the order every read of it assumes.
 
-This is parquet's `integrity_check`, and it exists for the same
+This is this backend's `integrity_check`, and it exists for the same
 reason: a file that fails it reads *wrongly* rather than failing to
 read. Every lookup here bisects `sort_key` -- that is what makes a
 bounded range 0.04 ms rather than 14 -- and bisection over rows that
@@ -462,14 +462,14 @@ it can reach that moving bytes would fix -- which is *provable* here,
 and so different in kind from "nothing to check", a sentence that would
 read as a clean bill of health for a store nothing looked at.
 
-A file that fails [`check_file()`](#outrage.store_parquet.ParquetStore.check_file) is not repaired but rebuilt, by
+A file that fails [`check_file()`](#outrage.store_pyarrow.PyarrowStore.check_file) is not repaired but rebuilt, by
 `outrage pack`, from a source that is still right.
 
 #### *classmethod* check_target(path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], \*, overwrite: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where a build would write, refusing a file already there.
 
-Public and separate from [`build()`](#outrage.store_parquet.ParquetStore.build) so a caller can hit the refusal
+Public and separate from [`build()`](#outrage.store_pyarrow.PyarrowStore.build) so a caller can hit the refusal
 **before** reading its source. A pack reads the whole corpus before it
 writes anything, so leaving this to the write means a refusal that
 arrives after forty thousand documents have been read - which is the
@@ -506,14 +506,14 @@ than quietly swapping.
 
 Stream one arbitrary-order part of a directory-backed store.
 
-`documents` has the same shape and validation as [`build()`](#outrage.store_parquet.ParquetStore.build), but
+`documents` has the same shape and validation as [`build()`](#outrage.store_pyarrow.PyarrowStore.build), but
 rows are written in the order they arrive and only one row group is
 held at a time.  The result is therefore a part for
 [`outrage.store_duckdb.DuckdbStore`](store_duckdb.md#outrage.store_duckdb.DuckdbStore), whose contract permits
 overlapping, independently produced parts in arbitrary order.  It is
-not a standalone [`ParquetStore`](#outrage.store_parquet.ParquetStore): that reader bisects one
+not a standalone [`PyarrowStore`](#outrage.store_pyarrow.PyarrowStore): that reader bisects one
 globally sorted file, while a part deliberately makes no such claim.
 
 This is the bounded-memory path for producers whose source naturally
 arrives in pieces.  A caller that needs one standalone parquet file
-uses [`build()`](#outrage.store_parquet.ParquetStore.build), or externally sorts before writing it.
+uses [`build()`](#outrage.store_pyarrow.PyarrowStore.build), or externally sorts before writing it.

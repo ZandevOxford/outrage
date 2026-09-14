@@ -23,7 +23,7 @@ The vocabulary is the interesting part, and it is worth reading in this order:
 lives, what version wrote it, how it is copied and checked -- and the four
 backends are its implementations:
 :class:`outrage.store_sqlite.SqliteStore` is a read-write database accumulated a
-document at a time, :class:`outrage.store_parquet.ParquetStore` is one
+document at a time, :class:`outrage.store_pyarrow.PyarrowStore` is one
 columnar file written whole and read many times, for a reference base of tens
 of thousands of documents, :class:`outrage.store_duckdb.DuckdbStore` reads the
 same files -- one, or many named by a directory or a pattern -- through duckdb,
@@ -1930,7 +1930,7 @@ class FileStore(Store):
         ``updated_at``. A backend with a native copy of its file overrides
         this and should -- :class:`~outrage.store_sqlite.SqliteStore` must,
         because the file alone is not the store there, and
-        :class:`~outrage.store_parquet.ParquetStore` does because a byte copy
+        :class:`~outrage.store_pyarrow.PyarrowStore` does because a byte copy
         is faster and exact. What a backend may not do is skip the verifying.
 
         The copy is written through a store that is then closed, and reopened
@@ -2090,6 +2090,11 @@ class FileStore(Store):
 #: Every backend, by the name it answers to, and the class behind it. The
 #: **single place** the package decides which storage a store is kept in.
 #:
+#: **A backend is named for how it reads**, not for the format it reads:
+#: ``duckdb`` and ``pyarrow`` both read parquet files, and ``sqlite`` and
+#: ``files`` are named for their storage, which is the same thing for them. The
+#: format's name is an alias instead -- see :data:`_ALIASES`.
+#:
 #: A registry rather than a ``backend=`` argument threaded through the server,
 #: the command line and the mount table, because a store is already addressed
 #: as a *file* and a backend already names its own -- so if a backend names its
@@ -2104,9 +2109,19 @@ class FileStore(Store):
 #: would be a cycle. :func:`_backend_for` resolves an entry on use.
 _BACKENDS: dict[str, tuple[str, str]] = {
     "sqlite": (".store_sqlite", "SqliteStore"),
-    "parquet": (".store_parquet", "ParquetStore"),
+    "pyarrow": (".store_pyarrow", "PyarrowStore"),
     "files": (".store_files", "FilesystemStore"),
     "duckdb": (".store_duckdb", "DuckdbStore"),
+}
+
+#: Other words a ``type=`` option may say, as the backend each one means.
+#:
+#: ``parquet`` is the format rather than a way of reading it, and it means the
+#: backend a ``.parquet`` store file opens with anyway, so ``ref=parts,type=parquet``
+#: and ``ref=parts/*.parquet`` are the same store. A store opened through an
+#: alias reports the backend's own name, since that is what opened it.
+_ALIASES: dict[str, str] = {
+    "parquet": "duckdb",
 }
 
 #: The extension each backend claims, as the name it resolves to. A store file
@@ -2119,8 +2134,8 @@ _BACKENDS: dict[str, tuple[str, str]] = {
 #:
 #: **``.parquet`` is read through duckdb**, whether it names one file or a
 #: pattern over many (``parts/*.parquet``). The pyarrow backend,
-#: :class:`~outrage.store_parquet.ParquetStore`, is what writes a parquet store
-#: and is opened only when a mount names it with ``type=parquet``: duckdb's
+#: :class:`~outrage.store_pyarrow.PyarrowStore`, is what writes a parquet store
+#: and is opened only when a mount names it with ``type=pyarrow``: duckdb's
 #: cost does not grow with the corpus, where the pyarrow reader holds an index
 #: over all of it, and every read either makes sits below the round trip of the
 #: tool call carrying it.
@@ -2184,14 +2199,14 @@ def _backend_for(
     sentence rather than raise ``ModuleNotFoundError`` at whoever is watching.
     """
     if backend is not None:
-        if backend not in _BACKENDS:
+        name = _ALIASES.get(backend, backend)
+        if name not in _BACKENDS:
             raise BackendError(
                 "backend-unknown",
                 backend=backend,
                 filename="" if filename is None else str(filename),
-                known=sorted(_BACKENDS),
+                known=list(backend_names()),
             )
-        name = backend
     elif filename is None:
         name = DEFAULT_BACKEND
     else:
@@ -2211,13 +2226,14 @@ def _backend_for(
 
 
 def backend_names() -> tuple[str, ...]:
-    """Every backend a store may be opened as, by name.
+    """Every word a ``type=`` option may say: each backend's name, and each alias.
 
-    What a ``type=`` option may say, for the front ends that document it and
-    the refusal that lists it -- one answer from the registry rather than a
-    list retyped in each place that needs to name them.
+    For the front ends that document it and the refusal that lists it -- one
+    answer from the registry rather than a list retyped in each place that
+    needs to name them. An alias is listed because it is accepted; what it
+    means is :data:`_ALIASES`'s to say.
     """
-    return tuple(sorted(_BACKENDS))
+    return tuple(sorted({*_BACKENDS, *_ALIASES}))
 
 
 def default_store_file() -> str:
@@ -2777,7 +2793,7 @@ _PAST_EVERYTHING = "\uffff"
 #: it: a table deciding whether a bound reaches a mounted store, a bisect over
 #: rows already in order, and a filter over a stream that is in order but
 #: cannot be bisected. The table is the same six rows as
-#: ``store_parquet._span`` and ``store_sqlite._range_clauses``, and the three
+#: ``store_pyarrow._span`` and ``store_sqlite._range_clauses``, and the three
 #: are meant to be read against each other.
 _BOUNDS: tuple[tuple[str, bool, bool, Callable[[str], str]], ...] = (
     ("after_inclusive", True, True, keys.sort_form),

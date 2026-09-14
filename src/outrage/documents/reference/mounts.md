@@ -442,7 +442,7 @@ Those of `prefixes` whose store cannot be written however it is mounted.
 
 The other half of a read-only mount's story. One mounted with
 `--mount-ro` or `read_only` refuses because of how it was started,
-and mounting it again is the remedy. A parquet or duckdb store refuses
+and mounting it again is the remedy. A pyarrow or duckdb store refuses
 because its backend is never written through, and a lent store because
 nothing can mount it any other way, so no remount changes either.
 Advice written for the first is wrong about the other two.

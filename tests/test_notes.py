@@ -611,7 +611,7 @@ def test_the_mounts_a_delete_could_not_reach_are_both_counted_and_named():
 
 
 def test_only_a_mount_a_remount_would_open_is_told_to_remount():
-    """A parquet or duckdb store refuses however it is mounted.
+    """A pyarrow or duckdb store refuses however it is mounted.
 
     Found live: a copy into a duckdb mount was told to mount it again with
     `read_only` false, which is how it had been mounted, beside the store's own

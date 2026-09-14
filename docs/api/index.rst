@@ -37,7 +37,7 @@ without anything above it knowing.
 The backends answer the same operations and are for different things.
 :mod:`outrage.store_sqlite` is the one a store is opened as by default:
 read-write, accumulated a document at a time, and what session context and
-notes on a codebase live in. :mod:`outrage.store_parquet` is one file, written
+notes on a codebase live in. :mod:`outrage.store_pyarrow` is one file, written
 whole and read many times, for a reference base of tens of thousands of
 documents; it refuses writes, and ``outrage pack`` is how documents get into
 one. :mod:`outrage.store_duckdb` reads a directory of such files, in any
@@ -74,7 +74,7 @@ read-only at ``outrage``. A store file is relative to ``--dir`` and a tree in
 
    store
    store_sqlite
-   store_parquet
+   store_pyarrow
    store_duckdb
    store_files
    mounts

@@ -1945,7 +1945,7 @@ def build_server(
                     description=(
                         "Backend to open `file` with, when the file name does not "
                         "say: 'files' for a directory of files, 'duckdb' for a "
-                        "directory of parquet parts, 'parquet' to read one parquet "
+                        "directory of parquet parts, 'pyarrow' to read one parquet "
                         "file with pyarrow rather than duckdb"
                     )
                 ),

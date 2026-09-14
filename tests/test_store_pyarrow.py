@@ -1,4 +1,4 @@
-"""The parquet backend: that it agrees with SQLite, and what is only its own.
+"""The pyarrow backend: that it agrees with SQLite, and what is only its own.
 
 ``test_store.py`` says a second backend should pass it unchanged but for the
 fixtures at the top. **A read-only backend cannot**, and pretending otherwise
@@ -52,15 +52,15 @@ from outrage.store import (
     Store,
 )
 from outrage.store_files import FilesystemStore
-from outrage.store_parquet import (
+from outrage.store_pyarrow import (
     FORMAT_VERSION,
     HELD_COLUMNS,
     INDEX_COLUMNS,
-    ParquetStore,
+    PyarrowStore,
 )
 from outrage.store_sqlite import SqliteStore
 
-pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
 
 
 #: A corpus chosen for the places the two backends could disagree rather than
@@ -130,28 +130,28 @@ def sqlite(tmp_path):
 
 
 @pytest.fixture
-def parquet(tmp_path, sqlite):
+def arrow(tmp_path, sqlite):
     """The same corpus packed, timestamps included.
 
     Built from ``sqlite`` rather than from ``CORPUS`` so ``updated_at`` matches
     and the comparison below is about the store rather than about the clock.
     """
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "p" / "ref.parquet",
         ((key, content, None, sqlite.retrieve_document(key).updated_at) for key, content in CORPUS),
     )
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as store:
         yield store
 
 
 @pytest.fixture
 def packed(tmp_path):
     """A small parquet store, for the tests that do not need a comparison."""
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "p" / "ref.parquet",
         [("a", "a body", None, None), ("a/!title", "A", None, None), ("a/b", "below", None, None)],
     )
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as store:
         yield store
 
 
@@ -211,7 +211,7 @@ _SUBTREES = [
 _METAS = [None, "title", ["title"], ["title", "summary"], ["summary"]]
 
 
-def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
+def test_the_two_backends_answer_every_read_identically(sqlite, arrow):
     """The contract, checked against a live oracle rather than expectations.
 
     Around four thousand comparisons across every read on the interface, every
@@ -222,11 +222,11 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
     better than the assertion message does.
     """
     for key in _KEYS:
-        answers_alike(sqlite, parquet, lambda s, k=key: s.exists(k))
-        answers_alike(sqlite, parquet, lambda s, k=key: s.descendant_count(k))
-        answers_alike(sqlite, parquet, lambda s, k=key: s.latest_change(k))
-        answers_alike(sqlite, parquet, lambda s, k=key: s.latest_change(k, whole_subtree=True))
-        answers_alike(sqlite, parquet, lambda s, k=key: s.retrieve_document(k))
+        answers_alike(sqlite, arrow, lambda s, k=key: s.exists(k))
+        answers_alike(sqlite, arrow, lambda s, k=key: s.descendant_count(k))
+        answers_alike(sqlite, arrow, lambda s, k=key: s.latest_change(k))
+        answers_alike(sqlite, arrow, lambda s, k=key: s.latest_change(k, whole_subtree=True))
+        answers_alike(sqlite, arrow, lambda s, k=key: s.retrieve_document(k))
         # The portability contract: a byte offset is the unit that survives
         # leaving a store, so the two backends have to return the same content
         # for one even though only one of them can seek to it. This is the
@@ -234,44 +234,42 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
         # replaced -- including where it snaps, and where it stops.
         for at in _BYTE_OFFSETS:
             answers_alike(
-                sqlite, parquet, lambda s, k=key, b=at: s.retrieve_document(k, byte_offset=b)
+                sqlite, arrow, lambda s, k=key, b=at: s.retrieve_document(k, byte_offset=b)
             )
             answers_alike(
                 sqlite,
-                parquet,
+                arrow,
                 lambda s, k=key, b=at: s.retrieve_document(k, byte_offset=b, max_chars=4),
             )
         answers_alike(
-            sqlite, parquet, lambda s, k=key: s.retrieve_document(k, pattern="a", byte_offset=1)
+            sqlite, arrow, lambda s, k=key: s.retrieve_document(k, pattern="a", byte_offset=1)
         )
         if key != keys.ROOT:
-            answers_alike(sqlite, parquet, lambda s, k=key: s.level_entry(k))
+            answers_alike(sqlite, arrow, lambda s, k=key: s.level_entry(k))
         for limit in (None, 1, 2, 100):
-            answers_alike(sqlite, parquet, lambda s, k=key, n=limit: s.list_keys(k, limit=n))
+            answers_alike(sqlite, arrow, lambda s, k=key, n=limit: s.list_keys(k, limit=n))
         # Paged to the end at a page size of two, so a level of three or more
         # crosses a boundary and the totals are asserted on every page.
-        answers_alike(sqlite, parquet, lambda s, k=key: walk_level(s, k))
+        answers_alike(sqlite, arrow, lambda s, k=key: walk_level(s, k))
         # And the same level with what lies below each of its keys. Both
         # flags at once, since a backend that answered one of them from the
         # other's selection would still agree with itself.
-        answers_alike(sqlite, parquet, lambda s, k=key: _descendants(s, k))
+        answers_alike(sqlite, arrow, lambda s, k=key: _descendants(s, k))
 
     for key, key_range in itertools.product(_KEYS, _RANGES):
-        answers_alike(
-            sqlite, parquet, lambda s, k=key, r=key_range: s.latest_change(k, key_range=r)
-        )
+        answers_alike(sqlite, arrow, lambda s, k=key, r=key_range: s.latest_change(k, key_range=r))
 
     for subtree, key_range, meta in itertools.product(_SUBTREES, _RANGES, _METAS):
         answers_alike(
             sqlite,
-            parquet,
+            arrow,
             lambda s, t=subtree, r=key_range, m=meta: page_facts(
                 s.get_documents(t, key_range=r, meta_name=m)
             ),
         )
         answers_alike(
             sqlite,
-            parquet,
+            arrow,
             lambda s, t=subtree, r=key_range, m=meta: walk_documents(s, t, r, m),
         )
 
@@ -279,7 +277,7 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
     for subtree, key_range, meta in itertools.product(_SUBTREES, _RANGES, names):
         answers_alike(
             sqlite,
-            parquet,
+            arrow,
             lambda s, t=subtree, r=key_range, m=meta: page_facts(
                 s.keys_missing_meta(t, key_range=r, meta_name=m)
             ),
@@ -287,14 +285,14 @@ def test_the_two_backends_answer_every_read_identically(sqlite, parquet):
         for window in _RANGES:
             answers_alike(
                 sqlite,
-                parquet,
+                arrow,
                 lambda s, t=subtree, r=key_range, m=meta, w=window: s.missing_meta_stats(
                     t, key_range=r, window=w, meta_name=m, sample=3
                 ),
             )
 
 
-def test_the_base_search_is_the_oracle_for_every_backend(sqlite, parquet):
+def test_the_base_search_is_the_oracle_for_every_backend(sqlite, arrow):
     """An optimized override must remain identical to the inherited baseline."""
     searches = [
         ([SearchCriterion("body", "contains", "document")], "any"),
@@ -322,14 +320,14 @@ def test_the_base_search_is_the_oracle_for_every_backend(sqlite, parquet):
             == expected
         )
         assert (
-            parquet.find_documents(
+            arrow.find_documents(
                 BoundedSubtree("a"), criteria=criteria, combine=combine, scan_limit=3
             )
             == expected
         )
 
 
-def test_the_two_backends_agree_under_every_combination_of_caps(sqlite, parquet):
+def test_the_two_backends_agree_under_every_combination_of_caps(sqlite, arrow):
     """The three bounds on a read multiply, and they page to the same end.
 
     ``max_chars`` caps a document, ``limit`` and the cursor page the
@@ -343,18 +341,18 @@ def test_the_two_backends_agree_under_every_combination_of_caps(sqlite, parquet)
     ):
         answers_alike(
             sqlite,
-            parquet,
+            arrow,
             lambda s, c=max_chars, t=max_total, n=limit: walk_documents(
                 s, EVERYTHING, UNBOUNDED, None, max_chars=c, max_total_chars=t, limit=n
             ),
         )
 
 
-def test_the_two_backends_slice_a_document_identically(sqlite, parquet):
+def test_the_two_backends_slice_a_document_identically(sqlite, arrow):
     """Offsets, lengths, patterns and occurrences, over the same three documents.
 
     :func:`outrage.store._excerpt` is shared, so this is really asking whether the
-    parquet backend hands it the same four fields SQLite does -- and whether a
+    pyarrow backend hands it the same four fields SQLite does -- and whether a
     pattern that does not occur fails the same way.
     """
     for key in ("a", "a/b/c", "b"):
@@ -363,7 +361,7 @@ def test_the_two_backends_slice_a_document_identically(sqlite, parquet):
         ):
             answers_alike(
                 sqlite,
-                parquet,
+                arrow,
                 lambda s, k=key, o=offset, ln=length, p=pattern, c=occurrence, m=max_chars: (
                     s.retrieve_document(
                         k, offset=o, length=ln, pattern=p, occurrence=c, max_chars=m
@@ -411,9 +409,9 @@ def test_a_refused_write_is_recorded_in_the_event_log(tmp_path):
 
     from outrage.eventlog import EventLog
 
-    ParquetStore.build(tmp_path / "ref.parquet", [("a", "body", None, None)])
+    PyarrowStore.build(tmp_path / "ref.parquet", [("a", "body", None, None)])
     log = EventLog(tmp_path / "log.jsonl")
-    with ParquetStore(tmp_path, filename="ref.parquet", log=log) as store:
+    with PyarrowStore(tmp_path, filename="ref.parquet", log=log) as store:
         with pytest.raises(ReadOnlyStoreError):
             store.store_document("a", "new")
     log.close()
@@ -433,8 +431,8 @@ def test_a_missing_parquet_store_is_refused_rather_than_created(tmp_path):
     missing, which no read could ever contradict.
     """
     with raises_rendered(BackendError, "no parquet store at") as raised:
-        ParquetStore(tmp_path, filename="absent.parquet")
-    assert raised.value.code == "parquet-store-missing"
+        PyarrowStore(tmp_path, filename="absent.parquet")
+    assert raised.value.code == "pyarrow-store-missing"
 
 
 def test_a_parquet_file_that_is_not_a_store_is_refused(tmp_path):
@@ -444,7 +442,7 @@ def test_a_parquet_file_that_is_not_a_store_is_refused(tmp_path):
     pq.write_table(pa.table({"key": ["a"], "content": ["b"]}), tmp_path / "other.parquet")
 
     with raises_rendered(BackendError, "not an outrage store"):
-        ParquetStore(tmp_path, filename="other.parquet")
+        PyarrowStore(tmp_path, filename="other.parquet")
 
 
 def test_a_file_from_a_later_build_is_refused_rather_than_read(tmp_path, monkeypatch):
@@ -454,22 +452,22 @@ def test_a_file_from_a_later_build_is_refused_rather_than_read(tmp_path, monkeyp
     read, so a mount table naming an unreadable file fails while somebody is
     still looking at the command that named it.
     """
-    from outrage import store_parquet
+    from outrage import store_pyarrow
 
-    monkeypatch.setattr(store_parquet, "FORMAT_VERSION", store_parquet.FORMAT_VERSION + 1)
-    ParquetStore.build(tmp_path / "future.parquet", [("a", "body", None, None)])
+    monkeypatch.setattr(store_pyarrow, "FORMAT_VERSION", store_pyarrow.FORMAT_VERSION + 1)
+    PyarrowStore.build(tmp_path / "future.parquet", [("a", "body", None, None)])
     monkeypatch.undo()
 
     with raises_rendered(BackendError, "repack it or upgrade outrage") as raised:
-        ParquetStore(tmp_path, filename="future.parquet")
-    assert raised.value.code == "parquet-format-newer"
+        PyarrowStore(tmp_path, filename="future.parquet")
+    assert raised.value.code == "pyarrow-format-newer"
 
 
 def _version_1_file(path) -> None:
     """A store in the version 1 layout, holding metadata nested below metadata."""
     pa = pytest.importorskip("pyarrow")
     pq = pytest.importorskip("pyarrow.parquet")
-    from outrage import store_parquet
+    from outrage import store_pyarrow
 
     written = ["a", "a/!title", "a/!changelog", "a/!changelog/22", "a/!changelog/22/!title"]
 
@@ -489,7 +487,7 @@ def _version_1_file(path) -> None:
             ("sort_key", pa.string()),
             ("chars", pa.int64()),
         ],
-        metadata={store_parquet.VERSION_KEY: b"1"},
+        metadata={store_pyarrow.VERSION_KEY: b"1"},
     )
     ordered = sorted(written, key=keys.sort_form)
     pq.write_table(
@@ -522,7 +520,7 @@ def test_a_version_1_file_is_read_by_deriving_the_split_from_its_keys(tmp_path):
     """
     _version_1_file(tmp_path / "old.parquet")
 
-    with ParquetStore(tmp_path, filename="old.parquet") as store:
+    with PyarrowStore(tmp_path, filename="old.parquet") as store:
         assert [e.key for e in store.list_keys("a/!changelog").items] == ["a/!changelog/22"]
         survey = store.get_documents(BoundedSubtree("a/!changelog"), meta_name="title")
         assert [e.key for e in survey.items] == ["a/!changelog/22/!title"]
@@ -533,17 +531,17 @@ def test_a_version_1_file_is_read_by_deriving_the_split_from_its_keys(tmp_path):
 def test_building_refuses_a_wildcard_because_there_is_nothing_to_allocate_from(tmp_path):
     """A ``?`` is a number read out of the store, and there is no store yet."""
     with raises_rendered(BackendError, "nothing to read"):
-        ParquetStore.build(tmp_path / "out.parquet", [("tmp/?", "body", None, None)])
+        PyarrowStore.build(tmp_path / "out.parquet", [("tmp/?", "body", None, None)])
 
 
 def test_building_refuses_an_existing_file_unless_told_to_replace_it(tmp_path):
     target = tmp_path / "out.parquet"
-    ParquetStore.build(target, [("a", "one", None, None)])
+    PyarrowStore.build(target, [("a", "one", None, None)])
     with raises_rendered(BackendError, "already exists"):
-        ParquetStore.build(target, [("a", "two", None, None)])
+        PyarrowStore.build(target, [("a", "two", None, None)])
 
-    ParquetStore.build(target, [("a", "two", None, None)], overwrite=True)
-    with ParquetStore(tmp_path, filename="out.parquet") as store:
+    PyarrowStore.build(target, [("a", "two", None, None)], overwrite=True)
+    with PyarrowStore(tmp_path, filename="out.parquet") as store:
         assert store.retrieve_document("a").content == "two"
 
 
@@ -553,17 +551,17 @@ def test_building_takes_the_last_of_two_documents_claiming_one_key(tmp_path):
     Silently keeping the first would make the result depend on an iteration
     order the caller did not choose.
     """
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "out.parquet", [("a", "first", None, None), ("a", "second", None, None)]
     )
-    with ParquetStore(tmp_path, filename="out.parquet") as store:
+    with PyarrowStore(tmp_path, filename="out.parquet") as store:
         assert store.retrieve_document("a").content == "second"
 
 
 def test_building_validates_every_key_the_way_a_writing_backend_does(tmp_path):
     """A build that admitted a key ``store_document`` refuses is a second namespace."""
     with pytest.raises(keys.InvalidKeyError):
-        ParquetStore.build(tmp_path / "out.parquet", [("a/b\x00c", "body", None, None)])
+        PyarrowStore.build(tmp_path / "out.parquet", [("a/b\x00c", "body", None, None)])
     assert not (tmp_path / "out.parquet").exists()
 
 
@@ -574,7 +572,7 @@ def test_a_directory_part_streams_in_source_order_and_replaces_atomically(tmp_pa
         ("z", "last alphabetically", "markdown", "2026-09-01T00:00:00Z"),
         ("a", "first alphabetically", "markdown", "2026-09-01T00:00:01Z"),
     ]
-    assert ParquetStore.build_part(target, iter(rows)) == 2
+    assert PyarrowStore.build_part(target, iter(rows)) == 2
     assert _column(target, "key") == ["z", "a"]
 
     def broken():
@@ -582,7 +580,7 @@ def test_a_directory_part_streams_in_source_order_and_replaces_atomically(tmp_pa
         yield "bad\x00key", "never valid", None, None
 
     with pytest.raises(keys.InvalidKeyError):
-        ParquetStore.build_part(target, broken(), overwrite=True)
+        PyarrowStore.build_part(target, broken(), overwrite=True)
     assert _column(target, "key") == ["z", "a"]
     assert not list(tmp_path.glob(".*.tmp"))
 
@@ -595,7 +593,7 @@ def test_the_file_is_written_in_key_order_and_says_so(tmp_path):
     file is ordered rather than having to discover it.
     """
     pq = pytest.importorskip("pyarrow.parquet")
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "out.parquet",
         [(key, content, None, None) for key, content in CORPUS],
     )
@@ -646,14 +644,14 @@ def test_a_page_of_documents_reads_each_row_group_once(tmp_path, monkeypatch):
     Twenty documents in one group is one decompression rather than twenty,
     which is the whole reason the last group read is kept.
     """
-    from outrage import store_parquet
+    from outrage import store_pyarrow
 
-    monkeypatch.setattr(store_parquet, "ROW_GROUP_SIZE", 8)
-    ParquetStore.build(
+    monkeypatch.setattr(store_pyarrow, "ROW_GROUP_SIZE", 8)
+    PyarrowStore.build(
         tmp_path / "many.parquet",
         [(f"k/{n:03d}", f"document {n}", None, None) for n in range(24)],
     )
-    with ParquetStore(tmp_path, filename="many.parquet") as store:
+    with PyarrowStore(tmp_path, filename="many.parquet") as store:
         reads = []
         original = store._parquet.read_row_group
         monkeypatch.setattr(
@@ -682,7 +680,7 @@ def test_backing_up_copies_the_file_because_the_file_is_the_store(packed, tmp_pa
     assert result.integrity == "ok"
     assert result.bytes == packed.path.stat().st_size
 
-    with ParquetStore(tmp_path, filename="copy.parquet") as copy:
+    with PyarrowStore(tmp_path, filename="copy.parquet") as copy:
         assert copy.retrieve_document("a").content == "a body"
 
 
@@ -694,11 +692,11 @@ def test_a_backup_of_an_older_file_is_that_older_file(tmp_path):
     """
     _version_1_file(tmp_path / "old.parquet")
 
-    with ParquetStore(tmp_path, filename="old.parquet") as store:
+    with PyarrowStore(tmp_path, filename="old.parquet") as store:
         result = store.backup(tmp_path / "copy.parquet")
 
     assert result.documents == 5
-    with ParquetStore(tmp_path, filename="copy.parquet") as copy:
+    with PyarrowStore(tmp_path, filename="copy.parquet") as copy:
         assert copy.stored_format_version == 1
 
 
@@ -708,15 +706,15 @@ def test_a_backup_over_the_store_itself_is_refused(packed):
         packed.backup(packed.path, overwrite=True)
 
 
-def test_a_container_says_what_is_beneath_it_rather_than_that_it_is_missing(parquet):
+def test_a_container_says_what_is_beneath_it_rather_than_that_it_is_missing(arrow):
     """The same answer SQLite gives, and the one that turns a dead end into a call."""
     with pytest.raises(KeyNotFoundError) as raised:
-        parquet.retrieve_document("context")
+        arrow.retrieve_document("context")
     assert raised.value.code == "key-is-a-container"
     assert raised.value.details["beneath"] == 4
 
     with pytest.raises(KeyNotFoundError) as raised:
-        parquet.retrieve_document("nope")
+        arrow.retrieve_document("nope")
     assert raised.value.code == "key-not-found"
 
 
@@ -724,7 +722,7 @@ def test_closing_twice_is_allowed_and_reopening_still_reads(tmp_path, packed):
     """A mount table closes what it opened when a failure means unwinding."""
     packed.close()
     packed.close()
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as store:
         assert store.retrieve_document("a").content == "a body"
 
 
@@ -739,7 +737,7 @@ def test_the_extension_chooses_the_backend(tmp_path):
     """
     assert store_module._backend_for("ref.parquet").backend_name == "duckdb"
     assert store_module._backend_for("parts/*.parquet").backend_name == "duckdb"
-    assert store_module._backend_for("ref.parquet", "parquet") is ParquetStore
+    assert store_module._backend_for("ref.parquet", "pyarrow") is PyarrowStore
     assert store_module._backend_for("ref.sqlite") is SqliteStore
     assert store_module._backend_for(None) is SqliteStore
     # An unrecognised name is the default backend, not an error: a store file
@@ -760,18 +758,18 @@ def test_a_backend_may_be_named_instead_of_inferred(tmp_path):
     """
     assert store_module._backend_for("documents", "files") is FilesystemStore
     # The name wins over the extension, which is the point of asking.
-    assert store_module._backend_for("ref.sqlite", "parquet") is ParquetStore
-    assert store_module.backend_names() == ("duckdb", "files", "parquet", "sqlite")
+    assert store_module._backend_for("ref.sqlite", "pyarrow") is PyarrowStore
+    assert store_module.backend_names() == ("duckdb", "files", "parquet", "pyarrow", "sqlite")
 
     with raises_rendered(BackendError, "there is no 'tree' backend"):
         store_module._backend_for("documents", "tree")
 
 
 def test_a_parquet_file_opens_with_this_backend_when_it_is_named(tmp_path):
-    """What `ref=python.parquet,type=parquet` says, and what testing this backend needs."""
-    ParquetStore.build(tmp_path / "ref.parquet", [("a", "body", None, None)])
-    with store_module.open_store(tmp_path, filename="ref.parquet", backend="parquet") as store:
-        assert isinstance(store, ParquetStore)
+    """What `ref=python.parquet,type=pyarrow` says, and what testing this backend needs."""
+    PyarrowStore.build(tmp_path / "ref.parquet", [("a", "body", None, None)])
+    with store_module.open_store(tmp_path, filename="ref.parquet", backend="pyarrow") as store:
+        assert isinstance(store, PyarrowStore)
         assert store.retrieve_document("a").content == "body"
 
 
@@ -821,7 +819,7 @@ def test_packing_a_store_carries_metadata_and_timestamps_across(sqlite, tmp_path
     assert {t.action for t in transfers} == {store_module.READ}
     assert len(transfers) == len(CORPUS)
 
-    with ParquetStore(tmp_path, filename="packed.parquet") as store:
+    with PyarrowStore(tmp_path, filename="packed.parquet") as store:
         for key, content in CORPUS:
             assert store.retrieve_document(key).content == content
             assert store.retrieve_document(key).updated_at == (
@@ -829,7 +827,7 @@ def test_packing_a_store_carries_metadata_and_timestamps_across(sqlite, tmp_path
             )
 
 
-def test_a_parquet_store_is_a_source_a_copy_reads_whole(sqlite, parquet, tmp_path):
+def test_a_parquet_store_is_a_source_a_copy_reads_whole(sqlite, arrow, tmp_path):
     """A reference base copied back out, key for key and stamp for stamp.
 
     The direction that needs nothing new: a copy asks its source only for the
@@ -837,7 +835,7 @@ def test_a_parquet_store_is_a_source_a_copy_reads_whole(sqlite, parquet, tmp_pat
     other even though nothing can be written to it.
     """
     with SqliteStore(tmp_path / "back") as target:
-        transfers = list(target.copy_from(parquet))
+        transfers = list(target.copy_from(arrow))
         assert {t.action for t in transfers} == {store_module.WROTE}
         for key, content in CORPUS:
             assert target.retrieve_document(key).content == content
@@ -846,7 +844,7 @@ def test_a_parquet_store_is_a_source_a_copy_reads_whole(sqlite, parquet, tmp_pat
             )
 
 
-def test_copying_into_a_parquet_store_is_refused_document_by_document(parquet, tmp_path):
+def test_copying_into_a_parquet_store_is_refused_document_by_document(arrow, tmp_path):
     """Read only is read only, and the copy says which end refused.
 
     Not a hole in ``copy_from``: a parquet file is written whole and the way
@@ -861,7 +859,7 @@ def test_copying_into_a_parquet_store_is_refused_document_by_document(parquet, t
     """
     with SqliteStore(tmp_path / "source") as source:
         source.store_document("zzz/nothing-here", "body")
-        transfers = list(parquet.copy_from(source))
+        transfers = list(arrow.copy_from(source))
     assert [t.action for t in transfers] == [store_module.FAILED]
     assert transfers[0].reason is None
     assert transfers[0].error is not None
@@ -877,21 +875,21 @@ def test_a_built_timestamp_is_normalised_like_a_written_one(tmp_path):
     against a store's own by luck.
     """
     target = tmp_path / "built.parquet"
-    ParquetStore.build(
+    PyarrowStore.build(
         target,
         [
             ("a", "one", None, "2020-01-02T05:04:05+02:00"),
             ("b", "two", None, "2020-01-02T03:04:05"),
         ],
     )
-    with ParquetStore(tmp_path, filename="built.parquet") as store:
+    with PyarrowStore(tmp_path, filename="built.parquet") as store:
         assert store.retrieve_document("a").updated_at == "2020-01-02T03:04:05+00:00"
         assert store.retrieve_document("b").updated_at == "2020-01-02T03:04:05+00:00"
 
 
 def test_a_built_timestamp_that_is_not_one_is_refused(tmp_path):
     with pytest.raises(ValueError, match="ISO 8601"):
-        ParquetStore.build(tmp_path / "built.parquet", [("a", "one", None, "yesterday")])
+        PyarrowStore.build(tmp_path / "built.parquet", [("a", "one", None, "yesterday")])
 
 
 def test_packing_a_store_and_packing_its_export_reach_the_same_store(sqlite, tmp_path):
@@ -905,8 +903,8 @@ def test_packing_a_store_and_packing_its_export_reach_the_same_store(sqlite, tmp
     list(bulk.pack(from_store, bulk.documents_from_store(sqlite, "a")))
     list(bulk.pack(from_tree, bulk.documents_from_tree(tmp_path / "tree", hidden=True)))
 
-    with ParquetStore(tmp_path, filename="a.parquet") as one:
-        with ParquetStore(tmp_path, filename="b.parquet") as two:
+    with PyarrowStore(tmp_path, filename="a.parquet") as one:
+        with PyarrowStore(tmp_path, filename="b.parquet") as two:
             assert [e.key for e in one.get_documents().items] == [
                 e.key for e in two.get_documents().items
             ]
@@ -944,7 +942,7 @@ def test_packing_a_tree_maps_paths_exactly_as_an_import_would(tmp_path):
     (source / "two.json").write_text('{"k": 1}')
 
     list(bulk.pack(tmp_path / "out.parquet", bulk.documents_from_tree(source)))
-    with ParquetStore(tmp_path, filename="out.parquet") as store:
+    with PyarrowStore(tmp_path, filename="out.parquet") as store:
         assert [e.key for e in store.get_documents().items] == ["a/one", "two"]
         assert store.retrieve_document("a/!title").content == "A"
         assert store.retrieve_document("two").format == "json"
@@ -976,7 +974,7 @@ def test_check_answers_for_a_parquet_store_in_its_own_terms(packed):
 
     report = maintenance.check(packed)
 
-    assert report.backend == "parquet"
+    assert report.backend == "pyarrow"
     assert (report.documents, report.metadata) == (2, 1)
     assert report.characters == len("a body") + len("A") + len("below")
     # Its own storage, in vocabulary SQLite has no answer for -- and with no
@@ -1015,7 +1013,7 @@ def test_the_row_checks_are_not_sqlites_and_fire_for_parquet_too(tmp_path):
     from outrage import maintenance
 
     path = tmp_path / "p" / "ref.parquet"
-    ParquetStore.build(path, [("a", "one", None, None), ("a/b", "two", None, None)])
+    PyarrowStore.build(path, [("a", "one", None, None), ("a/b", "two", None, None)])
 
     table = pq.read_table(path)
     parents = table.column("parent").to_pylist()
@@ -1023,7 +1021,7 @@ def test_the_row_checks_are_not_sqlites_and_fire_for_parquet_too(tmp_path):
     column = table.schema.get_field_index("parent")
     pq.write_table(table.set_column(column, "parent", [parents]), path)
 
-    with ParquetStore(path.parent, filename=path.name) as store:
+    with PyarrowStore(path.parent, filename=path.name) as store:
         report = maintenance.check(store)
 
     assert not report.sound
@@ -1033,7 +1031,7 @@ def test_the_row_checks_are_not_sqlites_and_fire_for_parquet_too(tmp_path):
 
 
 def test_check_finds_a_parquet_file_that_is_not_in_sort_order(tmp_path):
-    """Parquet's ``integrity_check``: a file that reads wrongly rather than failing.
+    """This backend's ``integrity_check``: a file that reads wrongly rather than failing.
 
     Every lookup bisects ``sort_key``. Rows out of order do not raise -- they
     return a confident wrong answer, with nothing anywhere to contradict it --
@@ -1045,7 +1043,7 @@ def test_check_finds_a_parquet_file_that_is_not_in_sort_order(tmp_path):
     from outrage import maintenance
 
     path = tmp_path / "p" / "ref.parquet"
-    ParquetStore.build(path, [("a", "one", None, None), ("b", "two", None, None)])
+    PyarrowStore.build(path, [("a", "one", None, None), ("b", "two", None, None)])
 
     # Rewrite the same rows in the wrong order, keeping the schema and its
     # metadata, which is what a file assembled by something other than `build`
@@ -1053,7 +1051,7 @@ def test_check_finds_a_parquet_file_that_is_not_in_sort_order(tmp_path):
     table = pq.read_table(path)
     pq.write_table(table.take([1, 0]), path)
 
-    with ParquetStore(path.parent, filename=path.name) as store:
+    with PyarrowStore(path.parent, filename=path.name) as store:
         report = maintenance.check(store)
 
     assert report.details["order"] == "not sorted"
@@ -1081,7 +1079,7 @@ def test_a_file_handle_and_its_row_group_cache_do_not_escape_their_thread(tmp_pa
     threads reading row groups through one is the same mistake
     ``planned/concurrency`` records, and this one is in C.
     """
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "many.parquet",
         [(f"k/{n:03d}", f"document {n}", None, None) for n in range(60)],
     )
@@ -1092,7 +1090,7 @@ def test_a_file_handle_and_its_row_group_cache_do_not_escape_their_thread(tmp_pa
     caches: dict[int, object] = {}
     lock = threading.Lock()
 
-    with ParquetStore(tmp_path, filename="many.parquet") as store:
+    with PyarrowStore(tmp_path, filename="many.parquet") as store:
 
         def note(worker):
             # Reads a document, which opens this thread's handle and fills its
@@ -1115,15 +1113,15 @@ def test_parallel_readers_all_get_the_document_they_asked_for(tmp_path, monkeypa
     but it does catch a handle that cannot serve two threads at once, which is
     the failure that raises rather than lies.
     """
-    from outrage import store_parquet
+    from outrage import store_pyarrow
 
-    monkeypatch.setattr(store_parquet, "ROW_GROUP_SIZE", 4)
-    ParquetStore.build(
+    monkeypatch.setattr(store_pyarrow, "ROW_GROUP_SIZE", 4)
+    PyarrowStore.build(
         tmp_path / "many.parquet",
         [(f"k/{n:03d}", f"document {n}", None, None) for n in range(60)],
     )
 
-    with ParquetStore(tmp_path, filename="many.parquet") as store:
+    with PyarrowStore(tmp_path, filename="many.parquet") as store:
 
         def read(worker):
             for n in range(60):
@@ -1142,7 +1140,7 @@ def test_read_only_is_the_backend_and_the_mount_together(tmp_path):
     """
     from outrage.mounts import open_mounts
 
-    ParquetStore.build(tmp_path / "base" / "ref.parquet", [("a", "body", None, None)])
+    PyarrowStore.build(tmp_path / "base" / "ref.parquet", [("a", "body", None, None)])
     SqliteStore(tmp_path / "base", filename="rw.sqlite").close()
     SqliteStore(tmp_path / "base", filename="ro.sqlite").close()
 
@@ -1180,11 +1178,11 @@ def test_an_implicit_key_is_listed_although_no_row_says_so(tmp_path):
     child rather than on the child, which is the same fact read off the order.
     Two levels of it, so a chain of implicit keys is covered rather than one.
     """
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "p" / "ref.parquet",
         [("a/b/c/d", "deep", None, None), ("a/b/c/e", "also deep", None, None)],
     )
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as store:
         assert [entry.key for entry in store.list_keys().items] == ["a"]
         assert store.level_entry("a").kind == "implicit"
         assert store.level_entry("a/b").kind == "implicit"
@@ -1204,11 +1202,11 @@ def test_a_level_is_listed_in_order_without_the_level_being_sorted(tmp_path):
     comes before ``10``; and a child's own row may be absent while its subtree
     still fixes where it sorts.
     """
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "p" / "ref.parquet",
         [(key, "body", None, None) for key in ("x/2", "x/10", "x/9/under", "x/1")],
     )
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as store:
         assert [entry.key for entry in store.list_keys("x").items] == [
             "x/1",
             "x/2",
@@ -1225,15 +1223,15 @@ def test_a_child_with_a_long_subtree_is_skipped_by_bisecting_past_it(tmp_path):
     part. So: one child with nothing beneath it, one with fewer descendants
     than the probe allows, and one with many more.
     """
-    from outrage.store_parquet import PROBE
+    from outrage.store_pyarrow import PROBE
 
     rows = [("t/alone", "body", None, None)]
     rows += [(f"t/small/{n}", "body", None, None) for n in range(PROBE - 2)]
     rows += [(f"t/large/{n}", "body", None, None) for n in range(PROBE * 5)]
     rows += [("t/last", "body", None, None)]
-    ParquetStore.build(tmp_path / "p" / "ref.parquet", rows)
+    PyarrowStore.build(tmp_path / "p" / "ref.parquet", rows)
 
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as store:
         page = store.list_keys("t")
         assert [entry.key for entry in page.items] == [
             "t/alone",
@@ -1253,7 +1251,7 @@ def test_metadata_is_found_by_looking_at_the_next_row_not_by_searching(tmp_path)
     non-matching name, or which counted metadata one level too deep, would get
     a different answer.
     """
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "p" / "ref.parquet",
         [
             ("a", "body", None, None),
@@ -1268,7 +1266,7 @@ def test_metadata_is_found_by_looking_at_the_next_row_not_by_searching(tmp_path)
             ("c/!title/!of", "the title", None, None),
         ],
     )
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as store:
         assert store.keys_missing_meta(meta_name="title").items == ["a/b", "b"]
         # `author` sorts before `title`, so a walk that gave up on the first
         # name it did not want would miss the title behind it -- `c` is here
@@ -1288,17 +1286,17 @@ def test_carrying_a_name_is_a_fact_about_the_store_not_about_the_range(tmp_path)
     stretch of the key order is not asking to have that fact re-decided. The
     range below ends at ``a``, so ``a/!title`` is outside it.
     """
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "p" / "ref.parquet",
         [("a", "body", None, None), ("a/!title", "A", None, None), ("z", "body", None, None)],
     )
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as store:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as store:
         within = KeyRange(before_inclusive="a")
         assert store.keys_missing_meta(key_range=within).items == []
         assert store.missing_meta_stats(key_range=within).total == 0
 
 
-def test_the_two_selection_paths_agree_where_a_depth_budget_forces_the_slow_one(sqlite, parquet):
+def test_the_two_selection_paths_agree_where_a_depth_budget_forces_the_slow_one(sqlite, arrow):
     """A depth budget takes the Python walk; without one the predicate vectorises.
 
     Two implementations of one predicate is two chances to disagree, so the
@@ -1308,8 +1306,8 @@ def test_the_two_selection_paths_agree_where_a_depth_budget_forces_the_slow_one(
     for key in ("", "one", "one/two"):
         for depth in (None, 0, 1, 2, 5):
             subtree = BoundedSubtree(key=key or None, depth=depth)
-            answers_alike(sqlite, parquet, lambda s, t=subtree: page_facts(s.get_documents(t)))
-            answers_alike(sqlite, parquet, lambda s, t=subtree: page_facts(s.keys_missing_meta(t)))
+            answers_alike(sqlite, arrow, lambda s, t=subtree: page_facts(s.get_documents(t)))
+            answers_alike(sqlite, arrow, lambda s, t=subtree: page_facts(s.keys_missing_meta(t)))
 
 
 def test_a_repeated_column_is_dictionary_encoded_and_a_distinct_one_is_not(tmp_path):
@@ -1323,7 +1321,7 @@ def test_a_repeated_column_is_dictionary_encoded_and_a_distinct_one_is_not(tmp_p
     """
     import pyarrow as pa
 
-    from outrage.store_parquet import ENCODABLE
+    from outrage.store_pyarrow import ENCODABLE
 
     same = [(f"k{n}", "body", "markdown", "2026-09-01T00:00:00+00:00") for n in range(200)]
     apart = [
@@ -1333,8 +1331,8 @@ def test_a_repeated_column_is_dictionary_encoded_and_a_distinct_one_is_not(tmp_p
 
     def encoded(rows, name):
         target = tmp_path / name / "ref.parquet"
-        ParquetStore.build(target, rows)
-        with ParquetStore(target.parent, filename="ref.parquet") as store:
+        PyarrowStore.build(target, rows)
+        with PyarrowStore(target.parent, filename="ref.parquet") as store:
             column = store._index.columns["updated_at"]
             # The values are what matters either way; the encoding is a
             # representation and every read goes through the same accessors.
@@ -1404,7 +1402,7 @@ def _column(path, name):
 
 def test_a_pack_writes_each_document_s_length_in_bytes(tmp_path):
     target = tmp_path / "out.parquet"
-    ParquetStore.build(target, [("a", "ascii", None, None), ("b", WIDE_DOC, None, None)])
+    PyarrowStore.build(target, [("a", "ascii", None, None), ("b", WIDE_DOC, None, None)])
 
     assert _column(target, "bytes") == [len(b"ascii"), len(WIDE_DOC.encode())]
     # Beside `chars` and not instead of it: the two differ exactly where the
@@ -1415,7 +1413,7 @@ def test_a_pack_writes_each_document_s_length_in_bytes(tmp_path):
 
 def test_a_pack_can_be_asked_not_to_write_it(tmp_path):
     target = tmp_path / "out.parquet"
-    ParquetStore.build(target, [("a", WIDE_DOC, None, None)], byte_lengths=False)
+    PyarrowStore.build(target, [("a", WIDE_DOC, None, None)], byte_lengths=False)
 
     assert _column(target, "bytes") is None
     # `chars` is not optional and cannot be: a total and a listing are answered
@@ -1433,12 +1431,12 @@ def test_a_file_without_the_column_reads_exactly_like_one_with_it(tmp_path):
     before this readable rather than refused.
     """
     documents = [(key, content, None, "2026-01-01T00:00:00+00:00") for key, content in CORPUS]
-    ParquetStore.build(tmp_path / "with.parquet", documents)
-    ParquetStore.build(tmp_path / "without.parquet", documents, byte_lengths=False)
+    PyarrowStore.build(tmp_path / "with.parquet", documents)
+    PyarrowStore.build(tmp_path / "without.parquet", documents, byte_lengths=False)
 
     with (
-        ParquetStore(tmp_path, filename="with.parquet") as rich,
-        ParquetStore(tmp_path, filename="without.parquet") as plain,
+        PyarrowStore(tmp_path, filename="with.parquet") as rich,
+        PyarrowStore(tmp_path, filename="without.parquet") as plain,
     ):
         assert rich.stored_format_version == plain.stored_format_version == FORMAT_VERSION
         for call in (

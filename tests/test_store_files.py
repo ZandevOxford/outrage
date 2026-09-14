@@ -6,7 +6,7 @@ parameter of that file's ``store`` fixture, which is the primary evidence for
 what it is. So the contract is not restated here.
 
 What is here is the second kind of evidence and the divergences. The comparison
-below is the same shape as ``test_store_parquet.py``'s: one corpus, put into
+below is the same shape as ``test_store_pyarrow.py``'s: one corpus, put into
 both backends, the same battery of calls to each, every answer asserted equal.
 It is stronger than re-running the contract against expectations, because a
 live oracle cannot drift; and it is what says that a store and a tree are the
@@ -39,7 +39,7 @@ from outrage.store import (
 from outrage.store_files import DEFAULT_TREE_NAME, FilesystemStore, NotTextError
 from outrage.store_sqlite import SqliteStore
 
-#: The corpus ``test_store_parquet.py`` chose, for the same reasons and with
+#: The corpus ``test_store_pyarrow.py`` chose, for the same reasons and with
 #: one addition: numeric segments that sort wrong as text, a sibling (``a-x``)
 #: that sorts between a key and its own children under a naive ordering, a
 #: document at the root, metadata on the root, JSON beside markdown, a document
@@ -197,7 +197,7 @@ def test_a_tree_is_opened_either_at_a_path_or_as_a_name_in_a_directory(tmp_path)
 def test_a_store_and_a_tree_answer_every_read_identically(sqlite, tree):
     """The contract, checked against a live oracle rather than expectations.
 
-    The same battery ``test_store_parquet.py`` puts to the columnar backend,
+    The same battery ``test_store_pyarrow.py`` puts to the columnar backend,
     for the same reason and written as one test for the same one: what is being
     asserted is a single claim -- *these are the same namespace* -- and a run
     reporting thousands of passes would say it thousands of times and locate a

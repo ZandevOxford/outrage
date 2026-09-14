@@ -167,7 +167,7 @@ What a check found. Empty `problems` is a sound store.
 
 #### backend *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)* *= ''*
 
-What kept the file: 'sqlite', 'parquet'. Named because the rest of the
+What kept the file: 'sqlite', 'pyarrow'. Named because the rest of the
 report reads differently depending on the answer, and because a report that
 did not say would look identical for a store nothing could check.
 
@@ -184,7 +184,7 @@ did not say would look identical for a store nothing could check.
 What this backend says about its own storage, label to value, in the
 order it is worth printing. Filled by
 [`check_file()`](store.md#outrage.store.FileStore.check_file). A mapping rather than fields, so
-that the numbers SQLite has and parquet does not are absent rather than
+that the numbers SQLite has and pyarrow does not are absent rather than
 zero -- a report reading `0 bytes in the log` for a store that has no log
 is a wrong answer delivered as a clean bill of health.
 

@@ -4,9 +4,9 @@ Every test here is about the contract :class:`outrage.store.Store` states -- key
 ranges, subtrees, pages, excerpts, the event log -- rather than about how
 SQLite keeps any of it. It runs against
 :class:`~outrage.store_sqlite.SqliteStore`, and half of it writes -- so the
-read-only parquet backend cannot pass this file, whatever the fixtures say.
+read-only pyarrow backend cannot pass this file, whatever the fixtures say.
 That is checked the other way round, by putting one corpus into both backends
-and comparing every answer: see ``test_store_parquet.py``. A future backend
+and comparing every answer: see ``test_store_pyarrow.py``. A future backend
 that *can* be written should pass this file unchanged but for the fixtures at
 the top. What is genuinely SQLite's own -- the schema, its migrations, the
 connection per thread -- is in ``test_store_sqlite.py``.
@@ -1038,8 +1038,8 @@ def test_retrieve_rejects_bad_arguments(store, kwargs, match):
 # a Python string, and a byte offset still names the same place in a file the
 # document was written out to. Every backend accepts one and returns identical
 # content for it -- only the cost differs -- so these run against each of them
-# from the same fixtures, and the parquet half of the same contract is the
-# comparison battery in `test_store_parquet.py`.
+# from the same fixtures, and the pyarrow half of the same contract is the
+# comparison battery in `test_store_pyarrow.py`.
 
 #: A document whose characters are one, two, three and four bytes, so that
 #: every arithmetic below is asking something a one-byte alphabet could not.

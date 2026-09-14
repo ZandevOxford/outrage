@@ -1228,10 +1228,10 @@ def test_check_reports_a_parquet_store_without_sqlites_vocabulary(tmp_path):
     The line that matters is the third: printed from the report's ``details``
     rather than from fields, so a store with no write-ahead log says nothing
     about one instead of reporting it as zero bytes -- which would read as a
-    fact somebody had checked. Named with ``type=parquet``, since the extension
+    fact somebody had checked. Named with ``type=pyarrow``, since the extension
     alone now opens the file through duckdb.
     """
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
 
     a_tree(tmp_path / ".outrage")
     run(
@@ -1243,10 +1243,10 @@ def test_check_reports_a_parquet_store_without_sqlites_vocabulary(tmp_path):
         "store.sqlite",
     )
 
-    status, output = run("check", "--dir", str(tmp_path), "--store", "ref.parquet,type=parquet")
+    status, output = run("check", "--dir", str(tmp_path), "--store", "ref.parquet,type=pyarrow")
 
     assert status == 0
-    assert "(parquet)" in output
+    assert "(pyarrow)" in output
     assert "order sorted" in output
     assert "integrity" not in output
     assert "log" not in output
@@ -2020,7 +2020,7 @@ def test_export_writes_the_root_document_and_names_it_as_a_key(tmp_path):
 
 def test_pack_builds_a_parquet_store_from_a_store(tmp_path, capsys):
     """The compaction: accumulate into SQLite, then pack it into one file."""
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
     an_exportable_store(tmp_path / ".outrage")
 
     status, output = run(
@@ -2044,7 +2044,7 @@ def test_pack_builds_a_parquet_store_from_a_store(tmp_path, capsys):
 
 
 def test_pack_builds_a_parquet_store_from_a_directory(tmp_path):
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
     an_exportable_store(tmp_path / ".outrage")
     run("export", "--dir", str(tmp_path / ".outrage"), str(tmp_path / "out"))
 
@@ -2064,7 +2064,7 @@ def test_pack_needs_exactly_one_source(tmp_path):
 
 
 def test_pack_dry_run_reports_and_writes_nothing(tmp_path, capsys):
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
     an_exportable_store(tmp_path / ".outrage")
 
     status, output = run(
@@ -2084,7 +2084,7 @@ def test_pack_dry_run_reports_and_writes_nothing(tmp_path, capsys):
 
 
 def test_pack_refuses_a_target_that_is_already_there(tmp_path, capsys):
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
     an_exportable_store(tmp_path / ".outrage")
     args = (
         "pack",
@@ -2711,7 +2711,7 @@ def test_a_read_only_backend_can_still_be_read_directly(tmp_path, capsys):
     which is what packing one is for -- would stop working the moment a project
     wrote a mount table down.
     """
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
     a_mounted_project(tmp_path / ".outrage")
     run(
         "pack",

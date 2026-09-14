@@ -54,7 +54,7 @@ segment order. Ranges, subtrees and cursors are filters over that stream.
 It is O(n) per read of a subtree, which is the wrong shape for a large corpus
 and the right one for what this backend is for -- an export target, a working
 copy, a tree under review. The fix, if a tree ever holds enough to want one, is
-a resident index like :attr:`outrage.store_parquet.ParquetStore._index`, not a
+a resident index like :attr:`outrage.store_pyarrow.PyarrowStore._index`, not a
 second definition of what the order is. The same paragraph is in
 :meth:`outrage.store.Store.last_child` for the same reason: a cost worth paying
 should be written down where it is paid.
@@ -1011,7 +1011,7 @@ class FilesystemStore(FileStore):
         The window is measured where the document's metadata *would* have
         sorted, not where the document itself does -- the contract says so, and
         it is what makes a caller's windows tile. Synthesised the same way the
-        parquet backend synthesises it, from the same two pieces:
+        pyarrow backend synthesises it, from the same two pieces:
         :func:`outrage.keys.meta_sort_suffix` for an ordinary key, and the
         metadata's own sort form for the root, which contributes no segment for
         a suffix to join onto.

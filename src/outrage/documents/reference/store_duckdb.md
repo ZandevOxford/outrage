@@ -6,7 +6,7 @@ The fourth implementation of [`outrage.store.Store`](store.md#outrage.store.Stor
 `.parquet` store file opens with unless a mount names another. It reads **one
 file, or a reference base too large for one file or that arrives in pieces**.
 Each part is a file `outrage pack` could have written -- the same columns and
-the same format stamp as [`outrage.store_parquet`](store_parquet.md#module-outrage.store_parquet) -- and the store is every
+the same format stamp as [`outrage.store_pyarrow`](store_pyarrow.md#module-outrage.store_pyarrow) -- and the store is every
 part together. Nothing about the file format is redefined here, and the pyarrow
 backend is still what writes one.
 
@@ -14,12 +14,12 @@ backend is still what writes one.
 order, but the source it was made from need not be: a producer holding its
 corpus in page-id order, or crawl order, or one file per batch, cannot be asked
 to sort across files before it can be read. That is what rules out answering
-this with the parquet backend's own reads, which bisect a single sorted file
+this with the pyarrow backend's own reads, which bisect a single sorted file
 and hold its small columns resident to do it -- over parts in arbitrary order
 that index would have to be merged at open and held over the whole corpus. Here
 nothing is held between queries but duckdb's own buffers, and **what this
 costs does not grow with the corpus**, which is the reason to have it. Reads are
-slower than the parquet backend's -- several milliseconds where a bisect is
+slower than the pyarrow backend's -- several milliseconds where a bisect is
 microseconds -- and every one of them is still far below the round trip of the
 tool call carrying it.
 
@@ -64,7 +64,7 @@ is a page that cannot move. A mount table pages across stores by asking each
 for its own pages and never cutting one, so the rule holds through a mount with
 nothing there knowing about it.
 
-**It does not write**, like the parquet backend and for a related reason: a
+**It does not write**, like the pyarrow backend and for a related reason: a
 store of parts changes by gaining one, which is a file somebody else writes,
 and nothing here updates a part in place. So [`store_document()`](#outrage.store_duckdb.DuckdbStore.store_document)
 and [`delete()`](#outrage.store_duckdb.DuckdbStore.delete) refuse, and the refusal is the storage's rather
@@ -75,7 +75,7 @@ A version 1 part carries no `meta_path` column and splits `meta_name`
 under an older rule; reading one would mean re-deriving that split in SQL,
 which is a second definition of the key grammar. So an older part is refused
 with the advice to repack it -- or, for a single file, to open it with
-`type=parquet`, which still reads one -- and parts mixing versions, a repack
+`type=pyarrow`, which still reads one -- and parts mixing versions, a repack
 left half done, are refused naming both.
 
 duckdb is an optional dependency, installed by the `parquet` extra. It is
@@ -85,7 +85,7 @@ not imported to read a store; only building a part is its business.
 
 ### outrage.store_duckdb.AUDIT_CHUNK *= 8192*
 
-Rows audited at a time. The same figure the parquet backend walks in, for
+Rows audited at a time. The same figure the pyarrow backend walks in, for
 the same reason: large enough to amortise a fetch, small enough that the
 rows are freed long before the walk ends.
 
@@ -179,7 +179,7 @@ store literally called `*.sqlite`.
 
 Drop the database, and every thread's cursor into it with it.
 
-Safe more than once. Unlike the parquet backend, which closes only this
+Safe more than once. Unlike the pyarrow backend, which closes only this
 thread's file, this closes the one database every cursor is a
 connection to -- duckdb has no other way to give the memory back -- so
 a thread still mid-read when the store is closed has that read fail.
@@ -192,7 +192,7 @@ new database and carries on.
 Refused: a part is added by writing a file, not through a store.
 
 Validated first, then refused, for the reason
-[`outrage.store_parquet.ParquetStore.store_document()`](store_parquet.md#outrage.store_parquet.ParquetStore.store_document) gives: a
+[`outrage.store_pyarrow.PyarrowStore.store_document()`](store_pyarrow.md#outrage.store_pyarrow.PyarrowStore.store_document) gives: a
 malformed argument is a bug, and "this store does not write" would hide
 it behind a limitation.
 
@@ -241,7 +241,7 @@ The newest `updated_at` over the rows [`descendant_count()`](#outrage.store_duck
 
 The newest row at `key`, sliced by the shared slicing.
 
-**A byte offset is honoured and not accelerated**, as in the parquet
+**A byte offset is honoured and not accelerated**, as in the pyarrow
 backend: a value comes out of its part whole, so the content is
 encoded and sliced, and answers the same bytes a backend that seeks
 does.
@@ -254,7 +254,7 @@ Each row below `key` names the child it is under by its next segment,
 and grouping on that names the level: a child whose own key is among
 its rows is stored, and one whose rows all lie beneath it is implicit.
 **This reads the subtree rather than the level**, which is the one
-read here whose cost is not bounded by what it returns. The parquet
+read here whose cost is not bounded by what it returns. The pyarrow
 backend bisects past each child's run; SQL has no bisect-and-skip, so
 a level costs its subtree. Listing the root groups the whole store.
 
@@ -327,7 +327,7 @@ same cursor would end the one this is still reading.
 
 How many parts, how many rows, and how many of them repeat a key.
 
-Order is not checked, because nothing here depends on it: the parquet
+Order is not checked, because nothing here depends on it: the pyarrow
 backend checks its file is sorted since every read of it bisects, and
 every read here is a query. A repeated key is not a problem either --
 it is legal, and a listing shows it -- so it is reported as the number

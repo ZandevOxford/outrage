@@ -79,7 +79,7 @@ def in_threads(work, threads=6):
 # One corpus in two stores and every answer asserted equal is how a second
 # implementation of ``Store`` is checked against a live oracle rather than
 # against expectations written down twice. Two of them use it now -- the
-# parquet backend against SQLite, and a three-store mount table against the one
+# pyarrow backend against SQLite, and a three-store mount table against the one
 # store holding the same corpus -- so it lives here rather than in either,
 # which is the same argument ``in_threads`` above makes.
 
@@ -88,7 +88,7 @@ def answers_alike(one, other, call):
     """Put ``call`` to both stores and require the same answer, exception or not.
 
     Exceptions are compared as a rendered type and code rather than re-raised,
-    because "SQLite raises and parquet returns an empty page" is exactly the
+    because "SQLite raises and pyarrow returns an empty page" is exactly the
     kind of disagreement this is looking for, and a test that let the first one
     propagate would report it as a failure of the oracle.
     """

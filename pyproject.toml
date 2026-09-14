@@ -35,7 +35,7 @@ Issues = "https://github.com/ZandevOxford/outrage/issues"
 # install without one is untouched until something asks for it.
 #
 # Parquet stores, both halves: duckdb reads them, and pyarrow writes them for
-# `outrage pack` and reads one for a mount that says `type=parquet`. Together
+# `outrage pack` and reads one for a mount that says `type=pyarrow`. Together
 # they are well over 100 MB installed. duckdb's floor is the version its backend
 # was measured and built against.
 parquet = ["pyarrow>=18", "duckdb>=1.5"]

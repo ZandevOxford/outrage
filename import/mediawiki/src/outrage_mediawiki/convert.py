@@ -9,7 +9,11 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from outrage.store_parquet import ParquetStore
+try:
+    from outrage.store_pyarrow import PyarrowStore
+except ImportError:
+    # outrage 0.13.0 and earlier call the same class by its old name.
+    from outrage.store_parquet import ParquetStore as PyarrowStore
 
 from . import __version__
 from .markdown import to_markdown
@@ -100,7 +104,7 @@ def convert_part(
         raise ConvertError(f"{target} exists without a matching conversion receipt")
 
     target_dir.mkdir(parents=True, exist_ok=True)
-    rows = ParquetStore.build_part(
+    rows = PyarrowStore.build_part(
         target, _rows(source_path, namespaces, redirects), overwrite=True
     )
     completed = Conversion(rows=rows, **expected)

@@ -17,9 +17,17 @@ below the cost of the tool call carrying them, and memory no longer grows with
 the corpus. A listing costs the subtree below the key rather than the level.
 `outrage check` reports parts, rows and repeated rows instead of whether the
 file is sorted. A format version 1 file, written before 0.4.0, is refused until
-it is repacked. `type=parquet` still opens any single file with pyarrow, which
+it is repacked. `type=pyarrow` still opens any single file with pyarrow, which
 is also the way to repack one: `outrage pack new.parquet --from-store
-old.parquet,type=parquet`.
+old.parquet,type=pyarrow`.
+
+Backends are now named for how they read rather than for the format. The one
+that reads a single file with pyarrow is `pyarrow`: `outrage.store_parquet` is
+now `outrage.store_pyarrow`, `ParquetStore` is `PyarrowStore`, its error codes
+begin `pyarrow-` rather than `parquet-`, and `outrage check` reports it as
+`(pyarrow)`. `type=pyarrow` selects it. `type=parquet` is now another name for
+`duckdb`, so a mount that says `type=parquet` reads through duckdb where 0.13.0
+read it with pyarrow.
 
 The `duckdb` extra is gone: the `parquet` extra now installs duckdb as well as
 pyarrow, and `all` names only `parquet` and `documents`. Installing

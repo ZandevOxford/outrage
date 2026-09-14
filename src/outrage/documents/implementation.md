@@ -3,7 +3,7 @@
 ## Currently implemented
 
 Environment: Python 3.12 or later, which is what `requires-python` asks for.
-Developed against SQLite 3.53 and, for the optional parquet backend, pyarrow 25.
+Developed against SQLite 3.53 and, for the optional pyarrow backend, pyarrow 25.
 Package installed in editable mode with `pip install -e ".[dev]"`; the parquet
 backend needs `.[parquet]` as well. 2049 tests and 20 doctests passing,
 `ruff check .` clean, as of 2026-09-05. Doctests are not in
@@ -56,13 +56,13 @@ backup. Two things moved with it rather than staying on the value types:
 `_subtree_clauses` there, because what a bound *means* is the namespace's
 business and what it compiles to is a backend's.
 
-### 2a. Parquet backend - `src/outrage/store_parquet.py` - done
+### 2a. Pyarrow backend - `src/outrage/store_pyarrow.py` - done
 
 A second implementation of `Store`, read-only, for the reference-base case:
 tens of thousands of small documents built once and read many times. One
 columnar file, one row per key, sorted by `sort_key`, holding the SQLite
 columns plus a precomputed `chars`. Documents get in through
-`ParquetStore.build` and `outrage pack`, which sources from a directory tree or
+`PyarrowStore.build` and `outrage pack`, which sources from a directory tree or
 from an existing store of any backend.
 
 pyarrow is an optional extra (`pip install 'outrage[parquet]'`), imported inside
@@ -70,7 +70,7 @@ the module, so a base install is untouched until something names a `.parquet`
 file. Which backend a store file uses follows from its extension -
 `store._backend_for` - so `--mount-ro ref=python.parquet` needs no new grammar.
 Read-only is a property of the backend (`Store.writable`) rather than of a
-mount configuration, so a parquet mount refuses writes whether or not
+mount configuration, so a pyarrow mount refuses writes whether or not
 `--mount-ro` named it, and cannot be the root mount at all.
 
 Measured at 40,000 rows against the same corpus in SQLite: the file is **11×
@@ -99,7 +99,7 @@ came from, metadata with no document, and the format version against what this
 build writes are all asked once in `maintenance`, over a new
 `Store.audit_rows`. What is genuinely the stooutrage's is asked through
 `Store.check_file`: SQLite's `integrity_check` and its write-ahead log,
-parquet's sort order - which is that backend's `integrity_check`, since a file
+a pyarrow store's sort order - which is that backend's `integrity_check`, since a file
 out of order is bisected to a confident wrong answer rather than failing to
 read. `Report` carries the shared numbers as fields and the backend's as a
 `details` mapping, so a store with no log says nothing about one instead of
@@ -162,7 +162,7 @@ A fourth implementation of `Store`, read-only, for a reference base too large
 for one file or that arrives in pieces: a directory of parquet parts, each one a
 file `outrage pack` could have written, read as one store through duckdb. The
 parts may be in **any order**, within a part and across parts. That is what
-rules out the parquet backend's own reads, which bisect one sorted file and
+rules out the pyarrow backend's own reads, which bisect one sorted file and
 hold its small columns resident to do it; here nothing is held between queries,
 so what a store costs does not grow with the corpus. Named rather than inferred,
 since a directory has no extension: `--mount-ro ref=parts,type=duckdb`.
@@ -171,7 +171,7 @@ Reads are the SQLite backend's SQL over a view of the parts, sharing its range,
 subtree and metadata clauses, so the three backends are one namespace by
 construction as well as by test. A listing groups the rows below a key by their
 next segment, which costs the subtree rather than the level - the one read here
-not bounded by what it returns. Measured against the parquet backend at
+not bounded by what it returns. Measured against the pyarrow backend at
 666,667 rows, reads are several times slower and all of them tens of
 milliseconds or less, which is below the cost of the tool call carrying them.
 
@@ -192,13 +192,13 @@ pyarrow.
 **It is what a `.parquet` store file opens as**, and the store file may name one
 file, a directory of parts, or a pattern over them - `ref=parts/*.parquet` - with
 the extension choosing the backend in the last case too. The pyarrow backend is
-opened only when a mount says `type=parquet`, which is also the one reader of a
+opened only when a mount says `type=pyarrow`, which is also the one reader of a
 format version 1 file. Each part is handed to duckdb glob-escaped, because duckdb
 expands every path as a pattern of its own. A backup keeps the store's shape: a
 file for a file, and for a pattern each part's path below the pattern's first
 wildcard.
 
-It is checked the way the parquet backend is, with the same corpus and battery
+It is checked the way the pyarrow backend is, with the same corpus and battery
 dealt at random across shuffled parts, and with a key repeated across parts
 paged through at every limit.
 

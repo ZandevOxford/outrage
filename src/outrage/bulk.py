@@ -177,7 +177,7 @@ class UnmappableError(OutrageError, ValueError):
     """Raised when a key has no file it can be written to, or a file no key."""
 
 
-#: One document as :meth:`outrage.store_parquet.ParquetStore.build` takes it:
+#: One document as :meth:`outrage.store_pyarrow.PyarrowStore.build` takes it:
 #: key, content, the format or None to detect it, and the timestamp or None
 #: for now. A tuple rather than a class because it is what a build consumes
 #: and nothing holds one for longer than that.
@@ -1087,7 +1087,7 @@ def documents_from_tree(
     row second, or None when there is nothing to pack. ``updated_at`` is None:
     a file's modification time is not the store's timestamp for the document,
     and inventing one at build time is the honest answer -- see
-    :meth:`outrage.store_parquet.ParquetStore.build`.
+    :meth:`outrage.store_pyarrow.PyarrowStore.build`.
     """
     source = Path(source).expanduser()
     if not source.is_dir():
@@ -1158,12 +1158,12 @@ def pack(
     there unless ``overwrite`` -- and two source documents claiming one key is
     resolved by the last one, which is what overwriting means everywhere else.
     """
-    from .store_parquet import ParquetStore
+    from .store_pyarrow import PyarrowStore
 
     # Before a single document is read. A pack reads its whole source before
     # writing anything, so checking at the write would refuse only after the
     # reading was done - right answer, least useful moment.
-    ParquetStore.check_target(target, overwrite=overwrite)
+    PyarrowStore.check_target(target, overwrite=overwrite)
 
     rows: list[Document] = []
     for transfer, row in documents:
@@ -1172,7 +1172,7 @@ def pack(
         yield transfer
 
     if not dry_run:
-        ParquetStore.build(target, rows, overwrite=overwrite, byte_lengths=byte_lengths)
+        PyarrowStore.build(target, rows, overwrite=overwrite, byte_lengths=byte_lengths)
 
 
 # -- one document, to a file and back ------------------------------------

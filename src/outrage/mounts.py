@@ -425,7 +425,7 @@ def _inward_range(mount: Mount, key_range: KeyRange) -> KeyRange | None:
     ask about. Which of the three is decided by comparing the bound's cut with
     the stretch, and the stretch is exactly ``sort_form(prefix)`` up to
     ``sort_subtree_end(prefix)`` -- a subtree is a contiguous run of the order,
-    which is the same fact ``store_parquet._subtree_range`` rests on.
+    which is the same fact ``store_pyarrow._subtree_range`` rests on.
 
     A bound that survives that comparison names a key at or below the mount
     point, by construction: its cut lies inside the mount's stretch, and the
@@ -1286,7 +1286,7 @@ class MountedStore(Store):
 
         The other half of a read-only mount's story. One mounted with
         ``--mount-ro`` or ``read_only`` refuses because of how it was started,
-        and mounting it again is the remedy. A parquet or duckdb store refuses
+        and mounting it again is the remedy. A pyarrow or duckdb store refuses
         because its backend is never written through, and a lent store because
         nothing can mount it any other way, so no remount changes either.
         Advice written for the first is wrong about the other two.

@@ -165,7 +165,7 @@ class Report:
 
     path: Path
     backend: str = ""
-    """What kept the file: 'sqlite', 'parquet'. Named because the rest of the
+    """What kept the file: 'sqlite', 'pyarrow'. Named because the rest of the
     report reads differently depending on the answer, and because a report that
     did not say would look identical for a store nothing could check."""
     format_version: int = 0
@@ -176,7 +176,7 @@ class Report:
     """What this backend says about its own storage, label to value, in the
     order it is worth printing. Filled by
     :meth:`~outrage.store.FileStore.check_file`. A mapping rather than fields, so
-    that the numbers SQLite has and parquet does not are absent rather than
+    that the numbers SQLite has and pyarrow does not are absent rather than
     zero -- a report reading ``0 bytes in the log`` for a store that has no log
     is a wrong answer delivered as a clean bill of health."""
     problems: list[Problem] = field(default_factory=list)
@@ -256,7 +256,7 @@ def _check_format_version(store: FileStore, report: Report) -> None:
     the same fault whatever wrote it.
 
     A backend may refuse an unreadable version on the way in rather than
-    reporting it here -- parquet does, so a check of one never sees the error
+    reporting it here -- pyarrow and duckdb do, so a check of one never sees the error
     branch, because the open that preceded it would have failed. That is not a
     contradiction: this is the answer for a backend that can open a file it
     only partly understands.
@@ -368,7 +368,7 @@ def _report_parents(wrong: list[str], report: Report) -> None:
     which is a document that has effectively vanished from every survey.
 
     Not SQLite's, although only SQLite could get it wrong until recently: the
-    parquet backend denormalises the same value into the same column, for the
+    pyarrow backend denormalises the same value into the same column, for the
     same reason, and can be handed a file where it disagrees just as easily.
     """
     if not wrong:

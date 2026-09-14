@@ -73,14 +73,17 @@ well, so the links below work here too.
 
 * **MCP server** - Python, stdio, for local use. Exposes the store as tools.
 * **Data store** - a Python library, independent of MCP so that it can be tested
-  and reused on its own. One interface with three backends behind it, and which
-  one a store *file* uses follows from its extension. **SQLite** is the
-  read-write default: a store accumulated a document at a time, which is what
-  session context and notes on a codebase are. **Parquet** is one columnar file,
-  written whole by `outrage pack` and read many times, for a reference base of
-  tens of thousands of documents - 11× smaller than the same corpus in SQLite,
-  and it seeks a range rather than scanning one. It refuses writes, which is the
-  storage rather than a setting. **Files** is a directory with one file per key,
+  and reused on its own. One interface with four backends behind it, each
+  named for how it reads, and which one a store *file* uses follows from its
+  extension. **SQLite** is the read-write default: a store accumulated a
+  document at a time, which is what session context and notes on a codebase
+  are. Parquet files are written whole by `outrage pack` and read many times,
+  for a reference base of tens of thousands of documents or more - 11× smaller
+  than the same corpus in SQLite. **DuckDB** reads them, one file or many, and
+  is what a `.parquet` store file opens with; **PyArrow** reads one file with
+  an index held in memory, and is asked for with `type=pyarrow`. Both refuse
+  writes, which is the storage rather than a setting. **Files** is a directory
+  with one file per key,
   which is what `outrage export` already wrote: the tree a person edits by hand,
   readable as a store rather than only as a transfer.
 * **Client integrations** - packaged project skills and agents for Claude Code,
@@ -117,6 +120,6 @@ in any order:
 `outrage-server --mount-ro ref=parts,type=duckdb`
 
 The last reads every `.parquet` file directly inside a directory, which has no
-extension to say which backend it needs. `type=parquet` reads a single file with
+extension to say which backend it needs. `type=pyarrow` reads a single file with
 pyarrow instead, which is also what still opens a file written by `outrage`
 before 0.4.0.

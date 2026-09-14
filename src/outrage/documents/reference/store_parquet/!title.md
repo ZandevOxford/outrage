@@ -1,1 +1,0 @@
-outrage.store_parquet

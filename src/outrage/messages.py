@@ -388,7 +388,7 @@ def _remounting(mounts: Sequence[str], unwritable: Sequence[str], verb: str) -> 
 
     Two answers, because a mount refuses for one of two reasons. One mounted
     read-only by choice opens to a remount, which is the caller's with the
-    `mount` tool and an operator's at startup. A parquet or duckdb store, or a
+    `mount` tool and an operator's at startup. A pyarrow or duckdb store, or a
     lent one such as the shipped documentation, refuses whatever it is mounted
     with, and advice to remount one costs a remount or a restart to find out is
     wrong.
@@ -1655,16 +1655,16 @@ def _versioning_unknown(name: Namer, /, *, versioning: str, known: Any, **_: Any
     )
 
 
-@template("parquet-needs-pyarrow")
-def _parquet_needs_pyarrow(name: Namer, /, *, reason: str, **_: Any) -> str:
+@template("pyarrow-needs-pyarrow")
+def _pyarrow_needs_pyarrow(name: Namer, /, *, reason: str, **_: Any) -> str:
     return (
         f"a parquet store needs pyarrow, which is not installed: {reason}. "
         f"Install it with `pip install 'outrage[parquet]'`."
     )
 
 
-@template("parquet-store-missing")
-def _parquet_store_missing(name: Namer, /, *, path: str, **_: Any) -> str:
+@template("pyarrow-store-missing")
+def _pyarrow_store_missing(name: Namer, /, *, path: str, **_: Any) -> str:
     return (
         f"there is no parquet store at {path}. Unlike a SQLite store this one "
         f"is not created empty: it has no write that would fill it, so an "
@@ -1672,16 +1672,16 @@ def _parquet_store_missing(name: Namer, /, *, path: str, **_: Any) -> str:
     )
 
 
-@template("parquet-not-a-store")
-def _parquet_not_a_store(name: Namer, /, *, path: str, **_: Any) -> str:
+@template("pyarrow-not-a-store")
+def _pyarrow_not_a_store(name: Namer, /, *, path: str, **_: Any) -> str:
     return (
         f"{path} is a parquet file but not an outrage store: it carries no format "
         f"version, so its columns are somebody else's and mean something else"
     )
 
 
-@template("parquet-format-newer")
-def _parquet_format_newer(name: Namer, /, *, path: str, found: int, expected: int, **_: Any) -> str:
+@template("pyarrow-format-newer")
+def _pyarrow_format_newer(name: Namer, /, *, path: str, found: int, expected: int, **_: Any) -> str:
     return (
         f"{path} is written in parquet store format {found} and this build "
         f"reads {expected}; it is not migrated in place, so repack it or "
@@ -1689,8 +1689,8 @@ def _parquet_format_newer(name: Namer, /, *, path: str, found: int, expected: in
     )
 
 
-@template("parquet-target-exists")
-def _parquet_target_exists(name: Namer, /, *, path: str, **_: Any) -> str:
+@template("pyarrow-target-exists")
+def _pyarrow_target_exists(name: Namer, /, *, path: str, **_: Any) -> str:
     return f"{path} already exists; pass --overwrite to replace it"
 
 
@@ -1779,12 +1779,12 @@ def _duckdb_format_older(name: Namer, /, *, path: str, found: int, expected: int
         f"the parts in {path} are written in parquet store format {found}, and a "
         f"duckdb store reads only format {expected}: the older format's metadata "
         f"columns would have to be re-derived from every key. A single file of it "
-        f"still opens with `type=parquet`; repack the parts to read them here."
+        f"still opens with `type=pyarrow`; repack the parts to read them here."
     )
 
 
-@template("parquet-build-wildcard")
-def _parquet_build_wildcard(name: Namer, /, *, key: str, **_: Any) -> str:
+@template("pyarrow-build-wildcard")
+def _pyarrow_build_wildcard(name: Namer, /, *, key: str, **_: Any) -> str:
     return (
         f"cannot pack {key!r}: a '?' is allocated by reading the store for a "
         f"free number, and a store being built has nothing to read"

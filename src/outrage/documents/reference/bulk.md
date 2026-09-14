@@ -77,7 +77,7 @@ is being lost, and that one does not know anything.
 
 ### outrage.bulk.Document
 
-One document as [`outrage.store_parquet.ParquetStore.build()`](store_parquet.md#outrage.store_parquet.ParquetStore.build) takes it:
+One document as [`outrage.store_pyarrow.PyarrowStore.build()`](store_pyarrow.md#outrage.store_pyarrow.PyarrowStore.build) takes it:
 key, content, the format or None to detect it, and the timestamp or None
 for now. A tuple rather than a class because it is what a build consumes
 and nothing holds one for longer than that.
@@ -675,7 +675,7 @@ Yields the `Transfer` first so a caller can report as it reads, and the
 row second, or None when there is nothing to pack. `updated_at` is None:
 a file's modification time is not the store's timestamp for the document,
 and inventing one at build time is the honest answer -- see
-[`outrage.store_parquet.ParquetStore.build()`](store_parquet.md#outrage.store_parquet.ParquetStore.build).
+[`outrage.store_pyarrow.PyarrowStore.build()`](store_pyarrow.md#outrage.store_pyarrow.PyarrowStore.build).
 
 ### outrage.bulk.export_document(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [Exported](#outrage.bulk.Exported)
 

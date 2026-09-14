@@ -11,70 +11,70 @@
 1529 1529
 
 #### Store location
-7810 7810
+8358 8358
 
 ### Mounted stores
-9404 9404
+9952 9952
 
 ### Event log
-19608 19608
+20186 20186
 
 ### Command line tool
-21697 21697
+22275 22275
 
 ### Skills
-25209 25209
+25787 25787
 
 #### The trigger problem
-26028 26028
+26606 26606
 
 ## Key namespace
-27434 27434
+28012 28012
 
 ### Grammar
-28807 28807
+29385 29385
 
 ### Sorting
-35484 35484
+36062 36062
 
 ### Autonumbering
-39073 39073
+39651 39651
 
 ### Reserved segments
-39675 39675
+40253 40253
 
 ### Naming the newest key
-40829 40829
+41407 41407
 
 #### Sorting numbered keys
-42988 42988
+43566 43566
 
 ## Values
-44002 44002
+44580 44580
 
 ## Text
-44385 44385
+44963 44963
 
 ### Encoding
-44394 44394
+44972 44972
 
 ### Line endings
-45478 45478
+46056 46056
 
 ## Tools
-47822 47822
+48400 48400
 
 ### The argument contract
-48409 48409
+48987 48987
 
 ### Tool semantics
-49340 49340
+49918 49918
 
 ## Schema
-52185 52185
+52763 52763
 
 ## Deferred
-55382 55390
+55960 55968
 
 ## Open questions
-57364 57372
+57942 57950

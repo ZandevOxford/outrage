@@ -1,4 +1,4 @@
-"""The parquet backend: one columnar file, written once and read many times.
+"""The pyarrow backend: one columnar file, written once and read many times.
 
 The second implementation of :class:`outrage.store.Store`, and the one the
 reference-base case is for: tens of thousands of small documents, built in one
@@ -7,8 +7,8 @@ same twelve operations :class:`~outrage.store_sqlite.SqliteStore` does, in the
 same vocabulary, and shares none of the storage.
 
 **It does not write.** A parquet file is not updated in place, so
-:meth:`~ParquetStore.store_document` and :meth:`~ParquetStore.delete` refuse
-rather than pretend. Documents get in through :meth:`ParquetStore.build`,
+:meth:`~PyarrowStore.store_document` and :meth:`~PyarrowStore.delete` refuse
+rather than pretend. Documents get in through :meth:`PyarrowStore.build`,
 which writes the whole file in one pass, and through ``outrage pack``, which is
 the command line over it. That refusal is the backend's own and not a mount's:
 see :class:`outrage.store.ReadOnlyStoreError` for the difference, which is that
@@ -29,7 +29,7 @@ The file is one row per key, carrying the columns
   **every total, and every listing, is answered without the content column
   being opened at all** -- ``total_chars`` over forty thousand documents costs
   a scan of a small integer column rather than of the corpus, and
-  :meth:`~ParquetStore.list_keys` reports each entry's ``size`` from it.
+  :meth:`~PyarrowStore.list_keys` reports each entry's ``size`` from it.
 
   What that does *not* mean is that a survey reads no content. A survey
   returns the title text, and a title is a document like any other, so its
@@ -43,7 +43,7 @@ A :class:`~outrage.store.Page` reports ``total`` and ``total_chars`` over the
 whole *selection*, and a total over an arbitrary predicate cannot come from
 row-group statistics -- it needs every row the predicate selects. So the
 contract obliges this backend to hold the small columns whole, in memory, and
-only ``content`` is read lazily. That is why :meth:`ParquetStore._index` is
+only ``content`` is read lazily. That is why :meth:`PyarrowStore._index` is
 built once per file and ``content`` never joins it.
 
 **How they are held is what decides how large a store can be.** They are the
@@ -56,9 +56,9 @@ bytes a row on the same corpus, and the eager dictionaries turn out to be
 derivable from the order the file is already in: see :class:`_Index`.
 
 pyarrow is an optional dependency: ``pip install "outrage[parquet]"``. It is
-imported inside this module and this module is imported only by
-:func:`outrage.store._backend_for`, so an install without it is unaffected until
-something names a ``.parquet`` file.
+imported inside this module, so an install without it is unaffected until
+something packs a store or opens one with ``type=pyarrow``; a ``.parquet`` store
+file opens with :mod:`outrage.store_duckdb` instead.
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ DEFAULT_STORE_FILE = "store.parquet"
 #: **Version 1 is still read**, and nothing is rewritten to do it. It has no
 #: ``meta_path`` column and a ``meta_name`` written under the rule that a name
 #: swallowed everything below the first ``!``; both come off ``key``, which the
-#: file carries, so :meth:`ParquetStore._build` derives them on the way in.
+#: file carries, so :meth:`PyarrowStore._build` derives them on the way in.
 FORMAT_VERSION = 2
 
 #: Where that version is written.
@@ -155,14 +155,14 @@ INDEX_COLUMNS = (
 #: Of those, the ones actually read into memory. ``doc_key`` and ``parent``
 #: come off ``key``, which the index is holding anyway, and between them they
 #: were a quarter of what an open store cost. ``doc_key`` is derived where a
-#: depth budget asks for it -- :meth:`ParquetStore._walked`, the only question
+#: depth budget asks for it -- :meth:`PyarrowStore._walked`, the only question
 #: anything asks of it -- and ``parent`` turns out not to be read by any read
 #: at all: it was a denormalisation for listing a level, and a level is now
 #: found by walking the order instead.
 #:
 #: Both are written to the file all the same. The file is read by other things,
 #: a column a reader can recompute is still a column a query engine should not
-#: have to, and :meth:`ParquetStore.audit_rows` checks the written ones against
+#: have to, and :meth:`PyarrowStore.audit_rows` checks the written ones against
 #: the keys they claim to describe.
 HELD_COLUMNS = tuple(name for name in INDEX_COLUMNS if name not in ("doc_key", "parent", "bytes"))
 
@@ -217,7 +217,7 @@ def _arrow() -> tuple[Any, Any]:
         import pyarrow as pa
         import pyarrow.parquet as pq
     except ImportError as exc:  # pragma: no cover - exercised by uninstalling
-        raise BackendError("parquet-needs-pyarrow", reason=str(exc)) from exc
+        raise BackendError("pyarrow-needs-pyarrow", reason=str(exc)) from exc
     return pa, pq
 
 
@@ -270,7 +270,7 @@ class _Row:
     and ``parent`` are a decode each, per document returned, for fields no
     caller of :meth:`_Index.row` reads. The selections that *do* ask about
     those read the column instead -- :meth:`_Index.matching` for the metadata
-    split, :meth:`ParquetStore._walked` for the one question ``doc_key``
+    split, :meth:`PyarrowStore._walked` for the one question ``doc_key``
     answers -- and neither makes a row to do it.
 
     ``position`` is the row's index in the file, which is how the content it
@@ -697,11 +697,11 @@ class _Selection:
         return self.positions[bisect_right(self.positions, bound, key=lambda p: order[p]) :]
 
 
-class ParquetStore(FileStore):
+class PyarrowStore(FileStore):
     """A document store held in a single parquet file, read only."""
 
     default_filename = DEFAULT_STORE_FILE
-    backend_name = "parquet"
+    backend_name = "pyarrow"
     format_version = FORMAT_VERSION
     writable = False
     versioned = False
@@ -730,7 +730,7 @@ class ParquetStore(FileStore):
             # reference base that is simply missing -- the same argument
             # ``open_mounts`` makes for a read-only mount, one step further
             # along, and here it holds however the store was opened.
-            raise BackendError("parquet-store-missing", path=str(self.path))
+            raise BackendError("pyarrow-store-missing", path=str(self.path))
         # One open file per thread, and one decoded row group per thread, for
         # the reason `SqliteStore` keeps one connection per thread: the server
         # runs its sync tool handlers in a worker pool, and a reader whose
@@ -758,7 +758,7 @@ class ParquetStore(FileStore):
         metadata = self._parquet.schema_arrow.metadata or {}
         written = metadata.get(VERSION_KEY)
         if written is None:
-            raise BackendError("parquet-not-a-store", path=str(self.path))
+            raise BackendError("pyarrow-not-a-store", path=str(self.path))
         # Kept, because an older file is read rather than refused and the
         # reader has to know which layout it is looking at. Only a file
         # *newer* than this build is refused -- the comparison is `>`, not
@@ -766,7 +766,7 @@ class ParquetStore(FileStore):
         self._written_version = int(written)
         if int(written) > FORMAT_VERSION:
             raise BackendError(
-                "parquet-format-newer",
+                "pyarrow-format-newer",
                 path=str(self.path),
                 found=int(written),
                 expected=FORMAT_VERSION,
@@ -1685,7 +1685,7 @@ class ParquetStore(FileStore):
     def check_file(self, report: Report) -> None:
         """Whether the file is still in the order every read of it assumes.
 
-        This is parquet's ``integrity_check``, and it exists for the same
+        This is this backend's ``integrity_check``, and it exists for the same
         reason: a file that fails it reads *wrongly* rather than failing to
         read. Every lookup here bisects ``sort_key`` -- that is what makes a
         bounded range 0.04 ms rather than 14 -- and bisection over rows that
@@ -1755,7 +1755,7 @@ class ParquetStore(FileStore):
         """
         target = Path(path).expanduser()
         if target.exists() and not overwrite:
-            raise BackendError("parquet-target-exists", path=str(target))
+            raise BackendError("pyarrow-target-exists", path=str(target))
         return target
 
     @classmethod
@@ -1806,7 +1806,7 @@ class ParquetStore(FileStore):
                 updated_at=updated_at,
             )
             if parsed.has_wildcard:
-                raise BackendError("parquet-build-wildcard", key=key)
+                raise BackendError("pyarrow-build-wildcard", key=key)
             # Last one wins, which is what overwriting means everywhere else in
             # the store. Silently keeping the first would make the result
             # depend on an iteration order the caller did not choose.
@@ -1865,7 +1865,7 @@ class ParquetStore(FileStore):
         held at a time.  The result is therefore a part for
         :class:`outrage.store_duckdb.DuckdbStore`, whose contract permits
         overlapping, independently produced parts in arbitrary order.  It is
-        not a standalone :class:`ParquetStore`: that reader bisects one
+        not a standalone :class:`PyarrowStore`: that reader bisects one
         globally sorted file, while a part deliberately makes no such claim.
 
         This is the bounded-memory path for producers whose source naturally
@@ -1895,7 +1895,7 @@ class ParquetStore(FileStore):
                     updated_at=updated_at,
                 )
                 if parsed.has_wildcard:
-                    raise BackendError("parquet-build-wildcard", key=key)
+                    raise BackendError("pyarrow-build-wildcard", key=key)
                 values: dict[str, object] = {
                     "key": parsed.key,
                     "doc_key": parsed.doc_key,
@@ -1976,7 +1976,7 @@ def _schema(pa: Any, *, byte_lengths: bool = BYTE_LENGTHS) -> Any:
 
 
 #: Stands in for "this document carries no metadata at all", so the lookup in
-#: :meth:`ParquetStore._missing` needs no branch and allocates nothing.
+#: :meth:`PyarrowStore._missing` needs no branch and allocates nothing.
 _NOTHING: frozenset[str] = frozenset()
 
 
@@ -2003,7 +2003,7 @@ def _span(marks: list[str], key_range: KeyRange) -> tuple[int, int]:
     preserves that order.
 
     Indices rather than a slice, so **two ranges can be intersected without
-    slicing between them** -- which is what :meth:`ParquetStore._selection`
+    slicing between them** -- which is what :meth:`PyarrowStore._selection`
     needs, because a subtree is a stretch of the order too and narrowing by one
     before bisecting the other would put the second bisect on a list whose
     marks no longer line up.
@@ -2155,5 +2155,5 @@ __all__ = [
     "PROBE",
     "ROW_GROUP_SIZE",
     "VERSION_KEY",
-    "ParquetStore",
+    "PyarrowStore",
 ]

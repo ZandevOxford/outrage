@@ -1566,9 +1566,9 @@ def test_the_server_reports_a_missing_read_only_store_as_one_line(tmp_path, caps
 
 
 def a_packed_store(directory: Path, name: str = "ref.parquet") -> Path:
-    from outrage.store_parquet import ParquetStore
+    from outrage.store_pyarrow import PyarrowStore
 
-    ParquetStore.build(
+    PyarrowStore.build(
         directory / name,
         [
             ("python/os/path/join", "Join one or more path components.", None, None),
@@ -1586,7 +1586,7 @@ def test_a_parquet_mount_is_read_only_without_anyone_saying_so(tmp_path):
     because nobody passed --mount-ro would be telling every caller something no
     write could make true, so the backend decides and the flag only adds.
     """
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
     a_packed_store(tmp_path / "base")
 
     with open_mounts(tmp_path / "base", ["ref=ref.parquet"]) as table:
@@ -1605,7 +1605,7 @@ def test_a_parquet_mount_refuses_a_write_without_offering_a_flag(tmp_path):
     advice that costs someone a restart to find out is wrong. Found by
     mounting a real one and writing to it.
     """
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
     a_packed_store(tmp_path / "base")
     SqliteStore(tmp_path / "base", filename="flagged.sqlite").close()
 
@@ -1679,7 +1679,7 @@ def test_a_parquet_store_cannot_be_the_root_mount(tmp_path):
 
 def test_a_table_says_which_read_only_mounts_no_remount_would_open(tmp_path):
     """A mount read-only by choice, and one read-only because of what it is."""
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
     a_packed_store(tmp_path / "base")
     SqliteStore(tmp_path / "base", filename="lent.sqlite").close()
 
@@ -1696,7 +1696,7 @@ def test_a_missing_parquet_mount_is_refused_rather_than_created(tmp_path):
     holds here without the flag: an empty reference base is one no read could
     ever contradict.
     """
-    pytest.importorskip("pyarrow", reason="the parquet backend is an optional extra")
+    pytest.importorskip("pyarrow", reason="the pyarrow backend needs the parquet extra")
 
     with raises_rendered(BackendError, "no parquet store at"):
         open_mounts(tmp_path / "base", ["ref=absent.parquet"])
@@ -1754,7 +1754,7 @@ def test_last_refuses_a_read_only_mount_the_way_a_named_key_would(tmp_path):
 # and a boundary inside that corpus would disagree with assertions written
 # about a single store while behaving exactly as designed.
 #
-# So crossing is checked the other way round, the way the parquet backend is:
+# So crossing is checked the other way round, the way the pyarrow backend is:
 # one corpus, put into a single store and into a four-store table that splits
 # it, the same battery of calls put to each, and every answer asserted equal.
 # That is stronger than expectations written down twice, because it compares

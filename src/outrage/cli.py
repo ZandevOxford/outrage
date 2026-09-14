@@ -830,7 +830,7 @@ def argument_parser() -> argparse.ArgumentParser:
             "in normal use, and what makes a copy of the database file alone "
             "lose recent writes. For parquet, read through duckdb, it is how "
             "many parts and rows there are and how many rows repeat a key; "
-            "opened with type=parquet, whether the file is still in the sort "
+            "opened with type=pyarrow, whether the file is still in the sort "
             "order every read of it bisects."
         ),
     )

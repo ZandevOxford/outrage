@@ -2,7 +2,7 @@
 
 ``outrage_mediawiki`` is a separate distribution that depends on a released
 ``outrage``, but it is developed here as a sibling of the checkout that
-produces it -- and it is the first real consumer of ``ParquetStore.build_part``,
+produces it -- and it is the first real consumer of ``PyarrowStore.build_part``,
 so a run that silently tested an *installed* ``outrage`` instead of the one
 beside it would be testing the wrong half of the pair.
 

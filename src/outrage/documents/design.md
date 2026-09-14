@@ -43,15 +43,15 @@ what a store is - the operations, the value types every answer comes back as,
 and the two ways a call bounds what it is asking about - as an abstract `Store`.
 There are four **backends**. `outrage.store_sqlite` is the read-write one -
 the schema, its migrations, the connection handling, and the SQL - and is what
-a store is opened as when its file says nothing else. `outrage.store_parquet`
+a store is opened as when its file says nothing else. `outrage.store_pyarrow`
 is one columnar file, written whole and read many times, for a reference base
 of tens of thousands of documents; it refuses writes, and `outrage pack` is how
 documents get into one. `outrage.store_duckdb` reads those files through duckdb
 - one of them, a directory of them, or the ones a pattern matches, in any order
 as one store - and refuses writes too. It is what a `.parquet` store file opens
-as: its cost does not grow with the corpus, where `outrage.store_parquet` holds
+as: its cost does not grow with the corpus, where `outrage.store_pyarrow` holds
 an index over all of it, so the pyarrow reader is opened only when a mount asks
-for it with `type=parquet`. `outrage.store_files` is a directory of files, one per
+for it with `type=pyarrow`. `outrage.store_files` is a directory of files, one per
 key, which is what an export target and a working copy already were - the same
 mapping `outrage.bulk` writes a tree with, expressed as a store, so that moving
 documents between a database and a directory is a copy rather than a fourth
@@ -86,7 +86,7 @@ itself the same way: open a fresh one of the same class at the destination,
 `copy_from` this one into it, reopen the copy and compare every key against the
 source. A backend with a native copy of its file still overrides it -
 `SqliteStore` must, because the file alone is not the store there, and
-`ParquetStore` does because a byte copy is faster and exact - but what none of
+`PyarrowStore` does because a byte copy is faster and exact - but what none of
 them may do is skip the verifying, since a copy that opens cleanly is not
 evidence of a complete one. What a backend cannot work out for itself is how to
 open another of its own kind at a path, so that is the one thing the base asks
@@ -98,6 +98,14 @@ the stores behind it. That is what the abstraction bought - a mount table in
 front of the server, the command line, or another table, with none of them
 holding routing code - and it is why `Store` says the operations without saying
 how they are kept.
+
+**A backend is named for how it reads, not for what it reads.** `duckdb` and
+`pyarrow` read the same parquet files, so naming either `parquet` would say
+nothing about which one a store gets; `sqlite` and `files` are named for their
+storage, which is the same thing for them. The format's name is still a word a
+`type=` may say - an alias, for `duckdb`, the backend a `.parquet` store file
+opens with anyway - so `ref=parts,type=parquet` and `ref=parts/*.parquet` are
+one store. A store reports the backend that opened it, whichever word chose it.
 
 `store._backend_for` is the single place the package chooses between them, and
 it chooses **by the store file's extension**: `.sqlite`, and `.parquet` for
@@ -202,10 +210,10 @@ change.
 and `docs = { path = "docs", type = "files" }` in a mount table. Which backend
 keeps a store otherwise follows from the store file's extension, which is what
 lets `ref=python.parquet` mean what it obviously means without a second
-grammar - but a **directory of files** has no extension to read, so the one
-backend whose store is a directory is the one that has to be asked for. The
-value is the backend's own name, the word a report already uses for it, rather
-than a fourth vocabulary for the same three classes.
+grammar - but a **directory** has no extension to read, so a directory of files
+or of parquet parts is what has to be asked for. The value is the backend's own
+name, the word a report already uses for it, rather than a second vocabulary for
+the same classes; the one exception is `parquet`, an alias for `duckdb`.
 
 An **option inside the argument's value** rather than a second flag beside it,
 and the reason is precedence. One mount is one option occurrence, so a `--mount`

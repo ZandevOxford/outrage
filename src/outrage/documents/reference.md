@@ -31,7 +31,7 @@ without anything above it knowing.
 The backends answer the same operations and are for different things.
 [`outrage.store_sqlite`](reference/store_sqlite.md#module-outrage.store_sqlite) is the one a store is opened as by default:
 read-write, accumulated a document at a time, and what session context and
-notes on a codebase live in. [`outrage.store_parquet`](reference/store_parquet.md#module-outrage.store_parquet) is one file, written
+notes on a codebase live in. [`outrage.store_pyarrow`](reference/store_pyarrow.md#module-outrage.store_pyarrow) is one file, written
 whole and read many times, for a reference base of tens of thousands of
 documents; it refuses writes, and `outrage pack` is how documents get into
 one. [`outrage.store_duckdb`](reference/store_duckdb.md#module-outrage.store_duckdb) reads a directory of such files, in any
@@ -65,7 +65,7 @@ read-only at `outrage`. A store file is relative to `--dir` and a tree in
 
 * [outrage.store](reference/store.md)
 * [outrage.store_sqlite](reference/store_sqlite.md)
-* [outrage.store_parquet](reference/store_parquet.md)
+* [outrage.store_pyarrow](reference/store_pyarrow.md)
 * [outrage.store_duckdb](reference/store_duckdb.md)
 * [outrage.store_files](reference/store_files.md)
 * [outrage.mounts](reference/mounts.md)

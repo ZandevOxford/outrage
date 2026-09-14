@@ -25,7 +25,7 @@ The vocabulary is the interesting part, and it is worth reading in this order:
 lives, what version wrote it, how it is copied and checked -- and the four
 backends are its implementations:
 [`outrage.store_sqlite.SqliteStore`](store_sqlite.md#outrage.store_sqlite.SqliteStore) is a read-write database accumulated a
-document at a time, [`outrage.store_parquet.ParquetStore`](store_parquet.md#outrage.store_parquet.ParquetStore) is one
+document at a time, [`outrage.store_pyarrow.PyarrowStore`](store_pyarrow.md#outrage.store_pyarrow.PyarrowStore) is one
 columnar file written whole and read many times, for a reference base of tens
 of thousands of documents, [`outrage.store_duckdb.DuckdbStore`](store_duckdb.md#outrage.store_duckdb.DuckdbStore) reads the
 same files -- one, or many named by a directory or a pattern -- through duckdb,
@@ -77,11 +77,12 @@ fallback is a fallback rather than a refusal.
 
 ### outrage.store.backend_names() → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...]
 
-Every backend a store may be opened as, by name.
+Every word a `type=` option may say: each backend's name, and each alias.
 
-What a `type=` option may say, for the front ends that document it and
-the refusal that lists it -- one answer from the registry rather than a
-list retyped in each place that needs to name them.
+For the front ends that document it and the refusal that lists it -- one
+answer from the registry rather than a list retyped in each place that
+needs to name them. An alias is listed because it is accepted; what it
+means is `_ALIASES`'s to say.
 
 ### outrage.store.check_read_position(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int), byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), occurrence: [int](https://docs.python.org/3/builtins/functions.html#int)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
@@ -573,7 +574,7 @@ into it, which carries every document, its format, its metadata and its
 `updated_at`. A backend with a native copy of its file overrides
 this and should -- [`SqliteStore`](store_sqlite.md#outrage.store_sqlite.SqliteStore) must,
 because the file alone is not the store there, and
-[`ParquetStore`](store_parquet.md#outrage.store_parquet.ParquetStore) does because a byte copy
+[`PyarrowStore`](store_pyarrow.md#outrage.store_pyarrow.PyarrowStore) does because a byte copy
 is faster and exact. What a backend may not do is skip the verifying.
 
 The copy is written through a store that is then closed, and reopened

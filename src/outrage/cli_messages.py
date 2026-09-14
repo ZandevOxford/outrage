@@ -62,7 +62,7 @@ def _mounts_refused_delete(
     # read-only mount is not a key, so a delete that stops at one prints
     # exactly what a delete that took everything prints.
     #
-    # Only a mount read-only by choice is told to drop the flag. A parquet or
+    # Only a mount read-only by choice is told to drop the flag. A pyarrow or
     # duckdb store, or the shipped documentation `--mount-docs` lends, refuses
     # however it is mounted, so the flag is not the reason.
     flagged = [mount for mount in mounts if mount not in unwritable]

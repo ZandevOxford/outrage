@@ -9,7 +9,7 @@ migrations, the connection handling, and the SQL that every read and write is
 expressed as -- so that [`outrage.store`](store.md#module-outrage.store) says what a store *is* without saying
 how this one is kept.
 
-The split was not speculative tidiness, and [`outrage.store_parquet`](store_parquet.md#module-outrage.store_parquet) is the
+The split was not speculative tidiness, and [`outrage.store_pyarrow`](store_pyarrow.md#module-outrage.store_pyarrow) is the
 evidence: the parts of this module that did not survive a second backend are
 exactly the parts that are here -- a row-per-key table with secondary indexes,
 `NOT EXISTS` against a self-join, and a connection per thread -- while every
@@ -17,9 +17,9 @@ word of the vocabulary above was inherited unchanged. That vocabulary is keys,
 ranges, subtrees, pages and excerpts, and it is backend independent because it
 is about the namespace rather than about storage.
 
-Read this one against [`outrage.store_parquet`](store_parquet.md#module-outrage.store_parquet) where the two answer the same
+Read this one against [`outrage.store_pyarrow`](store_pyarrow.md#module-outrage.store_pyarrow) where the two answer the same
 question differently. `_range_clauses` compiles a range to a predicate
-because a row-per-key table evaluates one; the parquet backend bisects a sorted
+because a row-per-key table evaluates one; the pyarrow backend bisects a sorted
 file instead, and the two are written to be read side by side.
 
 Nothing here is imported by a caller that only wants to read and write
@@ -75,7 +75,7 @@ the seeks it saves on every shape measured.
 ### outrage.store_sqlite.DEFAULT_STORE_FILE *= 'store.sqlite'*
 
 What a SQLite store's file is called when a caller names none. The name a
-parquet backend's default sits beside, each in its own module, neither
+pyarrow backend's default sits beside, each in its own module, neither
 needing a qualifier to say which storage it is for. That a store *is* a file
 inside a directory is not decided here -- see [`outrage.store.store_file()`](store.md#outrage.store.store_file);
 only what this backend calls one.

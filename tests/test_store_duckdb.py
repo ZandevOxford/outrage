@@ -1,7 +1,7 @@
 """The duckdb backend: that it agrees with SQLite, and what is only its own.
 
-The contract is checked the way the parquet backend's is, and with the same
-corpus and the same battery -- imported from ``test_store_parquet.py`` rather
+The contract is checked the way the pyarrow backend's is, and with the same
+corpus and the same battery -- imported from ``test_store_pyarrow.py`` rather
 than copied a third time: one corpus, put into both backends, every read put to
 each and the answers asserted equal. What differs is how the corpus is laid out
 on this side. It is split across several parts, and the parts are shuffled --
@@ -59,7 +59,7 @@ pytest.importorskip("pyarrow", reason="building a part needs the parquet extra")
 
 import pyarrow as pa  # noqa: E402 - only once the skip above has had its say
 import pyarrow.parquet as pq  # noqa: E402
-from test_store_parquet import (  # noqa: E402
+from test_store_pyarrow import (  # noqa: E402
     _BYTE_OFFSETS,
     _KEYS,
     _METAS,
@@ -70,11 +70,11 @@ from test_store_parquet import (  # noqa: E402
 )
 
 from outrage.store_duckdb import DuckdbStore  # noqa: E402
-from outrage.store_parquet import (  # noqa: E402
+from outrage.store_pyarrow import (  # noqa: E402
     COMPRESSION,
     ROW_GROUP_SIZE,
     VERSION_KEY,
-    ParquetStore,
+    PyarrowStore,
     _schema,
     _utf8_length,
 )
@@ -83,7 +83,7 @@ from outrage.store_parquet import (  # noqa: E402
 #
 # From the measurement that gated this backend, where it built one corpus as a
 # single sorted file and as parts in three shapes. A part is written through the
-# parquet backend's own schema rather than a second definition of it, so it is
+# pyarrow backend's own schema rather than a second definition of it, so it is
 # a file `outrage pack` could have written -- except in the one respect that is
 # the point, which is the order its rows are in.
 
@@ -161,10 +161,10 @@ def duck(tmp_path, sqlite):
 def packed(tmp_path):
     """A small store in two parts written by ``outrage pack``'s own builder."""
     directory = tmp_path / "d" / "ref"
-    ParquetStore.build(
+    PyarrowStore.build(
         directory / "one.parquet", [("a", "a body", None, None), ("a/!title", "A", None, None)]
     )
-    ParquetStore.build(directory / "two.parquet", [("a/b", "below", None, None)])
+    PyarrowStore.build(directory / "two.parquet", [("a/b", "below", None, None)])
     with _open(directory) as store:
         yield store
 
@@ -173,7 +173,7 @@ def packed(tmp_path):
 
 
 def test_shuffled_parts_answer_every_read_as_sqlite_does(sqlite, duck):
-    """The parquet backend's battery, put to a directory of shuffled parts.
+    """The pyarrow backend's battery, put to a directory of shuffled parts.
 
     One test for one claim, as there: *these are the same store*. The parts
     hold the corpus in no order, so every read that assumed one -- a listing
@@ -303,22 +303,22 @@ def test_the_base_search_is_what_a_duckdb_store_answers(sqlite, duck):
 
 
 def test_one_sorted_file_and_shuffled_parts_are_the_same_store(tmp_path, sqlite, duck):
-    """The layout the parquet backend reads, and the one this backend is for.
+    """The layout the pyarrow backend reads, and the one this backend is for.
 
     A corpus packed into one sorted file and the same corpus shuffled across
     parts, read by the two backends meant for each. Cheaper than the battery
     and asking a different question: not whether this agrees with SQLite, but
     whether the two ways of holding a reference base are interchangeable.
     """
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "p" / "ref.parquet",
         ((key, content, None, _when(sqlite, key)) for key, content in CORPUS),
     )
-    with ParquetStore(tmp_path / "p", filename="ref.parquet") as parquet:
+    with PyarrowStore(tmp_path / "p", filename="ref.parquet") as arrow:
         for key in _KEYS:
-            answers_alike(parquet, duck, lambda s, k=key: walk_level(s, k))
+            answers_alike(arrow, duck, lambda s, k=key: walk_level(s, k))
         for subtree in _SUBTREES:
-            answers_alike(parquet, duck, lambda s, t=subtree: walk_documents(s, t, UNBOUNDED, None))
+            answers_alike(arrow, duck, lambda s, t=subtree: walk_documents(s, t, UNBOUNDED, None))
 
 
 # -- a key held in more than one part --------------------------------------
@@ -591,7 +591,7 @@ def test_a_refused_write_still_validates_its_arguments_first(packed):
 def test_a_mount_refuses_a_write_in_the_backend_s_words_not_parquet_s(tmp_path):
     """The mount layer raises this refusal too, and has to say which store it is."""
     base = tmp_path / "base"
-    ParquetStore.build(base / "ref" / "one.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(base / "ref" / "one.parquet", [("x", "x", None, None)])
     SqliteStore(base).close()
     with open_mounts(base, ["ref=ref,type=duckdb"]) as table:
         assert table.resolve("ref/x").read_only
@@ -617,7 +617,7 @@ def test_a_directory_with_no_parts_is_refused(tmp_path):
 
 
 def test_a_part_that_is_not_parquet_refuses_the_whole_directory(tmp_path):
-    ParquetStore.build(tmp_path / "ref" / "one.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(tmp_path / "ref" / "one.parquet", [("x", "x", None, None)])
     (tmp_path / "ref" / "two.parquet").write_text("not parquet at all")
     with raises_rendered(BackendError, "cannot be read as parquet") as raised:
         DuckdbStore(tmp_path, filename="ref")
@@ -625,7 +625,7 @@ def test_a_part_that_is_not_parquet_refuses_the_whole_directory(tmp_path):
 
 
 def test_a_part_that_is_not_an_outrage_store_is_named(tmp_path):
-    ParquetStore.build(tmp_path / "ref" / "one.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(tmp_path / "ref" / "one.parquet", [("x", "x", None, None)])
     pq.write_table(pa.table({"key": ["y"]}), tmp_path / "ref" / "two.parquet")
     with raises_rendered(BackendError, "two.parquet is a parquet file but not") as raised:
         DuckdbStore(tmp_path, filename="ref")
@@ -648,13 +648,13 @@ def test_parts_in_an_older_format_are_refused_with_the_way_forward(tmp_path):
     assert raised.value.code == "duckdb-format-older"
 
 
-def test_an_older_single_file_is_refused_by_default_and_opens_when_named_parquet(tmp_path):
+def test_an_older_single_file_is_refused_by_default_and_opens_when_named_pyarrow(tmp_path):
     """The limitation of reading ``.parquet`` through duckdb, and its way round."""
     rows = _rows([("x", "old", "markdown", "2026-01-01T00:00:00+00:00")])
     _write_part(rows, tmp_path / "old.parquet", version=b"1")
-    with raises_rendered(BackendError, "opens with `type=parquet`"):
+    with raises_rendered(BackendError, "opens with `type=pyarrow`"):
         store_module.default_store(tmp_path, filename="old.parquet")
-    with store_module.open_store(tmp_path, filename="old.parquet", backend="parquet") as store:
+    with store_module.open_store(tmp_path, filename="old.parquet", backend="pyarrow") as store:
         assert store.retrieve_document("x").content == "old"
 
 
@@ -676,7 +676,7 @@ def test_extensions_are_refused_in_words_true_of_a_directory_of_parts(packed):
 
 def test_a_single_file_is_a_store_of_one_part(tmp_path, sqlite):
     """``ref.parquet`` itself, the layout ``outrage pack`` writes."""
-    ParquetStore.build(
+    PyarrowStore.build(
         tmp_path / "p" / "ref.parquet",
         ((key, content, None, _when(sqlite, key)) for key, content in CORPUS),
     )
@@ -689,23 +689,33 @@ def test_a_single_file_is_a_store_of_one_part(tmp_path, sqlite):
 
 
 def test_the_extension_opens_a_parquet_file_through_duckdb(tmp_path):
-    ParquetStore.build(tmp_path / "ref.parquet", [("x", "hello", None, None)])
+    PyarrowStore.build(tmp_path / "ref.parquet", [("x", "hello", None, None)])
     with store_module.open_store(tmp_path, filename="ref.parquet") as store:
         assert isinstance(store, DuckdbStore)
         assert store.retrieve_document("x").content == "hello"
-    with store_module.open_store(tmp_path, filename="ref.parquet", backend="parquet") as store:
-        assert isinstance(store, ParquetStore)
+    with store_module.open_store(tmp_path, filename="ref.parquet", backend="pyarrow") as store:
+        assert isinstance(store, PyarrowStore)
+
+
+def test_parquet_is_a_type_that_means_duckdb(tmp_path):
+    """The format's name, as an alias for the backend a `.parquet` file opens with."""
+    PyarrowStore.build(tmp_path / "parts" / "one.parquet", [("x", "x", None, None)])
+    assert store_module._backend_for("parts", "parquet") is DuckdbStore
+    with store_module.open_store(tmp_path, filename="parts", backend="parquet") as store:
+        assert store.backend_name == "duckdb"
+        assert store.exists("x")
+    assert "parquet" in store_module.backend_names()
 
 
 def test_a_directory_named_like_a_file_is_still_a_directory_of_parts(tmp_path):
-    ParquetStore.build(tmp_path / "ref.parquet" / "one.parquet", [("x", "x", None, None)])
-    ParquetStore.build(tmp_path / "ref.parquet" / "two.parquet", [("y", "y", None, None)])
+    PyarrowStore.build(tmp_path / "ref.parquet" / "one.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(tmp_path / "ref.parquet" / "two.parquet", [("y", "y", None, None)])
     with store_module.open_store(tmp_path, filename="ref.parquet") as store:
         assert store.list_keys().total == 2
 
 
 def test_backing_up_a_single_file_copies_a_file(tmp_path):
-    ParquetStore.build(tmp_path / "ref.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(tmp_path / "ref.parquet", [("x", "x", None, None)])
     with DuckdbStore(tmp_path, filename="ref.parquet") as store:
         done = store.backup(tmp_path / "copy.parquet")
     assert done.path.is_file()
@@ -721,9 +731,9 @@ def test_backing_up_a_single_file_copies_a_file(tmp_path):
 def nested(tmp_path):
     """Parts in two dated directories, one name in both, and things that are not parts."""
     base = tmp_path / "d"
-    ParquetStore.build(base / "ref" / "2026-01" / "part.parquet", [("a", "january", None, None)])
-    ParquetStore.build(base / "ref" / "2026-02" / "part.parquet", [("b", "february", None, None)])
-    ParquetStore.build(base / "ref" / "top.parquet", [("c", "top", None, None)])
+    PyarrowStore.build(base / "ref" / "2026-01" / "part.parquet", [("a", "january", None, None)])
+    PyarrowStore.build(base / "ref" / "2026-02" / "part.parquet", [("b", "february", None, None)])
+    PyarrowStore.build(base / "ref" / "top.parquet", [("c", "top", None, None)])
     (base / "ref" / "2026-02" / ".late.parquet").write_text("half written")
     (base / "ref" / "2026-02" / "notes.txt").write_text("not a part")
     return base
@@ -757,15 +767,15 @@ def test_a_pattern_matching_nothing_is_refused_and_creates_nothing(tmp_path):
 
 
 def test_a_name_that_exists_is_taken_literally_whatever_it_holds(tmp_path):
-    ParquetStore.build(tmp_path / "ref[1].parquet", [("x", "literal", None, None)])
-    ParquetStore.build(tmp_path / "ref1.parquet", [("x", "matched", None, None)])
+    PyarrowStore.build(tmp_path / "ref[1].parquet", [("x", "literal", None, None)])
+    PyarrowStore.build(tmp_path / "ref1.parquet", [("x", "matched", None, None)])
     with DuckdbStore(tmp_path, filename="ref[1].parquet") as store:
         assert store.retrieve_document("x").content == "literal"
 
 
 def test_a_store_directory_holding_a_wildcard_is_not_read_as_one(tmp_path):
     base = tmp_path / "odd[dir]"
-    ParquetStore.build(base / "ref" / "one.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(base / "ref" / "one.parquet", [("x", "x", None, None)])
     with DuckdbStore(base, filename="ref/*.parquet") as store:
         assert store.exists("x")
 
@@ -825,7 +835,7 @@ def test_the_command_line_reads_a_pattern_as_the_store(nested):
 def test_only_visible_parquet_files_are_parts(tmp_path):
     """A producer writing a part under a hidden name must not have it read half written."""
     directory = tmp_path / "ref"
-    ParquetStore.build(directory / "one.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(directory / "one.parquet", [("x", "x", None, None)])
     (directory / ".two.parquet").write_text("half written")
     (directory / "README").write_text("about these parts")
     with _open(directory) as store:
@@ -834,16 +844,16 @@ def test_only_visible_parquet_files_are_parts(tmp_path):
 
 def test_the_parts_are_those_there_when_the_store_was_opened(tmp_path):
     directory = tmp_path / "ref"
-    ParquetStore.build(directory / "one.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(directory / "one.parquet", [("x", "x", None, None)])
     with _open(directory) as store:
-        ParquetStore.build(directory / "two.parquet", [("y", "y", None, None)])
+        PyarrowStore.build(directory / "two.parquet", [("y", "y", None, None)])
         assert not store.exists("y")
     with _open(directory) as store:
         assert store.exists("y")
 
 
 def test_the_backend_is_named_because_a_directory_cannot_name_it(tmp_path):
-    ParquetStore.build(tmp_path / "ref" / "one.parquet", [("x", "x", None, None)])
+    PyarrowStore.build(tmp_path / "ref" / "one.parquet", [("x", "x", None, None)])
     assert store_module._backend_for("ref", "duckdb") is DuckdbStore
     assert "duckdb" in store_module.backend_names()
     with store_module.open_store(tmp_path, filename="ref", backend="duckdb") as store:
@@ -854,7 +864,7 @@ def test_the_backend_is_named_because_a_directory_cannot_name_it(tmp_path):
 
 def test_reading_a_directory_needs_no_pyarrow(tmp_path):
     """Said by the module and by the extra, so checked in a process without it."""
-    ParquetStore.build(tmp_path / "ref" / "one.parquet", [("x", "hello", None, None)])
+    PyarrowStore.build(tmp_path / "ref" / "one.parquet", [("x", "hello", None, None)])
     script = (
         "import sys\n"
         "class Block:\n"
@@ -901,7 +911,7 @@ def test_parallel_readers_all_get_the_document_they_asked_for(tmp_path):
     documents = [(f"doc/{n}", f"content {n}", None, None) for n in range(40)]
     directory = tmp_path / "ref"
     for n in range(4):
-        ParquetStore.build(directory / f"part-{n}.parquet", documents[n::4])
+        PyarrowStore.build(directory / f"part-{n}.parquet", documents[n::4])
     with _open(directory) as store:
 
         def work(i):
@@ -922,7 +932,7 @@ def test_a_container_says_what_is_beneath_it(packed):
 
 
 def test_backing_up_copies_the_parts_the_store_opened(packed, tmp_path):
-    ParquetStore.build(packed.path / "late.parquet", [("late", "arrived after open", None, None)])
+    PyarrowStore.build(packed.path / "late.parquet", [("late", "arrived after open", None, None)])
     done = packed.backup(tmp_path / "copy")
     assert sorted(path.name for path in done.path.iterdir()) == ["one.parquet", "two.parquet"]
     assert done.documents == 3
