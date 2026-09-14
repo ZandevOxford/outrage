@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.14.0 - 2026-09-14
 
 A `.parquet` store file is now read through DuckDB rather than pyarrow, and it
 may be a single packed file as well as a directory of parts. A store file may

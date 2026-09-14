@@ -773,6 +773,35 @@ def test_a_parquet_file_opens_with_this_backend_when_it_is_named(tmp_path):
         assert store.retrieve_document("a").content == "body"
 
 
+def test_the_names_this_backend_had_before_it_was_named_for_pyarrow_are_gone():
+    """0.14.0 removes them, and a removal is asserted rather than assumed.
+
+    The rule 0.9.0 paid for: a name said to be gone can come back through an
+    import under the same spelling. So the old module must not be importable,
+    the old class must not resolve where a caller would look, and the codes the
+    backend raised under its old name must have no template left to render.
+    """
+    import importlib.util
+
+    from outrage import store_duckdb, store_pyarrow
+
+    assert importlib.util.find_spec("outrage.store_parquet") is None
+    for module in (store_module, store_pyarrow, store_duckdb):
+        assert not hasattr(module, "ParquetStore"), module.__name__
+    removed = {
+        "parquet-needs-pyarrow",
+        "parquet-store-missing",
+        "parquet-not-a-store",
+        "parquet-format-newer",
+        "parquet-target-exists",
+        "parquet-build-wildcard",
+        "duckdb-not-a-directory",
+    }
+    assert removed.isdisjoint(messages._TEMPLATES)
+    assert "parquet" not in store_module._BACKENDS
+    assert store_module._ALIASES["parquet"] == "duckdb"
+
+
 def test_every_backend_states_whether_it_can_be_written():
     """Read from the source, because the failure it guards is a backend that
     forgets to say -- which inherits ``True`` and reports itself writable.

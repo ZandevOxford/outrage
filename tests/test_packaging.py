@@ -49,6 +49,16 @@ def test_documents_extra_installs_the_bounded_common_format_readers():
     ]
 
 
+def test_the_duckdb_extra_is_folded_into_parquet():
+    """Removed in 0.14.0: `parquet` installs both readers' libraries."""
+    extras = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+        "optional-dependencies"
+    ]
+    assert "duckdb" not in extras
+    assert any(requirement.startswith("duckdb") for requirement in extras["parquet"])
+    assert any(requirement.startswith("pyarrow") for requirement in extras["parquet"])
+
+
 def test_the_all_extra_names_every_extra_but_the_ones_for_working_on_outrage():
     """`all` is what the README says to install, so an extra it misses is one
     nobody following the README gets, with nothing to say so."""
