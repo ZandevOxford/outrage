@@ -560,17 +560,15 @@ def _remount_not_permanent(name: Namer, /, *, mount: str, **_: Any) -> str:
     )
 
 
-@MCP.template("remount-shipped-is-default")
-def _remount_shipped_is_default(name: Namer, /, *, mount: str, **_: Any) -> str:
-    # Nothing to write down, which is the whole of the news: this is the store
-    # outrage ships, it arrives with the server, and the reason it can be
-    # mounted by name in the first place is that it lives in `site-packages`
-    # and has no spelling as a mount file. Telling this caller to write it into
-    # the configuration file named a file they could not name.
+@MCP.template("remount-builtin-is-default")
+def _remount_builtin_is_default(name: Namer, /, *, mount: str, **_: Any) -> str:
+    # Nothing to write down, which is the whole of the news: built-ins arrive
+    # with the server and have no spelling as a mount file. Telling this caller
+    # to write one into the configuration file names a file they cannot name.
     return (
         f"this table lasts as long as this server and no longer, but "
-        f"{name(mount)!r} needs nothing written down: it is the store outrage "
-        f"ships and is mounted by default, so a restart puts it back."
+        f"{name(mount)!r} needs nothing written down: it is a built-in store "
+        f"mounted by default, so a restart puts it back."
     )
 
 
@@ -1327,31 +1325,39 @@ def _mount_unmount_at_root(name: Namer, /, **_: Any) -> str:
     )
 
 
-@template("mount-nothing-shipped")
-def _mount_nothing_shipped(name: Namer, /, *, mount: str, shipped: object, **_: Any) -> str:
-    listed = ", ".join(repr(keys.displayed(one)) for one in shipped)  # type: ignore[union-attr]
+@template("mount-nothing-builtin")
+def _mount_nothing_builtin(name: Namer, /, *, mount: str, builtins: object, **_: Any) -> str:
+    listed = ", ".join(repr(keys.displayed(one)) for one in builtins)  # type: ignore[union-attr]
     return (
-        f"outrage ships no store for {keys.displayed(mount)!r}, so there is "
-        f"nothing to mount there without a file. It ships one for {listed}; "
+        f"outrage has no built-in store for {keys.displayed(mount)!r}, so there is "
+        f"nothing to mount there without a file. Built-ins exist for {listed}; "
         f"anything else is a store file, named relative to the store directory."
     )
 
 
-@template("mount-shipped-takes-no-type")
-def _mount_shipped_takes_no_type(name: Namer, /, *, mount: str, **_: Any) -> str:
+@template("mount-builtin-takes-no-type")
+def _mount_builtin_takes_no_type(name: Namer, /, *, mount: str, **_: Any) -> str:
     return (
-        f"the store outrage ships for {keys.displayed(mount)!r} is opened by "
+        f"the built-in store at {keys.displayed(mount)!r} is opened by "
         f"name and not from a file, so there is no backend to choose: drop "
         f"`type`, or name a file to mount something else there."
     )
 
 
-@template("mount-shipped-takes-no-extensions")
-def _mount_shipped_takes_no_extensions(name: Namer, /, *, mount: str, **_: Any) -> str:
+@template("mount-builtin-takes-no-extensions")
+def _mount_builtin_takes_no_extensions(name: Namer, /, *, mount: str, **_: Any) -> str:
     return (
-        f"the store outrage ships for {keys.displayed(mount)!r} is a tree this "
-        f"package wrote, and it is read the way it was written: drop "
+        f"the built-in store at {keys.displayed(mount)!r} is opened by name, "
+        f"not as a configurable tree: drop "
         f"`extensions`, or name a file to mount something else there."
+    )
+
+
+@template("home-store-open-failed")
+def _home_store_open_failed(name: Namer, /, *, path: str, cause: str, **_: Any) -> str:
+    return (
+        f"the user-wide home store at {path!r} could not be opened: {cause}. "
+        "Retry with --unmount home to start without it."
     )
 
 

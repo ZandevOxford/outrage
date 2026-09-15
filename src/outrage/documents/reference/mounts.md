@@ -160,7 +160,7 @@ reference mount can opt out while the project store keeps its versions, and
 the other way round. Only a backend that can version takes it, and every
 other refuses it -- [`outrage.store.FileStore.in_directory()`](store.md#outrage.store.FileStore.in_directory).
 
-### *class* outrage.mounts.Mount(prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), store: [Store](store.md#outrage.store.Store), read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, lent: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
+### *class* outrage.mounts.Mount(prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), store: [Store](store.md#outrage.store.Store), read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, lent: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, builtin: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -190,6 +190,14 @@ no `KEY=FILE` spelling for a flag to name, and the `mount` tool mounts
 it read-only however it is asked. So the remedy for an ordinary read-only
 mount, mounting it again writable, is one nobody can take here, and a
 refusal has to know which of the two it is looking at to say so.
+
+#### builtin *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+Whether this is the package's built-in store at this mount point.
+
+This is provenance, not a property inferred from the key: a configured
+store may replace a built-in at the same point and must not inherit claims
+made about the built-in store.
 
 #### *property* kind *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
@@ -229,7 +237,7 @@ Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](h
 
 Raised when a mount table cannot be built as described.
 
-### *class* outrage.mounts.MountedStore(stores: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)], \*, read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ())
+### *class* outrage.mounts.MountedStore(stores: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)], \*, read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), builtin: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ())
 
 Bases: [`Store`](store.md#outrage.store.Store)
 
@@ -267,7 +275,7 @@ The single store case stated as a mount table rather than as a separate
 path through the server, so there is one set of behaviour to test and
 no second code path that only runs when nothing is mounted.
 
-#### remounted(\*, mount: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), unmount: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ()) → [MountedStore](#outrage.mounts.MountedStore)
+#### remounted(\*, mount: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), builtin: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), unmount: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ()) → [MountedStore](#outrage.mounts.MountedStore)
 
 This table with mounts removed and added, as a new table.
 
@@ -908,7 +916,7 @@ the same namespace, and the project has one. `spec` is what the reader
 wrote, when there is a spec to quote back at them; a file quotes the key it
 used as its own field name.
 
-### outrage.mounts.open_mounts(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None), specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), \*, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [Spec](#outrage.mounts.Spec) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, attached: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [MountedStore](#outrage.mounts.MountedStore)
+### outrage.mounts.open_mounts(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None), specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), \*, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [Spec](#outrage.mounts.Spec) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, attached: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), owned: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), builtin: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [MountedStore](#outrage.mounts.MountedStore)
 
 Open every store in `directory`, as one table.
 
@@ -955,6 +963,13 @@ which of two claims at one point survives is settled before this, in
 A store passed here is closed with the table, like every other, so a caller
 hands one over and does not close it twice -- and a failure part way
 through closes it as well.
+
+`owned` is the writable counterpart for a built-in outside the project
+directory. The table owns and closes these stores exactly as it does stores
+opened from specs, but does not mark them lent or read-only. `builtin`
+records which surviving external stores came from a built-in opener; it is
+provenance only, and a configured replacement at the same key carries none
+of it. Neither argument admits an absolute ordinary mount spec.
 
 `versioning` is the run's default for every store opened here, and a
 spec's own `versioning=` beats it. A lent store is not opened here, so it

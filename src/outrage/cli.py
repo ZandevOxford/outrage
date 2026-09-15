@@ -32,6 +32,7 @@ from . import (
     cli_messages,
     contents,
     eventlog,
+    home,
     info,
     ingest,
     install,
@@ -1298,6 +1299,17 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        mountfile.HOME_FLAG,
+        dest="mount_home",
+        action="store_true",
+        help=(
+            "Also mount the writable user-wide store at "
+            f"{keys.displayed(mountfile.HOME_MOUNT)!r}. Off here and on in the "
+            "MCP server. Every project session can read and write it, so changes "
+            "are global."
+        ),
+    )
+    parser.add_argument(
         mountfile.UNMOUNT_FLAG,
         dest="unmount",
         action="append",
@@ -1307,9 +1319,9 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
             "Do not mount the store mounted at KEY. The one thing an override "
             "cannot do -- naming a mount replaces it or adds it, and only this "
             "takes one away. Repeatable, and refused if nothing was mounted "
-            "there to remove: the documentation the MCP server carries at "
-            f"{mountfile.DOCS_MOUNT} is not mounted here unless "
-            f"{mountfile.DOCS_FLAG} asks for it. A --mount for the same key "
+            "there to remove: the built-ins the MCP server carries at "
+            f"{mountfile.DOCS_MOUNT} and {mountfile.HOME_MOUNT} are not mounted "
+            "here unless their mount flags ask for them. A --mount for the same key "
             "written after this one mounts it again."
         ),
     )
@@ -2395,6 +2407,18 @@ def _mounts_command(args: argparse.Namespace, out: TextIO) -> int:
         )
         seen.add(mountfile.DOCS_MOUNT)
         failed = failed or state == "missing"
+    if args.mount_home:
+        database = home.path()
+        rows.append(
+            (
+                mountfile.HOME_MOUNT,
+                str(database),
+                MOUNT_KIND,
+                "ok" if database.is_file() else "would create",
+                sources.get(mountfile.HOME_MOUNT, ("", mountfile.TYPED_SOURCE))[1],
+            )
+        )
+        seen.add(mountfile.HOME_MOUNT)
     for specs, kind in ((args.mounts, MOUNT_KIND), (args.read_only_mounts, READ_ONLY_MOUNT_KIND)):
         for spec in specs:
             point, named = mounts.parse_spec(spec)
@@ -2647,7 +2671,7 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
     root = _root(args)
     if not create:
         maintenance.require_store(directory, root.path)
-    if not (args.mounts or args.read_only_mounts or args.mount_docs):
+    if not (args.mounts or args.read_only_mounts or args.mount_docs or args.mount_home):
         with contextlib.closing(root.opened(directory, versioning=_versioning(args))) as opened:
             yield opened
         return
@@ -2660,6 +2684,17 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
         # the server: here somebody typed the flag, and a mount that silently
         # was not made is the failure `--mount-ro` refuses for.
         attached=shipped.attached() if args.mount_docs else {},
+        owned=(
+            {
+                home.MOUNT_POINT: home.open_store(
+                    mount_point=home.MOUNT_POINT,
+                    versioning=_versioning(args),
+                )
+            }
+            if args.mount_home
+            else {}
+        ),
+        builtin=[home.MOUNT_POINT] if args.mount_home else [],
         versioning=_versioning(args),
     ) as table:
         for mount in table.shadowing():

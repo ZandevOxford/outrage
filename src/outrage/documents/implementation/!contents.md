@@ -26,22 +26,22 @@
 13209 13212
 
 ### 4. Integration with Claude Code - done
-23792 23795
+24409 24412
 
 #### Getting a changed server to the agent
-24504 24507
+25121 25124
 
 #### What the session use changed
-25394 25397
+26011 26014
 
 ### 5. Skills - done
-28713 28716
+29330 29333
 
 #### Delivery
-30607 30610
+31224 31227
 
 ### 8. Event log - `src/outrage/eventlog.py` - done
-31708 31711
+32325 32328
 
 ## Planned work
-33779 33782
+34396 34399

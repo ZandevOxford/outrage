@@ -206,6 +206,14 @@ distinguishes one store from another is reduced to a filename, which is the
 seam a backend that is not SQLite fits into: the directory around it does not
 change.
 
+There are two narrow built-in exceptions rather than an escape hatch for
+absolute mount paths. The manual at `outrage` is lent read-only from the
+installation. The writable `home` store is owned by the table but lives at
+`~/.outrage/home.sqlite`, shared by every project for the user. Both enter the
+ordered source before project configuration, so a later mount or unmount uses
+ordinary precedence. Explicit provenance stays on a surviving built-in; a
+configured replacement at the same key inherits none of its claims.
+
 **A mount may name the backend that keeps it**: `--mount KEY=FILE,type=NAME`,
 and `docs = { path = "docs", type = "files" }` in a mount table. Which backend
 keeps a store otherwise follows from the store file's extension, which is what

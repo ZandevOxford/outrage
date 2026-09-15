@@ -51,6 +51,7 @@ from . import (
     bulk,
     config,
     eventlog,
+    home,
     ingest,
     keys,
     messages,
@@ -795,6 +796,8 @@ NO_README = (
     "instead for instructions."
 )
 
+_HOME_README = "Read `home/readme` for durable context shared across projects."
+
 
 def instructions(store: Store) -> str:
     """A line naming the root store's readme, then the instructions document.
@@ -842,6 +845,10 @@ def instructions(store: Store) -> str:
     # only on whether there is any. It is also the container case -- a key with
     # documents beneath it and nothing of its own introduces nothing.
     opening = READ_README if root.exists(README_KEY) else NO_README
+    if isinstance(store, MountedStore) and any(
+        mount.prefix == home.MOUNT_POINT and mount.builtin for mount in store
+    ):
+        opening = f"{opening}\n{_HOME_README}"
     return f"{opening}\n\n{delivered_text()}"
 
 
@@ -1933,9 +1940,9 @@ def build_server(
                     description=(
                         "Store file, relative to the store directory. For parquet "
                         "it may be a pattern over parts, such as 'parts/*.parquet'. "
-                        "Omit it to mount the store outrage ships for this key, "
-                        "which is how the 'outrage' manual is put back after "
-                        "unmounting it"
+                        "Omit it to restore a registered built-in: the read-only "
+                        "manual at 'outrage' or the writable user-wide store at "
+                        "'home'"
                     )
                 ),
             ] = None,
@@ -2302,6 +2309,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        mountfile.HOME_FLAG,
+        dest="mount_home",
+        action="store_true",
+        help=(
+            "Mount the writable user-wide store at "
+            f"{keys.displayed(mountfile.HOME_MOUNT)!r}. On by default here; "
+            "all project sessions can read and write it, and changes are global. "
+            f"{mountfile.UNMOUNT_FLAG} {mountfile.HOME_MOUNT} turns it off."
+        ),
+    )
+    parser.add_argument(
         mountfile.UNMOUNT_FLAG,
         dest="unmount",
         action="append",
@@ -2311,8 +2329,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Do not mount the store mounted at KEY: the one thing an override "
             "cannot do, since naming a mount replaces it or adds it. "
             "Repeatable, and refused if nothing was mounted there -- which "
-            f"includes {mountfile.DOCS_MOUNT}, mounted here by default and "
-            f"only on request on the command line."
+            f"includes {mountfile.DOCS_MOUNT} and {mountfile.HOME_MOUNT}, both "
+            "mounted here by default and only on request on the command line."
         ),
     )
     parser.add_argument(
@@ -2475,6 +2493,18 @@ def main(argv: list[str] | None = None) -> int:
                 root_mount=args.root_mount,
                 log=log,
                 attached=_documents(args.mount_docs, log),
+                owned=(
+                    {
+                        home.MOUNT_POINT: home.open_store(
+                            log=log,
+                            mount_point=home.MOUNT_POINT,
+                            versioning=not args.no_versioning,
+                        )
+                    }
+                    if args.mount_home
+                    else {}
+                ),
+                builtin=[home.MOUNT_POINT] if args.mount_home else [],
                 versioning=not args.no_versioning,
             ),
             directory=directory,

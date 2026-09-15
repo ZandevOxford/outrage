@@ -72,6 +72,15 @@ stays a clean namespace over the project's own store. It behaves as an ordinary
 mount otherwise: `--unmount outrage` leaves it out, and mounting your own store
 at `outrage` replaces it by the same rule that overrides any other entry.
 
+The MCP server also carries a writable built-in at `home`, backed by
+`~/.outrage/home.sqlite`. It is deliberately outside `--dir`: it is shared by
+every Outrage project for this user, and every project session can read and
+change it. Its first open seeds `home/readme` with that boundary and the server
+instructions route sessions there. `--unmount home` leaves it out for one run;
+a project mount at `home` replaces it without creating the global database.
+`--no-mount-config` does not suppress it because it is not a project-file
+entry. The command line remains project-only unless `--mount-home` opts in.
+
 `outrage mounts` reports the table a command line would open, without opening
 any of it — which matters because opening a read-write mount is what *creates*
 it, so a mistyped name becomes an empty store that reads like one with nothing

@@ -37,6 +37,12 @@ And that's it. That will set up the MCP server, tools, skills, agents and hooks
 such that when you run your LLM harness the agent will use the Outrage store
 as a memory.
 
+The server also mounts a writable user-wide store at `home`, kept in
+`~/.outrage/home.sqlite`. Every Outrage project session for this user can read
+and change it, so keep durable cross-project knowledge there and project state
+in the project's own store. `--unmount home` disables it for one server run;
+the command line opts in with `--mount-home`.
+
 One minor issue when using Copilot CLI: the working directory must be inside a
 Git repository. Otherwise, Copilot CLI will fail to load the MCP servers and
 other configuration.

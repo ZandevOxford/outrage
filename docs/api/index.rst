@@ -69,6 +69,11 @@ read-only at ``outrage``. A store file is relative to ``--dir`` and a tree in
 ``site-packages`` is not, so it is opened by absolute path and lent to
 :func:`outrage.mounts.open_mounts` through its ``attached`` argument.
 
+:mod:`outrage.home` is the other external built-in: a writable SQLite store at
+``~/.outrage/home.sqlite``, owned by the mount table and shared across the
+user's projects. Keeping it behind a built-in opener preserves the rule that
+ordinary mount files are relative to ``--dir``.
+
 .. toctree::
    :maxdepth: 1
 
@@ -81,6 +86,7 @@ read-only at ``outrage``. A store file is relative to ``--dir`` and a tree in
    remount
    mountfile
    shipped
+   home
    contents
    titles
    ingest

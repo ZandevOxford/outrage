@@ -39,16 +39,19 @@ layer: this is the layer that knows what the change did, and it carries facts
 rather than sentences. What the tools say about them is
 [`outrage.messages.MCP`](messages.md#outrage.messages.MCP).
 
-### outrage.remount.SHIPPED *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [Store](store.md#outrage.store.Store)]]* *= mappingproxy({'outrage': <function open_documents>})*
+### outrage.remount.BUILTINS *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Builtin](#outrage.remount.Builtin)]* *= mappingproxy({'outrage': Builtin(opener=<function open_documents>, lent=True), 'home': Builtin(opener=<function open_store>, lent=False)})*
 
-The stores outrage ships, by the mount point each answers for, as the
-openers that produce them. This is what lets a mount be spelled without a
-file: the shipped tree lives in `site-packages`, is not relative to
-`--dir` and so has no `KEY=FILE` spelling at all, which is the whole
-reason unmounting the manual would otherwise be a one-way door.
+File-less stores that can be restored by mount point and their ownership mode.
 
-A mapping rather than a special case for `outrage`, because the shape is
-the point: a second shipped store would be an entry here and nothing else.
+### *class* outrage.remount.Builtin(opener: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [Store](store.md#outrage.store.Store)], lent: [bool](https://docs.python.org/3/builtins/functions.html#bool))
+
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
+
+A file-less built-in store and whether the mount table borrows it.
+
+#### opener *: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [Store](store.md#outrage.store.Store)]*
+
+#### lent *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
 ### *class* outrage.remount.Changed(table: [MountedStore](mounts.md#outrage.mounts.MountedStore), notes: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Note](notes.md#outrage.notes.Note), ...] = ())
 
@@ -102,20 +105,16 @@ The store directory a mounted file is named relative to.
 Open a store and mount it at `key`, replacing whatever is there.
 
 `file` is relative to the store directory, as every mount's file is.
-Omitting it mounts the store **outrage ships** for that key -- today the
-documentation at `outrage` and nothing else -- which is the only way
-back for a caller that unmounted the manual, since a tree in
-`site-packages` has no spelling as a mount file. A shipped store is
-always mounted read-only: the next upgrade replaces it, so anything
-written there would be lost, and the table the call returns says so.
+Omitting it mounts a registered built-in store for that key. The
+documentation is lent and therefore always read-only; the home store
+is owned and writable unless `read_only` asks otherwise.
 
 `extensions` is the mount option of the same name, and only a tree
 has an answer to it -- [`EXTENSIONS_OPTION`](mounts.md#outrage.mounts.EXTENSIONS_OPTION). It is
 what mounts a documentation bundle whose documents link to each other
 by file name, since `keep` makes the key and the file name one
 string. A backend that keeps its store in a file refuses it, as does a
-shipped store, whose tree this package wrote and already reads its own
-way.
+built-in, whose opener is fixed rather than selected by mount options.
 
 A read-only mount must already exist, the same refusal
 [`open_mounts()`](mounts.md#outrage.mounts.open_mounts) makes and for the same reason: a
@@ -136,7 +135,7 @@ unreachable for as long as it was mounted.
 
 Close every store the live table holds.
 
-### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/builtins/functions.html#bool), shipped: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, created: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/builtins/functions.html#bool), builtin: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, created: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What a mount is worth remarking on, as codes and facts.
 
@@ -154,7 +153,7 @@ call opened it. Dynamic mounts are an MCP-only operation, so this is the
 one audience that needs the typo warning; startup and command-line mounts
 keep their existing quiet behaviour.
 
-`shipped` is whether this mounted the store outrage ships rather than a
+`builtin` is whether this mounted a registered built-in rather than a
 file, and it changes the last note rather than adding one. A file mount is
 made permanent by writing it into the mount configuration file; the shipped
 tree cannot be written there at all -- having no `KEY=FILE` spelling is

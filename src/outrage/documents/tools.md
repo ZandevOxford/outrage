@@ -550,11 +550,11 @@ distinguishes the prefixed file from the prefixed container. What the mode does
 cost is a format the key does not spell: `notes` stored as text reads back as
 markdown whether its file is `notes` or `.!notes`.
 
-Omit `file` to mount the store **outrage ships** for that key. Today that is
-the `outrage` manual and nothing else. It is the way back after unmounting the
-manual, which otherwise has no spelling here at all: it lives inside the
-installed package rather than in the store directory. A shipped store is always
-mounted read-only.
+Omit `file` to restore a registered built-in store. `outrage` restores the
+manual inside the installed package, lent and always read-only. `home` opens
+the writable user-wide store at `~/.outrage/home.sqlite`; `read_only=true` may
+mount it read-only for this server. Both are mounted by default at startup and
+need no mount-configuration entry.
 
 `read_only` refuses every write routed here, before the store is asked. It
 refuses writes *through this server* and does nothing to the file, which stays
@@ -568,12 +568,13 @@ connection was given were built from its readme.
 
 Returns the whole table, not the one mount, because what shadows what is not
 visible in an answer about a single mount. The change lasts as long as this
-server; write it into the mount configuration file to keep it.
+server. A file mount belongs in the mount configuration to survive a restart;
+a built-in needs nothing written down because startup restores it.
 
 ### Parameters
 
 - `key` (string; required) — Key to mount the store at; the root cannot be mounted over
-- `file` (string or null; default null) — Store file, relative to the store directory. For parquet it may be a pattern over parts, such as 'parts/*.parquet'. Omit it to mount the store outrage ships for this key, which is how the 'outrage' manual is put back after unmounting it
+- `file` (string or null; default null) — Store file, relative to the store directory. For parquet it may be a pattern over parts, such as 'parts/*.parquet'. Omit it to restore a registered built-in: the read-only manual at 'outrage' or the writable user-wide store at 'home'
 - `type` (string or null; default null) — Backend to open `file` with, when the file name does not say: 'files' for a directory of files, 'duckdb' for a directory of parquet parts, 'pyarrow' to read one parquet file with pyarrow rather than duckdb
 - `extensions` (string or null; default null) — For a directory of files, whether a known extension is part of the key: 'strip' takes it off, 'keep' makes the file name and the key one string, for a bundle whose documents link to each other by name
 - `read_only` (boolean; default false) — Refuse every write routed here; the file itself is untouched
@@ -609,8 +610,9 @@ would answer for them. Unmounting a point nothing is mounted at is refused
 rather than passed over, since what a mistyped one leaves behind is the mount
 it was meant to take away.
 
-The `outrage` manual can be unmounted like anything else, and `mount` with no
-`file` puts it back.
+The built-ins at `outrage` and `home` can be unmounted like anything else, and
+`mount` with no `file` puts either one back. Unmounting `home` changes only the
+session table; it does not delete the persistent user-wide data.
 
 Returns the whole table, not the mount that went. The change lasts as long as
 this server; a mount configuration file is what survives a restart.

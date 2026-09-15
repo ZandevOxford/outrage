@@ -47,7 +47,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import keys, shipped
+from . import home, keys, shipped
 from . import store as store_module
 from .errors import OutrageError
 from .mounts import (
@@ -121,6 +121,13 @@ DOCS_FLAG = "--mount-docs"
 #: store agree without either holding a second copy of the word.
 DOCS_MOUNT = shipped.MOUNT_POINT
 
+#: Mount the writable store shared by every project for this user. The server
+#: carries it by default beside the documentation; the command line opts in.
+HOME_FLAG = "--mount-home"
+
+#: The mount point :data:`HOME_FLAG` claims.
+HOME_MOUNT = home.MOUNT_POINT
+
 #: The flags this module has to recognise in an argument list. Everything else
 #: passes through untouched, including ``--store``: it shares a ``dest`` with
 #: ``--root-mount`` on the command line, so argparse's own last-one-wins is
@@ -130,6 +137,7 @@ _FLAGS = (
     MOUNT_FLAG,
     READ_ONLY_FLAG,
     DOCS_FLAG,
+    HOME_FLAG,
     UNMOUNT_FLAG,
     CONFIG_FLAG,
     NO_CONFIG_FLAG,
@@ -685,9 +693,9 @@ def spliced(
     already there. :data:`NO_CONFIG_FLAG` is the escape from the default file,
     and is the only way to be rid of it.
 
-    ``builtin`` is whether this front end carries the shipped documentation
-    without being asked -- the server does, the command line does not. It is
-    spliced in as :data:`DOCS_FLAG` at the very front, ahead of the default
+    ``builtin`` is whether this front end carries the built-in documentation
+    and home store without being asked -- the server does, the command line
+    does not. They are spliced in at the very front, ahead of the default
     file, so that it is an ordinary mount for every question that follows:
     ``mounts.toml`` naming that point overrides it, ``--unmount`` there removes
     it, and both by the rules already written rather than by a case for it.
@@ -715,7 +723,7 @@ def origins(
     """
     items, labels = _resolved(argv, directory, front, builtin)
     found = []
-    known = (ROOT_FLAG, MOUNT_FLAG, READ_ONLY_FLAG, DOCS_FLAG)
+    known = (ROOT_FLAG, MOUNT_FLAG, READ_ONLY_FLAG, DOCS_FLAG, HOME_FLAG)
     for item in items:
         if not item.tokens or item.tokens[0] not in known:
             continue
@@ -782,6 +790,7 @@ def _resolved(
         # subcommand, and an option written before the word `ls` is an option
         # on a parser that has never heard of it.
         items.append(_Item(_BUILTIN, [DOCS_FLAG], DOCS_MOUNT))
+        items.append(_Item(_BUILTIN, [HOME_FLAG], HOME_MOUNT))
     labels: dict[int, str] = {}
     source = 0
     default = base / DEFAULT_NAME
@@ -816,11 +825,12 @@ def _typed(argv: Sequence[str]) -> Iterator[_Item]:
             # already answered by the time a parser sees the list.
             index += 1
             continue
-        if canonical == DOCS_FLAG and not delimiter:
+        if canonical in (DOCS_FLAG, HOME_FLAG) and not delimiter:
             # No value: what it mounts is not nameable as a file, which is the
             # whole reason it is a flag. It claims a mount point all the same,
             # so an override or an unmount at that point sees it.
-            yield _Item(_TYPED, [canonical], DOCS_MOUNT)
+            point = DOCS_MOUNT if canonical == DOCS_FLAG else HOME_MOUNT
+            yield _Item(_TYPED, [canonical], point)
             index += 1
             continue
         if canonical in (MOUNT_FLAG, READ_ONLY_FLAG, UNMOUNT_FLAG, CONFIG_FLAG):
@@ -943,6 +953,8 @@ __all__ = [
     "DIR_FLAG",
     "DOCS_FLAG",
     "DOCS_MOUNT",
+    "HOME_FLAG",
+    "HOME_MOUNT",
     "FIELDS",
     "MOUNT_FIELD",
     "PATH_FIELD",

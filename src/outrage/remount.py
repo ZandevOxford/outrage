@@ -46,23 +46,28 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from . import keys, shipped
+from . import home, keys, shipped
 from . import store as store_module
 from .eventlog import EventLog
 from .mounts import MountedStore, MountError
 from .notes import Note
 from .store import Store, store_file, store_present
 
-#: The stores outrage ships, by the mount point each answers for, as the
-#: openers that produce them. This is what lets a mount be spelled without a
-#: file: the shipped tree lives in ``site-packages``, is not relative to
-#: ``--dir`` and so has no ``KEY=FILE`` spelling at all, which is the whole
-#: reason unmounting the manual would otherwise be a one-way door.
-#:
-#: A mapping rather than a special case for ``outrage``, because the shape is
-#: the point: a second shipped store would be an entry here and nothing else.
-SHIPPED: Mapping[str, Callable[..., Store]] = MappingProxyType(
-    {shipped.MOUNT_POINT: shipped.open_documents}
+
+@dataclass(frozen=True, slots=True)
+class Builtin:
+    """A file-less built-in store and whether the mount table borrows it."""
+
+    opener: Callable[..., Store]
+    lent: bool
+
+
+#: File-less stores that can be restored by mount point and their ownership mode.
+BUILTINS: Mapping[str, Builtin] = MappingProxyType(
+    {
+        shipped.MOUNT_POINT: Builtin(shipped.open_documents, lent=True),
+        home.MOUNT_POINT: Builtin(home.open_store, lent=False),
+    }
 )
 
 
@@ -144,20 +149,16 @@ class Live:
         """Open a store and mount it at ``key``, replacing whatever is there.
 
         ``file`` is relative to the store directory, as every mount's file is.
-        Omitting it mounts the store **outrage ships** for that key -- today the
-        documentation at ``outrage`` and nothing else -- which is the only way
-        back for a caller that unmounted the manual, since a tree in
-        ``site-packages`` has no spelling as a mount file. A shipped store is
-        always mounted read-only: the next upgrade replaces it, so anything
-        written there would be lost, and the table the call returns says so.
+        Omitting it mounts a registered built-in store for that key. The
+        documentation is lent and therefore always read-only; the home store
+        is owned and writable unless ``read_only`` asks otherwise.
 
         ``extensions`` is the mount option of the same name, and only a tree
         has an answer to it -- :data:`~outrage.mounts.EXTENSIONS_OPTION`. It is
         what mounts a documentation bundle whose documents link to each other
         by file name, since ``keep`` makes the key and the file name one
         string. A backend that keeps its store in a file refuses it, as does a
-        shipped store, whose tree this package wrote and already reads its own
-        way.
+        built-in, whose opener is fixed rather than selected by mount options.
 
         A read-only mount must already exist, the same refusal
         :func:`~outrage.mounts.open_mounts` makes and for the same reason: a
@@ -169,7 +170,7 @@ class Live:
         with self._lock:
             mount_path = None if file is None else store_file(self._directory, file)
             created = file is not None and not store_present(self._directory, file)
-            store = self._opened(prefix, file, type, extensions, read_only)
+            store, builtin = self._opened(prefix, file, type, extensions, read_only)
             # Everything up to the swap is inside this, `open_mounts`'s own
             # shape: a failure anywhere closes what was opened and leaves the
             # live table exactly as it was. Deriving the notes is in here for
@@ -179,15 +180,16 @@ class Live:
             try:
                 after = self._table.remounted(
                     mount={prefix: store},
-                    read_only=[prefix] if read_only and file is not None else [],
-                    lent=[prefix] if file is None else [],
+                    read_only=[prefix] if read_only and not (builtin and builtin.lent) else [],
+                    lent=[prefix] if builtin and builtin.lent else [],
+                    builtin=[prefix] if builtin else [],
                 )
                 replaced = prefix in {mount.prefix for mount in self._table}
                 notes = notes_for_mount(
                     after,
                     prefix,
                     replaced=replaced,
-                    shipped=file is None,
+                    builtin=file is None,
                     created=str(mount_path) if created else None,
                 )
             except Exception:
@@ -226,17 +228,20 @@ class Live:
         type: str | None,
         extensions: str | None,
         read_only: bool,
-    ) -> Store:
-        """The store to mount at ``prefix``: a file under the directory, or a shipped one."""
+    ) -> tuple[Store, Builtin | None]:
+        """The store to mount and its built-in descriptor, when file-less."""
         if file is None:
-            opener = SHIPPED.get(prefix)
-            if opener is None:
-                raise MountError("mount-nothing-shipped", mount=prefix, shipped=sorted(SHIPPED))
+            builtin = BUILTINS.get(prefix)
+            if builtin is None:
+                raise MountError("mount-nothing-builtin", mount=prefix, builtins=sorted(BUILTINS))
             if type is not None:
-                raise MountError("mount-shipped-takes-no-type", mount=prefix)
+                raise MountError("mount-builtin-takes-no-type", mount=prefix)
             if extensions is not None:
-                raise MountError("mount-shipped-takes-no-extensions", mount=prefix)
-            return opener(log=self._log)
+                raise MountError("mount-builtin-takes-no-extensions", mount=prefix)
+            arguments = {"log": self._log, "mount_point": prefix}
+            if not builtin.lent:
+                arguments["versioning"] = self._versioning
+            return builtin.opener(**arguments), builtin
         if read_only:
             if not store_present(self._directory, file):
                 database = store_file(self._directory, file)
@@ -249,7 +254,7 @@ class Live:
             versioning_default=self._versioning,
             log=self._log,
             mount_point=prefix,
-        )
+        ), None
 
     def _swap(self, after: MountedStore, notes: list[Note]) -> Changed:
         """Serve ``after``, and close what no longer has a table to be in.
@@ -272,7 +277,7 @@ def notes_for_mount(
     prefix: str,
     *,
     replaced: bool,
-    shipped: bool = False,
+    builtin: bool = False,
     created: str | None = None,
 ) -> list[Note]:
     """What a mount is worth remarking on, as codes and facts.
@@ -291,7 +296,7 @@ def notes_for_mount(
     one audience that needs the typo warning; startup and command-line mounts
     keep their existing quiet behaviour.
 
-    ``shipped`` is whether this mounted the store outrage ships rather than a
+    ``builtin`` is whether this mounted a registered built-in rather than a
     file, and it changes the last note rather than adding one. A file mount is
     made permanent by writing it into the mount configuration file; the shipped
     tree cannot be written there at all -- having no ``KEY=FILE`` spelling is
@@ -309,8 +314,8 @@ def notes_for_mount(
     # Two appends rather than one with the code chosen inline: `test_notes.py`
     # requires every emit site to name a literal, so that the set of codes a
     # table has to word can be read off the source rather than guessed at.
-    if shipped:
-        notes.append(Note("remount-shipped-is-default", mount=prefix))
+    if builtin:
+        notes.append(Note("remount-builtin-is-default", mount=prefix))
     else:
         notes.append(Note("remount-not-permanent", mount=prefix))
     return notes
@@ -347,7 +352,8 @@ def notes_for_unmount(after: MountedStore, prefix: str, *, started: bool = True)
 
 
 __all__ = [
-    "SHIPPED",
+    "BUILTINS",
+    "Builtin",
     "Changed",
     "Live",
     "notes_for_mount",

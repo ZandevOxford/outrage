@@ -1547,6 +1547,35 @@ def test_open_mounts_marks_only_the_read_only_specs(tmp_path):
         assert not built.resolve("anything").read_only
 
 
+def test_an_owned_external_store_is_writable_and_closed_with_the_table(tmp_path):
+    external = SqliteStore(tmp_path / "outside", filename="home.sqlite", mount_point="home")
+
+    with open_mounts(
+        tmp_path / "project",
+        owned={"home": external},
+        builtin=["home"],
+    ) as built:
+        built.store_document("home/shared", "kept")
+        mount = built.resolve("home/shared").mount
+        assert mount.read_only is False
+        assert mount.lent is False
+        assert mount.builtin is True
+        assert external.retrieve_document("shared").content == "kept"
+
+    assert external._local.conn is None
+
+
+def test_owned_stores_are_closed_when_validation_fails(tmp_path):
+    owned = SqliteStore(tmp_path / "owned", filename="home.sqlite", mount_point="home")
+    lent = SqliteStore(tmp_path / "lent", filename="docs.sqlite", mount_point="home")
+
+    with pytest.raises(MountError):
+        open_mounts(tmp_path / "project", attached={"home": lent}, owned={"home": owned})
+
+    assert owned._local.conn is None
+    assert lent._local.conn is None
+
+
 def test_the_same_mount_point_cannot_be_both(tmp_path):
     SqliteStore(tmp_path / "base", filename="ref.sqlite").close()
     with pytest.raises(MountError) as raised:
@@ -1587,7 +1616,19 @@ def test_the_server_reports_a_missing_read_only_store_as_one_line(tmp_path, caps
     from outrage.server import main
 
     missing = tmp_path / "base" / "not-there.sqlite"
-    assert main(["--dir", str(tmp_path / "base"), "--mount-ro", "ref=not-there.sqlite"]) == 1
+    assert (
+        main(
+            [
+                "--dir",
+                str(tmp_path / "base"),
+                "--unmount",
+                "home",
+                "--mount-ro",
+                "ref=not-there.sqlite",
+            ]
+        )
+        == 1
+    )
     assert "read-only mount" in capsys.readouterr().err
     assert not missing.exists()
 

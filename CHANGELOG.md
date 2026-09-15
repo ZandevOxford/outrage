@@ -4,6 +4,20 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+The MCP server now mounts a writable cross-project store at `home` by default,
+kept in `~/.outrage/home.sqlite`. Its first open creates a small `home/readme`
+explaining the boundary, and server instructions route sessions to it. Every
+project session for the user can read and write this store, so its changes are
+global. `--unmount home` disables it for a server run; project configuration or
+a typed mount at `home` replaces it by ordinary mount precedence. The command
+line remains project-only unless `--mount-home` opts in.
+
+The `mount` tool can restore both built-ins without a file: the read-only
+manual at `outrage`, and the writable user store at `home`. `read_only=true`
+may restore the latter read-only for the current server. A home store that
+cannot be opened stops startup rather than allowing `home/...` writes to fall
+through into the project root.
+
 A directory-of-files store now locks its writes. Two writers on one tree could
 hand out the same `?` number twice, so that one document replaced the other;
 leave a key stored in two formats at once with no file at all; attach one

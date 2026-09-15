@@ -23,7 +23,7 @@ import anyio
 import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
-from outrage import keys, remount, shipped
+from outrage import home, keys, remount, shipped
 from outrage.mounts import MountedStore, MountError
 from outrage.remount import Live
 from outrage.server import build_server
@@ -342,15 +342,44 @@ def test_mounting_the_manual_by_name_says_it_needs_nothing_written_down(base):
         said = call(server, "mount", key=shipped.MOUNT_POINT)["note"]
 
     assert "lasts as long as this server" in said
-    assert "is mounted by default, so a restart puts it back" in said
+    assert "mounted by default, so a restart puts it back" in said
     assert "mount configuration file" not in said
+
+
+def test_the_home_store_can_be_restored_by_name_and_is_writable(base, tmp_path, monkeypatch):
+    database = tmp_path / "user" / ".outrage" / "home.sqlite"
+    monkeypatch.setattr(home, "path", lambda: database)
+    root = SqliteStore(base, filename="outrage.sqlite")
+    with Live(MountedStore({keys.ROOT: root}), directory=base) as live:
+        server = build_server(live, directory=base)
+        result = call(server, "mount", key=home.MOUNT_POINT)
+        call(server, "store_document", key="home/shared", content="global")
+
+        mounted = live.table.resolve("home/shared").mount
+        assert mounted.builtin is True
+        assert mounted.lent is False
+        assert mounted.read_only is False
+        assert mounted.store.retrieve_document("shared").content == "global"
+        assert "mounted by default" in result["note"]
+
+
+def test_the_home_builtin_can_be_restored_read_only(base, tmp_path, monkeypatch):
+    monkeypatch.setattr(home, "path", lambda: tmp_path / "user" / "home.sqlite")
+    root = SqliteStore(base, filename="outrage.sqlite")
+    with Live(MountedStore({keys.ROOT: root}), directory=base) as live:
+        server = build_server(live, directory=base)
+        call(server, "mount", key=home.MOUNT_POINT, read_only=True)
+
+        said = call_expecting_error(server, "store_document", key="home/shared", content="no")
+        assert "mounted read-only" in said
 
 
 def test_a_key_outrage_ships_nothing_for_needs_a_file(server):
     said = call_expecting_error(server, "mount", key="lib")
 
-    assert "outrage ships no store for 'lib'" in said
+    assert "no built-in store for 'lib'" in said
     assert "'outrage'" in said
+    assert "'home'" in said
 
 
 def test_the_shipped_store_has_no_backend_to_choose(server):
@@ -383,7 +412,7 @@ def test_a_bundle_is_mounted_at_the_keys_its_own_links_name(server, base):
 def test_the_shipped_store_is_read_the_way_this_package_wrote_it(server):
     said = call_expecting_error(server, "mount", key=shipped.MOUNT_POINT, extensions="keep")
 
-    assert "read the way it was written" in said
+    assert "opened by name" in said
     assert "drop `extensions`" in said
 
 
@@ -519,6 +548,7 @@ def test_a_change_that_cannot_be_described_leaves_the_table_alone(live, base):
     assert [mount.prefix for mount in live.table] == ["", "ref"]
 
 
-def test_the_shipped_table_is_a_mapping_rather_than_a_special_case():
-    """One entry today, and the shape is what is being kept."""
-    assert set(remount.SHIPPED) == {shipped.MOUNT_POINT}
+def test_the_builtin_table_carries_both_ownership_modes():
+    assert set(remount.BUILTINS) == {shipped.MOUNT_POINT, "home"}
+    assert remount.BUILTINS[shipped.MOUNT_POINT].lent is True
+    assert remount.BUILTINS["home"].lent is False

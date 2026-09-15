@@ -14,8 +14,9 @@ would answer for them. Unmounting a point nothing is mounted at is refused
 rather than passed over, since what a mistyped one leaves behind is the mount
 it was meant to take away.
 
-The `outrage` manual can be unmounted like anything else, and `mount` with no
-`file` puts it back.
+The built-ins at `outrage` and `home` can be unmounted like anything else, and
+`mount` with no `file` puts either one back. Unmounting `home` changes only the
+session table; it does not delete the persistent user-wide data.
 
 Returns the whole table, not the mount that went. The change lasts as long as
 this server; a mount configuration file is what survives a restart.

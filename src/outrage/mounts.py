@@ -237,6 +237,14 @@ class Mount:
     refusal has to know which of the two it is looking at to say so.
     """
 
+    builtin: bool = False
+    """Whether this is the package's built-in store at this mount point.
+
+    This is provenance, not a property inferred from the key: a configured
+    store may replace a built-in at the same point and must not inherit claims
+    made about the built-in store.
+    """
+
     @property
     def kind(self) -> str:
         """What a listing calls this mount point."""
@@ -849,6 +857,7 @@ class MountedStore(Store):
         *,
         read_only: Collection[str] = (),
         lent: Collection[str] = (),
+        builtin: Collection[str] = (),
     ) -> None:
         # The base's own, which settles nothing but the log -- where a store's
         # file is belongs to `FileStore`, and this one has none. The log is
@@ -874,6 +883,7 @@ class MountedStore(Store):
         # never the root, and never a point nothing is mounted at.
         lending = points(lent)
         refusing = points(read_only) | lending
+        builtins = points(builtin)
 
         by_prefix: dict[str, Mount] = {}
         for prefix, store in stores.items():
@@ -901,13 +911,14 @@ class MountedStore(Store):
                 store=store,
                 read_only=storage or parsed.key in refusing,
                 lent=parsed.key in lending,
+                builtin=parsed.key in builtins,
             )
 
         # A read-only flag naming a mount point nothing is mounted at is a
         # typo, and the kind that reads as if it worked: the server would start,
         # every mount would be writable, and nothing would say why. Refused
         # rather than ignored.
-        unmatched = sorted(refusing - set(by_prefix), key=keys.sort_form)
+        unmatched = sorted((refusing | builtins) - set(by_prefix), key=keys.sort_form)
         if unmatched:
             raise MountError("mount-read-only-unmatched", mounts=unmatched)
 
@@ -935,6 +946,7 @@ class MountedStore(Store):
         mount: Mapping[str, Store] = MappingProxyType({}),
         read_only: Collection[str] = (),
         lent: Collection[str] = (),
+        builtin: Collection[str] = (),
         unmount: Collection[str] = (),
     ) -> MountedStore:
         """This table with mounts removed and added, as a new table.
@@ -999,13 +1011,16 @@ class MountedStore(Store):
         surviving = [m for m in self._mounts if m.prefix in stores and m.prefix not in adding]
         refusing = {m.prefix for m in surviving if m.read_only and not m.lent}
         lending = {m.prefix for m in surviving if m.lent}
+        builtins = {m.prefix for m in surviving if m.builtin}
         stores.update(adding)
         refusing.update(keys.parse(prefix).key for prefix in read_only)
         lending.update(keys.parse(prefix).key for prefix in lent)
+        builtins.update(keys.parse(prefix).key for prefix in builtin)
         return MountedStore(
             stores,
             read_only=sorted(refusing, key=keys.sort_form),
             lent=sorted(lending, key=keys.sort_form),
+            builtin=sorted(builtins, key=keys.sort_form),
         )
 
     @property
@@ -1827,8 +1842,11 @@ class MountedStore(Store):
 
     def close(self) -> None:
         """Close this thread's connection to every mounted store."""
+        closed: set[int] = set()
         for mount in self._mounts:
-            mount.store.close()
+            if id(mount.store) not in closed:
+                mount.store.close()
+                closed.add(id(mount.store))
 
     def __enter__(self) -> MountedStore:
         return self
@@ -2058,6 +2076,8 @@ def open_mounts(
     root_mount: str | os.PathLike[str] | Spec | None = None,
     log: EventLog | None = None,
     attached: Mapping[str, Store] = MappingProxyType({}),
+    owned: Mapping[str, Store] = MappingProxyType({}),
+    builtin: Collection[str] = (),
     versioning: bool = True,
 ) -> MountedStore:
     """Open every store in ``directory``, as one table.
@@ -2106,33 +2126,52 @@ def open_mounts(
     hands one over and does not close it twice -- and a failure part way
     through closes it as well.
 
+    ``owned`` is the writable counterpart for a built-in outside the project
+    directory. The table owns and closes these stores exactly as it does stores
+    opened from specs, but does not mark them lent or read-only. ``builtin``
+    records which surviving external stores came from a built-in opener; it is
+    provenance only, and a configured replacement at the same key carries none
+    of it. Neither argument admits an absolute ordinary mount spec.
+
     ``versioning`` is the run's default for every store opened here, and a
     spec's own ``versioning=`` beats it. A lent store is not opened here, so it
     is not reached.
     """
-    writable = [parse_spec(spec) for spec in specs]
-    refusing = [parse_spec(spec) for spec in read_only_specs]
-    # The root takes the same grammar as a mount, so a string is parsed for
-    # options here rather than by each front end. A ``Path`` is a path and not
-    # an argument -- a caller holding one has nothing to say about backends --
-    # and a ``Spec`` is one already parsed.
-    root = _root_spec(root_mount)
-    lent = {mount_point(prefix): store for prefix, store in attached.items()}
-    # Resolved once, here, because the read-only check below and the stores
-    # themselves have to agree about where a mount's file is; asking twice is
-    # how they would come to disagree.
-    base = store_module.resolve_directory(directory)
-    for prefix, spec in refusing:
-        database = store_file(base, spec.path)
-        if not store_present(base, spec.path):
-            raise MountError("mount-read-only-missing", mount=prefix, path=str(database))
-
-    # Lent stores go in first, so that anything opened here is closed by the
-    # failure path below whatever order the duplicate is found in -- and so
-    # that a second claim on a lent point is the same refusal as a second claim
-    # on any other.
-    opened: dict[str, Store] = dict(lent)
+    handed = [*attached.values(), *owned.values()]
+    opened: dict[str, Store] = {}
     try:
+        writable = [parse_spec(spec) for spec in specs]
+        refusing = [parse_spec(spec) for spec in read_only_specs]
+        # The root takes the same grammar as a mount, so a string is parsed for
+        # options here rather than by each front end. A ``Path`` is a path and not
+        # an argument -- a caller holding one has nothing to say about backends --
+        # and a ``Spec`` is one already parsed.
+        root = _root_spec(root_mount)
+        lent: dict[str, Store] = {}
+        external: dict[str, Store] = {}
+        for given, target in ((attached, lent), (owned, external)):
+            for prefix, store in given.items():
+                point = mount_point(prefix)
+                if point in target:
+                    raise MountError("mount-duplicate", mount=point)
+                target[point] = store
+        builtins = {mount_point(prefix) for prefix in builtin}
+        # Resolved once, here, because the read-only check below and the stores
+        # themselves have to agree about where a mount's file is; asking twice is
+        # how they would come to disagree.
+        base = store_module.resolve_directory(directory)
+        for prefix, spec in refusing:
+            database = store_file(base, spec.path)
+            if not store_present(base, spec.path):
+                raise MountError("mount-read-only-missing", mount=prefix, path=str(database))
+
+        # Lent stores go in first, so that a second claim on a lent point is the
+        # same refusal as a second claim on any other.
+        opened.update(lent)
+        for prefix, store in external.items():
+            if prefix in opened:
+                raise MountError("mount-duplicate", mount=prefix)
+            opened[prefix] = store
         # The root is never among the lent stores: ``mount_point`` refuses it
         # above, as it does for a spec, so this cannot overwrite one.
         # A root nobody named is the default store file under the default
@@ -2149,10 +2188,18 @@ def open_mounts(
             if prefix in opened:
                 raise MountError("mount-duplicate", mount=prefix)
             opened[prefix] = spec.opened(base, log=log, mount_point=prefix, versioning=versioning)
-        return MountedStore(opened, read_only=[prefix for prefix, _ in refusing], lent=list(lent))
+        return MountedStore(
+            opened,
+            read_only=[prefix for prefix, _ in refusing],
+            lent=list(lent),
+            builtin=builtins,
+        )
     except Exception:
-        for store in opened.values():
-            store.close()
+        closed: set[int] = set()
+        for store in [*handed, *opened.values()]:
+            if id(store) not in closed:
+                store.close()
+                closed.add(id(store))
         raise
 
 

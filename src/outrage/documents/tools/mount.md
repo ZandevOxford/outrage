@@ -29,11 +29,11 @@ distinguishes the prefixed file from the prefixed container. What the mode does
 cost is a format the key does not spell: `notes` stored as text reads back as
 markdown whether its file is `notes` or `.!notes`.
 
-Omit `file` to mount the store **outrage ships** for that key. Today that is
-the `outrage` manual and nothing else. It is the way back after unmounting the
-manual, which otherwise has no spelling here at all: it lives inside the
-installed package rather than in the store directory. A shipped store is always
-mounted read-only.
+Omit `file` to restore a registered built-in store. `outrage` restores the
+manual inside the installed package, lent and always read-only. `home` opens
+the writable user-wide store at `~/.outrage/home.sqlite`; `read_only=true` may
+mount it read-only for this server. Both are mounted by default at startup and
+need no mount-configuration entry.
 
 `read_only` refuses every write routed here, before the store is asked. It
 refuses writes *through this server* and does nothing to the file, which stays
@@ -47,4 +47,5 @@ connection was given were built from its readme.
 
 Returns the whole table, not the one mount, because what shadows what is not
 visible in an answer about a single mount. The change lasts as long as this
-server; write it into the mount configuration file to keep it.
+server. A file mount belongs in the mount configuration to survive a restart;
+a built-in needs nothing written down because startup restores it.

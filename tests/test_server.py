@@ -13,7 +13,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.shared.memory import create_client_server_memory_streams
 
 import outrage
-from outrage import bulk, eventlog, mountfile, shipped
+from outrage import bulk, eventlog, home, mountfile, shipped
 from outrage import mounts as mounts_module
 from outrage import server as server_module
 from outrage import store as store_module
@@ -2421,6 +2421,73 @@ def test_a_wildcard_key_is_not_a_round_trip(exporting):
 
 def test_the_shipped_documentation_is_mounted_unless_told_otherwise(tmp_path):
     assert parse_args(["--dir", str(tmp_path)]).mount_docs is True
+    assert parse_args(["--dir", str(tmp_path)]).mount_home is True
+
+
+def test_unmounting_home_is_the_off_switch(tmp_path):
+    args = parse_args(["--dir", str(tmp_path), mountfile.UNMOUNT_FLAG, mountfile.HOME_MOUNT])
+
+    assert args.mount_home is False
+
+
+def test_a_store_mounted_at_home_replaces_the_builtin(tmp_path):
+    args = parse_args(["--dir", str(tmp_path), "--mount", "home=mine.sqlite"])
+
+    assert args.mount_home is False
+    assert args.mounts == ["home=mine.sqlite"]
+
+
+def test_server_startup_opens_the_builtin_home_after_precedence(tmp_path, monkeypatch):
+    database = tmp_path / "user" / ".outrage" / "home.sqlite"
+    monkeypatch.setattr(home, "path", lambda: database)
+    observed = {}
+
+    class Server:
+        def run(self, transport):
+            observed["transport"] = transport
+
+    def built(live, *args, **kwargs):
+        mount = live.table.resolve("home/readme").mount
+        observed["builtin"] = mount.builtin
+        observed["writable"] = not mount.read_only
+        observed["instructions"] = instructions(live.table)
+        return Server()
+
+    monkeypatch.setattr(server_module, "build_server", built)
+
+    status = server_module.main(["--dir", str(tmp_path / "project"), "--unmount", "outrage"])
+
+    assert status == 0
+    assert observed["transport"] == "stdio"
+    assert observed["builtin"] is True
+    assert observed["writable"] is True
+    assert "Read `home/readme`" in observed["instructions"]
+    assert database.is_file()
+
+
+def test_server_precedence_can_remove_home_without_creating_it(tmp_path, monkeypatch):
+    database = tmp_path / "user" / ".outrage" / "home.sqlite"
+    monkeypatch.setattr(home, "path", lambda: database)
+
+    class Server:
+        def run(self, transport):
+            pass
+
+    monkeypatch.setattr(server_module, "build_server", lambda *args, **kwargs: Server())
+
+    status = server_module.main(
+        [
+            "--dir",
+            str(tmp_path / "project"),
+            "--unmount",
+            "outrage",
+            "--unmount",
+            "home",
+        ]
+    )
+
+    assert status == 0
+    assert not database.exists()
 
 
 def test_unmounting_the_documentation_is_the_off_switch(tmp_path):
@@ -2474,3 +2541,20 @@ def test_the_documentation_readme_is_not_delivered(tmp_path):
         text = instructions(table)
 
     assert "outrage manual" not in text
+
+
+def test_the_builtin_home_readme_route_is_delivered_from_provenance(tmp_path):
+    root = SqliteStore(tmp_path, filename="root.sqlite")
+    built_in = SqliteStore(tmp_path, filename="home.sqlite", mount_point="home")
+    override = SqliteStore(tmp_path, filename="other.sqlite", mount_point="home")
+    try:
+        with_home = mounts_module.MountedStore({"": root, "home": built_in}, builtin=["home"])
+        without_claim = mounts_module.MountedStore({"": root, "home": override})
+
+        assert "Read `home/readme`" in instructions(with_home)
+        assert "Read `home/readme`" not in instructions(without_claim)
+        assert len(instructions(with_home)) <= server_module.DELIVERY_BUDGET
+    finally:
+        built_in.close()
+        override.close()
+        root.close()

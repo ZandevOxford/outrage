@@ -379,6 +379,15 @@ built-in item carries its own source (`_BUILTIN`), distinct from the command
 line and from every file, so a claim the caller actually typed overrides it
 instead of colliding with it.
 
+**The cross-project home store** - `src/outrage/home.py`, a writable SQLite
+store at `~/.outrage/home.sqlite`, mounted at `home` by the server and only
+under `--mount-home` by the command line. It crosses the project-directory
+boundary through `open_mounts(owned=...)`, distinct from the lent read-only
+`attached` seam, so ordinary specs remain relative. Both built-ins are spliced
+before configuration and carry provenance only while they survive precedence.
+The dynamic mount registry records whether each built-in is lent: `outrage`
+always comes back read-only; `home` comes back writable unless asked otherwise.
+
 Deliberately not done, and recorded in `project/reference/planned/mounts`:
 aggregation across a boundary. The range bounds are the primitive it now needs:
 reading a subtree as ordered windows is what a merge across two stores would

@@ -195,10 +195,11 @@ person redirecting a document to a file. Ask for a slice and you get exactly the
 
 ```text
 outrage get [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-            [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-            [--mount-config FILE] [--no-mount-config] [--offset OFFSET]
-            [--byte-offset N] [--length LENGTH] [--pattern PATTERN]
-            [--occurrence OCCURRENCE] [--max-chars MAX_CHARS]
+            [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+            [--unmount KEY] [--mount-config FILE] [--no-mount-config]
+            [--offset OFFSET] [--byte-offset N] [--length LENGTH]
+            [--pattern PATTERN] [--occurrence OCCURRENCE]
+            [--max-chars MAX_CHARS]
             key
 ```
 
@@ -210,7 +211,8 @@ outrage get [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `key` - Key to read, e.g. context/1/task, context/1/task/!title, or context/?last/task for the newest.
@@ -232,10 +234,10 @@ learn the allocated number.
 
 ```text
 outrage set [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-            [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-            [--mount-config FILE] [--no-mount-config] [--no-versioning]
-            [--content CONTENT] [--file PATH] [--title TITLE]
-            [--format {markdown,json,text,html}]
+            [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+            [--unmount KEY] [--mount-config FILE] [--no-mount-config]
+            [--no-versioning] [--content CONTENT] [--file PATH]
+            [--title TITLE] [--format {markdown,json,text,html}]
             key
 ```
 
@@ -247,7 +249,8 @@ outrage set [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `--no-versioning` - Do not keep the earlier version of what this command overwrites or deletes. On by default, in SQLite stores only. It removes nothing kept already, and a store's own versioning= option wins over it.
@@ -268,10 +271,10 @@ installed. An existing destination is preserved unless --overwrite is passed. Th
 
 ```text
 outrage ingest [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-               [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-               [--mount-config FILE] [--no-mount-config]
-               [--no-versioning] [--title TITLE] [--overwrite]
-               [--dry-run]
+               [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+               [--unmount KEY] [--mount-config FILE]
+               [--no-mount-config] [--no-versioning] [--title TITLE]
+               [--overwrite] [--dry-run]
                SOURCE KEY
 ```
 
@@ -283,7 +286,8 @@ outrage ingest [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `--no-versioning` - Do not keep the earlier version of what this command overwrites or deletes. On by default, in SQLite stores only. It removes nothing kept already, and a store's own versioning= option wins over it.
@@ -305,7 +309,7 @@ index overwrites direct metadata named by --metadata-name, which defaults to con
 ```text
 outrage make_contents [-h] [--dir PATH] [--store FILE]
                       [--mount KEY=FILE] [--mount-ro KEY=FILE]
-                      [--mount-docs] [--unmount KEY]
+                      [--mount-docs] [--mount-home] [--unmount KEY]
                       [--mount-config FILE] [--no-mount-config]
                       [--no-versioning] [--metadata-name METADATA_NAME]
                       [--strip-links | --no-strip-links]
@@ -320,7 +324,8 @@ outrage make_contents [-h] [--dir PATH] [--store FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `--no-versioning` - Do not keep the earlier version of what this command overwrites or deletes. On by default, in SQLite stores only. It removes nothing kept already, and a store's own versioning= option wins over it.
@@ -338,9 +343,9 @@ disagree about whether it is there.
 
 ```text
 outrage ls [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-           [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-           [--mount-config FILE] [--no-mount-config] [--recursive]
-           [--counts] [--chars] [--limit N]
+           [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+           [--unmount KEY] [--mount-config FILE] [--no-mount-config]
+           [--recursive] [--counts] [--chars] [--limit N]
            [key]
 ```
 
@@ -352,7 +357,8 @@ outrage ls [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `key` - Key to list below, ?last for the newest. Omit for the top.
@@ -374,9 +380,10 @@ held.
 
 ```text
 outrage dump [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-             [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-             [--mount-config FILE] [--no-mount-config] [--meta NAME]
-             [--depth DEPTH] [--max-chars MAX_CHARS] [--limit N]
+             [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+             [--unmount KEY] [--mount-config FILE] [--no-mount-config]
+             [--meta NAME] [--depth DEPTH] [--max-chars MAX_CHARS]
+             [--limit N]
              [key]
 ```
 
@@ -388,7 +395,8 @@ outrage dump [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `key` - Key whose subtree to read.
@@ -409,8 +417,8 @@ The selection is the intersection of SOURCE, --depth, and every range bound supp
 
 ```text
 outrage copy [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-             [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-             [--mount-config FILE] [--no-mount-config]
+             [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+             [--unmount KEY] [--mount-config FILE] [--no-mount-config]
              [--no-versioning] [--reroot] [--depth DEPTH]
              [--after-inclusive KEY] [--after KEY]
              [--after-subtree KEY] [--before KEY]
@@ -428,7 +436,8 @@ outrage copy [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `--no-versioning` - Do not keep the earlier version of what this command overwrites or deletes. On by default, in SQLite stores only. It removes nothing kept already, and a store's own versioning= option wins over it.
@@ -460,8 +469,9 @@ nothing the database holds about them, and `outrage backup` is the copy that kee
 
 ```text
 outrage export [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-               [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-               [--mount-config FILE] [--no-mount-config]
+               [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+               [--unmount KEY] [--mount-config FILE]
+               [--no-mount-config]
                [--on-conflict {skip,overwrite,stop}]
                [--extensions {strip,keep}] [--dry-run]
                DIRECTORY [key]
@@ -475,7 +485,8 @@ outrage export [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `DIRECTORY` - Directory to write into. Created if missing.
@@ -497,9 +508,10 @@ same question without promising anything it might later have to take back.
 
 ```text
 outrage import [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-               [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-               [--mount-config FILE] [--no-mount-config]
-               [--no-versioning] [--on-conflict {skip,overwrite,stop}]
+               [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+               [--unmount KEY] [--mount-config FILE]
+               [--no-mount-config] [--no-versioning]
+               [--on-conflict {skip,overwrite,stop}]
                [--extensions {strip,keep}] [--hidden] [--dry-run]
                DIRECTORY [key]
 ```
@@ -512,7 +524,8 @@ outrage import [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `--no-versioning` - Do not keep the earlier version of what this command overwrites or deletes. On by default, in SQLite stores only. It removes nothing kept already, and a store's own versioning= option wins over it.
@@ -567,10 +580,10 @@ mistyped key cannot silently discard a subtree; what was left behind is reported
 
 ```text
 outrage rm [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-           [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-           [--mount-config FILE] [--no-mount-config] [--no-versioning]
-           [--recursive] [--unchanged-since TIME] [--dry-run]
-           [--limit N]
+           [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+           [--unmount KEY] [--mount-config FILE] [--no-mount-config]
+           [--no-versioning] [--recursive] [--unchanged-since TIME]
+           [--dry-run] [--limit N]
            key
 ```
 
@@ -582,7 +595,8 @@ outrage rm [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `--no-versioning` - Do not keep the earlier version of what this command overwrites or deletes. On by default, in SQLite stores only. It removes nothing kept already, and a store's own versioning= option wins over it.
@@ -629,8 +643,9 @@ open them.
 
 ```text
 outrage mounts [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-               [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-               [--mount-config FILE] [--no-mount-config]
+               [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+               [--unmount KEY] [--mount-config FILE]
+               [--no-mount-config]
 ```
 
 ### Arguments
@@ -641,7 +656,8 @@ outrage mounts [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 
@@ -658,8 +674,8 @@ table, so it answers for the stores as they are rather than for the line that wo
 
 ```text
 outrage info [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
-             [--mount-ro KEY=FILE] [--mount-docs] [--unmount KEY]
-             [--mount-config FILE] [--no-mount-config]
+             [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+             [--unmount KEY] [--mount-config FILE] [--no-mount-config]
 ```
 
 ### Arguments
@@ -670,6 +686,7 @@ outrage info [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
 - `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
 - `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
-- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the documentation the MCP server carries at outrage is not mounted here unless --mount-docs asks for it. A --mount for the same key written after this one mounts it again.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
 - `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
 - `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.

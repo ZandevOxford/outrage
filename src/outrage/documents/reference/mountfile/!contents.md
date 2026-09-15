@@ -19,122 +19,128 @@
 ### outrage.mountfile.DOCS_MOUNT *= 'outrage'*
 4145 4145
 
-### outrage.mountfile.FIELDS *= ('root-mount', 'mount', 'mount-ro')*
+### outrage.mountfile.HOME_FLAG *= '--mount-home'*
 4444 4444
 
+### outrage.mountfile.HOME_MOUNT *= 'home'*
+4646 4646
+
+### outrage.mountfile.FIELDS *= ('root-mount', 'mount', 'mount-ro')*
+4760 4760
+
 ### outrage.mountfile.MOUNT_FIELD *= 'mount'*
-4727 4727
+5043 5043
 
 ### outrage.mountfile.PATH_FIELD *= 'path'*
-4843 4843
+5159 5159
 
 ### outrage.mountfile.MOUNT_FLAG *= '--mount'*
-5183 5183
+5499 5499
 
 ### outrage.mountfile.NO_CONFIG_FLAG *= '--no-mount-config'*
-5268 5268
+5584 5584
 
 ### outrage.mountfile.READ_ONLY_FIELD *= 'mount-ro'*
-5687 5687
+6003 6003
 
 ### outrage.mountfile.READ_ONLY_FLAG *= '--mount-ro'*
-5787 5787
+6103 6103
 
 ### outrage.mountfile.ROOT_FIELD *= 'root-mount'*
-5920 5920
+6236 6236
 
 ### outrage.mountfile.ROOT_FLAG *= '--root-mount'*
-6224 6224
+6540 6540
 
 ### outrage.mountfile.TYPED_SOURCE *= 'the command line'*
-6426 6426
+6742 6742
 
 ### outrage.mountfile.UNMOUNT_FLAG *= '--unmount'*
-6561 6561
+6877 6877
 
 ### *exception* outrage.mountfile.MountFileError(code: str, \*\*details: Any)
-6833 6833
+7149 7149
 
 ### *class* outrage.mountfile.MountTable(path: Path, root: Spec | None, mounts: tuple[tuple[str, Spec], ...], read_only: tuple[tuple[str, Spec], ...])
-7244 7244
+7560 7560
 
 #### path *: Path*
-8108 8108
+8424 8424
 
 #### root *: Spec | None*
-8191 8191
+8507 8507
 
 #### mounts *: tuple[tuple[str, Spec], ...]*
-8377 8377
+8693 8693
 
 #### read_only *: tuple[tuple[str, Spec], ...]*
-8679 8679
+8995 8995
 
 #### options() → list[str]
-8963 8963
+9279 9279
 
 ### *class* outrage.mountfile.Origin(mount: str | None, flag: str, value: str, source: str)
-9151 9153
+9467 9469
 
 #### mount *: str | None*
-9981 9983
+10297 10299
 
 #### flag *: str*
-10162 10164
+10478 10480
 
 #### value *: str*
-10237 10239
+10553 10555
 
 #### source *: str*
-10313 10315
+10629 10631
 
 #### *property* read_only *: bool*
-10472 10474
+10788 10790
 
 #### *property* file *: str*
-10566 10568
+10882 10884
 
 #### *property* store *: Spec*
-10979 10981
+11295 11297
 
 ### *class* outrage.mountfile.Starter(path: Path, action: str, text: str, missing: str)
-11101 11103
+11417 11419
 
 #### path *: Path*
-11554 11556
+11870 11872
 
 #### action *: str*
-11637 11639
+11953 11955
 
 #### text *: str*
-11741 11743
+12057 12059
 
 #### missing *: str*
-11882 11884
+12198 12200
 
 #### *property* writes *: bool*
-12164 12166
+12480 12482
 
 ### outrage.mountfile.directory_in(argv: Sequence[str]) → str | None
-12255 12257
+12571 12573
 
 ### outrage.mountfile.origins(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[Origin]
-12802 12806
+13118 13122
 
 ### outrage.mountfile.plan_starter(directory: str | PathLike[str], \*, root_mount: str | None = None, mounts: Sequence[str] = (), read_only_mounts: Sequence[str] = ()) → Starter
-13841 13847
+14157 14163
 
 ### outrage.mountfile.read(path: str | PathLike[str]) → MountTable
-15501 15509
+15817 15825
 
 ### outrage.mountfile.sources(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[str]
-16129 16139
+16445 16455
 
 ### outrage.mountfile.spliced(argv: Sequence[str], \*, directory: str | PathLike[str] | None = None, front: int = 0, builtin: bool = False) → list[str]
-17694 17706
+18010 18022
 
 ### outrage.mountfile.starter_text(table: MountTable) → str
-20316 20330
+20604 20618
 
 ### outrage.mountfile.write_starter(starter: Starter) → None
-20750 20766
+21038 21054

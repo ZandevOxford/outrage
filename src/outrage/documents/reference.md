@@ -63,6 +63,11 @@ read-only at `outrage`. A store file is relative to `--dir` and a tree in
 `site-packages` is not, so it is opened by absolute path and lent to
 [`outrage.mounts.open_mounts()`](reference/mounts.md#outrage.mounts.open_mounts) through its `attached` argument.
 
+[`outrage.home`](reference/home.md#module-outrage.home) is the other external built-in: a writable SQLite store at
+`~/.outrage/home.sqlite`, owned by the mount table and shared across the
+user's projects. Keeping it behind a built-in opener preserves the rule that
+ordinary mount files are relative to `--dir`.
+
 * [outrage.store](reference/store.md)
 * [outrage.store_sqlite](reference/store_sqlite.md)
 * [outrage.store_pyarrow](reference/store_pyarrow.md)
@@ -72,6 +77,7 @@ read-only at `outrage`. A store file is relative to `--dir` and a tree in
 * [outrage.remount](reference/remount.md)
 * [outrage.mountfile](reference/mountfile.md)
 * [outrage.shipped](reference/shipped.md)
+* [outrage.home](reference/home.md)
 * [Document contents](reference/contents.md)
 * [Document titles](reference/titles.md)
 * [outrage.ingest](reference/ingest.md)

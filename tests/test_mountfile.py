@@ -615,7 +615,12 @@ def test_the_root_cannot_be_unmounted(tmp_path):
 def test_the_built_in_documentation_is_spliced_in_at_the_front(tmp_path):
     spliced = mountfile.spliced(["--dir", str(tmp_path)], builtin=True)
 
-    assert spliced == [mountfile.DOCS_FLAG, "--dir", str(tmp_path)]
+    assert spliced == [
+        mountfile.DOCS_FLAG,
+        mountfile.HOME_FLAG,
+        "--dir",
+        str(tmp_path),
+    ]
 
 
 def test_nothing_is_carried_unless_the_front_end_asks(tmp_path):
@@ -666,7 +671,7 @@ def test_the_built_in_documentation_can_be_unmounted(tmp_path):
         builtin=True,
     )
 
-    assert spliced == ["--dir", str(tmp_path)]
+    assert spliced == [mountfile.HOME_FLAG, "--dir", str(tmp_path)]
 
 
 def test_unmounting_it_where_it_is_not_carried_is_refused(tmp_path):
@@ -687,6 +692,7 @@ def test_the_default_file_is_not_what_carries_it(tmp_path):
     spliced = mountfile.spliced(["--dir", str(tmp_path), mountfile.NO_CONFIG_FLAG], builtin=True)
 
     assert mountfile.DOCS_FLAG in spliced
+    assert mountfile.HOME_FLAG in spliced
 
 
 def test_a_carried_mount_says_where_it_came_from(tmp_path):
@@ -696,6 +702,37 @@ def test_a_carried_mount_says_where_it_came_from(tmp_path):
     }
 
     assert found[mountfile.DOCS_MOUNT] == mountfile.BUILTIN_SOURCE
+    assert found[mountfile.HOME_MOUNT] == mountfile.BUILTIN_SOURCE
+
+
+def test_the_home_builtin_obeys_ordinary_override_and_unmount_precedence(tmp_path):
+    overridden = mountfile.spliced(
+        ["--dir", str(tmp_path), "--mount", f"{mountfile.HOME_MOUNT}=mine.sqlite"],
+        builtin=True,
+    )
+    removed = mountfile.spliced(
+        ["--dir", str(tmp_path), "--unmount", mountfile.HOME_MOUNT],
+        builtin=True,
+    )
+
+    assert mountfile.HOME_FLAG not in overridden
+    assert f"{mountfile.HOME_MOUNT}=mine.sqlite" in overridden
+    assert mountfile.HOME_FLAG not in removed
+
+
+def test_a_project_table_replaces_the_home_builtin(tmp_path):
+    a_table(tmp_path, '[mount]\nhome = "project-home.sqlite"\n')
+
+    spliced = mountfile.spliced(["--dir", str(tmp_path)], builtin=True)
+
+    assert mountfile.HOME_FLAG not in spliced
+    assert "home=project-home.sqlite" in spliced
+
+
+def test_the_home_flag_has_the_same_abbreviation_semantics_as_argparse(tmp_path):
+    spliced = mountfile.spliced(["--dir", str(tmp_path), "--mount-h"], builtin=True)
+
+    assert spliced.count(mountfile.HOME_FLAG) == 1
 
 
 def test_sources_names_the_files_a_run_reads_in_order(tmp_path):

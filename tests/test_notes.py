@@ -756,7 +756,7 @@ def _remounted(store, tmp_path) -> list[list[Note]]:
         before = MountedStore({keys.ROOT: store, "ref": inner})
         return [
             remount.notes_for_mount(before, "ref", replaced=True),
-            remount.notes_for_mount(before, "ref", replaced=False, shipped=True),
+            remount.notes_for_mount(before, "ref", replaced=False, builtin=True),
             remount.notes_for_mount(
                 before,
                 "new",

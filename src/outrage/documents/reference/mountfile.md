@@ -81,6 +81,15 @@ The mount point [`DOCS_FLAG`](#outrage.mountfile.DOCS_FLAG) claims. Named throug
 [`outrage.shipped`](shipped.md#module-outrage.shipped), which owns the answer, so that the splice and the
 store agree without either holding a second copy of the word.
 
+### outrage.mountfile.HOME_FLAG *= '--mount-home'*
+
+Mount the writable store shared by every project for this user. The server
+carries it by default beside the documentation; the command line opts in.
+
+### outrage.mountfile.HOME_MOUNT *= 'home'*
+
+The mount point [`HOME_FLAG`](#outrage.mountfile.HOME_FLAG) claims.
+
 ### outrage.mountfile.FIELDS *= ('root-mount', 'mount', 'mount-ro')*
 
 Every field a mount configuration may hold. Anything else in one is refused
@@ -321,9 +330,9 @@ file inserts its options, and inserting them says nothing about the ones
 already there. [`NO_CONFIG_FLAG`](#outrage.mountfile.NO_CONFIG_FLAG) is the escape from the default file,
 and is the only way to be rid of it.
 
-`builtin` is whether this front end carries the shipped documentation
-without being asked -- the server does, the command line does not. It is
-spliced in as [`DOCS_FLAG`](#outrage.mountfile.DOCS_FLAG) at the very front, ahead of the default
+`builtin` is whether this front end carries the built-in documentation
+and home store without being asked -- the server does, the command line
+does not. They are spliced in at the very front, ahead of the default
 file, so that it is an ordinary mount for every question that follows:
 `mounts.toml` naming that point overrides it, `--unmount` there removes
 it, and both by the rules already written rather than by a case for it.

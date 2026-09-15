@@ -173,7 +173,7 @@ CLI.silent(
     "run, which is why there is no mount tool on this side to warn about",
 )
 CLI.silent(
-    "remount-shipped-is-default",
+    "remount-builtin-is-default",
     "the same reason, and one more: this front end does not carry the shipped "
     "documentation unless `--mount-docs` asked for it, so being mounted by "
     "default is not a fact about this side at all",

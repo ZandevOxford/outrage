@@ -1,38 +1,47 @@
 # outrage.remount
 0 0
 
-### outrage.remount.SHIPPED *: Mapping[str, Callable[[...], Store]]* *= mappingproxy({'outrage': <function open_documents>})*
+### outrage.remount.BUILTINS *: Mapping[str, Builtin]* *= mappingproxy({'outrage': Builtin(opener=<function open_documents>, lent=True), 'home': Builtin(opener=<function open_store>, lent=False)})*
 2346 2346
 
+### *class* outrage.remount.Builtin(opener: Callable[[...], Store], lent: bool)
+2791 2791
+
+#### opener *: Callable[[...], Store]*
+3190 3190
+
+#### lent *: bool*
+3345 3345
+
 ### *class* outrage.remount.Changed(table: MountedStore, notes: tuple[Note, ...] = ())
-3221 3221
+3423 3423
 
 #### table *: MountedStore*
-3865 3865
+4067 4067
 
 #### notes *: tuple[Note, ...]*
-3935 3935
+4137 4137
 
 ### *class* outrage.remount.Live(table: MountedStore, \*, directory: str | PathLike[str] | None = None, log: EventLog | None = None, versioning: bool = True)
-4057 4057
+4259 4259
 
 #### *property* table *: MountedStore*
-5926 5926
+6128 6128
 
 #### *property* directory *: PathLike[str]*
-6070 6070
+6272 6272
 
 #### mount(key: str, \*, file: str | PathLike[str] | None = None, type: str | None = None, extensions: str | None = None, read_only: bool = False) → Changed
-6286 6286
+6488 6488
 
 #### unmount(key: str) → Changed
-8380 8382
+8360 8362
 
 #### close() → None
-8820 8824
+8800 8804
 
-### outrage.remount.notes_for_mount(after: MountedStore, prefix: str, \*, replaced: bool, shipped: bool = False, created: str | None = None) → list[Note]
-8940 8946
+### outrage.remount.notes_for_mount(after: MountedStore, prefix: str, \*, replaced: bool, builtin: bool = False, created: str | None = None) → list[Note]
+8920 8926
 
 ### outrage.remount.notes_for_unmount(after: MountedStore, prefix: str, \*, started: bool = True) → list[Note]
-10795 10803
+10773 10781

@@ -17,9 +17,9 @@ from pathlib import Path
 import pytest
 
 import outrage
+from outrage import home, mountfile, mounts, shipped
 from outrage import ingest as ingest_module
 from outrage import install as install_module
-from outrage import mountfile, mounts, shipped
 from outrage.cli import main, parse_args
 
 
@@ -2910,6 +2910,46 @@ def test_the_documentation_is_not_mounted_unless_asked(tmp_path):
 
     assert status == 0
     assert "outrage" not in output
+    assert "home" not in output
+
+
+def test_the_home_store_is_shared_only_when_the_cli_opts_in(tmp_path, monkeypatch):
+    database = tmp_path / "user" / ".outrage" / "home.sqlite"
+    monkeypatch.setattr(home, "path", lambda: database)
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    a_store(first)
+    a_store(second)
+
+    status, _ = run(
+        "set",
+        "--dir",
+        str(first),
+        mountfile.HOME_FLAG,
+        "home/shared",
+        "--content",
+        "global",
+    )
+    read_status, content = run("get", "--dir", str(second), mountfile.HOME_FLAG, "home/shared")
+    bare_status, _ = run("get", "--dir", str(first), "home/shared")
+
+    assert status == 0
+    assert read_status == 0
+    assert content == "global"
+    assert bare_status == 1
+    assert database.is_file()
+
+
+def test_mounts_reports_home_without_creating_it(tmp_path, monkeypatch):
+    database = tmp_path / "user" / ".outrage" / "home.sqlite"
+    monkeypatch.setattr(home, "path", lambda: database)
+
+    status, output = run("mounts", "--dir", str(tmp_path / "project"), mountfile.HOME_FLAG)
+
+    assert status == 0
+    assert str(database) in output
+    assert "would create" in output
+    assert not database.exists()
 
 
 def test_the_documentation_mounts_when_asked(tmp_path):
