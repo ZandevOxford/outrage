@@ -93,11 +93,15 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Self
+
+import filelock
 
 from . import bulk, keys
 from .errors import OutrageError
@@ -117,6 +121,7 @@ from .store import (
     EVERYTHING,
     UNBOUNDED,
     AuditRow,
+    BackendError,
     BoundedSubtree,
     Entry,
     Excerpt,
@@ -158,6 +163,119 @@ DEFAULT_TREE_NAME = "documents"
 #: answers with this rather than reading one. See
 #: :meth:`FilesystemStore.stored_format_version`.
 FORMAT_VERSION = 1
+
+#: The ``lock`` mount option's default: every writer of a tree in this process
+#: takes turns. See :meth:`FilesystemStore._writing`.
+LOCK_PROCESS = "process"
+
+#: The ``lock`` mount option's other value: every writer of a tree that asks for
+#: this takes turns, in whichever process, through a lock file beside the tree
+#: rather than in it.
+LOCK_INTERPROCESS = "interprocess"
+
+#: Every value the ``lock`` mount option takes.
+LOCK_MODES = (LOCK_PROCESS, LOCK_INTERPROCESS)
+
+#: How long a write waits for another on the same tree before giving up, in
+#: seconds. SQLite's wait, :data:`outrage.store_sqlite.BUSY_TIMEOUT_MS`, for the
+#: same reason: long enough that an ordinary write never meets it, short enough
+#: that a caller stuck behind something that is not ordinary hears about it.
+LOCK_TIMEOUT_SECONDS = 5.0
+
+#: What the lock file beside a tree is called: the tree's own name and this.
+LOCK_FILE_SUFFIX = ".lock"
+
+
+class _TreeLock:
+    """One tree's write lock in this process, and its lock file when a writer asks.
+
+    **The thread lock first, then the file.** Exclusion between threads never
+    depends on how the file lock treats threads, and only one thread at a time
+    ever touches the file lock, so it needs no guard of its own.
+
+    **The file is taken by the outermost unit only**, and only if that unit
+    asked for it. A nested unit is already inside whatever the outer one took,
+    which is also why a process-mode unit that calls an interprocess one takes
+    no file: the two modes do not mix, and a tree has nowhere to record which
+    one its writers agreed on.
+
+    ``filelock.FileLock`` rather than ``SoftFileLock``: it is ``flock`` on POSIX
+    and ``msvcrt`` locking on Windows, which the OS releases when the holder
+    dies, where a soft lock's file outlives a crash and blocks every writer
+    after it.
+    """
+
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.path = root.with_name(root.name + LOCK_FILE_SUFFIX)
+        self._thread = threading.RLock()
+        self._file: filelock.FileLock | None = None
+        # Both are read and written only while `_thread` is held.
+        self._depth = 0
+        self._holds_file = False
+
+    def acquire(self, *, interprocess: bool, timeout: float) -> bool:
+        """Take the lock within ``timeout`` seconds, or answer False having taken nothing."""
+        deadline = time.monotonic() + timeout
+        if not self._thread.acquire(timeout=timeout):
+            return False
+        if self._depth == 0 and interprocess:
+            try:
+                self._lock_file().acquire(timeout=max(0.0, deadline - time.monotonic()))
+            except filelock.Timeout:
+                self._thread.release()
+                return False
+            except BaseException:
+                self._thread.release()
+                raise
+            self._holds_file = True
+        self._depth += 1
+        return True
+
+    def release(self) -> None:
+        self._depth -= 1
+        try:
+            if self._depth == 0 and self._holds_file and self._file is not None:
+                self._holds_file = False
+                self._file.release()
+        finally:
+            self._thread.release()
+
+    def _lock_file(self) -> filelock.FileLock:
+        if self._file is None:
+            # A tree opened with `create=False` may have no parent yet, and a
+            # write makes the directories above it whichever way it was opened.
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._file = filelock.FileLock(self.path, thread_local=False)
+        return self._file
+
+
+#: One lock per tree in this process, keyed by the resolved root, so that every
+#: store opened on a tree shares it. Per instance would exclude nothing between
+#: a server's store and one ``bulk`` or ``shipped`` constructs on the same
+#: directory -- and for the lock file it would be worse than nothing, since
+#: ``flock`` taken twice in one process through two descriptors blocks itself.
+#: Entries are never removed: a process opens few trees, and a lock dropped
+#: while an instance still held it would let a new one past.
+_TREE_LOCKS: dict[Path, _TreeLock] = {}
+_TREE_LOCKS_GUARD = threading.Lock()
+
+
+def _tree_lock(root: Path) -> _TreeLock:
+    """The lock every store on ``root`` in this process takes to write."""
+    resolved = root.resolve()
+    with _TREE_LOCKS_GUARD:
+        if resolved not in _TREE_LOCKS:
+            _TREE_LOCKS[resolved] = _TreeLock(resolved)
+        return _TREE_LOCKS[resolved]
+
+
+class StoreBusyError(OutrageError, TimeoutError):
+    """Raised when a write waited :data:`LOCK_TIMEOUT_SECONDS` and the tree stayed busy.
+
+    Raised before the write touches anything, so a caller told this can repeat
+    the call as it was.
+    """
 
 
 class NotTextError(OutrageError, ValueError):
@@ -212,6 +330,7 @@ class FilesystemStore(FileStore):
         hidden: bool = True,
         create: bool = True,
         extensions: str = bulk.DEFAULT_EXTENSIONS,
+        lock: str = LOCK_PROCESS,
         mount_point: str | None = None,
     ) -> None:
         """Open the tree at ``root``, creating it if it is not there.
@@ -249,7 +368,15 @@ class FilesystemStore(FileStore):
         is a format the key does not spell, which does not round-trip; the keys
         *below* a document are kept in a container beside it, which is
         :data:`outrage.bulk.CONTAINER_PREFIX`.
+
+        ``lock`` is how far the write lock reaches, one of :data:`LOCK_MODES`.
+        ``process``, the default, keeps writers in this process apart and costs
+        nothing outside the tree. ``interprocess`` keeps apart every writer
+        that asks for it, in any process, and needs to write a lock file in the
+        directory *holding* the tree -- see :meth:`_writing`.
         """
+        if lock not in LOCK_MODES:
+            raise BackendError("lock-unknown", lock=lock, known=list(LOCK_MODES))
         Store.__init__(self, log=log, mount_point=mount_point)
         self.root = (
             resolve_directory() / DEFAULT_TREE_NAME if root is None else Path(root).expanduser()
@@ -264,17 +391,10 @@ class FilesystemStore(FileStore):
         # naming a mode nobody recognises is refused as the store is opened
         # and not by reading as a tree whose keys are not the ones asked for.
         self._extensions = bulk.check_extensions(extensions)
-        # Held only while a `?` is allocated. Allocating reads the level and
-        # then writes past its highest number, and two threads reading before
-        # either writes pick the same one -- which the SQLite backend keeps off
-        # with `BEGIN IMMEDIATE` and this has to keep off itself.
-        #
-        # **Within one process.** A tree has no lock a second process would
-        # see, so two of them allocating at once can still collide; a lock file
-        # would be a file in the corpus that is not a document, and the tree is
-        # the one backend whose contents somebody else is expected to be
-        # editing. Said plainly rather than papered over.
-        self._allocating = threading.Lock()
+        self.lock = lock
+        # Shared with every other store on this tree in this process; see
+        # `_writing`, the only place it is taken.
+        self._lock = _tree_lock(self.root)
         if create:
             self.root.mkdir(parents=True, exist_ok=True)
 
@@ -436,6 +556,59 @@ class FilesystemStore(FileStore):
 
     # -- writing ---------------------------------------------------------
 
+    @contextmanager
+    def _writing(self) -> Iterator[None]:
+        """Hold the tree's write lock for one unit of writing.
+
+        What a SQLite transaction gives its writers and a directory cannot:
+        **isolation between writers that take it**. A tree has no transaction,
+        so without this two writers interleave -- a ``?`` read by both before
+        either writes hands one number out twice, a key stored in two formats
+        at once can end up in neither, and a delete's prune can remove the
+        directory a write is about to land in. A unit is everything one call
+        does to the tree: a whole :meth:`store_document`, allocation, title and
+        contents included, and a whole :meth:`delete`, watermark included.
+
+        What it is not:
+
+        * **Atomic.** A process that dies inside a unit leaves what it wrote,
+          such as a document without the title stored with it. Each file is
+          still whole, which is :func:`outrage.bulk._write_file`'s doing.
+        * **Taken by readers.** Every file a read opens is whole, and a walk
+          across files was never a snapshot; locking reads would serialise
+          every listing for nothing a reader is owed.
+        * **Mandatory.** An editor, a ``git checkout`` or a sync client takes
+          no lock, and a tree is the backend somebody else is expected to edit.
+
+        **How far it reaches is** :attr:`lock`. Under ``process`` it is one
+        lock per tree per process, which is every writer in a server but not a
+        second server, nor the command line run beside it. Under
+        ``interprocess`` it is also ``flock`` on a file beside the tree --
+        ``tree.lock`` next to ``tree``, so the corpus holds nothing that is not
+        a document and every route to the tree finds the same file. That costs
+        write permission on the directory holding the tree, and **it binds only
+        writers that ask for it**: a process-mode writer and an interprocess one
+        exclude nothing between them.
+
+        One lock for the whole tree rather than one per directory. A unit
+        touches several -- the key's own, its metadata's, every parent a prune
+        removes, a recursive delete's whole subtree -- and per-directory locks
+        would need an order to take them in. A write holds the lock for
+        milliseconds, against a tool call costing far more.
+
+        Re-entrant, so a unit may call another. A wait longer than
+        :data:`LOCK_TIMEOUT_SECONDS`, for either lock, raises
+        :class:`StoreBusyError` having written nothing.
+        """
+        if not self._lock.acquire(
+            interprocess=self.lock == LOCK_INTERPROCESS, timeout=LOCK_TIMEOUT_SECONDS
+        ):
+            raise StoreBusyError("store-busy", tree=str(self.root), waited=LOCK_TIMEOUT_SECONDS)
+        try:
+            yield
+        finally:
+            self._lock.release()
+
     @_logged("store_document")
     def store_document(
         self,
@@ -455,7 +628,8 @@ class FilesystemStore(FileStore):
         atomicity for the *pair* while a concurrent reader of the tree can see
         either file at any moment anyway. What is atomic is each file, which is
         :func:`outrage.bulk._write_file`'s ``os.replace``: a write interrupted
-        halfway leaves whole files and no half of one.
+        halfway leaves whole files and no half of one. What another writer sees
+        is nothing until the whole call is done, which is :meth:`_writing`.
         """
         # Inside the logged method, deliberately: see `Store._validated`.
         parsed, content, format, title, contents, updated_at = self._validated(
@@ -467,27 +641,25 @@ class FilesystemStore(FileStore):
             encoding=encoding,
             updated_at=updated_at,
         )
-        if parsed.has_wildcard:
-            with self._allocating:
+        with self._writing():
+            if parsed.has_wildcard:
                 allocated = self._next_number(parsed.wildcard_parent)
                 parsed = keys.parse(keys.substitute_wildcard(parsed.key, allocated))
-                self._write(parsed.key, content, format, updated_at)
-        else:
             self._write(parsed.key, content, format, updated_at)
-        if title is not None:
-            self._write(
-                f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}title",
-                title,
-                "markdown",
-                updated_at,
-            )
-        if contents is not None:
-            self._write(
-                f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}contents",
-                contents,
-                "markdown",
-                updated_at,
-            )
+            if title is not None:
+                self._write(
+                    f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}title",
+                    title,
+                    "markdown",
+                    updated_at,
+                )
+            if contents is not None:
+                self._write(
+                    f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}contents",
+                    contents,
+                    "markdown",
+                    updated_at,
+                )
         return parsed.key
 
     def _write(self, key: str, content: str, format: str, updated_at: str | None = None) -> None:
@@ -596,44 +768,46 @@ class FilesystemStore(FileStore):
 
         The watermark is checked before the first ``unlink``, which is the only
         place it can be: unlinking is not undoable and there is no transaction
-        here to abandon.
+        here to abandon. The check, the walk and the unlinks are one unit under
+        :meth:`_writing`, so no write that takes the lock lands between them.
 
         A tree's timestamps are the filesystem's, so a watermark compared
         against one is comparing against an mtime rather than against something
         this store wrote. Touching a file is a change here and would not be in
         a database -- which is the honest reading for a tree a person edits.
         """
-        check_unchanged(
-            self,
-            key,
-            unchanged_since,
-            action="delete",
-            subtree=recursive,
-            key_range=key_range,
-        )
-        parsed = keys.parse(key)
-        within = _within(key_range)
-        rows = list(self._subtree_rows(parsed.key, measure=False))
+        with self._writing():
+            check_unchanged(
+                self,
+                key,
+                unchanged_since,
+                action="delete",
+                subtree=recursive,
+                key_range=key_range,
+            )
+            parsed = keys.parse(key)
+            within = _within(key_range)
+            rows = list(self._subtree_rows(parsed.key, measure=False))
 
-        # The key's own row and its whole metadata subtree: one unit, whatever
-        # the key is, because metadata has no meaning once what it describes is
-        # gone. What ``recursive`` adds is everything else below.
-        lo, hi = keys.meta_range(parsed.key)
-        below = _below(parsed.key)
-        targets = [
-            row
-            for row in rows
-            if row.key == parsed.key or lo <= row.key < hi or (recursive and below(row.key))
-        ]
+            # The key's own row and its whole metadata subtree: one unit,
+            # whatever the key is, because metadata has no meaning once what it
+            # describes is gone. What ``recursive`` adds is everything else below.
+            lo, hi = keys.meta_range(parsed.key)
+            below = _below(parsed.key)
+            targets = [
+                row
+                for row in rows
+                if row.key == parsed.key or lo <= row.key < hi or (recursive and below(row.key))
+            ]
 
-        removed = []
-        for row in targets:
-            if not within(row.sort_key):
-                continue
-            if not dry_run:
-                row.path.unlink(missing_ok=True)
-                self._prune(row.path.parent)
-            removed.append(row.key)
+            removed = []
+            for row in targets:
+                if not within(row.sort_key):
+                    continue
+                if not dry_run:
+                    row.path.unlink(missing_ok=True)
+                    self._prune(row.path.parent)
+                removed.append(row.key)
         return sorted(removed, key=keys.sort_form)
 
     def _prune(self, directory: Path) -> None:
@@ -1204,6 +1378,7 @@ class FilesystemStore(FileStore):
         filename: str | os.PathLike[str] | None = None,
         extensions: str | None = None,
         versioning: bool | None = None,
+        lock: str | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
     ) -> Self:
@@ -1222,7 +1397,9 @@ class FilesystemStore(FileStore):
         This is the backend ``extensions`` is *for*, and the only one that
         takes it: it names how a file name and a key segment line up, which is
         a question a store kept in one file does not have. None is the
-        constructor's default rather than a third mode.
+        constructor's default rather than a third mode. ``lock`` is the same
+        shape, for the same reason: a store kept in one file has its own
+        locking, and only a tree needs one supplied.
 
         ``versioning`` is refused as the base refuses it: a tree keeps no
         earlier versions, and a statement about them is a mistake to report.
@@ -1236,6 +1413,7 @@ class FilesystemStore(FileStore):
             log=log,
             mount_point=mount_point,
             **({} if extensions is None else {"extensions": extensions}),
+            **({} if lock is None else {"lock": lock}),
         )
 
     def opened_at(self, path: Path) -> Self:
@@ -1257,8 +1435,11 @@ class FilesystemStore(FileStore):
         passed over, the same way every other read of this store passes it
         over. :meth:`check_file` is what names those, and it is worth running
         before trusting a backup of a tree somebody has been editing by hand.
+
+        ``lock`` travels too: a copy written by a store that excludes other
+        processes is written under the same promise.
         """
-        return type(self)(path, hidden=self._hidden, extensions=self._extensions)
+        return type(self)(path, hidden=self._hidden, extensions=self._extensions, lock=self.lock)
 
     @property
     def stored_format_version(self) -> int:
@@ -1552,6 +1733,12 @@ def _entry(row: _Row) -> Entry:
 __all__ = [
     "DEFAULT_TREE_NAME",
     "FORMAT_VERSION",
+    "LOCK_FILE_SUFFIX",
+    "LOCK_INTERPROCESS",
+    "LOCK_MODES",
+    "LOCK_PROCESS",
+    "LOCK_TIMEOUT_SECONDS",
     "FilesystemStore",
     "NotTextError",
+    "StoreBusyError",
 ]

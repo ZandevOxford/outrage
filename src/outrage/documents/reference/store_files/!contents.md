@@ -13,80 +13,98 @@
 ### outrage.store_files.FORMAT_VERSION *= 1*
 6105 6105
 
-### *class* outrage.store_files.FilesystemStore(root: str | PathLike[str] | None = None, \*, log: EventLog | None = None, hidden: bool = True, create: bool = True, extensions: str = bulk.DEFAULT_EXTENSIONS, mount_point: str | None = None)
+### outrage.store_files.LOCK_FILE_SUFFIX *= '.lock'*
 6515 6515
 
+### outrage.store_files.LOCK_INTERPROCESS *= 'interprocess'*
+6644 6644
+
+### outrage.store_files.LOCK_MODES *= ('process', 'interprocess')*
+6878 6878
+
+### outrage.store_files.LOCK_PROCESS *= 'process'*
+6990 6990
+
+### outrage.store_files.LOCK_TIMEOUT_SECONDS *= 5.0*
+7164 7164
+
+### *class* outrage.store_files.FilesystemStore(root: str | PathLike[str] | None = None, \*, log: EventLog | None = None, hidden: bool = True, create: bool = True, extensions: str = bulk.DEFAULT_EXTENSIONS, lock: str = LOCK_PROCESS, mount_point: str | None = None)
+7571 7571
+
 #### default_filename *: ClassVar[str]* *= 'documents'*
-7471 7471
+8609 8609
 
 #### backend_name *: ClassVar[str]* *= 'files'*
-7974 7974
+9112 9112
 
 #### format_version *: ClassVar[int]* *= 1*
-8343 8343
+9481 9481
 
 #### writable *: ClassVar[bool]* *= True*
-8961 8961
+10099 10099
 
 #### versioned *: ClassVar[bool]* *= False*
-9570 9570
+10708 10708
 
 #### close() → None
-10106 10106
+11244 11244
 
 #### located(key: str, format: str | None = None) → Path | None
-10389 10391
+11527 11529
 
 #### store_document(key: str, content: str, format: str | None = None, \*, title: str | None = None, contents: str | None = None, encoding: str | None = None, updated_at: str | None = None) → str
-11611 11615
+12749 12753
 
 #### delete(key: str, recursive: bool = False, \*, key_range: KeyRange = UNBOUNDED, unchanged_since: str | None = None, dry_run: bool = False) → list[str]
-13000 13006
+14227 14233
 
 #### exists(key: str) → bool
-14649 14657
+15997 16005
 
 #### level_entry(key: str) → Entry | None
-14998 15008
+16346 16356
 
 #### descendant_count(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → int
-15464 15476
+16812 16824
 
 #### subtree_totals(key: str, \*, key_range: KeyRange = UNBOUNDED, chars: bool = False) → SubtreeTotals
-16276 16290
+17624 17638
 
 #### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
-17604 17620
+18952 18968
 
 #### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
-18891 18909
+20239 20257
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-20397 20417
+21745 21765
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
-21720 21742
+23068 23090
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-22849 22873
+24197 24221
 
-#### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
-24008 24034
+#### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, lock: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
+25356 25382
 
 #### opened_at(path: Path) → Self
-26259 26287
+27875 27903
 
 #### *property* stored_format_version *: int*
-27532 27562
+29260 29290
 
 #### audit_rows() → Iterator[AuditRow]
-28161 28191
+29889 29919
 
 #### check_file(report: Report) → None
-28702 28734
+30430 30462
 
 #### repair() → list[Repaired]
-29267 29301
+30995 31029
 
 ### *exception* outrage.store_files.NotTextError(code: str, \*\*details: Any)
-29824 29860
+31552 31588
+
+### *exception* outrage.store_files.StoreBusyError(code: str, \*\*details: Any)
+32158 32194

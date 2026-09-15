@@ -925,6 +925,16 @@ def _files_not_text(name: Namer, /, *, key: str, path: str, **_: Any) -> str:
     )
 
 
+@template("store-busy")
+def _store_busy(name: Namer, /, *, tree: str, waited: float, **_: Any) -> str:
+    return (
+        f"the tree {tree!r} is busy: this write waited {waited:g} seconds for "
+        f"another to finish and stopped rather than hang, so nothing was "
+        f"written. Try again; a write that keeps meeting this means something "
+        f"is holding the tree far longer than a write takes"
+    )
+
+
 # -- bulk import and export ------------------------------------------------
 
 
@@ -1642,6 +1652,29 @@ def _backend_takes_no_versioning(
         f"the {backend} store{about} cannot be asked for versioning={versioning}: "
         f"only a SQLite store keeps the versions a write replaces, so this one "
         f"has none to switch on or off. Drop the option for this store."
+    )
+
+
+@template("backend-takes-no-lock")
+def _backend_takes_no_lock(
+    name: Namer, /, *, backend: str, filename: str, lock: str, **_: Any
+) -> str:
+    about = f" {filename!r}" if filename else ""
+    return (
+        f"the {backend} store{about} cannot be asked for lock={lock}: a store "
+        f"kept in one file locks its own writes, and only a directory of files "
+        f"needs a lock supplied. Mount it with `type=files` if it is a tree, or "
+        f"drop the option."
+    )
+
+
+@template("lock-unknown")
+def _lock_unknown(name: Namer, /, *, lock: str, known: Any, **_: Any) -> str:
+    listed = ", ".join(str(one) for one in known)
+    return (
+        f"there is no lock={lock!r}. There is: {listed}. `process` keeps apart "
+        f"the writers in one process; `interprocess` keeps apart every process "
+        f"writing the tree that asks for it, through a lock file beside the tree."
     )
 
 

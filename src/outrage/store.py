@@ -1821,6 +1821,7 @@ class FileStore(Store):
         filename: str | os.PathLike[str] | None = None,
         extensions: str | None = None,
         versioning: bool | None = None,
+        lock: str | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
     ) -> Self:
@@ -1855,7 +1856,18 @@ class FileStore(Store):
         version is still a statement about that store, and whoever typed it
         meant something by it. None is no statement, and a store that can
         version then does.
+
+        ``lock`` is ``extensions``' shape exactly: how far a tree's write lock
+        reaches, which a store kept in one file answers with its own locking,
+        so only :class:`~outrage.store_files.FilesystemStore` takes it.
         """
+        if lock is not None:
+            raise BackendError(
+                "backend-takes-no-lock",
+                backend=cls.backend_name,
+                filename="" if filename is None else str(filename),
+                lock=lock,
+            )
         if extensions is not None:
             raise BackendError(
                 "backend-takes-no-extensions",
@@ -2260,6 +2272,7 @@ def default_store(
     extensions: str | None = None,
     versioning: str | None = None,
     versioning_default: bool = True,
+    lock: str | None = None,
     log: EventLog | None = None,
     mount_point: str | None = None,
 ) -> FileStore:
@@ -2280,7 +2293,8 @@ def default_store(
     ``extensions`` is the mount option of the same name, and is carried here
     for the same reason ``backend`` is: it is what an argument said, and the
     backend it reaches either takes it or refuses it --
-    :meth:`FileStore.in_directory` is where that happens.
+    :meth:`FileStore.in_directory` is where that happens. ``lock`` is carried
+    the same way and for the same reason.
 
     ``versioning`` is the mount option too, as typed -- :data:`VERSIONING_ON`,
     :data:`VERSIONING_OFF` or None -- and ``versioning_default`` is what a run
@@ -2299,6 +2313,7 @@ def default_store(
         filename=filename,
         extensions=extensions,
         versioning=stated,
+        lock=lock,
         log=log,
         mount_point=mount_point,
     )
@@ -2322,6 +2337,7 @@ def open_store(
     extensions: str | None = None,
     versioning: str | None = None,
     versioning_default: bool = True,
+    lock: str | None = None,
     log: EventLog | None = None,
     mount_point: str | None = None,
 ) -> Iterator[FileStore]:
@@ -2333,6 +2349,7 @@ def open_store(
         extensions=extensions,
         versioning=versioning,
         versioning_default=versioning_default,
+        lock=lock,
         log=log,
         mount_point=mount_point,
     )

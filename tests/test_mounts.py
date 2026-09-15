@@ -1138,6 +1138,36 @@ def test_a_versioning_value_that_is_neither_word_is_refused(tmp_path):
             pass
 
 
+def test_a_spec_carries_a_lock_and_renders_it_back():
+    spec = Spec(Path("docs"), "files", None, None, "interprocess")
+    assert parse_options("docs,type=files,lock=interprocess") == spec
+    assert unparse(spec) == "docs,type=files,lock=interprocess"
+
+
+def test_a_tree_opens_under_the_lock_its_mount_names(tmp_path):
+    """Named at a mount and at the root alike; left out, the default."""
+    with open_mounts(
+        tmp_path,
+        ["plain=plain,type=files", "shared=shared,type=files,lock=interprocess"],
+        root_mount="documents,type=files,lock=process",
+    ) as table:
+        locks = {mount.name: mount.store.lock for mount in table}
+    assert locks == {"/": "process", "plain": "process", "shared": "interprocess"}
+
+
+def test_a_store_kept_in_one_file_refuses_a_lock(tmp_path):
+    """Refused rather than ignored, like `extensions`: somebody meant it."""
+    with raises_rendered(BackendError, "cannot be asked for lock=process"):
+        with open_mounts(tmp_path, ["ref=ref.sqlite,lock=process"]):
+            pass
+
+
+def test_a_lock_that_is_neither_mode_is_refused(tmp_path):
+    with raises_rendered(BackendError, "there is no lock='shared'"):
+        with open_mounts(tmp_path, ["docs=tree,type=files,lock=shared"]):
+            pass
+
+
 def test_a_named_backend_that_does_not_exist_is_refused(tmp_path):
     """Unlike an unrecognised extension, which falls back to the default.
 

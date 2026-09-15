@@ -56,6 +56,20 @@ for the same kind of reason.
 A backend that keeps its store in a file has no such question, and refuses
 this rather than ignoring it -- [`outrage.store.FileStore.in_directory()`](store.md#outrage.store.FileStore.in_directory).
 
+### outrage.mounts.LOCK_OPTION *= 'lock'*
+
+The option that says how far a tree's write lock reaches:
+[`outrage.store_files.LOCK_PROCESS`](store_files.md#outrage.store_files.LOCK_PROCESS), the default, or
+[`outrage.store_files.LOCK_INTERPROCESS`](store_files.md#outrage.store_files.LOCK_INTERPROCESS).
+
+**Said at the mount for the reason** `extensions` **is**: a plain
+directory has nowhere to record how it is written, and a marker in it would
+be a file that is not a document. It follows that every writer of one tree
+has to be told the same thing -- a process-mode writer and an interprocess
+one exclude nothing between them -- and nothing can check that they were.
+Only a tree takes it, and every other backend refuses it --
+[`outrage.store.FileStore.in_directory()`](store.md#outrage.store.FileStore.in_directory).
+
 ### outrage.mounts.MOUNT_KIND *= 'mount'*
 
 The `kind` a listing reports for a key that is a mount point. A fourth
@@ -64,7 +78,7 @@ none of the three: it may hold content, and it always has a store behind it.
 A caller that does not know the word still learns that the key exists, which
 is the part that matters for navigating to it.
 
-### outrage.mounts.OPTIONS *= ('type', 'extensions', 'versioning')*
+### outrage.mounts.OPTIONS *= ('type', 'extensions', 'versioning', 'lock')*
 
 Every option a spec may carry. Anything else is refused rather than ignored,
 which is the rule `mounts.toml` already follows for a field it does not
@@ -831,7 +845,7 @@ an answer rather than an empty result. Such a segment is still
 *counted* -- totals describe the whole collection and have never
 depended on where the reader had got to.
 
-### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
+### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lock: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -862,6 +876,11 @@ backend's own default. Only a tree has an answer -- see
 
 Whether this store keeps earlier versions, when the argument said; else
 whatever the run defaults to. See [`VERSIONING_OPTION`](#outrage.mounts.VERSIONING_OPTION).
+
+#### lock *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+How far a tree's write lock reaches, when the argument said; else the
+backend's own default. See [`LOCK_OPTION`](#outrage.mounts.LOCK_OPTION).
 
 #### opened(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [FileStore](store.md#outrage.store.FileStore)
 

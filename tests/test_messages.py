@@ -76,7 +76,17 @@ def _raises() -> list[tuple[str, int, ast.Call]]:
 #: Stand-in details by shape rather than by meaning. A key has to be a string a
 #: namer can parse, a count has to survive arithmetic, and a plural has to be
 #: iterable; nothing here is about what the value would really be.
-_COUNTS = {"beneath", "segments", "limit", "length", "found", "expected", "occurrence", "offset"}
+_COUNTS = {
+    "beneath",
+    "segments",
+    "limit",
+    "length",
+    "found",
+    "expected",
+    "occurrence",
+    "offset",
+    "waited",
+}
 _PLURALS = {"mounts"}
 
 

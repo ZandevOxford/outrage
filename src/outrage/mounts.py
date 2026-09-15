@@ -144,11 +144,24 @@ EXTENSIONS_OPTION = "extensions"
 #: other refuses it -- :meth:`outrage.store.FileStore.in_directory`.
 VERSIONING_OPTION = "versioning"
 
+#: The option that says how far a tree's write lock reaches:
+#: :data:`outrage.store_files.LOCK_PROCESS`, the default, or
+#: :data:`outrage.store_files.LOCK_INTERPROCESS`.
+#:
+#: **Said at the mount for the reason** ``extensions`` **is**: a plain
+#: directory has nowhere to record how it is written, and a marker in it would
+#: be a file that is not a document. It follows that every writer of one tree
+#: has to be told the same thing -- a process-mode writer and an interprocess
+#: one exclude nothing between them -- and nothing can check that they were.
+#: Only a tree takes it, and every other backend refuses it --
+#: :meth:`outrage.store.FileStore.in_directory`.
+LOCK_OPTION = "lock"
+
 #: Every option a spec may carry. Anything else is refused rather than ignored,
 #: which is the rule ``mounts.toml`` already follows for a field it does not
 #: know: a mount that quietly did something other than what it says is the
 #: failure a mount configuration is least able to notice.
-OPTIONS = (TYPE_OPTION, EXTENSIONS_OPTION, VERSIONING_OPTION)
+OPTIONS = (TYPE_OPTION, EXTENSIONS_OPTION, VERSIONING_OPTION, LOCK_OPTION)
 
 #: The ``kind`` a listing reports for a key that is a mount point. A fourth
 #: kind beside 'document', 'metadata' and 'implicit', because a mount point is
@@ -1852,6 +1865,9 @@ class Spec:
     versioning: str | None = None
     """Whether this store keeps earlier versions, when the argument said; else
     whatever the run defaults to. See :data:`VERSIONING_OPTION`."""
+    lock: str | None = None
+    """How far a tree's write lock reaches, when the argument said; else the
+    backend's own default. See :data:`LOCK_OPTION`."""
 
     def opened(
         self,
@@ -1881,6 +1897,7 @@ class Spec:
             extensions=self.extensions,
             versioning=self.versioning,
             versioning_default=versioning,
+            lock=self.lock,
             log=log,
             mount_point=mount_point,
         )
@@ -1932,6 +1949,7 @@ def parse_options(value: str, *, spec: str | None = None) -> Spec:
         options.get(TYPE_OPTION),
         options.get(EXTENSIONS_OPTION),
         options.get(VERSIONING_OPTION),
+        options.get(LOCK_OPTION),
     )
 
 
@@ -1960,6 +1978,7 @@ def unparse(spec: Spec) -> str:
         (TYPE_OPTION, spec.type),
         (EXTENSIONS_OPTION, spec.extensions),
         (VERSIONING_OPTION, spec.versioning),
+        (LOCK_OPTION, spec.lock),
     ]
     return file + "".join(
         f"{OPTION_DELIMITER}{name}{OPTION_ASSIGNMENT}{value}"
@@ -2139,6 +2158,7 @@ def open_mounts(
 
 __all__ = [
     "EXTENSIONS_OPTION",
+    "LOCK_OPTION",
     "MOUNT_KIND",
     "OPTIONS",
     "OPTION_ASSIGNMENT",

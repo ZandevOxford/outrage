@@ -52,6 +52,7 @@ from . import store as store_module
 from .errors import OutrageError
 from .mounts import (
     EXTENSIONS_OPTION,
+    LOCK_OPTION,
     OPTION_DELIMITER,
     OPTIONS,
     SPEC_DELIMITER,
@@ -630,6 +631,7 @@ def _spec(value: object, *, field: str, path: Path) -> Spec | None:
         value.get(TYPE_OPTION),
         value.get(EXTENSIONS_OPTION),
         value.get(VERSIONING_OPTION),
+        value.get(LOCK_OPTION),
     )
 
 

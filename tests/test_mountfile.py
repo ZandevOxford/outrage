@@ -153,6 +153,19 @@ def test_an_entry_field_exists_for_every_option_a_spec_carries(tmp_path):
     assert set(mounts.OPTIONS) <= set(mountfile._ENTRY_FIELDS)
 
 
+def test_an_entry_can_name_a_trees_lock(tmp_path):
+    path = write(
+        tmp_path / "mounts.toml",
+        '[mount]\ntree = { path = "tree", type = "files", lock = "interprocess" }\n',
+    )
+
+    table = mountfile.read(path)
+    assert dict(table.mounts) == {
+        "tree": mounts.Spec(Path("tree"), "files", None, None, "interprocess")
+    }
+    assert table.options() == ["--mount", "tree=tree,type=files,lock=interprocess"]
+
+
 def test_an_entry_that_says_something_no_mount_can_say_is_refused(tmp_path):
     """Refused rather than ignored, and naming the file, like every field here.
 

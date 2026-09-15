@@ -21,7 +21,7 @@ classifiers = [
 # named so that the wheel and the sdist carry it.
 license = "MIT"
 license-files = ["LICENSE"]
-dependencies = ["mcp>=1.2", "pydantic>=2", "tomlkit>=0.13"]
+dependencies = ["filelock>=3.12", "mcp>=1.2", "pydantic>=2", "tomlkit>=0.13"]
 
 [project.urls]
 # The same repository twice, because a package index shows them as separate

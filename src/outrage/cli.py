@@ -43,6 +43,7 @@ from . import (
     mounts,
     shipped,
     store,
+    store_files,
 )
 from . import config as config_module
 from .errors import OutrageError
@@ -1266,7 +1267,10 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
             "a key the same string, for a bundle whose documents link to each "
             f"other by name. A SQLite store also takes {mounts.VERSIONING_OPTION}=, "
             f"one of {', '.join(store.VERSIONING_SETTINGS)}, over the run's "
-            "default. Repeatable. Reads, writes, surveys and recursive "
+            f"default. A tree takes {mounts.LOCK_OPTION}=, one of "
+            f"{', '.join(store_files.LOCK_MODES)}: `interprocess` keeps writers "
+            "in other processes apart too, and every writer of the tree has to "
+            "say it. Repeatable. Reads, writes, surveys and recursive "
             "deletes cross mount boundaries."
         ),
     )

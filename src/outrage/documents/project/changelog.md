@@ -2,6 +2,29 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+A directory-of-files store now locks its writes. Two writers on one tree could
+hand out the same `?` number twice, so that one document replaced the other;
+leave a key stored in two formats at once with no file at all; attach one
+writer's title to the other's document; or delete a directory another write was
+creating a file in. Each store and delete now holds a lock on the whole tree
+for its duration, shared by every store opened on that tree in the process,
+where before only `?` allocation was locked and only within one store object. A
+write that waits five seconds for the lock gives up with `store-busy` and
+writes nothing. Reads take no lock.
+
+A tree mount takes a new `lock` option. `lock=process`, the default, is the
+above. `lock=interprocess` also locks a file beside the tree, `tree.lock` next
+to `tree`, so that separate processes writing the same tree take turns: several
+MCP servers and the command line, say. Every process writing the tree has to
+say `interprocess`, since a writer that does not takes no file lock. The lock
+file needs write access to the directory holding the tree. Every other backend
+refuses the option. The option is written `docs,type=files,lock=interprocess`
+on the command line and `lock = "interprocess"` in `mounts.toml`.
+
+`filelock` is a new dependency.
+
 ## 0.14.0 - 2026-09-14
 
 A `.parquet` store file is now read through DuckDB rather than pyarrow, and it

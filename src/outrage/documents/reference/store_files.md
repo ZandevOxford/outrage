@@ -105,7 +105,33 @@ marker in the tree recording it and [`FilesystemStore.stored_format_version`](#o
 answers with this rather than reading one. See
 [`FilesystemStore.stored_format_version()`](#outrage.store_files.FilesystemStore.stored_format_version).
 
-### *class* outrage.store_files.FilesystemStore(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, hidden: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, create: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = bulk.DEFAULT_EXTENSIONS, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
+### outrage.store_files.LOCK_FILE_SUFFIX *= '.lock'*
+
+What the lock file beside a tree is called: the tree's own name and this.
+
+### outrage.store_files.LOCK_INTERPROCESS *= 'interprocess'*
+
+The `lock` mount option's other value: every writer of a tree that asks for
+this takes turns, in whichever process, through a lock file beside the tree
+rather than in it.
+
+### outrage.store_files.LOCK_MODES *= ('process', 'interprocess')*
+
+Every value the `lock` mount option takes.
+
+### outrage.store_files.LOCK_PROCESS *= 'process'*
+
+The `lock` mount option's default: every writer of a tree in this process
+takes turns. See `FilesystemStore._writing()`.
+
+### outrage.store_files.LOCK_TIMEOUT_SECONDS *= 5.0*
+
+How long a write waits for another on the same tree before giving up, in
+seconds. SQLite's wait, [`outrage.store_sqlite.BUSY_TIMEOUT_MS`](store_sqlite.md#outrage.store_sqlite.BUSY_TIMEOUT_MS), for the
+same reason: long enough that an ordinary write never meets it, short enough
+that a caller stuck behind something that is not ordinary hears about it.
+
+### *class* outrage.store_files.FilesystemStore(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, hidden: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, create: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = bulk.DEFAULT_EXTENSIONS, lock: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = LOCK_PROCESS, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`FileStore`](store.md#outrage.store.FileStore)
 
@@ -188,7 +214,8 @@ otherwise by writing to a staging directory and renaming would buy
 atomicity for the *pair* while a concurrent reader of the tree can see
 either file at any moment anyway. What is atomic is each file, which is
 `outrage.bulk._write_file()`'s `os.replace`: a write interrupted
-halfway leaves whole files and no half of one.
+halfway leaves whole files and no half of one. What another writer sees
+is nothing until the whole call is done, which is `_writing()`.
 
 #### delete(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
@@ -207,7 +234,8 @@ the shape of the tree without being visible in the namespace.
 
 The watermark is checked before the first `unlink`, which is the only
 place it can be: unlinking is not undoable and there is no transaction
-here to abandon.
+here to abandon. The check, the walk and the unlinks are one unit under
+`_writing()`, so no write that takes the lock lands between them.
 
 A tree's timestamps are the filesystem's, so a watermark compared
 against one is comparing against an mtime rather than against something
@@ -322,7 +350,7 @@ share theirs: the survey, its count and the list of what it could not
 see have to agree about what was in range, and two expressions of one
 predicate are two chances to disagree.
 
-#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
+#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lock: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
 The tree `filename` names inside a store directory.
 
@@ -339,7 +367,9 @@ without a name sits beside the store files rather than being one.
 This is the backend `extensions` is *for*, and the only one that
 takes it: it names how a file name and a key segment line up, which is
 a question a store kept in one file does not have. None is the
-constructor's default rather than a third mode.
+constructor's default rather than a third mode. `lock` is the same
+shape, for the same reason: a store kept in one file has its own
+locking, and only a tree needs one supplied.
 
 `versioning` is refused as the base refuses it: a tree keeps no
 earlier versions, and a statement about them is a mistake to report.
@@ -364,6 +394,9 @@ symbolic link, a file that is not text, a name no key spells -- is
 passed over, the same way every other read of this store passes it
 over. [`check_file()`](#outrage.store_files.FilesystemStore.check_file) is what names those, and it is worth running
 before trusting a backup of a tree somebody has been editing by hand.
+
+`lock` travels too: a copy written by a store that excludes other
+processes is written under the same promise.
 
 #### *property* stored_format_version *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
@@ -416,3 +449,12 @@ Raised when a file in the tree does not hold UTF-8 text.
 The store holds text. A file that is not text is reported rather than
 mangled into it -- the same answer [`outrage.bulk.import_tree()`](bulk.md#outrage.bulk.import_tree) gives
 for the same file, one layer up.
+
+### *exception* outrage.store_files.StoreBusyError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`TimeoutError`](https://docs.python.org/3/builtins/exceptions.html#TimeoutError)
+
+Raised when a write waited [`LOCK_TIMEOUT_SECONDS`](#outrage.store_files.LOCK_TIMEOUT_SECONDS) and the tree stayed busy.
+
+Raised before the write touches anything, so a caller told this can repeat
+the call as it was.
