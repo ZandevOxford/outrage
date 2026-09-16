@@ -281,13 +281,16 @@ class MissingMeta:
     what a caller needs to decide whether to go and look."""
     sample: list[str]
     """Up to a requested number of their keys. The count is exact; this is not."""
-    selection_documents: int
+    selection_documents: int | None = None
     """Documents in the whole **selection**, not in the window -- which is why
     the name says so. The three fields above describe one page's stretch of the
     store and these two describe the subtree it was cut from, and no caller
-    should be able to read one as the other by picking a short name."""
-    selection_carried: dict[str, int]
+    should be able to read one as the other by picking a short name. ``None``
+    when the caller did not request coverage."""
+    selection_carried: dict[str, int] | None = None
     """How many of ``selection_documents`` carry each name asked for.
+
+    ``None`` when the caller did not request coverage.
 
     **Counted, never derived.** Subtracting from a count of *values* gives the
     wrong answer and can go negative: a value may sit on a key that holds no
@@ -1710,8 +1713,13 @@ class Store(ABC):
         window: KeyRange = UNBOUNDED,
         meta_name: str | Sequence[str] = "title",
         sample: int = 0,
+        coverage: bool = False,
     ) -> MissingMeta:
         """What a metadata survey could not see, over exactly one page's window.
+
+        ``coverage`` adds counts for the whole selection. It is off by default
+        because each metadata name adds a selection-wide scan, while the three
+        window fields above are the bounded warning every survey needs.
 
         **Two ranges, measured against two different things**, and a document
         has to satisfy both. ``key_range`` is measured against a document's own

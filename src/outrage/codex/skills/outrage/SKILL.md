@@ -12,6 +12,10 @@ The tools carry the key grammar and argument rules. `outrage/` is the mounted,
 read-only Outrage manual rather than this project's store; its
 `outrage/workflow` document has detailed store-working guidance.
 
+For a large store, first use `list_keys` with `descendant_counts` to find the
+large branches, then narrow the survey. Metadata `coverage` scans the whole
+selection, so ask for it only when needed and only once while paging.
+
 For specialised operations, read only the matching local reference:
 `references/search.md`, `references/annotate.md`, or
 `references/backfill.md`.

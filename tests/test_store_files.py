@@ -244,7 +244,7 @@ def test_a_store_and_a_tree_answer_every_read_identically(sqlite, tree):
                 sqlite,
                 tree,
                 lambda s, t=subtree, r=key_range, m=meta, w=window: s.missing_meta_stats(
-                    t, key_range=r, window=w, meta_name=m, sample=3
+                    t, key_range=r, window=w, meta_name=m, sample=3, coverage=True
                 ),
             )
 

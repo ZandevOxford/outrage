@@ -307,227 +307,227 @@
 ### outrage.store.MetaReader
 48780 48802
 
-### *class* outrage.store.MissingMeta(total: int, total_chars: int, sample: list[str], selection_documents: int, selection_carried: dict[str, int])
+### *class* outrage.store.MissingMeta(total: int, total_chars: int, sample: list[str], selection_documents: int | None = None, selection_carried: dict[str, int] | None = None)
 49711 49733
 
 #### total *: int*
-50683 50705
+50827 50849
 
 #### total_chars *: int*
-50823 50845
+50967 50989
 
 #### sample *: list[str]*
-51030 51052
+51174 51196
 
-#### selection_documents *: int*
-51244 51266
+#### selection_documents *: int | None*
+51388 51410
 
-#### selection_carried *: dict[str, int]*
-51621 51643
+#### selection_carried *: dict[str, int] | None*
+51879 51901
 
 ### *class* outrage.store.Page(items: list[T], returned: int, total: int, total_chars: int, next_cursor: str | None)
-52501 52523
+52874 52896
 
 #### items *: list[T]*
-53434 53456
+53807 53829
 
 #### returned *: int*
-53515 53537
+53888 53910
 
 #### total *: int*
-53616 53638
+53989 54011
 
 #### total_chars *: int*
-53761 53783
+54134 54156
 
 #### next_cursor *: str | None*
-54071 54093
+54444 54466
 
 #### *property* truncated *: bool*
-54279 54301
+54652 54674
 
 ### *exception* outrage.store.PatternNotFoundError(code: str, \*\*details: Any)
-54665 54687
+55038 55060
 
 ### *exception* outrage.store.ReadOnlyStoreError(code: str, \*\*details: Any)
-55067 55089
+55440 55462
 
 ### outrage.store.SearchCombination
-55940 55962
+56313 56335
 
 ### *class* outrage.store.SearchCriterion(pattern: str, match: Literal['contains', 'line', 'regex'], target: Literal['document', 'metadata'], meta_name: tuple[str, ...] | None = None)
-56137 56159
+56510 56532
 
 #### pattern *: str*
-56801 56823
+57174 57196
 
 #### match *: Literal['contains', 'line', 'regex']*
-56879 56901
+57252 57274
 
 #### target *: Literal['document', 'metadata']*
-56996 57018
+57369 57391
 
 #### meta_name *: tuple[str, ...] | None*
-57109 57131
+57482 57504
 
 ### *class* outrage.store.SearchPage(matches: tuple[DocumentMatch, ...], matched: int, matched_chars: int, scanned: int, total_candidates: int, total_candidate_chars: int, next_cursor: str | None)
-57324 57346
+57697 57719
 
 #### matches *: tuple[DocumentMatch, ...]*
-58353 58375
+58726 58748
 
 #### matched *: int*
-58487 58509
+58860 58882
 
 #### matched_chars *: int*
-58566 58588
+58939 58961
 
 #### scanned *: int*
-58651 58673
+59024 59046
 
 #### total_candidates *: int*
-58730 58752
+59103 59125
 
 #### total_candidate_chars *: int*
-58818 58840
+59191 59213
 
 #### next_cursor *: str | None*
-58911 58933
+59284 59306
 
 ### outrage.store.SearchTarget
-59058 59080
+59431 59453
 
 ### *class* outrage.store.Store(\*, log: EventLog | None = None, mount_point: str | None = None)
-59255 59277
+59628 59650
 
 #### writable *: ClassVar[bool]* *= True*
-60644 60666
+61017 61039
 
 #### versioned *: ClassVar[bool]* *= False*
-61290 61312
+61663 61685
 
 #### writes_deferred *: ClassVar[bool]* *= False*
-61826 61848
+62199 62221
 
 #### backend_name *: ClassVar[str]*
-62372 62394
+62745 62767
 
 #### *abstractmethod* close() → None
-62729 62751
+63102 63124
 
 #### *abstractmethod* store_document(key: str, content: str, format: str | None = None, \*, title: str | None = None, contents: str | None = None, encoding: str | None = None, updated_at: str | None = None) → str
-63107 63131
+63480 63504
 
 #### copy_from(source: Store, subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, prefix: str | None = None, reroot: bool = False, on_conflict: str = SKIP, unchanged_since: str | None = None, dry_run: bool = False, cursor: str | None = None, limit: int | None = None) → Generator[Transfer, None, str | None]
-66380 66406
+66753 66779
 
 #### located(key: str, format: str | None = None) → Path | None
-71700 71728
+72073 72101
 
 #### *abstractmethod* delete(key: str, recursive: bool = False, \*, key_range: KeyRange = UNBOUNDED, unchanged_since: str | None = None, dry_run: bool = False) → list[str]
-72642 72672
+73015 73045
 
 #### *abstractmethod* descendant_count(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → int
-75513 75545
+75886 75918
 
 #### latest_change(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → str | None
-77271 77305
+77644 77678
 
 #### subtree_totals(key: str, \*, key_range: KeyRange = UNBOUNDED, chars: bool = False) → SubtreeTotals
-79276 79312
+79649 79685
 
 #### *abstractmethod* exists(key: str) → bool
-81991 82029
+82364 82402
 
 #### *abstractmethod* level_entry(key: str) → Entry | None
-82503 82543
+82876 82916
 
 #### *abstractmethod* retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
-83388 83430
+83761 83803
 
 #### *abstractmethod* list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
-85110 85154
+85483 85527
 
 #### last_child(key: str) → str | None
-88260 88306
+88633 88679
 
 #### *abstractmethod* get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-89976 90024
+90349 90397
 
 #### find_documents(subtree: BoundedSubtree = EVERYTHING, \*, criteria: Sequence[SearchCriterion], combine: Literal['any', 'all'] = 'any', key_range: KeyRange = UNBOUNDED, cursor: str | None = None, scan_limit: int | None = None) → SearchPage
-92159 92209
+92532 92582
 
-#### *abstractmethod* missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
-93411 93463
+#### *abstractmethod* missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0, coverage: bool = False) → MissingMeta
+93784 93836
 
 #### *abstractmethod* keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-95271 95325
+95931 95985
 
 ### *exception* outrage.store.StoreFileError(code: str, \*\*details: Any)
-96482 96538
+97142 97198
 
 ### *class* outrage.store.SubtreeTotals(keys: int, documents: int, chars: int | None)
-97231 97287
+97891 97947
 
 #### keys *: int*
-98288 98344
+98948 99004
 
 #### documents *: int*
-98866 98922
+99526 99582
 
 #### chars *: int | None*
-99450 99506
+100110 100166
 
 ### *class* outrage.store.Transfer(action: str, key: str | None, path: Path | None, reason: str | None = None, characters: int = 0, error: OutrageError | None = None)
-99989 100045
+100649 100705
 
 #### action *: str*
-102745 102801
+103405 103461
 
 #### key *: str | None*
-102822 102878
+103482 103538
 
 #### path *: Path | None*
-102961 103017
+103621 103677
 
 #### reason *: str | None*
-103109 103165
+103769 103825
 
 #### characters *: int*
-103251 103307
+103911 103967
 
 #### error *: OutrageError | None*
-103333 103389
+103993 104049
 
 ### outrage.store.default_store(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, backend: str | None = None, extensions: str | None = None, versioning: str | None = None, versioning_default: bool = True, lock: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → FileStore
-103468 103524
+104128 104184
 
 ### outrage.store.default_store_file() → str
-106676 106734
+107336 107394
 
 ### outrage.store.entry_kind(key: str) → str
-107332 107392
+107992 108052
 
 ### outrage.store.is_pattern(filename: str | PathLike[str] | None) → bool
-108007 108069
+108667 108729
 
 ### outrage.store.meta_reader(scope: str) → Callable[[str, str | None, str | None], tuple[str | None, str | None]]
-108750 108814
+109410 109474
 
 ### outrage.store.open_store(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, backend: str | None = None, extensions: str | None = None, versioning: str | None = None, versioning_default: bool = True, lock: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Iterator[FileStore]
-110443 110509
+111103 111169
 
 ### outrage.store.pattern_matches(directory: str | PathLike[str], filename: str | PathLike[str]) → list[Path]
-112126 112194
+112786 112854
 
 ### outrage.store.read_all(store: Store, key: str, \*\*kwargs: Any) → Excerpt
-113268 113338
+113928 113998
 
 ### outrage.store.resolve_directory(explicit: str | PathLike[str] | None = None) → Path
-114273 114345
+114933 115005
 
 ### outrage.store.store_file(directory: str | PathLike[str], filename: str | PathLike[str] | None = None) → Path
-114820 114894
+115480 115554
 
 ### outrage.store.store_present(directory: str | PathLike[str], filename: str | PathLike[str] | None = None) → bool
-116428 116504
+117088 117164

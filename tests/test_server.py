@@ -873,6 +873,25 @@ def test_get_documents_survey_names_the_untitled(server):
         "total": 1,
         "total_chars": len("No title here."),
         "sample": ["context/e5f6/note"],
+        "selection_documents": None,
+        "selection_carried": None,
+    }
+
+
+def test_get_documents_reports_selection_coverage_only_when_asked(server):
+    call(server, "store_document", key="context/e5f6/note", content="No title here.")
+    result = call(
+        server,
+        "get_documents",
+        key="context",
+        meta_name=["title"],
+        coverage=True,
+    )
+
+    assert result["without_meta"] == {
+        "total": 1,
+        "total_chars": len("No title here."),
+        "sample": ["context/e5f6/note"],
         # The subtree, not this page's window: three documents below `context`,
         # two of them titled.
         "selection_documents": 3,
@@ -899,8 +918,8 @@ def test_the_survey_says_none_missing_rather_than_going_quiet(server):
         "total": 0,
         "total_chars": 0,
         "sample": [],
-        "selection_documents": 2,
-        "selection_carried": {"title": 2},
+        "selection_documents": None,
+        "selection_carried": None,
     }
 
 
@@ -1837,6 +1856,13 @@ def test_the_delivered_text_fits_the_budget(store):
     assert len(f"{server_module.NO_README}\n\n{server_module.delivered_text()}") <= (
         server_module.DELIVERY_BUDGET
     )
+
+
+def test_the_delivered_text_gives_the_large_store_first_move():
+    text = server_module.delivered_text()
+
+    assert "`list_keys` with `descendant_counts`" in text
+    assert "only once while paging" in text
 
 
 @pytest.mark.parametrize(

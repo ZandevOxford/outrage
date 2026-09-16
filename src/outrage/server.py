@@ -492,12 +492,13 @@ class _MissingMetaResult(_ToolResult):
     total_chars: Annotated[int, Field(description="Characters stored across those documents")]
     sample: Annotated[list[str], Field(description="A bounded sample of their keys")]
     selection_documents: Annotated[
-        int, Field(description="Documents in the whole subtree, not just this page's window")
-    ]
+        int | None,
+        Field(description="Documents in the whole subtree, only when coverage was requested"),
+    ] = None
     selection_carried: Annotated[
-        dict[str, int],
+        dict[str, int] | None,
         Field(description="How many of those documents carry each name asked for"),
-    ]
+    ] = None
 
 
 class _GetDocumentsResult(_ToolResult):
@@ -1395,6 +1396,12 @@ def build_server(
                 min_length=1,
             ),
         ] = None,
+        coverage: Annotated[
+            bool,
+            Field(
+                description="Report whole-selection metadata coverage; adds selection-wide scans"
+            ),
+        ] = False,
         depth: Annotated[
             int | None,
             Field(description="How many levels below key to descend; unlimited when omitted", ge=0),
@@ -1452,11 +1459,12 @@ def build_server(
                 window=KeyRange(after=after, before_inclusive=page.next_cursor),
                 meta_name=meta_name,
                 sample=WITHOUT_META_SAMPLE,
+                coverage=coverage,
             )
-            # `total` and `sample` describe this page's window; the two
-            # `selection_` fields describe the whole subtree and do not move as
-            # a caller pages. Spelled out in the field names because a block
-            # holding two scopes is otherwise read as holding one.
+            # `total` and `sample` describe this page's window; when requested,
+            # the two `selection_` fields describe the whole subtree and do not
+            # move as a caller pages. Spelled out in the field names because a
+            # block holding two scopes is otherwise read as holding one.
             result["without_meta"] = {
                 "total": gap.total,
                 "total_chars": gap.total_chars,

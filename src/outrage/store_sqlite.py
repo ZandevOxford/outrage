@@ -1568,6 +1568,7 @@ class SqliteStore(FileStore):
         window: KeyRange = UNBOUNDED,
         meta_name: str | Sequence[str] = "title",
         sample: int = 0,
+        coverage: bool = False,
     ) -> MissingMeta:
         """The window is measured at a synthesised ``sort_key``, in SQL.
 
@@ -1617,7 +1618,9 @@ class SqliteStore(FileStore):
         params += bounds
 
         total, total_chars = self._selection_totals(where, params)
-        documents, carried = self._selection_coverage(subtree, key_range, names)
+        documents, carried = (
+            self._selection_coverage(subtree, key_range, names) if coverage else (None, None)
+        )
 
         found: list[str] = []
         if sample > 0 and total:

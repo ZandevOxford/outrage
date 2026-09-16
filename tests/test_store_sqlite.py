@@ -71,6 +71,20 @@ def test_document_title_and_contents_are_one_transaction(store, monkeypatch):
     assert not store.exists("a/!contents")
 
 
+def test_metadata_coverage_does_not_scan_until_asked(store, monkeypatch):
+    store.store_document("a", "body")
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("selection coverage was measured without coverage=True")
+
+    monkeypatch.setattr(store, "_selection_coverage", unexpected)
+
+    gap = store.missing_meta_stats()
+
+    assert gap.selection_documents is None
+    assert gap.selection_carried is None
+
+
 # -- migrations ----------------------------------------------------------
 
 

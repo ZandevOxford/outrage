@@ -611,7 +611,7 @@ def test_a_shadowed_key_is_not_named_as_missing_metadata(shadowed_server):
 
 
 def test_without_meta_does_not_count_what_it_cannot_show(shadowed_server):
-    result = call(shadowed_server, "get_documents", meta_name=["title"])
+    result = call(shadowed_server, "get_documents", meta_name=["title"], coverage=True)
     # The coverage half obeys the same rule from the other side. The root holds
     # five documents and the mount shadows three of them -- including
     # `project/untitled`, which would otherwise be the one thing this block
@@ -623,6 +623,20 @@ def test_without_meta_does_not_count_what_it_cannot_show(shadowed_server):
         "selection_documents": 4,
         "selection_carried": {"title": 4},
     }
+
+
+def test_missing_meta_without_coverage_skips_segments_outside_the_window(table, monkeypatch):
+    excluded = table.resolve("ref").mount.store
+
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("a segment outside the window was scanned without coverage")
+
+    monkeypatch.setattr(excluded, "missing_meta_stats", unexpected)
+
+    gap = table.missing_meta_stats(window=KeyRange(before="ref"))
+
+    assert gap.selection_documents is None
+    assert gap.selection_carried is None
 
 
 def test_a_survey_counts_the_segments_it_actually_read(shadowed_server):
@@ -2195,7 +2209,7 @@ def test_a_split_table_answers_every_read_the_way_one_store_holding_it_all_does(
                     whole,
                     split,
                     lambda s, t=subtree, r=key_range, m=meta, w=window: s.missing_meta_stats(
-                        t, key_range=r, window=w, meta_name=m, sample=3
+                        t, key_range=r, window=w, meta_name=m, sample=3, coverage=True
                     ),
                 )
 

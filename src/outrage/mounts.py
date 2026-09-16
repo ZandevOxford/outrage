@@ -1803,6 +1803,7 @@ class MountedStore(Store):
         window: KeyRange = UNBOUNDED,
         meta_name: str | Sequence[str] = "title",
         sample: int = 0,
+        coverage: bool = False,
     ) -> MissingMeta:
         """What a metadata survey could not see, summed across the boundary.
 
@@ -1812,7 +1813,8 @@ class MountedStore(Store):
         excludes is not asked at all, which is what makes a caller's windows
         tile as they page.
 
-        **The coverage half is summed over a different set of segments**, and
+        Coverage is computed only when requested. **That coverage half is
+        summed over a different set of segments**, and
         that is the whole subtlety here. ``total`` describes the window, so a
         segment the window excludes must not contribute to it; the coverage
         fields describe the *selection*, so that same segment must. Asking only
@@ -1828,7 +1830,7 @@ class MountedStore(Store):
         total = 0
         total_chars = 0
         names: list[str] = []
-        documents = 0
+        documents = 0 if coverage else None
         # Seeded from what was asked rather than from what the segments
         # answered, so an empty table reports every name at zero the way a
         # store with no documents does. A name nobody carries is zero, not
@@ -1836,21 +1838,29 @@ class MountedStore(Store):
         # it stands in for is the defect `test_a_split_table_answers_every_read`
         # exists to catch -- it caught this.
         asked = [meta_name] if isinstance(meta_name, str) else list(meta_name)
-        carried: dict[str, int] = dict.fromkeys(asked, 0)
+        carried: dict[str, int] | None = dict.fromkeys(asked, 0) if coverage else None
         for segment in self.segments(found.outer, subtree.depth, key_range=key_range):
             inward = _inward_range(segment.mount, window)
+            if inward is None and not coverage:
+                continue
             gap = segment.store.missing_meta_stats(
                 segment.subtree,
                 key_range=segment.key_range,
                 window=UNBOUNDED if inward is None else inward,
                 meta_name=meta_name,
                 sample=sample,
+                coverage=coverage,
             )
             # Every segment of the selection counts towards coverage; only the
             # ones the window reaches count towards what the window missed.
-            documents += gap.selection_documents
-            for name, count in gap.selection_carried.items():
-                carried[name] = carried.get(name, 0) + count
+            if coverage:
+                assert documents is not None
+                assert carried is not None
+                assert gap.selection_documents is not None
+                assert gap.selection_carried is not None
+                documents += gap.selection_documents
+                for name, count in gap.selection_carried.items():
+                    carried[name] = carried.get(name, 0) + count
             if inward is None:
                 continue
             total += gap.total

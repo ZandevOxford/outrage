@@ -1179,6 +1179,7 @@ class FilesystemStore(FileStore):
         window: KeyRange = UNBOUNDED,
         meta_name: str | Sequence[str] = "title",
         sample: int = 0,
+        coverage: bool = False,
     ) -> MissingMeta:
         """Documents carrying none of ``meta_name``, over one window.
 
@@ -1201,7 +1202,9 @@ class FilesystemStore(FileStore):
             for row in missing
             if inside(root if row.sort_key == keys.ROOT else row.sort_key + suffix)
         ]
-        documents, carried = self._selection_coverage(subtree, key_range, names)
+        documents, carried = (
+            self._selection_coverage(subtree, key_range, names) if coverage else (None, None)
+        )
         return MissingMeta(
             total=len(within),
             total_chars=_total_chars(within),

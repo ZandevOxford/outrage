@@ -232,6 +232,7 @@ whole document, use `read_document` on that document.
 
 - `key` (string or null; default null) — Key whose subtree to read; omit for root
 - `meta_name` (array[string] or null; default null; minimum items 1) — Metadata names to return instead of documents, e.g. ['title']
+- `coverage` (boolean; default false) — Report whole-selection metadata coverage; adds selection-wide scans
 - `depth` (integer or null; default null; minimum 0) — How many levels below key to descend; unlimited when omitted
 - `max_chars` (integer; default 2000; greater than 0) — Maximum characters per document
 - `limit` (integer; default 100; greater than 0) — Maximum documents to return
@@ -269,8 +270,8 @@ whole document, use `read_document` on that document.
 - `total` (integer; required) — Documents in this page's window carrying none of the names
 - `total_chars` (integer; required) — Characters stored across those documents
 - `sample` (array[string]; required) — A bounded sample of their keys
-- `selection_documents` (integer; required) — Documents in the whole subtree, not just this page's window
-- `selection_carried` (object[string, integer]; required) — How many of those documents carry each name asked for
+- `selection_documents` (integer or null; optional) — Documents in the whole subtree, only when coverage was requested
+- `selection_carried` (object[string, integer] or null; optional) — How many of those documents carry each name asked for
 
 ## `find_documents`
 

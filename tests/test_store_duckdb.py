@@ -252,7 +252,7 @@ def test_shuffled_parts_answer_every_read_as_sqlite_does(sqlite, duck):
                 sqlite,
                 duck,
                 lambda s, t=subtree, r=key_range, m=meta, w=window: s.missing_meta_stats(
-                    t, key_range=r, window=w, meta_name=m, sample=3
+                    t, key_range=r, window=w, meta_name=m, sample=3, coverage=True
                 ),
             )
 

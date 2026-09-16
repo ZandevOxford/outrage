@@ -1354,6 +1354,7 @@ class PyarrowStore(FileStore):
         window: KeyRange = UNBOUNDED,
         meta_name: str | Sequence[str] = "title",
         sample: int = 0,
+        coverage: bool = False,
     ) -> MissingMeta:
         """Documents carrying none of ``meta_name``, over one window.
 
@@ -1387,7 +1388,9 @@ class PyarrowStore(FileStore):
         ]
         lower, upper = _span(marks, window)
         within = missing.narrowed(lower, upper)
-        documents, carried = self._selection_coverage(subtree, key_range, names)
+        documents, carried = (
+            self._selection_coverage(subtree, key_range, names) if coverage else (None, None)
+        )
         return MissingMeta(
             total=len(within),
             total_chars=within.total_chars,

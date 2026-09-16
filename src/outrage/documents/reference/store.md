@@ -791,7 +791,7 @@ in; the split as the scope sees it, out.
 
 alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)], [`tuple`](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)]]
 
-### *class* outrage.store.MissingMeta(total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), sample: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], selection_documents: [int](https://docs.python.org/3/builtins/functions.html#int), selection_carried: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [int](https://docs.python.org/3/builtins/functions.html#int)])
+### *class* outrage.store.MissingMeta(total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), sample: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], selection_documents: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, selection_carried: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [int](https://docs.python.org/3/builtins/functions.html#int)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -814,16 +814,19 @@ what a caller needs to decide whether to go and look.
 
 Up to a requested number of their keys. The count is exact; this is not.
 
-#### selection_documents *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+#### selection_documents *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Documents in the whole **selection**, not in the window -- which is why
 the name says so. The three fields above describe one page's stretch of the
 store and these two describe the subtree it was cut from, and no caller
-should be able to read one as the other by picking a short name.
+should be able to read one as the other by picking a short name. `None`
+when the caller did not request coverage.
 
-#### selection_carried *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [int](https://docs.python.org/3/builtins/functions.html#int)]*
+#### selection_carried *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [int](https://docs.python.org/3/builtins/functions.html#int)] | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 How many of `selection_documents` carry each name asked for.
+
+`None` when the caller did not request coverage.
 
 **Counted, never derived.** Subtracting from a count of *values* gives the
 wrong answer and can go negative: a value may sit on a key that holds no
@@ -1452,9 +1455,13 @@ backend and [`MountedStore`](mounts.md#outrage.mounts.MountedStore) shares one b
 implementation. A backend override is only an optimization and can be
 checked against this method as its oracle.
 
-#### *abstractmethod* missing_meta_stats(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/builtins/functions.html#int) = 0) → [MissingMeta](#outrage.store.MissingMeta)
+#### *abstractmethod* missing_meta_stats(subtree: [BoundedSubtree](#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, coverage: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [MissingMeta](#outrage.store.MissingMeta)
 
 What a metadata survey could not see, over exactly one page's window.
+
+`coverage` adds counts for the whole selection. It is off by default
+because each metadata name adds a selection-wide scan, while the three
+window fields above are the bounded warning every survey needs.
 
 **Two ranges, measured against two different things**, and a document
 has to satisfy both. `key_range` is measured against a document's own

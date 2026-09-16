@@ -2537,6 +2537,8 @@ def test_missing_meta_stats_counts_without_listing(populated):
     assert stats.total == 1
     assert stats.sample == []
     assert stats.total_chars > 0
+    assert stats.selection_documents is None
+    assert stats.selection_carried is None
 
 
 def test_missing_meta_stats_samples_when_asked(populated):
@@ -2629,6 +2631,7 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
                 window=KeyRange(after=after, before_inclusive=page.next_cursor),
                 meta_name=["title"],
                 sample=100,
+                coverage=True,
             )
             seen += window.sample
             counted += window.total
@@ -2665,7 +2668,7 @@ def test_coverage_counts_documents_carrying_a_name_not_the_values(store):
     store.store_document("a/!title", "A")
     store.store_document("held/!title", "a title on a key holding nothing")
 
-    gap = store.missing_meta_stats(meta_name=["title"])
+    gap = store.missing_meta_stats(meta_name=["title"], coverage=True)
 
     assert gap.selection_documents == 3
     assert gap.selection_carried == {"title": 1}
@@ -2683,7 +2686,7 @@ def test_coverage_is_per_name_because_the_missing_total_cannot_be(store):
     store.store_document("a/!title", "A")
     store.store_document("b/!summary", "B")
 
-    gap = store.missing_meta_stats(meta_name=["title", "summary"])
+    gap = store.missing_meta_stats(meta_name=["title", "summary"], coverage=True)
 
     assert gap.selection_carried == {"title": 1, "summary": 1}
     # Only `c` carries neither, which is not derivable from the pair above.
@@ -2694,7 +2697,7 @@ def test_coverage_is_per_name_because_the_missing_total_cannot_be(store):
 def test_coverage_reports_a_name_nothing_carries_as_zero(store):
     store.store_document("a", "body")
 
-    gap = store.missing_meta_stats(meta_name=["title", "nobody-has-this"])
+    gap = store.missing_meta_stats(meta_name=["title", "nobody-has-this"], coverage=True)
 
     # Absent and zero are different answers, and a caller reading an absent key
     # as zero is right only by luck.
@@ -2709,8 +2712,12 @@ def test_coverage_honours_the_key_range_but_not_the_window(store):
         store.store_document(key, "body")
     store.store_document("a/!title", "A")
 
-    narrowed = store.missing_meta_stats(key_range=KeyRange(after="a"), meta_name=["title"])
-    windowed = store.missing_meta_stats(window=KeyRange(after="a", before="b"), meta_name=["title"])
+    narrowed = store.missing_meta_stats(
+        key_range=KeyRange(after="a"), meta_name=["title"], coverage=True
+    )
+    windowed = store.missing_meta_stats(
+        window=KeyRange(after="a", before="b"), meta_name=["title"], coverage=True
+    )
 
     assert narrowed.selection_documents == 2
     assert windowed.selection_documents == 3

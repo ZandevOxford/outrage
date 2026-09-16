@@ -711,7 +711,7 @@ for the same reason: the two have to be askable over one stretch of the
 store, and to agree about what was in range, or they stop describing
 the same one.
 
-#### missing_meta_stats(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/builtins/functions.html#int) = 0) → [MissingMeta](store.md#outrage.store.MissingMeta)
+#### missing_meta_stats(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, coverage: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [MissingMeta](store.md#outrage.store.MissingMeta)
 
 What a metadata survey could not see, summed across the boundary.
 
@@ -721,7 +721,8 @@ stretch. `window` crosses like any other range -- a segment it
 excludes is not asked at all, which is what makes a caller's windows
 tile as they page.
 
-**The coverage half is summed over a different set of segments**, and
+Coverage is computed only when requested. **That coverage half is
+summed over a different set of segments**, and
 that is the whole subtlety here. `total` describes the window, so a
 segment the window excludes must not contribute to it; the coverage
 fields describe the *selection*, so that same segment must. Asking only

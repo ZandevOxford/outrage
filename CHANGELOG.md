@@ -4,26 +4,31 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
-A metadata survey now reports **how many documents carry each name it was asked
-for**, alongside the count of those carrying none. `total` could not answer it:
-a document with a title and no summary is in neither number, and the two do not
-compose in either direction. `MissingMeta` gains `selection_documents` and
-`selection_carried`, and the MCP `without_meta` block gains the same two fields.
+A metadata survey can now report **how many documents carry each name it was
+asked for**, alongside the count of those carrying none. `total` could not
+answer it: a document with a title and no summary is in neither number, and the
+two do not compose in either direction. `MissingMeta` gains optional
+`selection_documents` and `selection_carried` fields, and the MCP
+`without_meta` block gains the same two fields. They are `null` unless
+`get_documents` is called with `coverage=true`.
 
 They describe the **whole selection**, not the page's window as the fields
 beside them do, which is why the names say so: a caller paging a survey reads
 the same denominator on every page rather than one that moves with the cursor.
+They are opt-in because the denominator and each metadata name add a
+whole-selection scan; the page-level missing count, character total and sample
+remain always present.
 
 The counts are of documents *carrying* a name, never values minus documents. A
 value can sit on a key holding no document of its own -- `a/!title` where `a` is
 implicit -- so subtracting reports too few and can go negative.
 
-`outrage dump --meta NAME` now says how much of the subtree the survey could not
-see. Asked for a metadata name it returns the documents carrying it, so the ones
-without it were absent from the answer with nothing to say they had ever been
-there - and a reader drew a conclusion about a subtree from the half of it that
-happened to be titled. The MCP server has warned about this since its
-`without_meta` block; the command line did not.
+`outrage dump --meta NAME` requests that coverage and now says how much of the
+subtree the survey could not see. Asked for a metadata name it returns the
+documents carrying it, so the ones without it were absent from the answer with
+nothing to say they had ever been there - and a reader drew a conclusion about
+a subtree from the half of it that happened to be titled. The MCP server has
+warned about this since its `without_meta` block; the command line did not.
 
 The line goes to standard error, so `outrage dump > file` is unchanged, and it
 counts the whole subtree rather than what was printed, so it stays true when

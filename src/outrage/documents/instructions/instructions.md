@@ -15,6 +15,10 @@ Statistics including `total` are reported to allow paging decisions.
 Where appropriate, store title metadata, which can be surveyed with
 `get_documents(meta_name=["title"])`.
 
+For a large store, first use `list_keys` with `descendant_counts` to find the
+large branches, then narrow the survey. Metadata `coverage` scans the whole
+selection, so ask for it only when needed and only once while paging.
+
 All unicode characters are valid in a segment except control characters
 below \x09, so most file paths can be mirrored. Segments starting with
 `?` are reserved.

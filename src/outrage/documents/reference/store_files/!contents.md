@@ -79,32 +79,32 @@
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
 21745 21765
 
-#### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0) → MissingMeta
+#### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0, coverage: bool = False) → MissingMeta
 23068 23090
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-24197 24221
+24279 24303
 
 #### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, lock: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
-25356 25382
+25438 25464
 
 #### opened_at(path: Path) → Self
-27875 27903
+27957 27985
 
 #### *property* stored_format_version *: int*
-29260 29290
+29342 29372
 
 #### audit_rows() → Iterator[AuditRow]
-29889 29919
+29971 30001
 
 #### check_file(report: Report) → None
-30430 30462
+30512 30544
 
 #### repair() → list[Repaired]
-30995 31029
+31077 31111
 
 ### *exception* outrage.store_files.NotTextError(code: str, \*\*details: Any)
-31552 31588
+31634 31670
 
 ### *exception* outrage.store_files.StoreBusyError(code: str, \*\*details: Any)
-32158 32194
+32240 32276

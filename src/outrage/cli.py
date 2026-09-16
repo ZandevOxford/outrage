@@ -1984,7 +1984,10 @@ def _report_without_meta(opened: store.Store, args: argparse.Namespace) -> None:
         store.BoundedSubtree(args.key, args.depth),
         meta_name=args.meta_name,
         sample=_WITHOUT_META_SAMPLE,
+        coverage=True,
     )
+    assert gap.selection_documents is not None
+    assert gap.selection_carried is not None
     where = keys.displayed(args.key) if args.key else "the top level"
     names = ", ".join(args.meta_name)
 
