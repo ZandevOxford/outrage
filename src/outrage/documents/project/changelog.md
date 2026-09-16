@@ -4,6 +4,12 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+The MCP server now continues starting when an individual non-root store cannot
+be opened. It writes the mount and full reason to stderr, omits that mount, and
+adds a fixed warning to the initialization instructions so tool callers know
+the namespace is incomplete. Invalid or duplicate mount configuration and a
+root-store failure still stop startup, and command-line commands remain strict.
+
 The MCP server now mounts a writable cross-project store at `home` by default,
 kept in `~/.outrage/home.sqlite`. Its first open creates a small `home/readme`
 from the shipped `outrage/home_readme` template, which suggests `home/readme`,

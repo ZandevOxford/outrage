@@ -74,6 +74,14 @@ ordering constraint instead -- the text was split in two so that the half
 that had to survive was sent first -- and editing the instructions down to
 what fits made the whole apparatus of halves unnecessary.
 
+### outrage.server.INCOMPLETE_MOUNTS *= "Warning: one or more non-root stores could not be opened, so this server's namespace is incomplete; call \`info\` to inspect its live mounts and configuration files."*
+
+Appended when startup omitted one or more non-root stores. The detailed
+reasons belong on stderr, where the operator who controls the configuration
+can act on them; this fixed sentence tells the MCP caller that the namespace
+it received is incomplete without spending the delivery budget on paths and
+backend-specific errors.
+
 ### outrage.server.INSTRUCTIONS *= ('instructions', 'instructions')*
 
 Where the delivered text is kept, below the shipped documentation's root,
@@ -138,7 +146,7 @@ risk is accepted on the same terms as `extra="forbid"`: what a change
 would cost is logging silently ceasing to happen, and
 `test_the_middleware_is_reached` fails loudly rather than letting it.
 
-### outrage.server.build_server(store: [Store](store.md#outrage.store.Store) | [Live](remount.md#outrage.remount.Live), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, remount_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ()) → MCPServer
+### outrage.server.build_server(store: [Store](store.md#outrage.store.Store) | [Live](remount.md#outrage.remount.Live), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, remount_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), incomplete_mounts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → MCPServer
 
 Build a server exposing `store`, which may be one store or a mount table.
 
@@ -189,6 +197,10 @@ work out: the configuration files the mount table was read from, which
 [`outrage.mountfile.sources()`](mountfile.md#outrage.mountfile.sources) knows and which are flattened away by the
 time there is a table.
 
+`incomplete_mounts` adds one bounded warning to the initialization
+instructions. [`main()`](#outrage.server.main) sets it after skipping a non-root store that
+could not be opened; the individual reasons stay on the operator's stderr.
+
 `remount_tool` is the `mount` and `unmount` pair, on for the same
 reason and withheld the same way -- the server's `--no-remount`. They are
 MCP-only, which is a decision rather than an omission: the command line
@@ -206,7 +218,7 @@ A function rather than a constant: a module constant holding it is rendered
 *by value* into the API reference, which put the whole document back into
 the generated page it had just been taken out of.
 
-### outrage.server.instructions(store: [Store](store.md#outrage.store.Store)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
+### outrage.server.instructions(store: [Store](store.md#outrage.store.Store), \*, incomplete_mounts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 A line naming the root store's readme, then the instructions document.
 

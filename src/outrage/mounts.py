@@ -2068,6 +2068,35 @@ def mount_point(prefix: str, *, spec: str | None = None) -> str:
     return parsed.key
 
 
+# Errors discovered while a spec becomes a store but still describing the
+# configuration rather than the store. They remain fatal under a tolerant
+# open: skipping a misspelled backend or an option its backend cannot honour
+# would make a configuration mistake look like a temporarily unavailable
+# store. Parsing and mount-point errors happen before the open loop and do not
+# need listing here.
+#
+# `backend-unavailable` is deliberately absent, and it is the one worth saying
+# out loud because it comes from the same function as `backend-unknown`: a
+# backend whose module is not installed -- a parquet mount without the extra --
+# is exactly the temporarily unavailable store this list exists to distinguish
+# a mistake from. The name is spelled right; the install is short.
+_CONFIGURATION_ERROR_CODES = frozenset(
+    {
+        "backend-takes-no-extensions",
+        "backend-takes-no-lock",
+        "backend-takes-no-versioning",
+        "backend-unknown",
+        "extensions-unknown",
+        "lock-unknown",
+        "store-file-absolute",
+        "store-file-escapes",
+        "store-file-pattern",
+        "store-file-unnamed",
+        "versioning-unknown",
+    }
+)
+
+
 def open_mounts(
     directory: str | os.PathLike[str] | None,
     specs: Sequence[str] = (),
@@ -2079,6 +2108,7 @@ def open_mounts(
     owned: Mapping[str, Store] = MappingProxyType({}),
     builtin: Collection[str] = (),
     versioning: bool = True,
+    on_open_error: Callable[[str, Spec, bool, OutrageError], None] | None = None,
 ) -> MountedStore:
     """Open every store in ``directory``, as one table.
 
@@ -2095,10 +2125,27 @@ def open_mounts(
     collision this checks: they would be two stores over one database, which
     SQLite handles and which no configuration has a reason to ask for.
 
-    Every spec is parsed before any store is opened, so a table that cannot be
-    described is refused without half of it existing. A failure part way
-    through the opening closes what was already open, since a process that
-    exits without doing so leaves a WAL behind.
+    Every spec is parsed and every mount-point collision is checked before any
+    store is opened, so a table that cannot be described is refused without
+    half of it existing. A failure part way through the opening closes what
+    was already open, since a process that exits without doing so leaves a WAL
+    behind.
+
+    **Only the description is checked that early.** A read-only mount whose
+    store is missing is found in the loop below, after the root and any earlier
+    writable mount have been opened -- and opening one creates its file. So a
+    table refused for a missing read-only store can leave those files behind
+    where an earlier version left nothing. That is the price of deciding each
+    mount's fate in one place, which is what ``on_open_error`` needs, and John
+    took it deliberately on 2026-09-16: the files are empty stores in a
+    directory the operator named, not data anybody loses.
+
+    ``on_open_error`` lets a long-running front end continue without an
+    individual non-root mount whose existence check or open raises an
+    :class:`~outrage.errors.OutrageError`. It receives the mount point, parsed
+    spec, whether the mount was requested read-only, and the error. Without a
+    callback every error remains fatal. Structural errors, a root-store error,
+    and exceptions that are not ``OutrageError`` are always fatal.
 
     A read-only mount must already exist. ``Store`` creates its file and
     migrates a database on the way in, so without this check a mistyped name
@@ -2149,29 +2196,27 @@ def open_mounts(
         root = _root_spec(root_mount)
         lent: dict[str, Store] = {}
         external: dict[str, Store] = {}
+        claimed: set[str] = set()
         for given, target in ((attached, lent), (owned, external)):
             for prefix, store in given.items():
                 point = mount_point(prefix)
-                if point in target:
+                if point in claimed:
                     raise MountError("mount-duplicate", mount=point)
+                claimed.add(point)
                 target[point] = store
+        for prefix, _spec in [*writable, *refusing]:
+            if prefix in claimed:
+                raise MountError("mount-duplicate", mount=prefix)
+            claimed.add(prefix)
         builtins = {mount_point(prefix) for prefix in builtin}
         # Resolved once, here, because the read-only check below and the stores
         # themselves have to agree about where a mount's file is; asking twice is
         # how they would come to disagree.
         base = store_module.resolve_directory(directory)
-        for prefix, spec in refusing:
-            database = store_file(base, spec.path)
-            if not store_present(base, spec.path):
-                raise MountError("mount-read-only-missing", mount=prefix, path=str(database))
-
-        # Lent stores go in first, so that a second claim on a lent point is the
-        # same refusal as a second claim on any other.
+        # Every collision has already been checked, so handed-over stores can
+        # be installed without opening anything first.
         opened.update(lent)
-        for prefix, store in external.items():
-            if prefix in opened:
-                raise MountError("mount-duplicate", mount=prefix)
-            opened[prefix] = store
+        opened.update(external)
         # The root is never among the lent stores: ``mount_point`` refuses it
         # above, as it does for a spec, so this cannot overwrite one.
         # A root nobody named is the default store file under the default
@@ -2184,15 +2229,29 @@ def open_mounts(
             if root is None
             else root.opened(base, log=log, mount_point=keys.ROOT, versioning=versioning)
         )
-        for prefix, spec in [*writable, *refusing]:
-            if prefix in opened:
-                raise MountError("mount-duplicate", mount=prefix)
-            opened[prefix] = spec.opened(base, log=log, mount_point=prefix, versioning=versioning)
+        opened_read_only: list[str] = []
+        for read_only, configured in ((False, writable), (True, refusing)):
+            for prefix, spec in configured:
+                try:
+                    if read_only and not store_present(base, spec.path):
+                        database = store_file(base, spec.path)
+                        raise MountError(
+                            "mount-read-only-missing", mount=prefix, path=str(database)
+                        )
+                    opened[prefix] = spec.opened(
+                        base, log=log, mount_point=prefix, versioning=versioning
+                    )
+                    if read_only:
+                        opened_read_only.append(prefix)
+                except OutrageError as exc:
+                    if on_open_error is None or exc.code in _CONFIGURATION_ERROR_CODES:
+                        raise
+                    on_open_error(prefix, spec, read_only, exc)
         return MountedStore(
             opened,
-            read_only=[prefix for prefix, _ in refusing],
+            read_only=opened_read_only,
             lent=list(lent),
-            builtin=builtins,
+            builtin=builtins & opened.keys(),
         )
     except Exception:
         closed: set[int] = set()

@@ -229,14 +229,14 @@
 ### outrage.mounts.mount_point(prefix: str, \*, spec: str | None = None) → str
 56626 56686
 
-### outrage.mounts.open_mounts(directory: str | PathLike[str] | None, specs: Sequence[str] = (), read_only_specs: Sequence[str] = (), \*, root_mount: str | PathLike[str] | Spec | None = None, log: EventLog | None = None, attached: Mapping[str, Store] = MappingProxyType({}), owned: Mapping[str, Store] = MappingProxyType({}), builtin: Collection[str] = (), versioning: bool = True) → MountedStore
+### outrage.mounts.open_mounts(directory: str | PathLike[str] | None, specs: Sequence[str] = (), read_only_specs: Sequence[str] = (), \*, root_mount: str | PathLike[str] | Spec | None = None, log: EventLog | None = None, attached: Mapping[str, Store] = MappingProxyType({}), owned: Mapping[str, Store] = MappingProxyType({}), builtin: Collection[str] = (), versioning: bool = True, on_open_error: Callable[[str, Spec, bool, OutrageError], None] | None = None) → MountedStore
 57408 57470
 
 ### outrage.mounts.parse_options(value: str, \*, spec: str | None = None) → Spec
-62478 62542
+63978 64042
 
 ### outrage.mounts.parse_spec(spec: str) → tuple[str, Spec]
-63793 63859
+65293 65359
 
 ### outrage.mounts.unparse(spec: Spec) → str
-65087 65155
+66587 66655

@@ -776,8 +776,19 @@ _HOME_NO_README = (
     "`outrage/home_readme` instead for suggested conventions."
 )
 
+#: Appended when startup omitted one or more non-root stores. The detailed
+#: reasons belong on stderr, where the operator who controls the configuration
+#: can act on them; this fixed sentence tells the MCP caller that the namespace
+#: it received is incomplete without spending the delivery budget on paths and
+#: backend-specific errors.
+INCOMPLETE_MOUNTS = (
+    "Warning: one or more non-root stores could not be opened, so this "
+    "server's namespace is incomplete; call `info` to inspect its live mounts "
+    "and configuration files."
+)
 
-def instructions(store: Store) -> str:
+
+def instructions(store: Store, *, incomplete_mounts: bool = False) -> str:
     """A line naming the root store's readme, then the instructions document.
 
     The readme is **named, not carried**. The argument for inlining it holds as
@@ -834,6 +845,8 @@ def instructions(store: Store) -> str:
     if home_mount is not None:
         home_opening = _HOME_READ_README if home_mount.store.exists(README_KEY) else _HOME_NO_README
         opening = f"{opening}\n{home_opening}"
+    if incomplete_mounts:
+        opening = f"{opening}\n{INCOMPLETE_MOUNTS}"
     return f"{opening}\n\n{delivered_text()}"
 
 
@@ -912,6 +925,7 @@ def build_server(
     info_tool: bool = True,
     remount_tool: bool = True,
     mount_config: Sequence[str] = (),
+    incomplete_mounts: bool = False,
 ) -> MCPServer:
     """Build a server exposing ``store``, which may be one store or a mount table.
 
@@ -962,6 +976,10 @@ def build_server(
     :func:`outrage.mountfile.sources` knows and which are flattened away by the
     time there is a table.
 
+    ``incomplete_mounts`` adds one bounded warning to the initialization
+    instructions. :func:`main` sets it after skipping a non-root store that
+    could not be opened; the individual reasons stay on the operator's stderr.
+
     ``remount_tool`` is the ``mount`` and ``unmount`` pair, on for the same
     reason and withheld the same way -- the server's ``--no-remount``. They are
     MCP-only, which is a decision rather than an omission: the command line
@@ -984,7 +1002,7 @@ def build_server(
         # root: a mount tool may change anything except the store whose readme
         # this was composed from, so what a connection was told stays true for
         # as long as the connection does.
-        instructions=instructions(live.table),
+        instructions=instructions(live.table, incomplete_mounts=incomplete_mounts),
         # Registered only when there is somewhere to write, so that the default
         # configuration adds nothing to the SDK's chain at all.
         middleware=[RequestLog(log)] if log.enabled else None,
@@ -2408,7 +2426,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
-def _documents(wanted: bool, log: EventLog | None = None) -> dict[str, Store]:
+def _documents(
+    wanted: bool,
+    log: EventLog | None = None,
+    on_unavailable: Callable[[], None] | None = None,
+) -> dict[str, Store]:
     """The shipped documentation to attach, warning rather than failing without it.
 
     A **warning**, and this is the one place the default differs from the flag.
@@ -2422,6 +2444,8 @@ def _documents(wanted: bool, log: EventLog | None = None) -> dict[str, Store]:
     if not wanted:
         return {}
     if not shipped.available():
+        if on_unavailable is not None:
+            on_unavailable()
         print(
             f"outrage: warning: the shipped documentation is not in this "
             f"installation ({shipped.tree()}), so nothing is mounted at "
@@ -2430,6 +2454,31 @@ def _documents(wanted: bool, log: EventLog | None = None) -> dict[str, Store]:
         )
         return {}
     return dict(shipped.attached(log=log))
+
+
+class _StartupWarnings:
+    """Report omitted non-root stores and remember that callers need warning."""
+
+    def __init__(self) -> None:
+        self.incomplete = False
+
+    def mark(self) -> None:
+        self.incomplete = True
+
+    def mount(
+        self,
+        mount_point: str,
+        _spec: mounts_module.Spec | None,
+        _read_only: bool,
+        error: OutrageError,
+    ) -> None:
+        self.mark()
+        reason = messages.render(error, spell=messages.flag).removesuffix(".")
+        print(
+            f"outrage: warning: mount {mount_point!r} was not opened: "
+            f"{reason}; continuing without it.",
+            file=sys.stderr,
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2466,6 +2515,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     log.start(version=__version__, directory=str(directory), log=str(log.path))
     try:
+        startup_warnings = _StartupWarnings()
+        attached = _documents(args.mount_docs, log, startup_warnings.mark)
+        owned: dict[str, Store] = {}
+        if args.mount_home:
+            try:
+                owned[home.MOUNT_POINT] = home.open_store(
+                    log=log,
+                    mount_point=home.MOUNT_POINT,
+                    versioning=not args.no_versioning,
+                )
+            except OutrageError as exc:
+                startup_warnings.mount(home.MOUNT_POINT, None, False, exc)
         # `Live` is the context manager and `open_mounts` is not, which matters
         # rather than being a preference: a mount tool replaces the table, so
         # `with open_mounts(...)` would close a table that is no longer the one
@@ -2477,20 +2538,11 @@ def main(argv: list[str] | None = None) -> int:
                 args.read_only_mounts,
                 root_mount=args.root_mount,
                 log=log,
-                attached=_documents(args.mount_docs, log),
-                owned=(
-                    {
-                        home.MOUNT_POINT: home.open_store(
-                            log=log,
-                            mount_point=home.MOUNT_POINT,
-                            versioning=not args.no_versioning,
-                        )
-                    }
-                    if args.mount_home
-                    else {}
-                ),
-                builtin=[home.MOUNT_POINT] if args.mount_home else [],
+                attached=attached,
+                owned=owned,
+                builtin=list(owned),
                 versioning=not args.no_versioning,
+                on_open_error=startup_warnings.mount,
             ),
             directory=directory,
             log=log,
@@ -2515,6 +2567,7 @@ def main(argv: list[str] | None = None) -> int:
                 info_tool=not args.no_info,
                 remount_tool=not args.no_remount,
                 mount_config=args.config_files,
+                incomplete_mounts=startup_warnings.incomplete,
             ).run("stdio")
     except OutrageError as exc:
         # The same rule `cli.main` follows, and for the same reason: a mount
@@ -2544,6 +2597,7 @@ __all__ = [
     "DEFAULT_PAGE_CHARS",
     "DEFAULT_SEARCH_SCAN_LIMIT",
     "DELIVERY_BUDGET",
+    "INCOMPLETE_MOUNTS",
     "INSTRUCTIONS",
     "NO_README",
     "READ_README",

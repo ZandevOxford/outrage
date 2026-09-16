@@ -916,7 +916,7 @@ the same namespace, and the project has one. `spec` is what the reader
 wrote, when there is a spec to quote back at them; a file quotes the key it
 used as its own field name.
 
-### outrage.mounts.open_mounts(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None), specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), \*, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [Spec](#outrage.mounts.Spec) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, attached: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), owned: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), builtin: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [MountedStore](#outrage.mounts.MountedStore)
+### outrage.mounts.open_mounts(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None), specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_specs: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), \*, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [Spec](#outrage.mounts.Spec) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, attached: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), owned: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)] = MappingProxyType({}), builtin: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, on_open_error: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Spec](#outrage.mounts.Spec), [bool](https://docs.python.org/3/builtins/functions.html#bool), [OutrageError](errors.md#outrage.errors.OutrageError)], [None](https://docs.python.org/3/builtins/constants.html#None)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [MountedStore](#outrage.mounts.MountedStore)
 
 Open every store in `directory`, as one table.
 
@@ -933,10 +933,27 @@ as mounting it twice in either. Two mounts naming the same *file* is not a
 collision this checks: they would be two stores over one database, which
 SQLite handles and which no configuration has a reason to ask for.
 
-Every spec is parsed before any store is opened, so a table that cannot be
-described is refused without half of it existing. A failure part way
-through the opening closes what was already open, since a process that
-exits without doing so leaves a WAL behind.
+Every spec is parsed and every mount-point collision is checked before any
+store is opened, so a table that cannot be described is refused without
+half of it existing. A failure part way through the opening closes what
+was already open, since a process that exits without doing so leaves a WAL
+behind.
+
+**Only the description is checked that early.** A read-only mount whose
+store is missing is found in the loop below, after the root and any earlier
+writable mount have been opened -- and opening one creates its file. So a
+table refused for a missing read-only store can leave those files behind
+where an earlier version left nothing. That is the price of deciding each
+mount's fate in one place, which is what `on_open_error` needs, and John
+took it deliberately on 2026-09-16: the files are empty stores in a
+directory the operator named, not data anybody loses.
+
+`on_open_error` lets a long-running front end continue without an
+individual non-root mount whose existence check or open raises an
+[`OutrageError`](errors.md#outrage.errors.OutrageError). It receives the mount point, parsed
+spec, whether the mount was requested read-only, and the error. Without a
+callback every error remains fatal. Structural errors, a root-store error,
+and exceptions that are not `OutrageError` are always fatal.
 
 A read-only mount must already exist. `Store` creates its file and
 migrates a database on the way in, so without this check a mistyped name

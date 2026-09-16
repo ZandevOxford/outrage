@@ -17,6 +17,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from conftest import answers_alike, page_facts, raises_rendered, walk_documents, walk_level
 from outrage import bulk, keys, messages
+from outrage.errors import OutrageError
 from outrage.eventlog import EventLog
 from outrage.mounts import (
     MOUNT_KIND,
@@ -1612,25 +1613,131 @@ def test_the_server_reports_a_bad_mount_table_as_one_line(tmp_path, capsys):
     assert "KEY=FILE" in err
 
 
-def test_the_server_reports_a_missing_read_only_store_as_one_line(tmp_path, capsys):
-    from outrage.server import main
+def test_the_server_skips_a_missing_read_only_store(tmp_path, monkeypatch, capsys):
+    from outrage import server as server_module
 
-    missing = tmp_path / "base" / "not-there.sqlite"
+    base = tmp_path / "base"
+    SqliteStore(base, filename="healthy.sqlite").close()
+    observed = {}
+
+    class Server:
+        def run(self, transport):
+            observed["transport"] = transport
+
+    def built(live, *args, **kwargs):
+        observed["mounts"] = [mount.prefix for mount in live.table]
+        observed["incomplete"] = kwargs["incomplete_mounts"]
+        observed["instructions"] = server_module.instructions(
+            live.table, incomplete_mounts=kwargs["incomplete_mounts"]
+        )
+        return Server()
+
+    monkeypatch.setattr(server_module, "build_server", built)
+
     assert (
-        main(
+        server_module.main(
             [
                 "--dir",
-                str(tmp_path / "base"),
+                str(base),
                 "--unmount",
                 "home",
+                "--unmount",
+                "outrage",
                 "--mount-ro",
-                "ref=not-there.sqlite",
+                "healthy=healthy.sqlite",
+                "--mount-ro",
+                "gone=not-there.sqlite",
             ]
         )
-        == 1
+        == 0
     )
-    assert "read-only mount" in capsys.readouterr().err
-    assert not missing.exists()
+
+    assert observed["transport"] == "stdio"
+    assert observed["mounts"] == ["", "healthy"]
+    assert observed["incomplete"] is True
+    assert server_module.INCOMPLETE_MOUNTS in observed["instructions"]
+    assert "mount 'gone' was not opened" in capsys.readouterr().err
+    assert not (base / "not-there.sqlite").exists()
+
+
+def test_open_mounts_is_strict_unless_a_caller_supplies_a_handler(tmp_path):
+    with pytest.raises(MountError):
+        open_mounts(tmp_path, read_only_specs=["gone=gone.sqlite"])
+
+
+def test_open_mounts_reports_and_skips_only_a_non_root_open_error(tmp_path):
+    SqliteStore(tmp_path, filename="kept.sqlite").close()
+    failures = []
+
+    with open_mounts(
+        tmp_path,
+        read_only_specs=["kept=kept.sqlite", "gone=gone.sqlite"],
+        on_open_error=lambda *failure: failures.append(failure),
+    ) as table:
+        assert [mount.prefix for mount in table] == ["", "kept"]
+
+    assert [(point, read_only, error.code) for point, _spec, read_only, error in failures] == [
+        ("gone", True, "mount-read-only-missing")
+    ]
+
+
+def test_a_duplicate_is_fatal_before_a_tolerant_open_creates_any_store(tmp_path):
+    failures = []
+
+    with pytest.raises(MountError):
+        open_mounts(
+            tmp_path,
+            ["same=one.sqlite", "same=two.sqlite"],
+            on_open_error=lambda *failure: failures.append(failure),
+        )
+
+    assert failures == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_root_open_error_is_fatal_even_with_a_handler(tmp_path):
+    failures = []
+
+    with pytest.raises(OutrageError):
+        open_mounts(
+            tmp_path,
+            root_mount="root.sqlite,type=nonsense",
+            on_open_error=lambda *failure: failures.append(failure),
+        )
+
+    assert failures == []
+
+
+def test_a_bad_non_root_backend_is_configuration_not_an_open_warning(tmp_path):
+    failures = []
+
+    with pytest.raises(OutrageError) as raised:
+        open_mounts(
+            tmp_path,
+            ["broken=broken.sqlite,type=nonsense"],
+            on_open_error=lambda *failure: failures.append(failure),
+        )
+
+    assert raised.value.code == "backend-unknown"
+    assert failures == []
+
+
+def test_an_unexpected_non_root_exception_is_not_swallowed(tmp_path, monkeypatch):
+    opened = Spec.opened
+
+    def crashing(self, *args, **kwargs):
+        if self.path.name == "crash.sqlite":
+            raise RuntimeError("bug")
+        return opened(self, *args, **kwargs)
+
+    monkeypatch.setattr(Spec, "opened", crashing)
+
+    with pytest.raises(RuntimeError, match="bug"):
+        open_mounts(
+            tmp_path,
+            ["broken=crash.sqlite"],
+            on_open_error=lambda *_failure: pytest.fail("unexpected callback"),
+        )
 
 
 # -- a mount whose backend cannot be written -------------------------------

@@ -2490,6 +2490,33 @@ def test_server_precedence_can_remove_home_without_creating_it(tmp_path, monkeyp
     assert not database.exists()
 
 
+def test_server_startup_continues_when_the_builtin_home_cannot_open(tmp_path, monkeypatch, capsys):
+    observed = {}
+
+    def refused(**kwargs):
+        raise mounts_module.MountError(
+            "mount-read-only-missing", mount="home", path="/unavailable/home.sqlite"
+        )
+
+    class Server:
+        def run(self, transport):
+            observed["transport"] = transport
+
+    def built(live, *args, **kwargs):
+        observed["mounts"] = [mount.prefix for mount in live.table]
+        observed["incomplete"] = kwargs["incomplete_mounts"]
+        return Server()
+
+    monkeypatch.setattr(home, "open_store", refused)
+    monkeypatch.setattr(server_module, "build_server", built)
+
+    status = server_module.main(["--dir", str(tmp_path), "--unmount", "outrage"])
+
+    assert status == 0
+    assert observed == {"mounts": [""], "incomplete": True, "transport": "stdio"}
+    assert "mount 'home' was not opened" in capsys.readouterr().err
+
+
 def test_unmounting_the_documentation_is_the_off_switch(tmp_path):
     args = parse_args(["--dir", str(tmp_path), mountfile.UNMOUNT_FLAG, mountfile.DOCS_MOUNT])
 
@@ -2520,8 +2547,10 @@ def test_a_build_that_dropped_the_tree_warns_rather_than_refusing(tmp_path, monk
     command line, where somebody typed --mount-docs, refuses instead.
     """
     monkeypatch.setattr(shipped, "tree", lambda: tmp_path / "gone")
+    marked = []
 
-    assert server_module._documents(True) == {}
+    assert server_module._documents(True, on_unavailable=lambda: marked.append(True)) == {}
+    assert marked == [True]
     assert "not in this installation" in capsys.readouterr().err
 
 
@@ -2556,6 +2585,9 @@ def test_the_builtin_home_readme_route_is_delivered_from_provenance(tmp_path):
         assert "`outrage/home_readme` instead" not in instructions(with_home)
         assert "Read `home/readme`" not in instructions(without_claim)
         assert len(instructions(with_home)) <= server_module.DELIVERY_BUDGET
+        incomplete = instructions(with_home, incomplete_mounts=True)
+        assert incomplete.count(server_module.INCOMPLETE_MOUNTS) == 1
+        assert len(incomplete) <= server_module.DELIVERY_BUDGET
     finally:
         built_in.close()
         override.close()

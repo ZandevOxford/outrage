@@ -19,41 +19,44 @@
 ### outrage.server.DELIVERY_BUDGET *= 2048*
 2983 2983
 
-### outrage.server.INSTRUCTIONS *= ('instructions', 'instructions')*
+### outrage.server.INCOMPLETE_MOUNTS *= "Warning: one or more non-root stores could not be opened, so this server's namespace is incomplete; call \`info\` to inspect its live mounts and configuration files."*
 3799 3799
 
+### outrage.server.INSTRUCTIONS *= ('instructions', 'instructions')*
+4336 4336
+
 ### outrage.server.NO_README *= 'This store has no \`readme\` document. Try reading \`outrage/readme\` instead for instructions.'*
-4285 4285
+4822 4822
 
 ### outrage.server.READ_README *= 'This store has a \`readme\` document covering project conventions. Read it before starting.'*
-4617 4617
+5154 5154
 
 ### outrage.server.README_KEY *= 'readme'*
-4959 4959
+5496 5496
 
 ### outrage.server.TOOLS *= 'tools'*
-5217 5217
+5754 5754
 
 ### outrage.server.WITHOUT_META_SAMPLE *= 10*
-5561 5561
+6098 6098
 
 ### *class* outrage.server.RequestLog(log: EventLog)
-5821 5821
+6358 6358
 
-### outrage.server.build_server(store: Store | Live, log: EventLog | None = None, directory: str | PathLike[str] | None = None, \*, all_tools: bool = False, info_tool: bool = True, remount_tool: bool = True, mount_config: Sequence[str] = ()) → MCPServer
-7128 7128
+### outrage.server.build_server(store: Store | Live, log: EventLog | None = None, directory: str | PathLike[str] | None = None, \*, all_tools: bool = False, info_tool: bool = True, remount_tool: bool = True, mount_config: Sequence[str] = (), incomplete_mounts: bool = False) → MCPServer
+7665 7665
 
 ### outrage.server.delivered_text() → str
-11024 11026
+11887 11889
 
-### outrage.server.instructions(store: Store) → str
-11610 11614
+### outrage.server.instructions(store: Store, \*, incomplete_mounts: bool = False) → str
+12473 12477
 
 ### outrage.server.main(argv: list[str] | None = None) → int
-13739 13745
+14697 14703
 
 ### outrage.server.parse_args(argv: list[str] | None = None) → Namespace
-14621 14629
+15579 15587
 
 ### outrage.server.tool_description(name: str) → str
-15952 15962
+16910 16920
