@@ -60,7 +60,17 @@ strict: check-env
 #
 # `-a -E` because the output is committed, so a run must not depend on what the
 # last one left behind.
+#
+# **And the output directory goes first**, which `-a -E` does not reach: those
+# flags rebuild every page Sphinx renders, and say nothing about a page it has
+# stopped rendering. A module renamed or removed, or a page dropped from the
+# index, leaves its markdown lying in `$(BUILDDIR)/markdown/api/`, and the
+# `documents` target below copies whatever it finds there into the shipped tree
+# -- so the page comes back as a live one, for a module that no longer exists,
+# after the tracked copy has been deleted. `tests/test_reference.py` is the only
+# thing that notices.
 markdown: check-env
+	@rm -rf "$(BUILDDIR)/markdown"
 	@$(SPHINXBUILD) -b markdown "$(SOURCEDIR)" "$(BUILDDIR)/markdown" \
 		-d "$(BUILDDIR)/doctrees-markdown" -W --keep-going -a -E $(SPHINXOPTS) $(O)
 
