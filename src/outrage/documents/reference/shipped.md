@@ -89,6 +89,18 @@ without `src/outrage/skills/` -- the packaged skill -- and nothing said
 so. `test_packaging.py` is where that is guarded; this is what a front end
 asks before mounting something it was not explicitly told to mount.
 
+### outrage.shipped.document_text(\*parts: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
+
+Read one installed Markdown document directly from the shipped tree.
+
+Runtime bootstrap text cannot be read through the mount: it is needed
+before every store has opened, and a configured mount at `outrage` may
+replace the packaged tree. Reading it here keeps the mounted manual and the
+text used by the process on the same source bytes.
+
+The result is cached for the lifetime of the process. A missing file is a
+broken installation and is reported rather than replaced with empty text.
+
 ### outrage.shipped.open_documents(\*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = MOUNT_POINT) → [FilesystemStore](store_files.md#outrage.store_files.FilesystemStore)
 
 Open the shipped tree, read-only, refusing if it is not there.

@@ -52,6 +52,7 @@ bootstrap rather than here.
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 
 from .errors import OutrageError
@@ -100,6 +101,26 @@ def available() -> bool:
     return tree().is_dir()
 
 
+@functools.cache
+def document_text(*parts: str) -> str:
+    """Read one installed Markdown document directly from the shipped tree.
+
+    Runtime bootstrap text cannot be read through the mount: it is needed
+    before every store has opened, and a configured mount at ``outrage`` may
+    replace the packaged tree. Reading it here keeps the mounted manual and the
+    text used by the process on the same source bytes.
+
+    The result is cached for the lifetime of the process. A missing file is a
+    broken installation and is reported rather than replaced with empty text.
+    """
+    *directories, name = parts
+    document = tree().joinpath(*directories, f"{name}.md")
+    try:
+        return document.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise DocumentsError("documents-not-installed", path=str(document)) from exc
+
+
 def open_documents(
     *, log: EventLog | None = None, mount_point: str = MOUNT_POINT
 ) -> FilesystemStore:
@@ -145,6 +166,7 @@ __all__ = [
     "DocumentsError",
     "attached",
     "available",
+    "document_text",
     "open_documents",
     "tree",
 ]

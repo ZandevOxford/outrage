@@ -75,9 +75,11 @@ at `outrage` replaces it by the same rule that overrides any other entry.
 The MCP server also carries a writable built-in at `home`, backed by
 `~/.outrage/home.sqlite`. It is deliberately outside `--dir`: it is shared by
 every Outrage project for this user, and every project session can read and
-change it. Its first open seeds `home/readme` with that boundary and the server
-instructions route sessions there. `--unmount home` leaves it out for one run;
-a project mount at `home` replaces it without creating the global database.
+change it. Its first open seeds `home/readme` from the smaller conventions
+template at `outrage/home_readme`. Server instructions route sessions to the
+home readme when it exists, or to that template when it does not. `--unmount
+home` leaves it out for one run; a project mount at `home` replaces it without
+creating the global database.
 `--no-mount-config` does not suppress it because it is not a project-file
 entry. The command line remains project-only unless `--mount-home` opts in.
 

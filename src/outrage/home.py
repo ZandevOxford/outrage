@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import shipped
 from .errors import OutrageError
 from .eventlog import EventLog
 from .store import Store
@@ -24,16 +25,8 @@ STORE_FILE = "home.sqlite"
 README_KEY = "readme"
 #: The bootstrap document's title metadata.
 README_TITLE = "Home store"
-#: The minimal document seeded into a new or deliberately emptied home store.
-README = """# Home store
-
-This writable store is shared by every Outrage project for this user.
-Keep durable user-wide knowledge here; keep project-specific state and
-decisions in the project's root store. Changes here affect every project.
-
-No namespace beyond 'readme' is prescribed yet. Add titles and routes as the
-store grows.
-"""
+#: The shipped template used to bootstrap the home store.
+README_DOCUMENT = "home_readme"
 
 
 class HomeStoreError(OutrageError, OSError):
@@ -43,6 +36,11 @@ class HomeStoreError(OutrageError, OSError):
 def path() -> Path:
     """The user-wide store file, independent of project directory settings."""
     return Path.home() / DIRECTORY_NAME / STORE_FILE
+
+
+def readme() -> str:
+    """The shipped home-store conventions used for a new store's readme."""
+    return shipped.document_text(README_DOCUMENT)
 
 
 def open_store(
@@ -65,7 +63,7 @@ def open_store(
         if not opened.exists(README_KEY) and opened.get_documents(limit=1).total == 0:
             opened.store_document(
                 README_KEY,
-                README,
+                readme(),
                 "markdown",
                 title=README_TITLE,
             )
@@ -80,10 +78,11 @@ __all__ = [
     "DIRECTORY_NAME",
     "HomeStoreError",
     "MOUNT_POINT",
-    "README",
+    "README_DOCUMENT",
     "README_KEY",
     "README_TITLE",
     "STORE_FILE",
     "open_store",
     "path",
+    "readme",
 ]

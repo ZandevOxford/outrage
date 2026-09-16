@@ -55,6 +55,7 @@ EXPECTED = (
     "default_readme",
     "design",
     "development",
+    "home_readme",
     "hooks",
     "implementation",
     "importers",
@@ -198,6 +199,19 @@ def test_default_readme_routes_detailed_working_practice():
     assert "`outrage/workflow`" in default
     assert "`document_edit`" in workflow
     assert "Before handoff or compaction" in workflow
+
+
+def test_home_readme_suggests_only_user_wide_starting_points():
+    with shipped.open_documents() as store:
+        readme = store.retrieve_document("home_readme").content
+
+    assert "`home/readme`" in readme
+    assert "`home/contents`" in readme
+    assert "`home/agents`" in readme
+    assert "`home/reference`" in readme
+    assert "project-specific state" in readme
+    assert "default home-store readme" in readme
+    assert "Ask the user" in readme
 
 
 def test_it_is_opened_without_creating_anything(tmp_path, monkeypatch):

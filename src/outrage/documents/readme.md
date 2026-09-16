@@ -20,6 +20,8 @@ If reading this via the MCP server,
 * [cli](cli.md) - the command line.
 * [default_readme](default_readme.md) is a default readme suggesting a project
   structure.
+* [home_readme](home_readme.md) is the smaller counterpart for the shared home
+  store.
 * [design](design.md) - why outrage is built the way it is. The components,
   the key namespace and its grammar, what text is and how it is encoded, the
   tool semantics and the schema, with the reasoning and the roads not taken.

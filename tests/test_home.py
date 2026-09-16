@@ -22,11 +22,11 @@ def test_the_path_is_user_wide_and_not_the_project_store(monkeypatch, tmp_path):
     assert home.path() == tmp_path / ".outrage" / "home.sqlite"
 
 
-def test_a_new_home_store_gets_the_exact_minimal_readme(monkeypatch, tmp_path):
+def test_a_new_home_store_gets_the_exact_shipped_readme(monkeypatch, tmp_path):
     fake_home(monkeypatch, tmp_path)
 
     with home.open_store() as opened:
-        assert opened.retrieve_document(home.README_KEY).content == home.README
+        assert opened.retrieve_document(home.README_KEY).content == home.readme()
         assert opened.retrieve_document("readme/!title").content == home.README_TITLE
 
 
@@ -59,7 +59,7 @@ def test_a_deliberately_emptied_store_is_seeded_again(monkeypatch, tmp_path):
         assert opened.get_documents(limit=1).total == 0
 
     with home.open_store() as reopened:
-        assert reopened.retrieve_document("readme").content == home.README
+        assert reopened.retrieve_document("readme").content == home.readme()
 
 
 def test_concurrent_first_opens_converge_on_one_bootstrap(monkeypatch, tmp_path):
@@ -72,7 +72,7 @@ def test_concurrent_first_opens_converge_on_one_bootstrap(monkeypatch, tmp_path)
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
         contents = list(pool.map(lambda _: open_and_read(), range(16)))
 
-    assert contents == [home.README] * 16
+    assert contents == [home.readme()] * 16
 
 
 def test_the_home_store_inherits_versioning_and_logs_outward_keys(monkeypatch, tmp_path):

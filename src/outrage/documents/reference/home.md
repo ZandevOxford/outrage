@@ -20,9 +20,9 @@ Raised when the built-in home store cannot be opened or bootstrapped.
 
 The namespace prefix where the user-wide store is mounted.
 
-### outrage.home.README *= "# Home store\\n\\nThis writable store is shared by every Outrage project for this user.\\nKeep durable user-wide knowledge here; keep project-specific state and\\ndecisions in the project's root store. Changes here affect every project.\\n\\nNo namespace beyond 'readme' is prescribed yet. Add titles and routes as the\\nstore grows.\\n"*
+### outrage.home.README_DOCUMENT *= 'home_readme'*
 
-The minimal document seeded into a new or deliberately emptied home store.
+The shipped template used to bootstrap the home store.
 
 ### outrage.home.README_KEY *= 'readme'*
 
@@ -43,3 +43,7 @@ Open the home store and seed its minimal readme when it is empty.
 ### outrage.home.path() → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 The user-wide store file, independent of project directory settings.
+
+### outrage.home.readme() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
+
+The shipped home-store conventions used for a new store's readme.

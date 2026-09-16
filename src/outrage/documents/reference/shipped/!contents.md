@@ -16,8 +16,11 @@
 ### outrage.shipped.available() → bool
 4814 4816
 
-### outrage.shipped.open_documents(\*, log: EventLog | None = None, mount_point: str = MOUNT_POINT) → FilesystemStore
+### outrage.shipped.document_text(\*parts: str) → str
 5258 5262
 
+### outrage.shipped.open_documents(\*, log: EventLog | None = None, mount_point: str = MOUNT_POINT) → FilesystemStore
+5913 5919
+
 ### outrage.shipped.tree() → Path
-6696 6702
+7351 7359

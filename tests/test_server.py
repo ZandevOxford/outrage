@@ -2548,13 +2548,32 @@ def test_the_builtin_home_readme_route_is_delivered_from_provenance(tmp_path):
     built_in = SqliteStore(tmp_path, filename="home.sqlite", mount_point="home")
     override = SqliteStore(tmp_path, filename="other.sqlite", mount_point="home")
     try:
+        built_in.store_document("readme", "home conventions")
         with_home = mounts_module.MountedStore({"": root, "home": built_in}, builtin=["home"])
         without_claim = mounts_module.MountedStore({"": root, "home": override})
 
         assert "Read `home/readme`" in instructions(with_home)
+        assert "`outrage/home_readme` instead" not in instructions(with_home)
         assert "Read `home/readme`" not in instructions(without_claim)
         assert len(instructions(with_home)) <= server_module.DELIVERY_BUDGET
     finally:
         built_in.close()
         override.close()
+        root.close()
+
+
+def test_a_builtin_home_without_a_readme_is_routed_to_the_shipped_template(tmp_path):
+    root = SqliteStore(tmp_path, filename="root.sqlite")
+    built_in = SqliteStore(tmp_path, filename="home.sqlite", mount_point="home")
+    try:
+        built_in.store_document("kept", "a non-empty home store")
+        table = mounts_module.MountedStore({"": root, "home": built_in}, builtin=["home"])
+
+        text = instructions(table)
+
+        assert "no `home/readme` document" in text
+        assert "`outrage/home_readme` instead" in text
+        assert len(text) <= server_module.DELIVERY_BUDGET
+    finally:
+        built_in.close()
         root.close()

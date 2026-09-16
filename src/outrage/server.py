@@ -722,33 +722,6 @@ INSTRUCTIONS = ("instructions", "instructions")
 TOOLS = "tools"
 
 
-@functools.cache
-def _shipped_text(*parts: str) -> str:
-    """The text of one installed document, read from the files.
-
-    The files rather than the mount, for two reasons. The instructions are
-    needed at import, to size them against ``DELIVERY_BUDGET``, which is before
-    any store is opened; and a mount table naming ``outrage`` overrides the
-    shipped documentation silently, which would otherwise let a project's own
-    store decide what this server says about itself.
-    :func:`outrage.shipped.tree` is the same directory the mount reads, so the
-    two never disagree about what the text is.
-
-    Read once per process, which is what the instructions themselves promise a
-    session: they are sent when a client connects, so a file edited afterwards
-    reaches the next server rather than this one.
-
-    A missing file is the build failure :func:`outrage.shipped.available`
-    exists to notice, and is raised rather than served with a hole in it.
-    """
-    *directories, name = parts
-    path = shipped.tree().joinpath(*directories, f"{name}.md")
-    try:
-        return path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise shipped.DocumentsError("documents-not-installed", path=str(path)) from exc
-
-
 def delivered_text() -> str:
     """The instructions document, as the bytes a client that does not truncate gets.
 
@@ -760,7 +733,7 @@ def delivered_text() -> str:
     *by value* into the API reference, which put the whole document back into
     the generated page it had just been taken out of.
     """
-    return _shipped_text(*INSTRUCTIONS)
+    return shipped.document_text(*INSTRUCTIONS)
 
 
 def tool_description(name: str) -> str:
@@ -772,7 +745,7 @@ def tool_description(name: str) -> str:
     description. Keeping the description in the documentation tree also makes
     the bytes a session receives available at ``outrage/tools/<name>``.
     """
-    return _shipped_text(TOOLS, name)
+    return shipped.document_text(TOOLS, name)
 
 
 #: The key whose document introduces the store. One name, so that a session
@@ -796,7 +769,12 @@ NO_README = (
     "instead for instructions."
 )
 
-_HOME_README = "Read `home/readme` for durable context shared across projects."
+_HOME_READ_README = "Read `home/readme` for durable context shared across projects."
+
+_HOME_NO_README = (
+    "The home store has no `home/readme` document. Try reading "
+    "`outrage/home_readme` instead for suggested conventions."
+)
 
 
 def instructions(store: Store) -> str:
@@ -845,10 +823,17 @@ def instructions(store: Store) -> str:
     # only on whether there is any. It is also the container case -- a key with
     # documents beneath it and nothing of its own introduces nothing.
     opening = READ_README if root.exists(README_KEY) else NO_README
-    if isinstance(store, MountedStore) and any(
-        mount.prefix == home.MOUNT_POINT and mount.builtin for mount in store
-    ):
-        opening = f"{opening}\n{_HOME_README}"
+    home_mount = (
+        next(
+            (mount for mount in store if mount.prefix == home.MOUNT_POINT and mount.builtin),
+            None,
+        )
+        if isinstance(store, MountedStore)
+        else None
+    )
+    if home_mount is not None:
+        home_opening = _HOME_READ_README if home_mount.store.exists(README_KEY) else _HOME_NO_README
+        opening = f"{opening}\n{home_opening}"
     return f"{opening}\n\n{delivered_text()}"
 
 
