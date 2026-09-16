@@ -1914,6 +1914,18 @@ def _ls_number(value: int | str | None) -> str:
     return "-" if value is None else str(value)
 
 
+# Keys named when a survey by metadata could not see them, before the report
+# stops listing and only counts. The same job the count does at any size: say
+# that the survey under-reports, not enumerate what it missed. This front end
+# has no command that would page the rest, so the sample is all a reader gets.
+#
+# Half the server's, and private where the server's is public, because both are
+# properties of a report rather than of the store: ten keys is a reasonable JSON
+# array and an unreadable terminal line, and nothing outside this module has a
+# use for either number.
+_WITHOUT_META_SAMPLE = 5
+
+
 def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
     """Print a subtree, one document at a time, as each one arrives."""
     shown = 0
@@ -1937,10 +1949,64 @@ def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
             print(header, file=out)
             print(excerpt.content, file=out)
             shown += 1
+        if args.meta_name is not None:
+            _report_without_meta(opened, args)
 
     if not shown:
         print(f"nothing at or below {args.key or 'the top level'}", file=out)
     return 0
+
+
+def _report_without_meta(opened: store.Store, args: argparse.Namespace) -> None:
+    """Say how much of the subtree a survey by metadata could not see.
+
+    A survey asked for a name returns the documents carrying it, so the ones
+    that do not carry it are absent from the answer with nothing to say they
+    were ever there. Left alone the report quietly under-states the store, and
+    a reader draws a conclusion about a subtree from the half of it that
+    happened to be titled.
+
+    **Over the whole subtree, not over what was printed.** The claim being made
+    is about the store rather than about this run, and it stays true when
+    ``--limit`` stopped the stream early -- which is when under-reporting is
+    worst and the line matters most.
+
+    **On stderr**, because ``outrage dump > file`` is an export: a line about
+    the export does not belong inside it. Said even when nothing is missing,
+    since "no line" and "nothing missing here" are answers a reader must be
+    able to tell apart, and only one of them is worth acting on.
+
+    No remedy is offered. The MCP server names ``keys_missing_meta`` here and
+    this front end has no such command, so a sentence pointing at one would send
+    a reader after something they cannot run.
+    """
+    gap = opened.missing_meta_stats(
+        store.BoundedSubtree(args.key, args.depth),
+        meta_name=args.meta_name,
+        sample=_WITHOUT_META_SAMPLE,
+    )
+    where = keys.displayed(args.key) if args.key else "the top level"
+    names = ", ".join(args.meta_name)
+    # "None of them" is the selection, so the good news is that every document
+    # carries *at least one* -- not that it carries them all, which is what a
+    # bare list of names reads as and is a stronger claim than the count makes.
+    carries = names if len(args.meta_name) == 1 else f"at least one of {names}"
+    if not gap.total:
+        print(f"outrage: every document at or below {where} carries {carries}", file=sys.stderr)
+        return
+    listed = ", ".join(keys.displayed(key) for key in gap.sample)
+    rest = gap.total - len(gap.sample)
+    if rest > 0:
+        listed += f", and {rest} more"
+    one = gap.total == 1
+    counted = "1 document" if one else f"{gap.total} documents"
+    carry = "carries" if one else "carry"
+    them = "it" if one else "them"
+    print(
+        f"outrage: {counted} at or below {where} {carry} none of {names} "
+        f"({gap.total_chars} characters), so this survey does not show {them}: {listed}",
+        file=sys.stderr,
+    )
 
 
 def _documents(

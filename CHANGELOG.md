@@ -4,6 +4,17 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+`outrage dump --meta NAME` now says how much of the subtree the survey could not
+see. Asked for a metadata name it returns the documents carrying it, so the ones
+without it were absent from the answer with nothing to say they had ever been
+there - and a reader drew a conclusion about a subtree from the half of it that
+happened to be titled. The MCP server has warned about this since its
+`without_meta` block; the command line did not.
+
+The line goes to standard error, so `outrage dump > file` is unchanged, and it
+counts the whole subtree rather than what was printed, so it stays true when
+`--limit` stopped the stream early.
+
 A re-run of `outrage init` or `outrage config` no longer drops a field somebody
 added to the server entry by hand. `env` is the one that comes up, and `cwd`
 behind it: only `command` and `args` are written here, and rebuilding the entry

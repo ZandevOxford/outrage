@@ -1455,6 +1455,112 @@ def test_dump_limit_shows_less_and_says_so(tmp_path, capsys):
     assert "stopped at --limit 2" in capsys.readouterr().err
 
 
+def a_partly_titled_store(directory: Path) -> None:
+    """Three documents, two titled, one not -- and one title on an implicit key.
+
+    The last is what makes coverage a count rather than a subtraction: `held`
+    holds nothing itself, so it is not a document, and its title is a value
+    with no document under it.
+    """
+    from outrage.store_sqlite import SqliteStore
+
+    with SqliteStore(directory) as opened:
+        for key in ("notes/a", "notes/b", "notes/c"):
+            opened.store_document(key, "body")
+        opened.store_document("notes/a/!title", "A")
+        opened.store_document("notes/b/!title", "B")
+        opened.store_document("held/below", "body")
+        opened.store_document("held/!title", "a title on a key holding nothing")
+
+
+def test_dump_says_what_a_metadata_survey_could_not_see(tmp_path, capsys):
+    """The whole point of the block: the survey answers with the titled
+    documents and nothing in it says the untitled one was ever there."""
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    _, output = run("dump", "--dir", str(tmp_path / ".outrage"), "notes", "--meta", "title")
+
+    assert "=== notes/a/!title" in output
+    assert "notes/c" not in output
+    reported = capsys.readouterr().err
+    assert "1 document at or below notes carry" not in reported
+    assert "1 document at or below notes" in reported
+    assert "notes/c" in reported
+
+
+def test_dump_says_so_when_nothing_is_missing(tmp_path, capsys):
+    """Silence would read the same as a block nobody thought to print."""
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    run("dump", "--dir", str(tmp_path / ".outrage"), "notes/a", "--meta", "title")
+
+    assert "every document at or below notes/a carries title" in capsys.readouterr().err
+
+
+def test_dump_does_not_claim_a_document_carries_every_name(tmp_path, capsys):
+    """`--meta title --meta summary` selects documents carrying *none* of them,
+    so nothing missing means each carries at least one -- not that each carries
+    both, which is what a bare list of names reads as."""
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    run(
+        "dump",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "notes/a",
+        "--meta",
+        "title",
+        "--meta",
+        "summary",
+    )
+
+    reported = capsys.readouterr().err
+    assert "at least one of title, summary" in reported
+
+
+def test_dump_counts_the_subtree_even_when_the_limit_stopped_it(tmp_path, capsys):
+    """The claim is about the store, not about this run -- and under-reporting
+    is worst exactly when the stream stopped early."""
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    run("dump", "--dir", str(tmp_path / ".outrage"), "notes", "--meta", "title", "--limit", "1")
+
+    reported = capsys.readouterr().err
+    assert "stopped at --limit 1" in reported
+    assert "1 document at or below notes" in reported
+
+
+def test_dump_says_nothing_about_coverage_when_no_metadata_was_asked_for(tmp_path, capsys):
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    run("dump", "--dir", str(tmp_path / ".outrage"), "notes")
+
+    assert "carries" not in capsys.readouterr().err
+
+
+def test_dump_sends_the_coverage_block_to_stderr(tmp_path, capsys):
+    """`outrage dump > file` is an export, and a line about the export does not
+    belong inside it."""
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    _, output = run("dump", "--dir", str(tmp_path / ".outrage"), "notes", "--meta", "title")
+
+    assert "outrage:" not in output
+    assert "outrage:" in capsys.readouterr().err
+
+
+def test_dump_offers_no_remedy_this_front_end_cannot_run(tmp_path, capsys):
+    """The MCP server names `keys_missing_meta` here; there is no such command,
+    so a sentence naming one would send a reader after something they cannot
+    run. `workflow`: a message never tells a reader to do something they
+    cannot."""
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    run("dump", "--dir", str(tmp_path / ".outrage"), "notes", "--meta", "title")
+
+    assert "keys_missing_meta" not in capsys.readouterr().err
+
+
 def test_dump_asks_for_one_page_before_printing_anything(tmp_path, monkeypatch):
     import argparse
 
