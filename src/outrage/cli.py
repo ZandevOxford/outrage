@@ -1987,24 +1987,44 @@ def _report_without_meta(opened: store.Store, args: argparse.Namespace) -> None:
     )
     where = keys.displayed(args.key) if args.key else "the top level"
     names = ", ".join(args.meta_name)
-    # "None of them" is the selection, so the good news is that every document
-    # carries *at least one* -- not that it carries them all, which is what a
-    # bare list of names reads as and is a stronger claim than the count makes.
-    carries = names if len(args.meta_name) == 1 else f"at least one of {names}"
+
+    # Coverage first: it is the shape of the subtree, and what follows is one
+    # survey's blind spot within it. A reader wants the denominator before the
+    # exception to it.
+    for name in args.meta_name:
+        carried = gap.selection_carried.get(name, 0)
+        print(
+            f"outrage: {carried} of {gap.selection_documents} documents at or below "
+            f"{where} carry {name}",
+            file=sys.stderr,
+        )
+
+    # What is left to say depends on how many names were asked for, because the
+    # lines above already answer the one-name case. Saying it twice in different
+    # words is how a reader comes to believe they are two different facts.
     if not gap.total:
-        print(f"outrage: every document at or below {where} carries {carries}", file=sys.stderr)
+        if len(args.meta_name) > 1:
+            print(
+                f"outrage: every document at or below {where} carries at least one of {names}",
+                file=sys.stderr,
+            )
         return
+
     listed = ", ".join(keys.displayed(key) for key in gap.sample)
     rest = gap.total - len(gap.sample)
     if rest > 0:
         listed += f", and {rest} more"
     one = gap.total == 1
-    counted = "1 document" if one else f"{gap.total} documents"
-    carry = "carries" if one else "carry"
+    if len(args.meta_name) == 1:
+        subject = "the 1 without it" if one else f"the other {gap.total}"
+    else:
+        counted = "1 document" if one else f"{gap.total} documents"
+        subject = f"{counted} carrying none of {names}"
+    hold = "holds" if one else "hold"
     them = "it" if one else "them"
     print(
-        f"outrage: {counted} at or below {where} {carry} none of {names} "
-        f"({gap.total_chars} characters), so this survey does not show {them}: {listed}",
+        f"outrage: {subject} {hold} {gap.total_chars} characters, and this survey "
+        f"does not show {them}: {listed}",
         file=sys.stderr,
     )
 

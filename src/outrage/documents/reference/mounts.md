@@ -721,6 +721,18 @@ stretch. `window` crosses like any other range -- a segment it
 excludes is not asked at all, which is what makes a caller's windows
 tile as they page.
 
+**The coverage half is summed over a different set of segments**, and
+that is the whole subtlety here. `total` describes the window, so a
+segment the window excludes must not contribute to it; the coverage
+fields describe the *selection*, so that same segment must. Asking only
+the segments the window reaches would report coverage of the page
+instead of coverage of the subtree, and it would change as a caller
+paged -- the one thing the selection scope exists to stop.
+
+A name absent from a segment is absent because that segment holds no
+document carrying it, which is zero rather than unknown, so the sum is
+over the union of the names any segment reported.
+
 #### close() → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Close this thread's connection to every mounted store.

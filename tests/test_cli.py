@@ -1483,18 +1483,64 @@ def test_dump_says_what_a_metadata_survey_could_not_see(tmp_path, capsys):
     assert "=== notes/a/!title" in output
     assert "notes/c" not in output
     reported = capsys.readouterr().err
-    assert "1 document at or below notes carry" not in reported
-    assert "1 document at or below notes" in reported
+    assert "2 of 3 documents at or below notes carry title" in reported
+    assert "the 1 without it holds" in reported
     assert "notes/c" in reported
 
 
 def test_dump_says_so_when_nothing_is_missing(tmp_path, capsys):
-    """Silence would read the same as a block nobody thought to print."""
+    """Silence would read the same as a block nobody thought to print.
+
+    The coverage line carries it for a single name -- "1 of 1" says both halves
+    at once -- so there is deliberately no second sentence after it.
+    """
     a_partly_titled_store(tmp_path / ".outrage")
 
     run("dump", "--dir", str(tmp_path / ".outrage"), "notes/a", "--meta", "title")
 
-    assert "every document at or below notes/a carries title" in capsys.readouterr().err
+    reported = capsys.readouterr().err
+    assert "1 of 1 documents at or below notes/a carry title" in reported
+    assert "does not show" not in reported
+
+
+def test_dump_reports_coverage_of_the_subtree_per_name(tmp_path, capsys):
+    """The number `total` cannot give: how many carry *each* name.
+
+    `total` counts documents carrying none of them, so a document with a title
+    and no summary is in neither number.
+    """
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    run(
+        "dump",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "notes",
+        "--meta",
+        "title",
+        "--meta",
+        "summary",
+    )
+
+    reported = capsys.readouterr().err
+    assert "2 of 3 documents at or below notes carry title" in reported
+    assert "0 of 3 documents at or below notes carry summary" in reported
+
+
+def test_dump_coverage_counts_documents_not_values(tmp_path, capsys):
+    """`held` holds nothing itself, so its title is a value with no document.
+
+    Counting values and subtracting would report four titles against three
+    documents here and go negative on a subtree with more of them.
+    """
+    a_partly_titled_store(tmp_path / ".outrage")
+
+    run("dump", "--dir", str(tmp_path / ".outrage"), "--meta", "title")
+
+    # Four documents in the store -- notes/a, notes/b, notes/c, held/below --
+    # and three titles, but only two of the titles sit on a document. Counting
+    # the titles would say three of four.
+    assert "2 of 4 documents at or below the top level carry title" in capsys.readouterr().err
 
 
 def test_dump_does_not_claim_a_document_carries_every_name(tmp_path, capsys):
@@ -1527,7 +1573,7 @@ def test_dump_counts_the_subtree_even_when_the_limit_stopped_it(tmp_path, capsys
 
     reported = capsys.readouterr().err
     assert "stopped at --limit 1" in reported
-    assert "1 document at or below notes" in reported
+    assert "2 of 3 documents at or below notes carry title" in reported
 
 
 def test_dump_says_nothing_about_coverage_when_no_metadata_was_asked_for(tmp_path, capsys):

@@ -281,6 +281,25 @@ class MissingMeta:
     what a caller needs to decide whether to go and look."""
     sample: list[str]
     """Up to a requested number of their keys. The count is exact; this is not."""
+    selection_documents: int
+    """Documents in the whole **selection**, not in the window -- which is why
+    the name says so. The three fields above describe one page's stretch of the
+    store and these two describe the subtree it was cut from, and no caller
+    should be able to read one as the other by picking a short name."""
+    selection_carried: dict[str, int]
+    """How many of ``selection_documents`` carry each name asked for.
+
+    **Counted, never derived.** Subtracting from a count of *values* gives the
+    wrong answer and can go negative: a value may sit on a key that holds no
+    document of its own -- ``a/!title`` where ``a`` is implicit -- and this
+    project's own store has two, 945 titles against 943 documents. So these are
+    documents that carry the name, and ``selection_documents`` minus one of
+    them is the number lacking it.
+
+    Per name because ``total`` cannot answer it: that counts documents carrying
+    **none** of the names, and a document carrying a title but no summary is in
+    neither number. The two do not compose in either direction.
+    """
 
 
 @dataclass(frozen=True, slots=True)

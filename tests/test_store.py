@@ -2622,6 +2622,7 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
             store.store_document(f"{key}/!title", "T")
 
         after, seen, counted = None, [], 0
+        coverage = []
         while True:
             page = store.get_documents(meta_name=["title"], limit=1, cursor=after)
             window = store.missing_meta_stats(
@@ -2631,6 +2632,7 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
             )
             seen += window.sample
             counted += window.total
+            coverage.append((window.selection_documents, window.selection_carried["title"]))
             if page.next_cursor is None:
                 break
             after = page.next_cursor
@@ -2639,7 +2641,79 @@ def test_survey_windows_tile_over_adversarial_keys(tmp_path):
         assert sorted(seen) == sorted(whole.items), f"titled={titled}"
         assert len(seen) == len(set(seen)), f"double counted, titled={titled}"
         assert counted == whole.total, f"titled={titled}"
+        # The coverage half is the opposite property to the one above, over the
+        # same adversarial keys: the missing counts *tile* because they describe
+        # a window, and these must not move at all because they describe the
+        # selection. A caller paging a survey reads the same denominator on
+        # every page or the ratio it prints changes as it scrolls.
+        assert len(set(coverage)) == 1, f"coverage moved while paging, titled={titled}"
+        assert coverage[0] == (len(keyset), len(titled)), f"titled={titled}"
         store.connection.close()
+
+
+def test_coverage_counts_documents_carrying_a_name_not_the_values(store):
+    """A value can sit on a key that holds no document of its own.
+
+    `held` is implicit -- it exists because `held/below` does -- so `held/!title`
+    is a title with no document under it. Counting titles and subtracting from
+    the document count reports one document too few here, and goes negative on a
+    subtree with more of them than it has documents. This project's own store
+    has 945 titles against 943 documents for exactly this reason.
+    """
+    for key in ("a", "b", "held/below"):
+        store.store_document(key, "body")
+    store.store_document("a/!title", "A")
+    store.store_document("held/!title", "a title on a key holding nothing")
+
+    gap = store.missing_meta_stats(meta_name=["title"])
+
+    assert gap.selection_documents == 3
+    assert gap.selection_carried == {"title": 1}
+    # Two titles exist; one of them is not on a document. Subtracting values
+    # from documents would say 3 - 2 = 1 lacking, where three documents lack it
+    # bar `a`, which is two.
+    assert gap.selection_documents - gap.selection_carried["title"] == 2
+
+
+def test_coverage_is_per_name_because_the_missing_total_cannot_be(store):
+    """`total` counts documents carrying *none* of the names, so a document with
+    a title and no summary is in neither number. The two do not compose."""
+    for key in ("a", "b", "c"):
+        store.store_document(key, "body")
+    store.store_document("a/!title", "A")
+    store.store_document("b/!summary", "B")
+
+    gap = store.missing_meta_stats(meta_name=["title", "summary"])
+
+    assert gap.selection_carried == {"title": 1, "summary": 1}
+    # Only `c` carries neither, which is not derivable from the pair above.
+    assert gap.total == 1
+    assert gap.selection_documents == 3
+
+
+def test_coverage_reports_a_name_nothing_carries_as_zero(store):
+    store.store_document("a", "body")
+
+    gap = store.missing_meta_stats(meta_name=["title", "nobody-has-this"])
+
+    # Absent and zero are different answers, and a caller reading an absent key
+    # as zero is right only by luck.
+    assert gap.selection_carried == {"title": 0, "nobody-has-this": 0}
+
+
+def test_coverage_honours_the_key_range_but_not_the_window(store):
+    """The two ranges are measured against different things, and only one of
+    them bounds coverage: `key_range` narrows the selection, `window` narrows
+    one page of a survey of it."""
+    for key in ("a", "b", "c"):
+        store.store_document(key, "body")
+    store.store_document("a/!title", "A")
+
+    narrowed = store.missing_meta_stats(key_range=KeyRange(after="a"), meta_name=["title"])
+    windowed = store.missing_meta_stats(window=KeyRange(after="a", before="b"), meta_name=["title"])
+
+    assert narrowed.selection_documents == 2
+    assert windowed.selection_documents == 3
 
 
 def test_a_document_and_its_metadata_survive_the_rebuild_in_order(file_store):

@@ -1811,26 +1811,58 @@ class MountedStore(Store):
         stretch. ``window`` crosses like any other range -- a segment it
         excludes is not asked at all, which is what makes a caller's windows
         tile as they page.
+
+        **The coverage half is summed over a different set of segments**, and
+        that is the whole subtlety here. ``total`` describes the window, so a
+        segment the window excludes must not contribute to it; the coverage
+        fields describe the *selection*, so that same segment must. Asking only
+        the segments the window reaches would report coverage of the page
+        instead of coverage of the subtree, and it would change as a caller
+        paged -- the one thing the selection scope exists to stop.
+
+        A name absent from a segment is absent because that segment holds no
+        document carrying it, which is zero rather than unknown, so the sum is
+        over the union of the names any segment reported.
         """
         found = self.resolve(subtree.key)
         total = 0
         total_chars = 0
         names: list[str] = []
+        documents = 0
+        # Seeded from what was asked rather than from what the segments
+        # answered, so an empty table reports every name at zero the way a
+        # store with no documents does. A name nobody carries is zero, not
+        # absent, and a table that answers a different *shape* from the store
+        # it stands in for is the defect `test_a_split_table_answers_every_read`
+        # exists to catch -- it caught this.
+        asked = [meta_name] if isinstance(meta_name, str) else list(meta_name)
+        carried: dict[str, int] = dict.fromkeys(asked, 0)
         for segment in self.segments(found.outer, subtree.depth, key_range=key_range):
             inward = _inward_range(segment.mount, window)
-            if inward is None:
-                continue
             gap = segment.store.missing_meta_stats(
                 segment.subtree,
                 key_range=segment.key_range,
-                window=inward,
+                window=UNBOUNDED if inward is None else inward,
                 meta_name=meta_name,
                 sample=sample,
             )
+            # Every segment of the selection counts towards coverage; only the
+            # ones the window reaches count towards what the window missed.
+            documents += gap.selection_documents
+            for name, count in gap.selection_carried.items():
+                carried[name] = carried.get(name, 0) + count
+            if inward is None:
+                continue
             total += gap.total
             total_chars += gap.total_chars
             names += _named_keys(segment, gap.sample)
-        return MissingMeta(total=total, total_chars=total_chars, sample=names[:sample])
+        return MissingMeta(
+            total=total,
+            total_chars=total_chars,
+            sample=names[:sample],
+            selection_documents=documents,
+            selection_carried=carried,
+        )
 
     # A table has no ``path``, ``directory``, ``backup``, ``audit_rows``,
     # ``check_file`` or ``repair``, and does not answer them at all: it is a

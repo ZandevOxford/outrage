@@ -612,7 +612,17 @@ def test_a_shadowed_key_is_not_named_as_missing_metadata(shadowed_server):
 
 def test_without_meta_does_not_count_what_it_cannot_show(shadowed_server):
     result = call(shadowed_server, "get_documents", meta_name=["title"])
-    assert result["without_meta"] == {"total": 0, "total_chars": 0, "sample": []}
+    # The coverage half obeys the same rule from the other side. The root holds
+    # five documents and the mount shadows three of them -- including
+    # `project/untitled`, which would otherwise be the one thing this block
+    # exists to report -- so the denominator is the four a reader can reach.
+    assert result["without_meta"] == {
+        "total": 0,
+        "total_chars": 0,
+        "sample": [],
+        "selection_documents": 4,
+        "selection_carried": {"title": 4},
+    }
 
 
 def test_a_survey_counts_the_segments_it_actually_read(shadowed_server):

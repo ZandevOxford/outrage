@@ -266,9 +266,11 @@ whole document, use `read_document` on that document.
 
 #### `MissingMeta` fields
 
-- `total` (integer; required) — Documents carrying none of the requested metadata
+- `total` (integer; required) — Documents in this page's window carrying none of the names
 - `total_chars` (integer; required) — Characters stored across those documents
 - `sample` (array[string]; required) — A bounded sample of their keys
+- `selection_documents` (integer; required) — Documents in the whole subtree, not just this page's window
+- `selection_carried` (object[string, integer]; required) — How many of those documents carry each name asked for
 
 ## `find_documents`
 

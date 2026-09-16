@@ -1387,13 +1387,35 @@ class PyarrowStore(FileStore):
         ]
         lower, upper = _span(marks, window)
         within = missing.narrowed(lower, upper)
+        documents, carried = self._selection_coverage(subtree, key_range, names)
         return MissingMeta(
             total=len(within),
             total_chars=within.total_chars,
             sample=[self._index.at("key", position) for position in within.positions[:sample]]
             if sample > 0
             else [],
+            selection_documents=documents,
+            selection_carried=carried,
         )
+
+    def _selection_coverage(
+        self, subtree: BoundedSubtree, key_range: KeyRange, names: list[str]
+    ) -> tuple[int, dict[str, int]]:
+        """Documents in the selection, and how many carry each name.
+
+        Over the selection rather than the window, and each name counted as
+        ``documents`` minus the documents missing that one name --
+        :meth:`outrage.store_sqlite.SqliteStore._selection_coverage` has why it
+        is that subtraction and not a count of the values themselves.
+
+        One lookahead pass per name on top of the one already run, each of them
+        :meth:`_missing`'s, so a name is never decided here by a rule the
+        survey does not use.
+        """
+        documents = len(self._selection(subtree, key_range, meta_name=None))
+        return documents, {
+            name: documents - len(self._missing(subtree, key_range, [name])) for name in names
+        }
 
     @_logged("keys_missing_meta")
     def keys_missing_meta(

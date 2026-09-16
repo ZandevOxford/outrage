@@ -873,6 +873,10 @@ def test_get_documents_survey_names_the_untitled(server):
         "total": 1,
         "total_chars": len("No title here."),
         "sample": ["context/e5f6/note"],
+        # The subtree, not this page's window: three documents below `context`,
+        # two of them titled.
+        "selection_documents": 3,
+        "selection_carried": {"title": 2},
     }
 
 
@@ -891,7 +895,13 @@ def test_the_survey_says_none_missing_rather_than_going_quiet(server):
 
     # Absent and zero are different answers, and a caller reading an absent
     # block as "none" is right only by luck.
-    assert result["without_meta"] == {"total": 0, "total_chars": 0, "sample": []}
+    assert result["without_meta"] == {
+        "total": 0,
+        "total_chars": 0,
+        "sample": [],
+        "selection_documents": 2,
+        "selection_carried": {"title": 2},
+    }
 
 
 def test_get_documents_without_meta_says_nothing_about_untitled_documents(server):

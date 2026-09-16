@@ -791,7 +791,7 @@ in; the split as the scope sees it, out.
 
 alias of [`Callable`](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)], [`tuple`](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None), [`str`](https://docs.python.org/3/builtins/stdtypes.html#str) | [`None`](https://docs.python.org/3/builtins/constants.html#None)]]
 
-### *class* outrage.store.MissingMeta(total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), sample: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)])
+### *class* outrage.store.MissingMeta(total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), sample: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], selection_documents: [int](https://docs.python.org/3/builtins/functions.html#int), selection_carried: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [int](https://docs.python.org/3/builtins/functions.html#int)])
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -813,6 +813,28 @@ what a caller needs to decide whether to go and look.
 #### sample *: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
 
 Up to a requested number of their keys. The count is exact; this is not.
+
+#### selection_documents *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
+Documents in the whole **selection**, not in the window -- which is why
+the name says so. The three fields above describe one page's stretch of the
+store and these two describe the subtree it was cut from, and no caller
+should be able to read one as the other by picking a short name.
+
+#### selection_carried *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [int](https://docs.python.org/3/builtins/functions.html#int)]*
+
+How many of `selection_documents` carry each name asked for.
+
+**Counted, never derived.** Subtracting from a count of *values* gives the
+wrong answer and can go negative: a value may sit on a key that holds no
+document of its own -- `a/!title` where `a` is implicit -- and this
+project's own store has two, 945 titles against 943 documents. So these are
+documents that carry the name, and `selection_documents` minus one of
+them is the number lacking it.
+
+Per name because `total` cannot answer it: that counts documents carrying
+**none** of the names, and a document carrying a title but no summary is in
+neither number. The two do not compose in either direction.
 
 ### *class* outrage.store.Page(items: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[T], returned: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None))
 

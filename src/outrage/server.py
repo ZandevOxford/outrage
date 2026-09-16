@@ -486,9 +486,18 @@ class _ListKeysResult(_ToolResult):
 
 
 class _MissingMetaResult(_ToolResult):
-    total: Annotated[int, Field(description="Documents carrying none of the requested metadata")]
+    total: Annotated[
+        int, Field(description="Documents in this page's window carrying none of the names")
+    ]
     total_chars: Annotated[int, Field(description="Characters stored across those documents")]
     sample: Annotated[list[str], Field(description="A bounded sample of their keys")]
+    selection_documents: Annotated[
+        int, Field(description="Documents in the whole subtree, not just this page's window")
+    ]
+    selection_carried: Annotated[
+        dict[str, int],
+        Field(description="How many of those documents carry each name asked for"),
+    ]
 
 
 class _GetDocumentsResult(_ToolResult):
@@ -1444,10 +1453,16 @@ def build_server(
                 meta_name=meta_name,
                 sample=WITHOUT_META_SAMPLE,
             )
+            # `total` and `sample` describe this page's window; the two
+            # `selection_` fields describe the whole subtree and do not move as
+            # a caller pages. Spelled out in the field names because a block
+            # holding two scopes is otherwise read as holding one.
             result["without_meta"] = {
                 "total": gap.total,
                 "total_chars": gap.total_chars,
                 "sample": gap.sample,
+                "selection_documents": gap.selection_documents,
+                "selection_carried": gap.selection_carried,
             }
         return _GetDocumentsResult.model_validate(result)
 

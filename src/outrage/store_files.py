@@ -1201,11 +1201,33 @@ class FilesystemStore(FileStore):
             for row in missing
             if inside(root if row.sort_key == keys.ROOT else row.sort_key + suffix)
         ]
+        documents, carried = self._selection_coverage(subtree, key_range, names)
         return MissingMeta(
             total=len(within),
             total_chars=_total_chars(within),
             sample=[row.key for row in within[:sample]] if sample > 0 else [],
+            selection_documents=documents,
+            selection_carried=carried,
         )
+
+    def _selection_coverage(
+        self, subtree: BoundedSubtree, key_range: KeyRange, names: list[str]
+    ) -> tuple[int, dict[str, int]]:
+        """Documents in the selection, and how many carry each name.
+
+        Over the selection rather than the window, and each name counted as
+        ``documents`` minus the documents missing that one name, which is the
+        contract every backend implements the same way -- see
+        :meth:`outrage.store_sqlite.SqliteStore._selection_coverage` for why it
+        is a subtraction from *documents* and never a count of values.
+
+        One walk per name here, where a backend that can bisect runs a query.
+        This is the backend whose every answer is a walk.
+        """
+        documents = len(self._selection(subtree, key_range, meta_name=None))
+        return documents, {
+            name: documents - len(self._missing(subtree, key_range, [name])) for name in names
+        }
 
     @_logged("keys_missing_meta")
     def keys_missing_meta(

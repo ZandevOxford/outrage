@@ -4,6 +4,20 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+A metadata survey now reports **how many documents carry each name it was asked
+for**, alongside the count of those carrying none. `total` could not answer it:
+a document with a title and no summary is in neither number, and the two do not
+compose in either direction. `MissingMeta` gains `selection_documents` and
+`selection_carried`, and the MCP `without_meta` block gains the same two fields.
+
+They describe the **whole selection**, not the page's window as the fields
+beside them do, which is why the names say so: a caller paging a survey reads
+the same denominator on every page rather than one that moves with the cursor.
+
+The counts are of documents *carrying* a name, never values minus documents. A
+value can sit on a key holding no document of its own -- `a/!title` where `a` is
+implicit -- so subtracting reports too few and can go negative.
+
 `outrage dump --meta NAME` now says how much of the subtree the survey could not
 see. Asked for a metadata name it returns the documents carrying it, so the ones
 without it were absent from the answer with nothing to say they had ever been

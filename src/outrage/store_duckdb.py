@@ -790,6 +790,7 @@ class DuckdbStore(FileStore):
         params += bounds
 
         total, total_chars = self._totals(where, params)
+        documents, carried = self._selection_coverage(subtree, key_range, names)
         found: list[str] = []
         if sample > 0 and total:
             found = [
@@ -799,7 +800,13 @@ class DuckdbStore(FileStore):
                     [*params, sample],
                 )
             ]
-        return MissingMeta(total=total, total_chars=total_chars, sample=found)
+        return MissingMeta(
+            total=total,
+            total_chars=total_chars,
+            sample=found,
+            selection_documents=documents,
+            selection_carried=carried,
+        )
 
     @_logged("keys_missing_meta")
     def keys_missing_meta(
@@ -920,6 +927,25 @@ class DuckdbStore(FileStore):
             f"AND split_part(key, '{keys.DELIMITER}', -1) IN ({marks}))"
         )
         return where, [*params, *(keys.META_PREFIX + name for name in names)]
+
+    def _selection_coverage(
+        self, subtree: BoundedSubtree, key_range: KeyRange, names: list[str]
+    ) -> tuple[int, dict[str, int]]:
+        """Documents in the selection, and how many carry each name.
+
+        The SQLite backend's method for the same reasons it gives, over this
+        backend's anti-join: each name is ``documents`` minus the documents
+        missing that one name, so the count shares :meth:`_missing`'s predicate
+        with the survey rather than defining carrying a second time.
+        """
+        where, params = self._selection(subtree, key_range, meta_name=None)
+        documents, _ = self._totals(where, params)
+        carried = {}
+        for name in names:
+            missing, bound = self._missing(subtree, key_range, [name])
+            lacking, _ = self._totals(missing, bound)
+            carried[name] = documents - lacking
+        return documents, carried
 
     def _totals(self, where: str, params: Sequence[object]) -> tuple[int, int]:
         row = self._one(
