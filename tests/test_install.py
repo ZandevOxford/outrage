@@ -33,6 +33,8 @@ from outrage.install import (
     CODEX_DIR,
     CODEX_HOOK,
     COPILOT_HOOK,
+    CURSOR_DIR,
+    CURSOR_HOOK,
     GITHUB_DIR,
     HOOK_TARGETS,
     MARKER,
@@ -144,17 +146,22 @@ def test_the_shared_hook_command_names_the_running_python_environment():
         assert shlex.split(command) == expected
 
 
-def test_the_copilot_hook_command_selects_its_flat_payload():
+@pytest.mark.parametrize(
+    ("target", "flag"), [(COPILOT_HOOK, "--copilot"), (CURSOR_HOOK, "--cursor")]
+)
+def test_a_flat_harness_command_selects_its_own_payload(target, flag):
+    """The flag is how the hook asks for the key its harness reads back."""
     expected = [
         str(Path(sys.executable).resolve()),
         "-m",
         "outrage",
         "sessionstart",
-        "--copilot",
+        flag,
         SESSIONSTART_MARKER,
     ]
-    command = sessionstart_command(copilot=True)
+    command = sessionstart_command(target=target)
 
+    assert target.payload_flag == flag
     if os.name == "nt":
         assert command == subprocess.list2cmdline(expected)
     else:
@@ -193,9 +200,11 @@ def test_the_sessionstart_payload_is_read_from_the_shipped_document():
     assert payload["hookSpecificOutput"]["additionalContext"] == (
         prompt.read_text(encoding="utf-8").removesuffix("\n")
     )
-    assert sessionstart_payload(copilot=True) == {
-        "additionalContext": prompt.read_text(encoding="utf-8").removesuffix("\n")
-    }
+    context = prompt.read_text(encoding="utf-8").removesuffix("\n")
+    assert sessionstart_payload(target=COPILOT_HOOK) == {"additionalContext": context}
+    # One character of difference from Copilot's, and nothing reports it wrong:
+    # the session just starts without the context.
+    assert sessionstart_payload(target=CURSOR_HOOK) == {"additional_context": context}
 
 
 def test_the_sessionstart_prompt_is_read_at_command_time(tmp_path, monkeypatch):
@@ -611,6 +620,7 @@ def test_init_writes_the_three_things(tmp_path):
     assert installed(tmp_path, "skills/outrage/SKILL.md").is_file()
     assert codex_installed(tmp_path, "skills/outrage/SKILL.md").is_file()
     assert copilot_installed(tmp_path, "agents/outrage-search.agent.md").is_file()
+    assert cursor_servers(tmp_path)["outrage"]["command"] == entry["command"]
     assert done.writes
 
 
@@ -623,6 +633,87 @@ def test_init_writes_the_server_for_codex_too_and_marks_it(tmp_path):
     assert entry == done.codex_server.entry
     assert entry["args"][0] == config_module.SERVER_MARKER
     assert entry["args"][1:] == servers(tmp_path / ".mcp.json")["outrage"]["args"]
+
+
+def cursor_servers(project: Path) -> dict:
+    return servers(project / ".cursor" / "mcp.json")
+
+
+def test_init_writes_the_server_for_cursor_too(tmp_path):
+    """Cursor reads no .mcp.json either, and its file is that file's shape."""
+    done = init(tmp_path, log=Path(tmp_path / "events.jsonl"))
+
+    entry = cursor_servers(tmp_path)["outrage"]
+    assert entry == done.cursor_server.entry
+    assert entry["args"] == servers(tmp_path / ".mcp.json")["outrage"]["args"]
+    assert entry["command"] == servers(tmp_path / ".mcp.json")["outrage"]["command"]
+
+
+def test_the_cursor_entry_declares_the_transport(tmp_path):
+    """Cursor documents `type` as required, and a server it will not launch
+    leaves nothing behind to diagnose. The Claude Code entry does not carry it,
+    so this is the one field that is not the same entry at another path."""
+    init(tmp_path)
+
+    entry = cursor_servers(tmp_path)["outrage"]
+    assert entry["type"] == config_module.CURSOR_SERVER_TYPE == "stdio"
+    assert "type" not in servers(tmp_path / ".mcp.json")["outrage"]
+
+
+def test_the_cursor_entry_carries_no_marker(tmp_path):
+    """`mcpServers` is an object, so the name finds the entry. Only Codex's
+    TOML, which cannot hold two tables of one name, needed recognising."""
+    init(tmp_path)
+
+    args = cursor_servers(tmp_path)["outrage"]["args"]
+    assert not any(config_module.is_server_marker(arg) for arg in args)
+
+
+def test_a_second_cursor_run_keeps_what_the_user_added(tmp_path):
+    """The rule every entry follows: an option this run does not mention is
+    inherited, and a server that is not ours is not touched."""
+    init(tmp_path, log=Path(tmp_path / "events.jsonl"))
+    path = tmp_path / ".cursor" / "mcp.json"
+    config = read_json(path)
+    config["mcpServers"]["something-else"] = {"command": "theirs", "args": []}
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+    done = init(tmp_path)
+
+    after = cursor_servers(tmp_path)
+    assert after["something-else"] == {"command": "theirs", "args": []}
+    assert "--log" in after["outrage"]["args"], "logging is inherited, not switched off"
+    assert after["outrage"]["type"] == "stdio"
+    assert not done.cursor_server.writes
+
+
+def test_a_cursor_file_that_does_not_parse_stops_the_run(tmp_path):
+    """The whole run is planned before any of it is written, so a project is
+    never left with a hook and no server entry."""
+    path = tmp_path / ".cursor" / "mcp.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        init(tmp_path)
+
+    assert not (tmp_path / ".mcp.json").exists()
+    assert not (tmp_path / CODEX_DIR / "config.toml").exists()
+
+
+def test_cursor_gets_the_entry_and_the_hook_and_no_assets(tmp_path):
+    """`.cursor/` holds exactly the two files outrage owns.
+
+    Cursor's project instructions are `.cursor/rules` and `.cursor/commands`
+    and outrage ships neither, so anything else here would be somebody's own.
+    """
+    init(tmp_path)
+
+    assert sorted(p.name for p in (tmp_path / CURSOR_DIR).iterdir()) == [
+        "hooks.json",
+        "mcp.json",
+    ]
+    assert CURSOR_HOOK.relative == Path(CURSOR_DIR) / "hooks.json"
 
 
 def test_init_records_the_store_directory_it_is_given(tmp_path):
@@ -689,6 +780,7 @@ def test_a_second_init_changes_nothing_anywhere(tmp_path):
     assert not done.writes
     assert done.server.action == "unchanged"
     assert done.codex_server.action == "unchanged"
+    assert done.cursor_server.action == "unchanged"
     assert [h.action for h in done.hooks] == ["unchanged"] * len(HOOK_TARGETS)
     assert actions(list(done.assets)) == {"unchanged"}
     assert actions(list(done.codex_assets)) == {"unchanged"}
@@ -702,10 +794,12 @@ def test_init_dry_run_writes_nothing_and_agrees_with_the_real_run(tmp_path):
     assert not (tmp_path / CLAUDE_DIR).exists()
     assert not (tmp_path / CODEX_DIR).exists()
     assert not (tmp_path / GITHUB_DIR).exists()
+    assert not (tmp_path / ".cursor").exists()
 
     done = init(tmp_path)
     assert preview.server.action == done.server.action
     assert preview.codex_server.action == done.codex_server.action
+    assert preview.cursor_server.action == done.cursor_server.action
     assert [h.action for h in preview.hooks] == [h.action for h in done.hooks]
     assert actions(list(preview.assets)) == actions(list(done.assets))
     assert actions(list(preview.codex_assets)) == actions(list(done.codex_assets))
@@ -723,6 +817,7 @@ def test_a_refusal_stops_the_whole_run(tmp_path):
 
     assert not (tmp_path / ".mcp.json").exists(), "the server entry was not written either"
     assert not (tmp_path / ".codex" / "config.toml").exists()
+    assert not (tmp_path / ".cursor" / "mcp.json").exists()
     assert not installed(tmp_path, "skills/outrage/SKILL.md").exists()
     assert not codex_installed(tmp_path, "skills/outrage/SKILL.md").exists()
     assert not copilot_installed(tmp_path, "agents/outrage-search.agent.md").exists()
@@ -763,7 +858,7 @@ def test_the_copilot_entry_keeps_only_bash_off_windows():
     entry = template_entry(COPILOT_HOOK)
     assert entry["type"] == "command"
     assert "powershell" not in entry
-    assert entry["bash"] == install_module._sessionstart_command(copilot=True, shell="bash")
+    assert entry["bash"] == install_module._sessionstart_command(target=COPILOT_HOOK, shell="bash")
 
 
 def test_the_copilot_marker_is_an_argument_and_the_old_field_is_gone():
@@ -958,16 +1053,25 @@ def test_every_harness_delivers_the_same_sentence():
 
     `test_both_harnesses_deliver_the_same_sentence` above covers the first two
     and is left as it is; this one is over `HOOK_TARGETS`, so a fourth harness
-    is caught without a fourth test.
+    is caught without a fourth test. Cursor was that fourth harness and this
+    test did catch it: its payload key is `additional_context`, so reading
+    `additionalContext` out of it raised rather than quietly comparing None.
     """
 
     def context(target) -> str:
         entry = template_entry(target)
-        command = entry["bash"] if "bash" in entry else entry["hooks"][0]["command"]
+        if "bash" in entry:  # Copilot CLI picks a shell per platform
+            command = entry["bash"]
+        elif "command" in entry:  # Cursor: one string, like Copilot's but flat
+            command = entry["command"]
+        else:  # Claude Code and Codex nest the handler
+            command = entry["hooks"][0]["command"]
         payload = json.loads(
             subprocess.run(["sh", "-c", command], capture_output=True, text=True, check=True).stdout
         )
-        return payload.get("hookSpecificOutput", payload)["additionalContext"]
+        if target.context_field:
+            return payload[target.context_field]
+        return payload["hookSpecificOutput"]["additionalContext"]
 
     assert len({context(t) for t in HOOK_TARGETS}) == 1
 

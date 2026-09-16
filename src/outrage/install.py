@@ -1,8 +1,9 @@
 """Setting a project up: the MCP entries, hooks, and harness-specific skills.
 
 ``init`` is the whole of ``outrage init`` and the three parts are separable: the
-server entries - ``.mcp.json``, and ``.codex/config.toml`` for Codex, which
-does not read the other - are :mod:`outrage.config`'s and are called rather
+server entries - ``.mcp.json``, ``.codex/config.toml`` for Codex and
+``.cursor/mcp.json`` for Cursor, neither of which reads the first - are
+:mod:`outrage.config`'s and are called rather
 than repeated, the
 session-start hooks are written here, and packaged assets are copied into the
 directories their harness reads. Most of what follows is about the hooks,
@@ -14,7 +15,7 @@ leaves everything else exactly as it found it - the rule :mod:`outrage.config`
 already follows for ``.mcp.json``, and the reason its ``read_config`` and
 ``write_config`` are reused here rather than reimplemented.
 
-## Three harnesses, one hook each
+## Four harnesses, one hook each
 
 :data:`HOOK_TARGETS` is the list, and everything below takes one of them rather
 than assuming Claude Code. Adding the second one is what turned the constants
@@ -22,6 +23,25 @@ into a :class:`HookTarget`, on the rule that nothing is generalised before
 there is a second real case to generalise *to*, and Copilot CLI was it. Codex,
 added third, cost a template and a constant and no change to any function here
 - which is the shape working.
+
+Cursor, added fourth, cost one more field. Its file is ``.cursor/hooks.json``,
+Copilot's shape down to the ``"version": 1`` stamp and the lower-case
+``sessionStart``, and its entry is a single ``command`` string like Codex's.
+What it does not share with either is the **payload**, and that is the field:
+Cursor reads back ``additional_context`` where Copilot reads
+``additionalContext``, the same word in a different case convention. One
+character of difference that delivers nothing at all if it is wrong, which is
+why :attr:`HookTarget.context_field` spells it out per harness rather than
+letting a boolean mean "the flat one".
+
+Cursor's packaged *assets* are still nothing: its project instructions are
+``.cursor/rules`` and ``.cursor/commands``, and there is no packaged equivalent
+of either here, so :func:`write_assets` has nothing to copy there.
+
+Cursor's ``matcher`` is documented as optional for every event, so unlike the
+Codex one it is left out. That is the same rule as Codex's, not a departure
+from it: ship what the documentation establishes. For Codex requiredness was
+*not* established and the example carried one, so the example won.
 
 They differ in more than spelling:
 
@@ -74,7 +94,11 @@ The CLI accepts that one private argument and does not print it, so the marker
 is independent of shell comment syntax and remains absent from stdout.
 
 Copilot's command also carries a hidden ``--copilot`` flag so the CLI emits its
-flat ``additionalContext`` payload rather than Claude and Codex's nested one.
+flat ``additionalContext`` payload rather than Claude and Codex's nested one,
+and Cursor's carries ``--cursor`` for its ``additional_context``. Both flags
+stay accepted for as long as an entry written by an older release might still
+be installed: the hook file is only rewritten by ``outrage init``, so upgrading
+the package does not upgrade the command line already recorded in it.
 Older Copilot entries carried the marker in a ``comment`` field, and older
 Claude Code and Codex entries carried it in a trailing shell comment;
 :func:`is_ours` looks for the marker anywhere in the entry, so every generation
@@ -104,7 +128,7 @@ one word further along.
 
 ## The bridge this is
 
-All three hooks now run ``<python> -m outrage sessionstart``.
+All four hooks now run ``<python> -m outrage sessionstart``.
 The interpreter is the absolute :data:`sys.executable` of the environment that
 ran ``outrage init``, for the same reason the MCP entry names that environment:
 a hook does not inherit an activated environment. The managed marker is an
@@ -114,7 +138,9 @@ command depends on ``#`` meaning the same thing on every platform.
 Copilot CLI remains different only at the boundary: its hook contract selects
 one of ``bash`` and ``powershell`` according to the platform, and its output is
 the documented flat payload. The command reads the same shipped prompt at
-invocation time and selects that shape with ``--copilot``.
+invocation time and selects that shape with ``--copilot``. Cursor takes one
+command string for every platform, as Codex does, and differs only in the
+payload key.
 """
 
 from __future__ import annotations
@@ -157,6 +183,10 @@ CODEX_DIR = ".codex"
 
 #: Where Copilot CLI reads its repository hook and preferred agent definitions.
 GITHUB_DIR = ".github"
+
+#: Where Cursor reads its project hook. The server entry lives here too, as
+#: ``mcp.json``; :data:`outrage.config.CURSOR_CONFIG_NAME` is that one.
+CURSOR_DIR = ".cursor"
 
 #: The settings file the fragment is merged into, inside :data:`CLAUDE_DIR`.
 SETTINGS_NAME = "settings.json"
@@ -210,9 +240,29 @@ class HookTarget:
     base: dict[str, Any] = field(default_factory=dict)
     """What a newly created file starts from, before the entry is merged in.
 
-    Empty for Claude Code. Copilot CLI requires ``{"version": 1}``, and a file
-    without it is not read - which is the sort of thing that fails by the hook
-    simply never firing, so it is carried here rather than assumed.
+    Empty for Claude Code. Copilot CLI and Cursor both require
+    ``{"version": 1}``, and a file without it is not read - which is the sort of
+    thing that fails by the hook simply never firing, so it is carried here
+    rather than assumed.
+    """
+
+    context_field: str | None = None
+    """The key this harness reads the prompt back under, or None for the nested
+    Claude Code shape that Codex shares.
+
+    A string rather than a flag because the two flat harnesses do not agree:
+    Copilot CLI reads ``additionalContext`` and Cursor ``additional_context``.
+    Nothing reports a payload under the wrong key - the session simply starts
+    without the context - so the exact spelling is worth stating per harness.
+    """
+
+    payload_flag: str | None = None
+    """The private ``outrage sessionstart`` flag that selects :attr:`context_field`.
+
+    None where the nested shape is the default and no flag is needed. It is
+    part of the installed command, so a flag here can be **added** but not
+    renamed or removed: an entry written by an older release keeps running the
+    command it recorded until ``outrage init`` rewrites the file.
     """
 
     @property
@@ -246,6 +296,8 @@ COPILOT_HOOK = HookTarget(
     relative=Path(".github") / "hooks" / "outrage.json",
     event="sessionStart",
     base={"version": 1},
+    context_field="additionalContext",
+    payload_flag="--copilot",
 )
 
 #: Codex: its own file, like Copilot CLI, but the entry is Claude Code's shape
@@ -260,8 +312,23 @@ CODEX_HOOK = HookTarget(
     event="SessionStart",
 )
 
+#: Cursor: its own file again, Copilot's ``"version": 1`` stamp and lower-case
+#: ``sessionStart``, and Codex's single ``command`` string. The one thing it
+#: shares with neither is the payload key. ``matcher`` is documented as
+#: optional here, so it is left out; see the module docstring on why Codex's is
+#: written even so.
+CURSOR_HOOK = HookTarget(
+    name="Cursor",
+    template=Path("cursor.json"),
+    relative=Path(CURSOR_DIR) / "hooks.json",
+    event="sessionStart",
+    base={"version": 1},
+    context_field="additional_context",
+    payload_flag="--cursor",
+)
+
 #: Every hook ``outrage init`` writes, in the order it reports them.
-HOOK_TARGETS = (CLAUDE_HOOK, COPILOT_HOOK, CODEX_HOOK)
+HOOK_TARGETS = (CLAUDE_HOOK, COPILOT_HOOK, CODEX_HOOK, CURSOR_HOOK)
 
 # There is deliberately no module-level HOOK_EVENT or TEMPLATE any more. They
 # were the Claude Code target's event and template, and once a second target
@@ -304,9 +371,11 @@ def settings_path(project_dir: str | Path) -> Path:
 
 
 def sessionstart_command(
-    executable: str | os.PathLike[str] | None = None, *, copilot: bool = False
+    executable: str | os.PathLike[str] | None = None,
+    *,
+    target: HookTarget = CLAUDE_HOOK,
 ) -> str:
-    """Build the shell command installed for the shared SessionStart payload.
+    """Build the shell command installed for ``target``'s SessionStart payload.
 
     The absolute interpreter is the one running ``outrage init``. ``shlex``
     quotes it for POSIX shells and ``list2cmdline`` for Windows; neither has to
@@ -316,14 +385,17 @@ def sessionstart_command(
     The marker is a real argument understood by the private CLI wiring, not a
     shell comment, so it survives either command language without reaching
     stdout.
+
+    The only thing ``target`` changes is whether a payload flag is appended,
+    which is :attr:`HookTarget.payload_flag`.
     """
-    return _sessionstart_command(executable, copilot=copilot)
+    return _sessionstart_command(executable, target=target)
 
 
 def _sessionstart_command(
     executable: str | os.PathLike[str] | None = None,
     *,
-    copilot: bool = False,
+    target: HookTarget = CLAUDE_HOOK,
     shell: str | None = None,
 ) -> str:
     """The shared hook command, quoted for one harness's actual shell."""
@@ -336,8 +408,8 @@ def _sessionstart_command(
         "outrage",
         "sessionstart",
     ]
-    if copilot:
-        argv.append("--copilot")
+    if target.payload_flag:
+        argv.append(target.payload_flag)
     argv.append(SESSIONSTART_MARKER)
     if shell == "powershell":
         quoted = ("'" + argument.replace("'", "''") + "'" for argument in argv)
@@ -347,14 +419,20 @@ def _sessionstart_command(
     return subprocess.list2cmdline(argv)
 
 
-def sessionstart_payload(*, copilot: bool = False) -> dict[str, Any]:
-    """Read the shipped prompt and wrap it in one harness's hook payload."""
+def sessionstart_payload(*, target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
+    """Read the shipped prompt and wrap it in ``target``'s hook payload.
+
+    Two shapes, and which one is not a property of this function: a harness
+    with a :attr:`HookTarget.context_field` reads the prompt back under that
+    key alone, and one without it takes Claude Code's nested envelope, which
+    Codex shares down to the event name.
+    """
     context = _SESSIONSTART_PROMPT.read_text(encoding="utf-8").removesuffix("\n")
-    if copilot:
-        return {"additionalContext": context}
+    if target.context_field:
+        return {target.context_field: context}
     return {
         "hookSpecificOutput": {
-            "hookEventName": CLAUDE_HOOK.event,
+            "hookEventName": target.event,
             "additionalContext": context,
         }
     }
@@ -366,7 +444,7 @@ def _render_sessionstart_command(
     """Replace the packaged placeholder without knowing a harness's shape."""
     if isinstance(value, str):
         command = _sessionstart_command(
-            copilot=target is COPILOT_HOOK,
+            target=target,
             shell=(
                 "powershell"
                 if shell is None and target is CLAUDE_HOOK and sys.platform == "win32"
@@ -392,10 +470,10 @@ def template_entry(target: HookTarget = CLAUDE_HOOK) -> dict[str, Any]:
     """The entry to install, read from the packaged template.
 
     Every harness carries a placeholder rendered with the absolute interpreter
-    and managed marker at init time. Copilot receives the same command with a
-    flag selecting its flat payload. The marker is present before the entry is
-    accepted, so a broken template cannot silently become one a later run
-    fails to recognise.
+    and managed marker at init time. Copilot and Cursor receive the same
+    command with a flag selecting their own flat payload key. The marker is
+    present before the entry is accepted, so a broken template cannot silently
+    become one a later run fails to recognise.
     """
     try:
         loaded = json.loads(target.fragment.read_text(encoding="utf-8"))
@@ -685,6 +763,10 @@ class Installation:
     codex_server: config.Change
     """The same server in ``.codex/config.toml``, which is where Codex reads it."""
 
+    cursor_server: config.Change
+    """The same server again in ``.cursor/mcp.json``, for Cursor. Its hook is in
+    :attr:`hooks` with the rest; what it has none of is packaged assets."""
+
     hooks: tuple[HookChange, ...]
     """One per :data:`HOOK_TARGETS`, in that order."""
 
@@ -705,6 +787,7 @@ class Installation:
         return (
             self.server.writes
             or self.codex_server.writes
+            or self.cursor_server.writes
             or self.table.writes
             or any(h.writes for h in self.hooks)
             or any(a.writes for a in self.assets)
@@ -729,9 +812,12 @@ def init(
 ) -> Installation:
     """Set a project up: the MCP server entries, hooks, and packaged skills.
 
-    The server entry is written twice, to ``.mcp.json`` and to Codex's
-    ``.codex/config.toml``, from the same options; the Codex one carries a
-    marker, :func:`outrage.config.plan_codex` says why.
+    The server entry is written three times, to ``.mcp.json``, to Codex's
+    ``.codex/config.toml`` and to Cursor's ``.cursor/mcp.json``, from the same
+    options; the Codex one carries a marker, :func:`outrage.config.plan_codex`
+    says why, and the Cursor one carries a ``type``,
+    :func:`outrage.config.cursor_entry` says why. The hooks are one per
+    :data:`HOOK_TARGETS`, which is all four harnesses.
 
     The whole of it is planned before any of it is written, so a refusal - a
     settings file that does not parse, a ``.mcp.json`` that does not - stops
@@ -785,6 +871,12 @@ def init(
         marked=True,
     )
     codex_server, codex_document, codex_text = config.plan_codex(codex_path, codex_entry)
+    # Cursor's file is `.mcp.json`'s shape, so this is `plan` again with
+    # another path rather than a planner of its own.
+    cursor_path = config.cursor_config_path(project)
+    cursor_server, cursor_servers, cursor_text = config.plan(
+        cursor_path, config.CURSOR_SCOPE, config.cursor_entry(entry)
+    )
     table = mountfile.plan_starter(
         store_dir,
         root_mount=root_mount,
@@ -797,6 +889,8 @@ def init(
             config.write_config(server_path, servers, servers_text)
         if codex_server.writes:
             config.write_toml(codex_path, codex_document, codex_text)
+        if cursor_server.writes:
+            config.write_config(cursor_path, cursor_servers, cursor_text)
         if table.writes:
             mountfile.write_starter(table)
         for path, hook, settings, settings_text in hooks:
@@ -810,6 +904,7 @@ def init(
         project_dir=project,
         server=server,
         codex_server=codex_server,
+        cursor_server=cursor_server,
         table=table,
         hooks=tuple(hook for _, hook, _, _ in hooks),
         assets=tuple(assets),
@@ -822,10 +917,12 @@ __all__ = [
     "ASSET_DIRS",
     "CLAUDE_DIR",
     "CODEX_DIR",
+    "CURSOR_DIR",
     "GITHUB_DIR",
     "CLAUDE_HOOK",
     "CODEX_HOOK",
     "COPILOT_HOOK",
+    "CURSOR_HOOK",
     "HOOKS_FIELD",
     "HOOK_TARGETS",
     "MARKER",

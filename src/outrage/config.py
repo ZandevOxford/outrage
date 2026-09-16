@@ -35,6 +35,30 @@ A table carrying the marker is ours under whatever name it has. Failing that, a
 table named :data:`SERVER_NAME` is adopted and gains the marker, since that is
 the entry ``outrage config`` would have replaced in JSON and a TOML file cannot
 hold a second one beside it.
+
+## Cursor reads the same JSON somewhere else
+
+Cursor's servers are ``mcpServers`` in ``.cursor/mcp.json``: Claude Code's
+shape and Claude Code's field name, in a directory of its own. So it needs
+neither a reader nor a planner of its own - :func:`plan` takes the path - and
+the whole of supporting it is :func:`cursor_config_path` and the type field
+below. That it cost so little is the point of ``plan`` taking a path rather
+than deriving one from a scope.
+
+It needs no marker either, and the reason is the one that makes Codex need
+one: ``mcpServers`` is an object, so the entry is found by its name and one
+entry can be replaced without touching the rest. Only the TOML file, which
+cannot hold two tables under the same name, had to be able to recognise an
+entry somebody had renamed.
+
+**Cursor's entry does carry ``"type": "stdio"``**, which is the one thing that
+is not just Claude Code's entry at another path. Cursor documents ``type`` as
+required beside ``command``, and every client behaviour this project has been
+burnt by was one it assumed rather than read: a server that is simply not
+launched leaves nothing to diagnose. Writing it is harmless if it turns out to
+be inferred anyway, and omitting it is not if it is not, so the asymmetry
+decides it. The same reasoning as the Codex hook's ``matcher`` - ship what is
+documented and do not improve on it.
 """
 
 from __future__ import annotations
@@ -91,6 +115,21 @@ CODEX_CONFIG_NAME = Path(".codex") / "config.toml"
 
 #: The table holding Codex's servers.
 CODEX_SERVERS_FIELD = "mcp_servers"
+
+#: Cursor's project scoped configuration, relative to the project root. The
+#: field inside it is :data:`SERVERS_FIELD`, the same as ``.mcp.json``'s, which
+#: is why there is a path here and nothing else.
+CURSOR_CONFIG_NAME = Path(".cursor") / "mcp.json"
+
+#: What Cursor's documentation requires beside ``command`` for a server it
+#: launches itself. See the module docstring on why it is written out.
+CURSOR_SERVER_TYPE = "stdio"
+
+#: What :func:`plan` is told a Cursor entry's scope is. It is still the
+#: project's file rather than the user's; ``.cursor/mcp.json`` is just not the
+#: project file *Claude Code* reads, so the report needs a label rather than a
+#: different scope.
+CURSOR_SCOPE = "project"
 
 #: What marks a server entry as outrage's, minus the ``:vN``. Names the server
 #: entry, not the client that reads it.
@@ -489,6 +528,28 @@ def codex_config_path(project_dir: str | os.PathLike[str] | None = None) -> Path
     return Path(project_dir or Path.cwd()).expanduser().resolve() / CODEX_CONFIG_NAME
 
 
+def cursor_config_path(project_dir: str | os.PathLike[str] | None = None) -> Path:
+    """Where a project's Cursor configuration is, whether or not it exists yet.
+
+    Cursor also reads ``~/.cursor/mcp.json`` for every project at once. That is
+    deliberately not here: ``outrage init`` sets up *a project*, and a server
+    entry naming one project's store directory is wrong in every other one.
+    """
+    return Path(project_dir or Path.cwd()).expanduser().resolve() / CURSOR_CONFIG_NAME
+
+
+def cursor_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Add what Cursor needs to an entry :func:`server_entry` built.
+
+    Only :data:`CURSOR_SERVER_TYPE`, and first, so the entry reads as the
+    documented shape rather than as Claude Code's with a field appended.
+    Kept a function rather than done at the call site because the reason is
+    worth having somewhere, and because a second Cursor-only field would
+    otherwise be a second edit in :mod:`outrage.install`.
+    """
+    return {"type": CURSOR_SERVER_TYPE, **entry}
+
+
 def read_toml(path: Path) -> tuple[tomlkit.TOMLDocument, str | None]:
     """Read a TOML configuration file, returning the document and original text.
 
@@ -614,6 +675,9 @@ __all__ = [
     "CLI_SCRIPT_NAME",
     "CODEX_CONFIG_NAME",
     "CODEX_SERVERS_FIELD",
+    "CURSOR_CONFIG_NAME",
+    "CURSOR_SCOPE",
+    "CURSOR_SERVER_TYPE",
     "MARKER",
     "MARKER_MATCH",
     "PROJECT_CONFIG_NAME",
@@ -627,6 +691,8 @@ __all__ = [
     "ConfigError",
     "codex_config_path",
     "config_path",
+    "cursor_config_path",
+    "cursor_entry",
     "default_store_dir",
     "is_server_marker",
     "launch_command",

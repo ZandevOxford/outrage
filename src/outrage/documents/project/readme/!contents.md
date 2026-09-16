@@ -2,16 +2,16 @@
 0 0
 
 ## Features
-226 226
+235 235
 
 ## Getting started
-767 767
+790 790
 
 ## Documentation
-1849 1849
+1639 1639
 
 ## Components
-3531 3531
+3321 3321
 
 ## Parquet stores
-5535 5536
+5325 5326

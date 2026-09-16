@@ -38,6 +38,30 @@ table named [`SERVER_NAME`](#outrage.config.SERVER_NAME) is adopted and gains th
 the entry `outrage config` would have replaced in JSON and a TOML file cannot
 hold a second one beside it.
 
+## Cursor reads the same JSON somewhere else
+
+Cursor's servers are `mcpServers` in `.cursor/mcp.json`: Claude Code's
+shape and Claude Code's field name, in a directory of its own. So it needs
+neither a reader nor a planner of its own - [`plan()`](#outrage.config.plan) takes the path - and
+the whole of supporting it is [`cursor_config_path()`](#outrage.config.cursor_config_path) and the type field
+below. That it cost so little is the point of `plan` taking a path rather
+than deriving one from a scope.
+
+It needs no marker either, and the reason is the one that makes Codex need
+one: `mcpServers` is an object, so the entry is found by its name and one
+entry can be replaced without touching the rest. Only the TOML file, which
+cannot hold two tables under the same name, had to be able to recognise an
+entry somebody had renamed.
+
+**Cursor's entry does carry \`\`"type": "stdio"\`\`**, which is the one thing that
+is not just Claude Code's entry at another path. Cursor documents `type` as
+required beside `command`, and every client behaviour this project has been
+burnt by was one it assumed rather than read: a server that is simply not
+launched leaves nothing to diagnose. Writing it is harmless if it turns out to
+be inferred anyway, and omitting it is not if it is not, so the asymmetry
+decides it. The same reasoning as the Codex hook's `matcher` - ship what is
+documented and do not improve on it.
+
 ### outrage.config.CLI_SCRIPT_NAME *= 'outrage'*
 
 Console script for the command line, the other half of the pair. A caller
@@ -52,6 +76,24 @@ Codex's project scoped configuration, relative to the project root.
 ### outrage.config.CODEX_SERVERS_FIELD *= 'mcp_servers'*
 
 The table holding Codex's servers.
+
+### outrage.config.CURSOR_CONFIG_NAME *= PosixPath('.cursor/mcp.json')*
+
+Cursor's project scoped configuration, relative to the project root. The
+field inside it is [`SERVERS_FIELD`](#outrage.config.SERVERS_FIELD), the same as `.mcp.json`'s, which
+is why there is a path here and nothing else.
+
+### outrage.config.CURSOR_SCOPE *= 'project'*
+
+What [`plan()`](#outrage.config.plan) is told a Cursor entry's scope is. It is still the
+project's file rather than the user's; `.cursor/mcp.json` is just not the
+project file *Claude Code* reads, so the report needs a label rather than a
+different scope.
+
+### outrage.config.CURSOR_SERVER_TYPE *= 'stdio'*
+
+What Cursor's documentation requires beside `command` for a server it
+launches itself. See the module docstring on why it is written out.
 
 ### outrage.config.MARKER *= 'outrage-managed:mcp-server'*
 
@@ -137,6 +179,24 @@ Where a project's Codex configuration is, whether or not it exists yet.
 ### outrage.config.config_path(scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str), project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Locate the configuration file for `scope`.
+
+### outrage.config.cursor_config_path(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+
+Where a project's Cursor configuration is, whether or not it exists yet.
+
+Cursor also reads `~/.cursor/mcp.json` for every project at once. That is
+deliberately not here: `outrage init` sets up *a project*, and a server
+entry naming one project's store directory is wrong in every other one.
+
+### outrage.config.cursor_entry(entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+
+Add what Cursor needs to an entry [`server_entry()`](#outrage.config.server_entry) built.
+
+Only [`CURSOR_SERVER_TYPE`](#outrage.config.CURSOR_SERVER_TYPE), and first, so the entry reads as the
+documented shape rather than as Claude Code's with a field appended.
+Kept a function rather than done at the call site because the reason is
+worth having somewhere, and because a second Cursor-only field would
+otherwise be a second edit in [`outrage.install`](install.md#module-outrage.install).
 
 ### outrage.config.default_store_dir(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 

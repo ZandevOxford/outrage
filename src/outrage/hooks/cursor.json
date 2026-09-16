@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "type": "command",
+        "command": "__OUTRAGE_SESSIONSTART_COMMAND__"
+      }
+    ]
+  }
+}

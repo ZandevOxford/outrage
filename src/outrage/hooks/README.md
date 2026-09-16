@@ -3,13 +3,15 @@
 The packaged `skills/`, `agents/`, `codex/` and `copilot/` trees carry markdown
 that clients read directly, and this directory carries the session-start hook
 for each harness - `settings.json` for Claude Code, `copilot.json` for Copilot
-CLI, `codex.json` for Codex.
+CLI, `codex.json` for Codex, `cursor.json` for Cursor.
 
-Only the first is a fragment of a file the user owns. The other two are whole
+Only the first is a fragment of a file the user owns. The other three are whole
 files of outrage's own, which is why they carry what their harness requires at
-the top level: Copilot's `"version": 1`, and Codex's `matcher`. See
-`install.HOOK_TARGETS`, and the module docstring on the matcher, which is
-shipped as documented rather than reasoned about.
+the top level: Copilot's and Cursor's `"version": 1`, and Codex's `matcher`.
+Cursor documents its `matcher` as optional for every event and so does not
+carry one; Codex's requiredness is not documented either way, so its example
+wins. See `install.HOOK_TARGETS`, and the module docstring on the matcher,
+which is shipped as documented rather than reasoned about.
 
 `settings.json` here is a **fragment, not a file to copy over**. A project's
 `.claude/settings.json` holds that user's own settings, so an installer writes
@@ -22,16 +24,25 @@ outrage sets up. This template is the committed source of truth, and the
 rendered file is machine-local output - the same split `.mcp.json` has, with the
 generation step being what keeps them honest.
 
-All three hooks call the absolute Python interpreter from the environment that
+All four hooks call the absolute Python interpreter from the environment that
 ran `outrage init`:
 
     /absolute/environment/python -m outrage sessionstart outrage-managed:session-start:v3
 
 `outrage sessionstart` reads `documents/hooks/sessionstart.md` from the
 installed package. Claude Code and Codex receive their nested JSON payload;
-Copilot's command adds `--copilot` for its flat payload. Its packaged template
+Copilot's command adds `--copilot` for its flat `additionalContext`, and
+Cursor's adds `--cursor` for its flat `additional_context`. The two flat
+harnesses do not agree on that key, which is why each names its own in
+`install.HookTarget.context_field` rather than sharing a "flat" flag - a
+payload under the wrong key is reported by nobody and simply delivers nothing.
+A payload flag can be added but never renamed or withdrawn: the hook file
+records the command, and only `outrage init` rewrites it.
+
+Copilot's packaged template
 carries both shell forms, but the installed entry keeps only `powershell` on
-Windows and only `bash` elsewhere. On Windows, Claude's handler selects
+Windows and only `bash` elsewhere. Cursor takes one command string on every
+platform, as Codex does. On Windows, Claude's handler selects
 PowerShell explicitly so it is not routed through Git Bash. Windows paths use
 forward slashes in every hook command, as they do in `.mcp.json`, to avoid JSON
 backslash escaping. The prompt therefore follows package upgrades, and neither

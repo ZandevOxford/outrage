@@ -31,6 +31,15 @@ dist/
 # outrage itself has every reason to commit some of this.
 .codex/
 
+# Cursor's server entry and hook, on the same rule as .claude/ above: `outrage
+# init` writes both, and the command in each is an absolute path into a conda
+# environment, true on one machine. Named file by file rather than as .cursor/,
+# because outrage ships no rules or commands and a project's own belong to it -
+# which is not so of .claude/ and .codex/, where the skill bundles are rendered
+# output. Recreate these with `outrage init`.
+.cursor/mcp.json
+.cursor/hooks.json
+
 # The root .agents/ tree is local harness state too. Repository-owned agent
 # sources live under src/outrage/, so nothing here is a source of truth.
 .agents/

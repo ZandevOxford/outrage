@@ -119,13 +119,15 @@ def argument_parser() -> argparse.ArgumentParser:
         help="set a project up: MCP server, session hooks, skill and agents",
         description=(
             "Arrange everything a project needs to use outrage: the MCP server "
-            "entry in .mcp.json and, for Codex, in .codex/config.toml, where it "
-            "carries a marker so a re-run finds it; a session-start hook for "
-            "each harness - "
+            "entry in .mcp.json, in .codex/config.toml for Codex, where it "
+            "carries a marker so a re-run finds it, and in .cursor/mcp.json "
+            "for Cursor; a session-start hook for each harness - "
             ".claude/settings.json for Claude Code, .github/hooks/outrage.json "
-            "for Copilot CLI, .codex/hooks.json for Codex - and the packaged "
+            "for Copilot CLI, .codex/hooks.json for Codex, .cursor/hooks.json "
+            "for Cursor - and the packaged "
             "skill and agents in .claude/, Copilot agents in .github/agents/, "
-            "and the Codex skills in .codex/. "
+            "and the Codex skills in .codex/. Cursor has no packaged files of "
+            "its own. "
             "Only the entries outrage owns are written; anything else in those "
             "files is left as it was, and a file already holding the current "
             "content is not rewritten. Mounts go in mounts.toml in the store "
@@ -171,18 +173,29 @@ def argument_parser() -> argparse.ArgumentParser:
         help="emit the managed SessionStart context as hook JSON",
         description="Emit the managed SessionStart context as hook JSON.",
     )
-    sessionstart.add_argument(
-        "--copilot",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
+    # One hidden flag per harness whose payload is not the Claude Code shape,
+    # selecting the key it reads the prompt back under. They are part of the
+    # installed command, so a flag here is never renamed or withdrawn: an entry
+    # written by an older release runs until `outrage init` rewrites the file.
+    for hook in install.HOOK_TARGETS:
+        if hook.payload_flag:
+            sessionstart.add_argument(
+                hook.payload_flag,
+                dest="payload_target",
+                action="store_const",
+                const=hook,
+                help=argparse.SUPPRESS,
+            )
     sessionstart.add_argument(
         "managed_marker",
         nargs="?",
         choices=(install.SESSIONSTART_MARKER,),
         help=argparse.SUPPRESS,
     )
-    sessionstart.set_defaults(handler=_sessionstart_command)
+    sessionstart.set_defaults(
+        handler=_sessionstart_command,
+        payload_target=install.CLAUDE_HOOK,
+    )
 
     config = subcommands.add_parser(
         "config",
@@ -1371,6 +1384,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
 
     _report(done.server, out, dry_run=args.dry_run)
     _report(done.codex_server, out, dry_run=args.dry_run, label="Codex")
+    _report(done.cursor_server, out, dry_run=args.dry_run, label="Cursor")
     _report_table(done.table, out, dry_run=args.dry_run)
     for hook in done.hooks:
         _report_hook(hook, out, dry_run=args.dry_run)
@@ -1406,7 +1420,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
 def _sessionstart_command(args: argparse.Namespace, out: TextIO) -> int:
     """Emit the packaged prompt in the selected harness's hook payload."""
     payload = json.dumps(
-        install.sessionstart_payload(copilot=args.copilot),
+        install.sessionstart_payload(target=args.payload_target),
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -2747,7 +2761,8 @@ def _report(
     talks to nothing anyone meant.
 
     ``label`` names the client in place of the scope, where one run writes the
-    same scope for two of them.
+    same scope for several of them - the project entry, Codex's and Cursor's
+    are all "project" and only the label tells them apart.
     """
     verb = _said(change.action, dry_run)
 

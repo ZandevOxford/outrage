@@ -4,6 +4,35 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+`outrage init` now sets up Cursor as well, which is the fourth harness it
+supports. Cursor reads neither `.mcp.json` nor Codex's `.codex/config.toml`, so
+a project set up here previously gave a Cursor session no server and no
+context at all.
+
+The MCP server entry goes in `.cursor/mcp.json`, which is `.mcp.json`'s own
+`mcpServers` shape and is merged the same way: one entry named `outrage` is
+written and everything else in the file is left alone. It declares
+`"type": "stdio"`, which Cursor documents as required.
+
+The session-start hook goes in `.cursor/hooks.json`, alongside any hooks
+already there, carrying the same managed marker every harness's hook carries so
+a re-run replaces it rather than adding a second. Cursor reads the prompt back
+under `additional_context`, where Copilot CLI uses `additionalContext` and
+Claude Code and Codex use a nested envelope, so the hook command carries a
+`--cursor` flag selecting that key. No packaged files go with either: Cursor's
+project instructions are `.cursor/rules` and `.cursor/commands`, and outrage
+ships neither.
+
+Supporting a fourth payload shape moved it onto the harness it belongs to, so
+`install.sessionstart_payload` and `install.sessionstart_command` now take
+`target=<HookTarget>` where they took `copilot=<bool>` - **breaking for library
+callers**, who should pass `install.COPILOT_HOOK` instead of `copilot=True`.
+`install.HookTarget` gained `context_field` and `payload_flag`, and
+`install.Installation` gained a `cursor_server` field. The `--copilot` and
+`--cursor` flags on `outrage sessionstart` are unaffected and neither will be
+withdrawn: an installed hook keeps running the command line recorded in its
+file until `outrage init` rewrites it.
+
 The server now records why it would not start in `errors.jsonl` in the store
 directory, whether or not `--log` asked for an event log. An MCP client
 launches the server and discards its stderr, so a refused mount table

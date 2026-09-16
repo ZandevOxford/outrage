@@ -40,11 +40,22 @@ def test_sessionstart_emits_the_shipped_prompt_as_hook_json():
     assert json.loads(output) == install_module.sessionstart_payload()
 
 
-def test_sessionstart_emits_the_flat_copilot_payload_when_selected():
-    status, output = run("sessionstart", "--copilot")
+@pytest.mark.parametrize(
+    ("flag", "target"),
+    [
+        ("--copilot", install_module.COPILOT_HOOK),
+        ("--cursor", install_module.CURSOR_HOOK),
+    ],
+)
+def test_sessionstart_emits_a_flat_payload_when_one_is_selected(flag, target):
+    """Each flat harness reads the prompt back under its own key, and these
+    flags are what an installed hook uses to ask for it. They are part of the
+    recorded command, so neither may be withdrawn while an older entry lives."""
+    status, output = run("sessionstart", flag)
 
     assert status == 0
-    assert json.loads(output) == install_module.sessionstart_payload(copilot=True)
+    assert json.loads(output) == install_module.sessionstart_payload(target=target)
+    assert list(json.loads(output)) == [target.context_field]
 
 
 def test_python_m_outrage_dispatches_sessionstart_to_the_cli():
