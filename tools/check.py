@@ -169,8 +169,8 @@ CHECKS: tuple[Check, ...] = (
         name="docs",
         argv=("make", "-C", "docs", "strict", f"PYTHON={PYTHON}"),
         note=(
-            "Sphinx with warnings as errors. Needs docs.python.org for the "
-            "intersphinx inventory; offline it succeeds while dropping type links."
+            "Sphinx with warnings as errors. Needs no network: the intersphinx "
+            "inventory is committed at docs/python_objects.inv."
         ),
     ),
     Check(

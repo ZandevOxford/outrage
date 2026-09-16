@@ -8,6 +8,13 @@
 # so when it is missing, rather than leaving Make to report an import error that
 # names neither the interpreter nor the package.
 #
+# `inventory` is the one exception, and needs no Python at all: it refetches
+# `python_objects.inv`, the intersphinx inventory `conf.py` reads off disk so
+# that nothing else here goes near the network. It wants `curl` and a
+# connection. Refreshing is then a deliberate two-step -- `make inventory`, then
+# `make documents` -- and the reference diff that follows is reviewed like any
+# other change.
+#
 # PYTHON is whatever the activated environment resolves, and can be overridden:
 # make markdown PYTHON=/path/to/python
 #
@@ -22,7 +29,7 @@ SPHINXBUILD   ?= $(PYTHON) -m sphinx
 SOURCEDIR     = .
 BUILDDIR      = _build
 
-.PHONY: help check-env strict markdown documents clean Makefile
+.PHONY: help check-env strict markdown documents inventory clean Makefile
 
 help:
 	@$(SPHINXBUILD) -M help "$(SOURCEDIR)" "$(BUILDDIR)" $(SPHINXOPTS) $(O)
@@ -119,6 +126,16 @@ documents: check-env markdown
 	@$(PYTHON) ../tools/copy_project_documents.py ../src/outrage/documents/project
 	@$(PYTHON) ../tools/document_titles.py ../src/outrage/documents
 	@$(PYTHON) ../tools/document_contents.py ../src/outrage/documents
+
+# Refetch the committed intersphinx inventory. Every other target reads it from
+# disk, so this is the only one that touches the network -- and the only thing
+# that can move where the reference's external links point. Run `documents`
+# after it and read the diff: upstream relocating a page should be a change
+# somebody made and looked at, not something that happens to a build.
+#
+# No `check-env`: it needs neither sphinx nor this project's Python.
+inventory:
+	@curl -fsS -o python_objects.inv https://docs.python.org/3/objects.inv
 
 clean:
 	@rm -rf "$(BUILDDIR)"
