@@ -168,6 +168,22 @@ def test_a_flat_harness_command_selects_its_own_payload(target, flag):
         assert shlex.split(command) == expected
 
 
+def test_the_replaced_copilot_argument_is_gone_from_both_entry_points():
+    """0.15.0 replaced `copilot=<bool>` with `target=<HookTarget>`.
+
+    A fourth harness made the boolean untenable: it had come to mean "the flat
+    payload shape", which is two harnesses reading two different keys. The
+    absence is asserted rather than assumed because the changelog calls the
+    change breaking for library callers, and 0.9.0 is the release that claimed
+    a removal the replacing import quietly undid; `reference/distribution`
+    carries that rule. Neither signature takes `**kwargs`, so a caller passing
+    the old argument is told so.
+    """
+    for entry_point in (sessionstart_command, sessionstart_payload):
+        with pytest.raises(TypeError):
+            entry_point(copilot=True)
+
+
 def test_claude_uses_powershell_and_forward_slashes_on_windows(monkeypatch):
     monkeypatch.setattr(install_module.sys, "platform", "win32")
     monkeypatch.setattr(install_module.sys, "executable", r"C:\Users\John\env\python.exe")

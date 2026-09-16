@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 0.15.0 - 2026-09-16
 
 `outrage init` now sets up Cursor as well, which is the fourth harness it
 supports. Cursor reads neither `.mcp.json` nor Codex's `.codex/config.toml`, so
