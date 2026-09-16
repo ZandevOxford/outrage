@@ -50,6 +50,7 @@ from . import (
     __version__,
     bulk,
     config,
+    errorlog,
     eventlog,
     home,
     ingest,
@@ -2481,6 +2482,26 @@ class _StartupWarnings:
         )
 
 
+def _record_startup_failure(
+    directory: str | os.PathLike[str] | None,
+    event: str,
+    error: BaseException,
+    **fields: Any,
+) -> None:
+    """Write one error record, resolving the directory when there is not one yet.
+
+    Wrapped rather than called directly because the two failure sites differ in
+    exactly one way -- whether ``--directory`` has been answered -- and because
+    :func:`outrage.store.resolve_directory` is the one part of this that is
+    outside :func:`outrage.errorlog.record`'s own guarantee never to raise.
+    """
+    try:
+        resolved = store_module.resolve_directory(directory)
+    except Exception:  # noqa: BLE001 - a failure here must not replace the one being recorded
+        return
+    errorlog.record(resolved, event, error, version=__version__, **fields)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Open the configured stores and serve them over stdio until the client
     stops.
@@ -2504,7 +2525,14 @@ def main(argv: list[str] | None = None) -> int:
         # operator's stderr about the command line they just typed, and every
         # message reachable here is about that command line. It is a tool call
         # that is the exception in this module, not a shell.
-        print(f"outrage: {messages.render(exc, spell=messages.flag)}", file=sys.stderr)
+        rendered = messages.render(exc, spell=messages.flag)
+        # The one record that can land somewhere other than the store the
+        # operator meant: `parse_args` assigns `config_files` last, so a
+        # configuration that will not parse leaves no namespace and `--directory`
+        # is unknown. The environment's answer is the best available guess, and
+        # the one an invocation without `--directory` would have used anyway.
+        _record_startup_failure(None, "parse-args", exc, message=rendered)
+        print(f"outrage: {rendered}", file=sys.stderr)
         return 1
     # Resolved here rather than left to the store, because the log defaults to
     # a file beside the database and so needs the same answer.
@@ -2580,8 +2608,23 @@ def main(argv: list[str] | None = None) -> int:
         # to build, and every key one of these names is a mount point, which is
         # already a name in the whole namespace. Flags for the same reason as
         # above -- the reader is whoever started the server.
-        print(f"outrage: {messages.render(exc, spell=messages.flag)}", file=sys.stderr)
+        rendered = messages.render(exc, spell=messages.flag)
+        _record_startup_failure(directory, "run", exc, message=rendered)
+        print(f"outrage: {rendered}", file=sys.stderr)
         return 1
+    except Exception as exc:
+        # A witness, not a handler: the traceback is recorded and then re-raised
+        # unchanged, because anything reaching here is a bug in outrage and a
+        # bug that stops tracebacking is a bug that stops being reported. The
+        # record is the whole point -- a client's stderr is exactly where an
+        # operator cannot read one.
+        #
+        # `Exception`, not `BaseException`: a client closing the server is a
+        # ``KeyboardInterrupt`` or a ``SystemExit`` through here, and recording
+        # an ordinary shutdown as a failure would make the file say the opposite
+        # of what it is for.
+        _record_startup_failure(directory, "run", exc)
+        raise
     finally:
         # A process that is killed writes no stop event, which is itself worth
         # being able to see in the log.

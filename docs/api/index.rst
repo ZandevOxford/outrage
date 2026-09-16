@@ -124,5 +124,6 @@ words it -- the tool returns the fields, ``outrage info`` prints them.
    info
    install
    eventlog
+   errorlog
    logread
    maintenance

@@ -4,6 +4,16 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+The server now records why it would not start in `errors.jsonl` in the store
+directory, whether or not `--log` asked for an event log. An MCP client
+launches the server and discards its stderr, so a refused mount table
+previously left nothing behind to read afterwards. A record carries the error's
+code and the message that went to stderr, and a full traceback for anything
+that was not an outrage error; the file is created `0600`, and the oldest
+records are dropped once it passes a one-megabyte ceiling. Nothing here can
+stop a server: a failure to write says so once on stderr and is otherwise
+swallowed. The command line is unchanged, since its operator sees stderr.
+
 The MCP server now continues starting when an individual non-root store cannot
 be opened. It writes the mount and full reason to stderr, omits that mount, and
 adds a fixed warning to the initialization instructions so tool callers know

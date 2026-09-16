@@ -107,5 +107,6 @@ words it -- the tool returns the fields, `outrage info` prints them.
 * [outrage.info](reference/info.md)
 * [outrage.install](reference/install.md)
 * [outrage.eventlog](reference/eventlog.md)
+* [outrage.errorlog](reference/errorlog.md)
 * [outrage.logread](reference/logread.md)
 * [outrage.maintenance](reference/maintenance.md)
