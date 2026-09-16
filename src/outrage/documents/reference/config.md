@@ -239,10 +239,25 @@ previous three beside it. `command` always comes from the new entry -
 the absolute path into this environment is the one thing `outrage config`
 exists to correct.
 
-The consequence to know: **an option cannot be removed by leaving it out.**
-Dropping a mount is an edit to the file. That is the right way round for a
-command a user runs to repair a project rather than to redefine it, and
-losing configuration silently is the failure that was actually reported.
+**The same rule holds one level up, over the entry's own fields.** A JSON
+entry is an object, and `command` and `args` are the only two fields
+written here; a client's schema has others, and a user may have written
+one. `env` and `cwd` are the ones that come up. So a field the new
+entry does not carry is inherited too, and only the fields this function
+was handed are replaced. Without that, every re-run rebuilt the object
+from `command` and `args` alone and a hand-added `env` went with it -
+the same failure as the dropped mounts, one level out, and the harder one
+to notice because the arguments it left behind were all correct.
+
+The new entry's fields keep their own order and the inherited ones follow,
+so an entry written from scratch still reads as the shape its client
+documents rather than as whatever order a previous version happened to use.
+
+The consequence to know: **nothing can be removed by leaving it out.**
+Dropping a mount, or an `env`, is an edit to the file. That is the right
+way round for a command a user runs to repair a project rather than to
+redefine it, and losing configuration silently is the failure that was
+actually reported.
 
 ### outrage.config.mounts_in(args: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 

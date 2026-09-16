@@ -553,6 +553,58 @@ def test_an_option_this_release_has_never_heard_of_survives():
     assert merged["args"] == ["--dir", "/p/.outrage", "--future-flag", "value", "-v"]
 
 
+def test_a_field_this_code_never_writes_survives():
+    """The rule above, one level out, over the entry's own fields.
+
+    An entry is an object with more in it than the two fields written here -
+    a client's schema has others and a user may have added one, `env` and `cwd`
+    being the ones that come up. Rebuilding the object from `command` and
+    `args` took the rest with it and left an argument list that was entirely
+    correct, which is why nothing looked wrong.
+    """
+    previous = entry_with("--dir", "/p/.outrage") | {"env": {"OUTRAGE_DEBUG": "1"}, "cwd": "/p"}
+    new = entry_with("--dir", "/p/.outrage")
+
+    merged = config_module.merge_entry(previous, new)
+
+    assert merged["env"] == {"OUTRAGE_DEBUG": "1"}
+    assert merged["cwd"] == "/p"
+
+
+def test_a_field_the_new_entry_carries_replaces_the_old_one():
+    previous = entry_with("--dir", "/p/.outrage") | {"type": "sse", "env": {"A": "1"}}
+    new = entry_with("--dir", "/p/.outrage") | {"type": "stdio"}
+
+    merged = config_module.merge_entry(previous, new)
+
+    assert merged["type"] == "stdio"
+    assert merged["env"] == {"A": "1"}
+
+
+def test_the_new_entrys_fields_come_before_the_inherited_ones():
+    """Cursor's entry leads with `type`, so an entry a re-run writes should
+    still read as the shape that client documents rather than as whatever
+    order the file it replaced happened to hold."""
+    previous = {"env": {"A": "1"}, "command": "/old/bin/outrage-server", "args": ["--dir", "/p"]}
+    new = config_module.cursor_entry(entry_with("--dir", "/p"))
+
+    merged = config_module.merge_entry(previous, new)
+
+    assert list(merged) == ["type", "command", "args", "env"]
+
+
+def test_a_malformed_argument_list_does_not_cost_the_fields_beside_it():
+    """The two halves are independent: an argument list too damaged to take
+    apart says nothing about whether the `env` next to it is worth keeping."""
+    previous = {"command": "/old/bin/outrage-server", "args": "not a list", "env": {"A": "1"}}
+    new = entry_with("--dir", "/p/.outrage")
+
+    merged = config_module.merge_entry(previous, new)
+
+    assert merged["args"] == ["--dir", "/p/.outrage"]
+    assert merged["env"] == {"A": "1"}
+
+
 def test_nothing_to_merge_from_leaves_the_new_entry_alone():
     new = entry_with("--dir", "/p/.outrage")
 
@@ -583,6 +635,30 @@ def test_init_twice_leaves_a_configured_project_untouched(tmp_path):
             "ref=ref.sqlite",
             "--log",
         ],
+    }
+    _, merged, _ = config_module.plan(path, "project", entry)
+    config_module.write_config(path, merged)
+    before = path.read_text()
+
+    plain = config_module.server_entry(tmp_path / ".outrage", ["/env/bin/outrage-server"])
+    change, merged, original = config_module.plan(path, "project", plain)
+
+    assert change.action == "unchanged"
+    assert not change.writes
+    config_module.write_config(path, merged, original)
+    assert path.read_text() == before
+
+
+def test_a_hand_added_env_is_not_even_a_change(tmp_path):
+    """End to end, and the report matters as much as the file.
+
+    A project whose entry carries an `env` somebody wrote should come out of a
+    re-run untouched and be *reported* as untouched, rather than rewritten as
+    an update that happens to be missing something.
+    """
+    path = tmp_path / ".mcp.json"
+    entry = config_module.server_entry(tmp_path / ".outrage", ["/env/bin/outrage-server"]) | {
+        "env": {"OUTRAGE_DEBUG": "1"}
     }
     _, merged, _ = config_module.plan(path, "project", entry)
     config_module.write_config(path, merged)

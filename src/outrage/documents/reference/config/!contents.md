@@ -104,31 +104,31 @@
 13159 13173
 
 ### outrage.config.mounts_in(args: Sequence[str]) → list[str]
-15205 15221
+16071 16087
 
 ### outrage.config.plan(path: Path, scope: str, entry: dict[str, Any], name: str = SERVER_NAME) → tuple[Change, dict[str, Any], str | None]
-15904 15922
+16770 16788
 
 ### outrage.config.plan_codex(path: Path, entry: dict[str, Any], name: str = SERVER_NAME) → tuple[Change, TOMLDocument, str | None]
-16969 16989
+17835 17855
 
 ### outrage.config.read_config(path: Path) → tuple[dict[str, Any], str | None]
-18272 18294
+19138 19160
 
 ### outrage.config.read_toml(path: Path) → tuple[TOMLDocument, str | None]
-19091 19115
+19957 19981
 
 ### outrage.config.script_command(script: str, executable: str | PathLike[str] | None = None) → list[str] | None
-19653 19679
+20519 20545
 
 ### outrage.config.server_entry(directory: str | PathLike[str], command: list[str] | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False, marked: bool = False) → dict[str, Any]
-20772 20800
+21638 21666
 
 ### outrage.config.split_args(args: Sequence[str]) → list[tuple[str, list[str]]]
-24589 24619
+25455 25485
 
 ### outrage.config.write_config(path: Path, config: dict[str, Any], original: str | None = None) → None
-25600 25632
+26466 26498
 
 ### outrage.config.write_toml(path: Path, document: TOMLDocument, original: str | None = None) → None
-26515 26549
+27381 27415

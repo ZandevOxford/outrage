@@ -2,6 +2,22 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+A re-run of `outrage init` or `outrage config` no longer drops a field somebody
+added to the server entry by hand. `env` is the one that comes up, and `cwd`
+behind it: only `command` and `args` are written here, and rebuilding the entry
+object from those two took everything else with it. Any field the new entry does
+not carry is now inherited from the one in the file, which is the rule that has
+always governed the arguments, applied to the entry itself.
+
+It affects `.mcp.json` and Cursor's `.cursor/mcp.json`. Codex's TOML was never
+affected: that file is edited in place rather than rebuilt, so a table's `env`
+and its tool approvals already survived.
+
+A project whose entry carries such a field is now reported as `unchanged` by a
+plain re-run, where it was previously reported as an update.
+
 ## 0.15.0 - 2026-09-16
 
 `outrage init` now sets up Cursor as well, which is the fourth harness it
