@@ -8,7 +8,7 @@ Command line tool for the Outrage document store
 
 ```text
 outrage [-h] [--version]
-        {init,sessionstart,config,backup,log,get,set,ingest,make_contents,ls,dump,copy,export,import,pack,rm,check,mounts,info}
+        {init,uninit,sessionstart,config,backup,log,get,set,ingest,make_contents,ls,dump,copy,export,import,pack,rm,check,mounts,info}
         ...
 ```
 
@@ -20,6 +20,7 @@ outrage [-h] [--version]
 ## Commands
 
 - [`init`](#init) - set a project up: MCP server, session hooks, skill and agents
+- [`uninit`](#uninit) - remove the MCP server entries, session hooks and packaged files
 - [`sessionstart`](#sessionstart) - emit the managed SessionStart context as hook JSON
 - [`config`](#config) - write the MCP server configuration for a project or user
 - [`backup`](#backup) - copy the store to a verified snapshot
@@ -60,7 +61,7 @@ moves.
 outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
              [--mount KEY=FILE] [--mount-ro KEY=FILE] [--log [PATH]]
              [--log-content {none,excerpt,full}] [--no-info]
-             [--no-remount] [--no-versioning] [--dry-run]
+             [--no-remount] [--no-versioning] [--dry-run] [--force]
 ```
 
 ### Arguments
@@ -77,6 +78,33 @@ outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
 - `--no-remount` - Record --no-remount on the server entry, so the server offers no 'mount' or 'unmount' tool and its mounts are only what it was started with. On by default there, and MCP-only: this front end builds its table from scratch every run and has nothing to change. Added by a re-run, never removed by one.
 - `--no-versioning` - Record --no-versioning on the server entry, so the server keeps no earlier version of what it overwrites or deletes. On by default there, in SQLite stores only. Added by a re-run, never removed by one.
 - `--dry-run` - Report what would change without writing anything.
+- `--force` - Replace a packaged skill or agent that has been edited since outrage wrote it, which is otherwise refused. Every such file is named first, so this is a decision taken once with the whole list in view.
+
+## `uninit`
+
+Undo what 'outrage init' installs: the server entry in .mcp.json, in .codex/config.toml and in
+.cursor/mcp.json, the session-start hook for each of the four harnesses, and the packaged skills and
+agents. Only what outrage wrote is touched, and no file or directory is deleted for being left empty
+- an empty servers object and an empty hook list trigger nothing, and removing a key a client put
+there is not this command's business. The store directory is not touched at all: this removes an
+integration, not anybody's documents, so the store, its mount table and its logs stay exactly as
+they are. Refuses, and writes nothing whatever, when removing something would destroy what outrage
+did not write - a hand-added field or option on a server entry, or a packaged file edited since
+outrage wrote it. Every reason is reported together rather than one run at a time, and --force
+clears the ones a flag can clear.
+
+### Usage
+
+```text
+outrage uninit [-h] [--project-dir PATH] [--dry-run] [--force]
+```
+
+### Arguments
+
+- `-h, --help` - show this help message and exit
+- `--project-dir PATH` - Project directory to remove outrage from. Defaults to cwd.
+- `--dry-run` - Report what would be removed without writing anything.
+- `--force` - Remove what is refused anyway. Reaches a hand-added field or option on a server entry, a Codex table holding more than the launch, and a packaged file that was edited or that nothing records. It does not reach a file that cannot be read, which no flag can make safe to rewrite.
 
 ## `sessionstart`
 

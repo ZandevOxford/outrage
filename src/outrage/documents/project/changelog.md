@@ -4,6 +4,42 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+`outrage uninit` removes what `outrage init` installs: the server entry in
+`.mcp.json`, in `.codex/config.toml` and in `.cursor/mcp.json`, the
+session-start hook for each of the four harnesses, and the packaged skills and
+agents. It removes **triggers, not data** -- the store directory, its mount
+table and its logs are never touched -- and it **deletes no file or directory
+for being left empty**. An empty servers object and an empty hook list invoke
+nothing, and removing a key a client put there is not outrage's business.
+
+It **refuses, and writes nothing at all, when removing something would destroy
+what outrage did not write**: a field or option on a server entry that no
+`outrage config` could have produced, a Codex table holding more than the
+launch, or a packaged file edited since outrage wrote it. Note which side of
+that line the options fall on. A `--log` or a `--dir` does not refuse, whoever
+asked for it, and the entry is printed before it goes so the terminal keeps
+what the file will not. A `--mount` does refuse, because no release writes one
+any more -- it names a store outrage never chose, and the entry is its only
+record.
+
+**Every reason is reported together**, not one run at a time. `--force` clears
+the ones a flag can clear; it cannot clear a file that will not parse, and the
+run stays all or nothing either way.
+
+`outrage init` now **refuses to overwrite a packaged skill or agent that has
+been edited** since outrage wrote it, where it used to replace it silently.
+`--force` replaces it. This is only workable because `init` now writes an
+install receipt -- `.outrage.json` in each harness directory, holding a hash of
+each file as it wrote it -- so a file differing from the packaged copy can be
+told apart from one an **earlier release** wrote, which is the common case on
+any upgrade and must not refuse. A project with no receipt yet keeps the old
+behaviour for exactly one run, and gains one.
+
+For library callers: `config.Change.writes` is now the set of actions that
+write rather than everything but `unchanged`, since a removal added `absent`
+and `refused`, both of which leave the file alone. `errors.Refusal` is new, and
+carries a code and details exactly as an error does.
+
 Two processes or threads opening the same new SQLite store no longer fail at
 the point both try to make WAL its journal mode. SQLite may return
 `SQLITE_BUSY` immediately there even with a busy timeout, so that one pragma is

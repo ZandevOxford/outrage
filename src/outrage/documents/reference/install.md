@@ -146,6 +146,39 @@ invocation time and selects that shape with `--copilot`. Cursor takes one
 command string for every platform, as Codex does, and differs only in the
 payload key.
 
+## The packaged files have no identity, so there is a receipt
+
+A hook entry and a server table can be recognised: one carries a marker, the
+other a name. A copied markdown file carries nothing at all, so the only
+evidence about it is its bytes -- and bytes cannot answer the question that
+matters, which is whether a file differing from the packaged copy was *edited*
+or is simply an **older release's** copy that nobody has touched. The second is
+the common one: it happens to every project on any upgrade that changed a
+shipped file.
+
+That was affordable while the answer was "overwrite it anyway". It stops being
+affordable once a difference refuses, because then every upgrade refuses.
+
+[`InstallRecord`](#outrage.install.InstallRecord) is what separates the two. `init` writes one manifest
+per harness directory, holding a hash of each file as it wrote it, and a later
+run compares three things rather than two: what is on disk, what this release
+packages, and what outrage recorded putting there. A file that matches the
+record but not the package is an upgrade and is replaced in silence; one that
+matches neither was edited, and both `init` and `uninit` refuse over it.
+
+The rules are [`outrage.bulk.ExportRecord`](bulk.md#outrage.bulk.ExportRecord)'s, which answers the same
+question about an exported document: a file rather than a name or a table in a
+process, unknown fields ignored on read so a later writer can record more, and
+**a missing record degrades to not making the check** rather than to making it
+wrongly. The last is what makes the first run after an upgrade possible at all:
+no project in existence has a manifest, so `init` adopts -- it does what it
+did before, and records what it wrote, so the check begins one run later.
+
+There is deliberately no timestamp and no version string in it. One harness
+directory is usually committed, so a field that changes on every run is a diff
+in somebody's history for nothing; what is worth recording is what changes only
+when the files do.
+
 ### outrage.install.ASSET_DIRS *= ('skills', 'agents')*
 
 Packaged directories that install into `.claude/`, copied whole. Markdown
@@ -227,11 +260,34 @@ still [`MARKER_MATCH`](#outrage.install.MARKER_MATCH); the version remains infor
 
 The settings file the fragment is merged into, inside [`CLAUDE_DIR`](#outrage.install.CLAUDE_DIR).
 
-### *class* outrage.install.FileChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), source: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str))
+### *class* outrage.install.Edit(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), document: [Any](https://docs.python.org/3/library/typing.html#typing.Any) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, original: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, toml: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, delete: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
-What installing one packaged file would do, or did.
+One file a removal will write or delete, decided and ready to apply.
+
+The plan carries these so that applying it needs nothing but the plan --
+see [`apply_uninit()`](#outrage.install.apply_uninit) on why that matters.
+
+#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+
+#### document *: [Any](https://docs.python.org/3/library/typing.html#typing.Any) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+The whole file as it will be left, or None where it is being deleted.
+
+#### original *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+The file's text as it was read, so its layout can be preserved.
+
+#### toml *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+#### delete *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+### *class* outrage.install.FileChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), source: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), relative: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = '')
+
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
+
+What installing or removing one packaged file would do, or did.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
@@ -239,29 +295,65 @@ What installing one packaged file would do, or did.
 
 #### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-'created', 'updated', 'unchanged' or 'linked'.
+What comparing the file with the packaged copy found, which each command
+reads for itself:
+
+`created`
+: Not there. `init` writes it; a removal has nothing to do.
+
+`unchanged`
+: Byte for byte the packaged copy.
+
+`updated`
+: Different, and the receipt says outrage wrote what is there -- so an
+  **earlier release's** copy, which nobody has touched.
+
+`edited`
+: Different, and the receipt says outrage wrote something else. Somebody
+  edited it, and both commands refuse rather than destroy it.
+
+`unrecorded`
+: Different, with no receipt covering it, so which of the two it is
+  cannot be told. `init` does what it did before receipts existed;
+  a removal refuses.
+
+`linked`
+: Reached through a symlink, and left alone by everything.
+
+#### relative *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
+
+Where the file is below its harness directory, in POSIX spelling, which
+is how a receipt names it.
 
 #### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
+Whether `init` writes this one without being forced.
+
+#### *property* refuses *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+Whether this one stops a run that was not forced.
+
 #### describe() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
-### *class* outrage.install.HookChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None), duplicates: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, target: [HookTarget](#outrage.install.HookTarget) = HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}, context_field=None, payload_flag=None))
+### *class* outrage.install.HookChange(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None), duplicates: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, target: [HookTarget](#outrage.install.HookTarget) = HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}, context_field=None, payload_flag=None), refusals: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...] = ())
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
-What installing the hook would do, or did.
+What installing or removing the hook would do, or did.
 
 #### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
 
 #### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-'created', 'updated' or 'unchanged'.
+`created`, `updated` or `unchanged` when the entry is being
+written, and `removed`, `absent` or `refused` when it is being taken
+away.
 
 #### entry *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
 
 #### previous *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-The entry being replaced, when there was one.
+The entry being replaced or removed, when there was one.
 
 #### duplicates *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
@@ -270,6 +362,15 @@ Extra entries of ours removed, from a run that could not identify them.
 #### target *: [HookTarget](#outrage.install.HookTarget)*
 
 Which harness's hook this is, so a report over several can name them.
+
+#### refusals *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...]*
+
+Why this hook will not be touched, when something stopped it.
+
+**Never about the entry's content.** An installer replaces its own hook
+entry whole, so nothing a person writes inside one survives the next
+`init` anyway and a removal destroys nothing that was not already
+forfeit. What does land here is a settings file that cannot be read.
 
 #### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
@@ -355,7 +456,58 @@ Bases: [`ConfigError`](config.md#outrage.config.ConfigError)
 
 Settings that cannot safely be updated.
 
-### *class* outrage.install.Installation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), server: [Change](config.md#outrage.config.Change), codex_server: [Change](config.md#outrage.config.Change), cursor_server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], copilot_assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], table: [Starter](mountfile.md#outrage.mountfile.Starter))
+### *class* outrage.install.InstallRecord(files: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)], version: [int](https://docs.python.org/3/builtins/functions.html#int) = 1)
+
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
+
+What `init` last wrote into one harness directory, as it recorded it.
+
+The only evidence that separates a packaged file somebody edited from one
+an earlier release wrote. See the module docstring for why bytes alone
+cannot, and [`outrage.bulk.ExportRecord`](bulk.md#outrage.bulk.ExportRecord) for the shape this follows.
+
+#### files *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
+
+Each installed file, by its path below the harness directory in POSIX
+spelling, to the hash of what was written there. POSIX because one of these
+directories is committed and read on whatever platform checks it out.
+
+#### version *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
+#### *static* path_for(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
+
+Where the receipt for the directory at `root` is kept.
+
+#### *classmethod* read(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [InstallRecord](#outrage.install.InstallRecord) | [None](https://docs.python.org/3/builtins/constants.html#None)
+
+The receipt in `root`, or None if there is not a readable one.
+
+None for every way it can be absent -- not there, not JSON, not an
+object, holding no usable file table -- because the caller's fallback
+is to make no claim about what it finds, which is exactly right for a
+directory outrage has never recorded writing to.
+
+#### *classmethod* of(changes: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[FileChange](#outrage.install.FileChange)]) → [InstallRecord](#outrage.install.InstallRecord)
+
+The receipt for a directory these changes have just been applied to.
+
+The packaged bytes, because that is what is on disk once every change
+that writes has been written and every change that did not write was
+already equal to them. A symlinked path is left out: its content is not
+outrage's to claim, and nothing wrote it.
+
+#### matches(relative: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [bytes](store.md#outrage.store.Backup.bytes)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
+
+Whether `content` is what this receipt says was written at `relative`.
+
+#### write(root: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
+
+Write this receipt into `root`, and say whether anything changed.
+
+False when the directory already holds exactly this, so a re-run leaves
+no diff behind in a harness directory somebody commits.
+
+### *class* outrage.install.Installation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), server: [Change](config.md#outrage.config.Change), codex_server: [Change](config.md#outrage.config.Change), cursor_server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], copilot_assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], table: [Starter](mountfile.md#outrage.mountfile.Starter), refusals: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...] = ())
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -394,7 +546,92 @@ Copilot CLI agents.
 
 The project's mount table: written when there is none, never rewritten.
 
+#### refusals *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...]*
+
+Every reason this installation will not proceed, not merely the first.
+
+Empty on an ordinary run. What lands here is a packaged file somebody
+edited, which is the one thing `init` declines to overwrite -- and every
+one of them, so a person is told the whole of what is in the way and
+decides once.
+
 #### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+### outrage.install.RECORD_NAME *= '.outrage.json'*
+
+What `init` writes beside the files it copied, in each harness directory,
+recording what it put there. Named for the suffix the export record already
+uses, because it is the same mechanism answering the same question.
+
+### outrage.install.RECORD_VERSION *= 1*
+
+The manifest format. Bumped only by a change an older reader cannot survive;
+an added field is not one, since unknown fields are ignored on read.
+
+### *class* outrage.install.Uninstallation(project_dir: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), forced: [bool](https://docs.python.org/3/builtins/functions.html#bool), server: [Change](config.md#outrage.config.Change), codex_server: [Change](config.md#outrage.config.Change), cursor_server: [Change](config.md#outrage.config.Change), hooks: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...], assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], codex_assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], copilot_assets: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...], receipts: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), ...], file_refusals: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...] = (), edits: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Edit](#outrage.install.Edit), ...] = ())
+
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
+
+Everything `outrage uninit` would take out of a project, and why not.
+
+Produced whole before anything is written, and applied from itself, so
+nothing can be done that the report did not describe.
+
+#### project_dir *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+
+#### forced *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+#### server *: [Change](config.md#outrage.config.Change)*
+
+#### codex_server *: [Change](config.md#outrage.config.Change)*
+
+#### cursor_server *: [Change](config.md#outrage.config.Change)*
+
+#### hooks *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), ...]*
+
+#### assets *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
+
+#### codex_assets *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
+
+#### copilot_assets *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[FileChange](#outrage.install.FileChange), ...]*
+
+#### receipts *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), ...]*
+
+The install receipts to delete. Outrage's own bookkeeping rather than
+configuration, and one left behind would claim files that are gone.
+
+#### file_refusals *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...]*
+
+#### edits *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Edit](#outrage.install.Edit), ...]*
+
+#### *property* refusals *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...]*
+
+Every reason found, over the whole project, in the order reported.
+
+#### *property* blocking *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...]*
+
+The refusals that still stand, which under force is those no flag reaches.
+
+#### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+### outrage.install.apply_uninit(plan: [Uninstallation](#outrage.install.Uninstallation)) → [None](https://docs.python.org/3/builtins/constants.html#None)
+
+Carry out a plan [`plan_uninit()`](#outrage.install.plan_uninit) produced.
+
+**Takes the plan, not the project.** Nothing here looks at the project
+again, so there is no second derivation that could reach a different answer
+from the one already reported -- which is what makes the two passes a
+property of the code rather than a convention that holds until somebody
+adds a third caller.
+
+Applying a plan that still has [`Uninstallation.blocking`](#outrage.install.Uninstallation.blocking) refusals is
+the caller's mistake to avoid; this does what it was given.
+
+### outrage.install.asset_refusals(changes: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[FileChange](#outrage.install.FileChange)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Refusal](errors.md#outrage.errors.Refusal)]
+
+Every packaged file somebody edited, as refusals, one per file.
+
+Overridable: the content is real and a caller may knowingly discard it.
 
 ### outrage.install.asset_sources() → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)]]
 
@@ -408,7 +645,7 @@ Every packaged Codex skill, as a source and path below `.codex`.
 
 Every packaged Copilot agent, as a source and path below `.github`.
 
-### outrage.install.init(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Installation](#outrage.install.Installation)
+### outrage.install.init(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, root_mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), read_only_mounts: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, force: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Installation](#outrage.install.Installation)
 
 Set a project up: the MCP server entries, hooks, and packaged skills.
 
@@ -437,6 +674,14 @@ three mounts and its `--log` to a re-run of `outrage init` that was only
 meant to install a hook: the flags default to nothing, so the entry was
 rebuilt with nothing. [`outrage.config.merge_entry()`](config.md#outrage.config.merge_entry) is the actual fix
 and it sits in `plan`, where both this and `outrage config` reach it.
+
+**A packaged file somebody edited stops the run**, and `force` is what
+replaces it anyway. Every such file is reported, not the first, which is
+why they are collected as [`outrage.errors.Refusal`](errors.md#outrage.errors.Refusal) values rather
+than raised: the whole of what is in the way should reach a person in one
+go. Refusing is only affordable because a receipt can tell an edit from an
+older release's copy -- [`InstallRecord`](#outrage.install.InstallRecord), and the module docstring on
+what happens where there is no receipt yet.
 
 ### outrage.install.install(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, \*, target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [HookChange](#outrage.install.HookChange)
 
@@ -472,6 +717,24 @@ disagree with it.
 
 Work out which packaged files a project is missing or has an older copy of.
 
+### outrage.install.plan_hook_removal(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), \*, target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[HookChange](#outrage.install.HookChange), [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
+
+Work out what taking our session-start entry out of `path` would change.
+
+Returns what [`plan()`](#outrage.install.plan) returns, with `None` in place of the settings
+when there is nothing to write.
+
+**Every entry the marker matches goes**, not merely the first: a run that
+once failed to recognise its own entry can have left more than one, and
+leaving the extras behind would leave the hook firing.
+
+Nothing here raises. A settings file that will not parse is recorded as a
+refusal instead, so a caller taking four hooks out at once reports all four
+answers rather than the first failure.
+
+The event's list is left in place when the last entry leaves it. An empty
+list fires nothing, and the file belongs to whoever else writes in it.
+
 ### outrage.install.plan_codex_assets(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]
 
 Work out which Codex skills a project is missing or has an older copy of.
@@ -480,9 +743,62 @@ Work out which Codex skills a project is missing or has an older copy of.
 
 Work out which Copilot agents a project is missing or has an older copy of.
 
+### outrage.install.plan_uninit(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), \*, force: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Uninstallation](#outrage.install.Uninstallation)
+
+Work out everything removing outrage from a project would do.
+
+**Never writes and never raises.** A file that cannot be read becomes a
+refusal like any other, because the point of planning the whole project
+first is to report every reason at once: a caller who fixes one thing,
+runs again and meets the next has been sent round a loop this could have
+spared them.
+
+`force` is applied here, to the plan, rather than at the moment of
+writing. A refusal every reason for which is overridable becomes an
+ordinary removal and the reasons stay on it, so the report can say what was
+overridden; one that no flag reaches stays refused whatever was asked for.
+
+### outrage.install.removal_action(change: [FileChange](#outrage.install.FileChange), \*, forced: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
+
+What removing one packaged file does, read off the shared comparison.
+
+The comparison is `_plan_files()`' and says what the file *is*; this
+says what a removal makes of that, which is not the same reading the
+installer takes. An earlier release's copy is still outrage's to delete;
+a file nobody can account for is not.
+
+### outrage.install.removal_refusals(changes: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[FileChange](#outrage.install.FileChange)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Refusal](errors.md#outrage.errors.Refusal)]
+
+The same, for a removal, which refuses over one more case.
+
+A file with no receipt covering it might be an earlier release's copy or
+might be somebody's work, and deleting it is not reversible either way.
+`init` overwrites such a file because that is what it has always done and
+a refusal there would block the very upgrade that starts recording them;
+deleting one on the same evidence would be a different bet entirely.
+
 ### outrage.install.settings_path(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
 Where a project's Claude Code settings file is, existing or not.
+
+### outrage.install.uninit(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), \*, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, force: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Uninstallation](#outrage.install.Uninstallation)
+
+Remove outrage's integration from a project, or say what removing it would do.
+
+Takes out the server entries, the session-start hooks, the packaged skills
+and agents, and the receipts recording them. **Leaves every file and
+directory standing**: an empty servers object and an empty hook list
+trigger nothing, and pruning a container risks removing a key the harness
+needs. The store directory is not touched at all -- this removes an
+integration, not anybody's documents.
+
+**Nothing at all is written when anything still refuses**, force or no
+force, which is the same all-or-nothing the installer has and for the same
+reason: a project left half arranged is a worse state than one left alone,
+and here it would be one where some of outrage still starts. A refusal no
+flag reaches -- a file that cannot be read -- therefore stops the whole
+removal, and the remedy is to repair or delete that file and run again.
+See [`plan_uninit()`](#outrage.install.plan_uninit).
 
 ### outrage.install.sessionstart_command(executable: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, target: [HookTarget](#outrage.install.HookTarget) = CLAUDE_HOOK) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
@@ -519,6 +835,9 @@ command with a flag selecting their own flat payload key. The marker is
 present before the entry is accepted, so a broken template cannot silently
 become one a later run fails to recognise.
 
-### outrage.install.write_assets(changes: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)]) → [None](https://docs.python.org/3/builtins/constants.html#None)
+### outrage.install.write_assets(changes: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[FileChange](#outrage.install.FileChange)], \*, force: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Copy across the files that differ, atomically and one at a time.
+
+`force` also replaces a file somebody edited, which is otherwise the one
+thing this declines to do.

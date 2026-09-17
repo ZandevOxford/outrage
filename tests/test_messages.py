@@ -18,7 +18,7 @@ import pytest
 
 from conftest import long_options
 from outrage import cli, keys, messages
-from outrage.errors import OutrageError
+from outrage.errors import OutrageError, Refusal
 from outrage.mounts import Mount, MountedStore, ReadOnlyMountError
 from outrage.store import KeyNotFoundError
 from outrage.store_sqlite import SqliteStore
@@ -59,17 +59,35 @@ OUTRAGE_ERRORS = _outrage_errors()
 
 
 def _raises() -> list[tuple[str, int, ast.Call]]:
-    """Every ``raise SomeOutrageError(...)`` in the package, with where it is."""
+    """Every site that names a code, with where it is.
+
+    Two shapes, because a code reaches a reader two ways. A ``raise
+    SomeOutrageError(...)`` is one. The other is a ``Refusal(...)``, which is
+    the same facts recorded rather than thrown, by a command that has to report
+    every reason it will not proceed instead of stopping at the first.
+
+    Both are collected here so that all three rules below bind both. A refusal
+    with no template is a caller reading an AssertionError exactly as a raise
+    would be, and a template only a refusal produces is not wording nothing
+    maintains.
+
+    ``Refusal.of`` is deliberately not collected: it carries the code of the
+    error it was handed, which was guarded where that error is raised.
+    """
     found = []
     for path in sorted(SOURCE.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.Raise) or not isinstance(node.exc, ast.Call):
+            if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call):
+                call = node.exc
+            elif isinstance(node, ast.Call) and getattr(node.func, "id", None) == "Refusal":
+                call = node
+            else:
                 continue
-            function = node.exc.func
+            function = call.func
             name = getattr(function, "id", getattr(function, "attr", None))
-            if name in OUTRAGE_ERRORS:
-                found.append((path.name, node.lineno, node.exc))
+            if name in OUTRAGE_ERRORS or name == "Refusal":
+                found.append((path.name, call.lineno, call))
     return found
 
 
@@ -144,10 +162,40 @@ def test_every_template_renders_from_the_details_its_raise_site_passes():
     """Rendering must not be the thing that fails when something else has."""
     for filename, lineno, call in _raises():
         code = call.args[0].value
-        details = {keyword.arg: _stand_in(keyword.arg) for keyword in call.keywords if keyword.arg}
+        details = {
+            keyword.arg: _stand_in(keyword.arg)
+            for keyword in call.keywords
+            # `overridable` says whether a flag can pass a refusal, not what
+            # the sentence says, so it is no more a detail than `spell` is.
+            if keyword.arg and keyword.arg != "overridable"
+        }
         error = OutrageError(code, **details)
         rendered = messages.render(error)
         assert isinstance(rendered, str) and rendered, f"{filename}:{lineno} renders nothing"
+
+
+def test_overridable_is_the_refusals_own_field_and_never_a_detail():
+    """The same rule ``spell`` follows, one constructor along.
+
+    ``overridable`` says whether a flag can pass this refusal; it is not a fact
+    the sentence is written from. Kept off ``details`` so that rendering asks
+    for exactly what a template declares, and so a refusal and the error it
+    stands for carry the same facts.
+    """
+    refusal = Refusal("asset-edited", overridable=False, path="/p/x")
+
+    assert refusal.overridable is False
+    assert dict(refusal.details) == {"path": "/p/x"}
+    assert dict(refusal.as_error().details) == {"path": "/p/x"}
+
+
+def test_a_refusal_renders_as_the_error_it_stands_for():
+    """One vocabulary, so recording a reason invents no second wording layer."""
+    refusal = Refusal("asset-edited", path="/p/.claude/skills/outrage/SKILL.md")
+
+    assert messages.render(refusal.as_error()) == messages.render(
+        OutrageError("asset-edited", path="/p/.claude/skills/outrage/SKILL.md")
+    )
 
 
 def test_str_is_a_developer_rendering_not_a_message():

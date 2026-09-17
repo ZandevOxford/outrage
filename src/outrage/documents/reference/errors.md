@@ -33,6 +33,18 @@ is deliberately not what a user wants: anything that prints an error straight
 at somebody now looks wrong when it is read, rather than looking fine and
 naming a key that does not exist.
 
+## A refusal is the same facts, recorded instead of raised
+
+[`Refusal`](#outrage.errors.Refusal) is what a command uses when it has to report **every** reason
+it will not proceed rather than the first. An exception cannot do that: raising
+stops the survey that found it, so a caller fixes one thing, runs again, and
+meets the next. A refusal is therefore an ordinary value, collected as the work
+is planned and reported together.
+
+It carries a `code` and `details` because that is what a message is written
+from, so recording one invents **no second vocabulary**: the wording tables
+render a refusal exactly as they render the error it came from.
+
 ### *exception* outrage.errors.OutrageError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`Exception`](https://docs.python.org/3/builtins/exceptions.html#Exception)
@@ -46,3 +58,40 @@ needs, by name.
 #### \_\_str_\_() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Return str(self).
+
+### *class* outrage.errors.Refusal(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, overridable: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
+
+One reason a command will not proceed, recorded rather than raised.
+
+**Built exactly as an error is** -- a code and details by name -- because
+it is the same thing at a different moment, and because one rule then
+guards both: a code here needs a sentence in the wording tables just as
+much as a code that is thrown.
+
+#### code
+
+#### details *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
+
+#### overridable
+
+Whether a force option can proceed past this one.
+
+False is for a refusal no flag can answer, and the case it exists for
+is a configuration file that does not parse: nothing can rewrite one
+key of a file it cannot read, so offering to try would be advice that
+cannot work. A refusal about *content* -- something valid that this
+command declines to destroy -- is the caller's to override, and is the
+default.
+
+#### *classmethod* of(error: [OutrageError](#outrage.errors.OutrageError), \*, overridable: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Refusal](#outrage.errors.Refusal)
+
+Record `error` as a refusal instead of letting it propagate.
+
+Not overridable by default: an error raised while *reading* is the kind
+a flag cannot answer, and a caller who knows better says so.
+
+#### as_error() → [OutrageError](#outrage.errors.OutrageError)
+
+This refusal as the error it would have been, for a caller wanting one.
