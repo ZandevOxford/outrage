@@ -30,6 +30,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -268,16 +269,43 @@ CHILD_BATCH = 8
 CHILD_BATCH_CEILING = 256
 
 #: How long a writer waits for another writer to finish before giving up, in
-#: milliseconds. SQLite's own default is zero -- a busy database fails on the
-#: spot rather than waiting -- which is invisible with one connection and the
-#: usual cause of spurious "database is locked" with several. Generous, because
+#: milliseconds. WAL activation uses it as an explicit retry deadline, and it
+#: is then set as the connection's ordinary busy timeout. Generous, because
 #: every write here is small and the alternative to waiting is an error.
 BUSY_TIMEOUT_MS = 5000
+
+#: A busy handler may decline to wait when doing so could deadlock, so the
+#: journal-mode pragma can still return ``SQLITE_BUSY`` immediately when
+#: concurrent first opens overlap. Yield between explicit attempts rather than
+#: spin for the whole busy timeout.
+_WAL_RETRY_INTERVAL_SECONDS = 0.01
 
 #: When the sidecar is worth reporting. A WAL always holds something between
 #: checkpoints; it is only interesting once it holds more than the database it
 #: belongs to, which is the state that makes a file copy lose real content.
 WAL_RATIO = 1.0
+
+
+def _set_wal_mode(conn: sqlite3.Connection) -> None:
+    """Select WAL, retrying only a concurrent ``SQLITE_BUSY`` response."""
+    deadline = time.monotonic() + BUSY_TIMEOUT_MS / 1000
+    while True:
+        try:
+            row = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+        except sqlite3.OperationalError as error:
+            code = getattr(error, "sqlite_errorcode", None)
+            if not isinstance(code, int) or code & 0xFF != sqlite3.SQLITE_BUSY:
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise
+            time.sleep(min(_WAL_RETRY_INTERVAL_SECONDS, remaining))
+            continue
+
+        mode = None if row is None else row[0]
+        if not isinstance(mode, str) or mode.casefold() != "wal":
+            raise RuntimeError(f"SQLite did not enable WAL mode: journal_mode returned {mode!r}")
+        return
 
 
 class SqliteStore(FileStore):
@@ -340,15 +368,17 @@ class SqliteStore(FileStore):
         on means a connection that escapes to another thread fails loudly
         rather than returning quiet nonsense.
         """
-        conn = sqlite3.connect(self.path)
+        # `_set_wal_mode` owns its wait, so start with SQLite's own handler
+        # disabled: an attempt cannot consume a second full timeout after the
+        # explicit deadline has nearly elapsed.
+        conn = sqlite3.connect(self.path, timeout=0)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
+        _set_wal_mode(conn)
         # WAL lets readers run alongside a writer, but writers still take
-        # turns, and without this a second one is refused *immediately*: the
-        # default busy timeout is zero. Waiting is what makes a concurrent
+        # turns. Once activation is complete, a busy handler makes a concurrent
         # write look like it merely took a moment.
         conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        conn.execute("PRAGMA synchronous=NORMAL")
         # Ordering stays defined in one place. The stored `sort_key` covers
         # every real row, but the implicit children of a level are derived from
         # the `parent` column and have no row of their own, so a query that has

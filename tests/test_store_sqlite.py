@@ -19,6 +19,7 @@ and asks what came out.
 import sqlite3
 import threading
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -44,6 +45,72 @@ def test_creates_directory_and_database(tmp_path):
     with SqliteStore(directory) as s:
         assert s.path == directory / "store.sqlite"
     assert (directory / "store.sqlite").exists()
+
+
+def sqlite_error(code, message="database is locked"):
+    error = sqlite3.OperationalError(message)
+    error.sqlite_errorcode = code
+    return error
+
+
+def journal_mode_result(mode):
+    result = Mock()
+    result.fetchone.return_value = (mode,)
+    return result
+
+
+def test_setting_wal_retries_sqlite_busy(monkeypatch):
+    connection = Mock()
+    connection.execute.side_effect = [
+        sqlite_error(sqlite3.SQLITE_BUSY),
+        journal_mode_result("wal"),
+    ]
+    sleeps = []
+    monkeypatch.setattr(sqlite_module.time, "sleep", sleeps.append)
+
+    sqlite_module._set_wal_mode(connection)
+
+    assert connection.execute.call_count == 2
+    assert sleeps == [sqlite_module._WAL_RETRY_INTERVAL_SECONDS]
+
+
+def test_setting_wal_does_not_retry_another_sqlite_error(monkeypatch):
+    connection = Mock()
+    refused = sqlite_error(sqlite3.SQLITE_READONLY, "attempt to write a readonly database")
+    connection.execute.side_effect = refused
+    sleep = Mock()
+    monkeypatch.setattr(sqlite_module.time, "sleep", sleep)
+
+    with pytest.raises(sqlite3.OperationalError) as raised:
+        sqlite_module._set_wal_mode(connection)
+
+    assert raised.value is refused
+    sleep.assert_not_called()
+
+
+def test_setting_wal_stops_retrying_at_the_busy_timeout(monkeypatch):
+    connection = Mock()
+    busy = sqlite_error(sqlite3.SQLITE_BUSY)
+    connection.execute.side_effect = busy
+    moments = iter([0.0, sqlite_module.BUSY_TIMEOUT_MS / 1000])
+    monkeypatch.setattr(sqlite_module.time, "monotonic", lambda: next(moments))
+    sleep = Mock()
+    monkeypatch.setattr(sqlite_module.time, "sleep", sleep)
+
+    with pytest.raises(sqlite3.OperationalError) as raised:
+        sqlite_module._set_wal_mode(connection)
+
+    assert raised.value is busy
+    assert connection.execute.call_count == 1
+    sleep.assert_not_called()
+
+
+def test_setting_wal_refuses_a_different_returned_mode():
+    connection = Mock()
+    connection.execute.return_value = journal_mode_result("delete")
+
+    with pytest.raises(RuntimeError, match="journal_mode returned 'delete'"):
+        sqlite_module._set_wal_mode(connection)
 
 
 def test_rejects_a_newer_schema(tmp_path):

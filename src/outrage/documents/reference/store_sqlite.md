@@ -51,9 +51,8 @@ migration.
 ### outrage.store_sqlite.BUSY_TIMEOUT_MS *= 5000*
 
 How long a writer waits for another writer to finish before giving up, in
-milliseconds. SQLite's own default is zero -- a busy database fails on the
-spot rather than waiting -- which is invisible with one connection and the
-usual cause of spurious "database is locked" with several. Generous, because
+milliseconds. WAL activation uses it as an explicit retry deadline, and it
+is then set as the connection's ordinary busy timeout. Generous, because
 every write here is small and the alternative to waiting is an error.
 
 ### outrage.store_sqlite.CHILD_BATCH *= 8*

@@ -4,6 +4,13 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+Two processes or threads opening the same new SQLite store no longer fail at
+the point both try to make WAL its journal mode. SQLite may return
+`SQLITE_BUSY` immediately there even with a busy timeout, so that one pragma is
+now retried within the existing five-second bound. Other SQLite errors and
+ordinary transactions are unchanged, and opening refuses to continue unless
+SQLite confirms that WAL was selected.
+
 A metadata survey can now report **how many documents carry each name it was
 asked for**, alongside the count of those carrying none. `total` could not
 answer it: a document with a title and no summary is in neither number, and the
