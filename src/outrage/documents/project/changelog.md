@@ -2,7 +2,11 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 1.0.0 - 2026-09-17
+
+1.0 release contains most of the initial intended functionality, and is
+intended to now be reasonably stable and backwards compatible in interfaces
+and formats.
 
 `outrage uninit` removes what `outrage init` installs: the server entry in
 `.mcp.json`, in `.codex/config.toml` and in `.cursor/mcp.json`, the
