@@ -13,203 +13,335 @@
 ## The bridge this is
 7443 7445
 
-### outrage.install.ASSET_DIRS *= ('skills', 'agents')*
+## The packaged files have no identity, so there is a receipt
 8343 8345
 
+### outrage.install.ASSET_DIRS *= ('skills', 'agents')*
+10350 10352
+
 ### outrage.install.CLAUDE_DIR *= '.claude'*
-8625 8627
+10632 10634
 
 ### outrage.install.CODEX_DIR *= '.codex'*
-8886 8888
+10893 10895
 
 ### outrage.install.CURSOR_DIR *= '.cursor'*
-9081 9083
+11088 11090
 
 ### outrage.install.GITHUB_DIR *= '.github'*
-9309 9311
+11316 11318
 
 ### outrage.install.CLAUDE_HOOK *= HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}, context_field=None, payload_flag=None)*
-9433 9435
+11440 11442
 
 ### outrage.install.CODEX_HOOK *= HookTarget(name='Codex', template=PosixPath('codex.json'), relative=PosixPath('.codex/hooks.json'), event='SessionStart', base={}, context_field=None, payload_flag=None)*
-9709 9711
+11716 11718
 
 ### outrage.install.COPILOT_HOOK *= HookTarget(name='Copilot CLI', template=PosixPath('copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1}, context_field='additionalContext', payload_flag='--copilot')*
-10216 10218
+12223 12225
 
 ### outrage.install.CURSOR_HOOK *= HookTarget(name='Cursor', template=PosixPath('cursor.json'), relative=PosixPath('.cursor/hooks.json'), event='sessionStart', base={'version': 1}, context_field='additional_context', payload_flag='--cursor')*
-10659 10661
+12666 12668
 
 ### outrage.install.HOOKS_FIELD *= 'hooks'*
-11209 11211
+13216 13218
 
 ### outrage.install.HOOK_TARGETS *= (HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}, context_field=None, payload_flag=None), HookTarget(name='Copilot CLI', template=PosixPath('copilot.json'), relative=PosixPath('.github/hooks/outrage.json'), event='sessionStart', base={'version': 1}, context_field='additionalContext', payload_flag='--copilot'), HookTarget(name='Codex', template=PosixPath('codex.json'), relative=PosixPath('.codex/hooks.json'), event='SessionStart', base={}, context_field=None, payload_flag=None), HookTarget(name='Cursor', template=PosixPath('cursor.json'), relative=PosixPath('.cursor/hooks.json'), event='sessionStart', base={'version': 1}, context_field='additional_context', payload_flag='--cursor'))*
-11379 11381
+13386 13388
 
 ### outrage.install.MARKER *= 'outrage-managed:session-start'*
-12268 12270
+14275 14277
 
 ### outrage.install.MARKER_MATCH *= '-managed:session-start'*
-12468 12470
+14475 14477
 
 ### outrage.install.SESSIONSTART_MARKER *= 'outrage-managed:session-start:v3'*
-12763 12765
+14770 14772
 
 ### outrage.install.SETTINGS_NAME *= 'settings.json'*
-13008 13010
+15015 15017
 
-### *class* outrage.install.FileChange(path: Path, source: Path, action: str)
-13163 13165
+### *class* outrage.install.Edit(path: Path, document: Any | None = None, original: str | None = None, toml: bool = False, delete: bool = False)
+15170 15172
 
 #### path *: Path*
-13554 13556
+16023 16025
+
+#### document *: Any | None*
+16106 16108
+
+#### original *: str | None*
+16325 16327
+
+#### toml *: bool*
+16534 16536
+
+#### delete *: bool*
+16612 16614
+
+### *class* outrage.install.FileChange(path: Path, source: Path, action: str, relative: str = '')
+16692 16694
+
+#### path *: Path*
+17171 17173
 
 #### source *: Path*
-13637 13639
+17254 17256
 
 #### action *: str*
-13722 13724
+17339 17341
+
+#### relative *: str*
+18149 18151
 
 #### *property* writes *: bool*
-13847 13849
+18328 18330
+
+#### *property* refuses *: bool*
+18473 18475
 
 #### describe() → str
-13938 13940
+18616 18618
 
-### *class* outrage.install.HookChange(path: Path, action: str, entry: dict[str, Any], previous: dict[str, Any] | None, duplicates: int = 0, target: HookTarget = HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}, context_field=None, payload_flag=None))
-14017 14021
+### *class* outrage.install.HookChange(path: Path, action: str, entry: dict[str, Any], previous: dict[str, Any] | None, duplicates: int = 0, target: HookTarget = HookTarget(name='Claude Code', template=PosixPath('settings.json'), relative=PosixPath('.claude/settings.json'), event='SessionStart', base={}, context_field=None, payload_flag=None), refusals: tuple[Refusal, ...] = ())
+18695 18699
 
 #### path *: Path*
-15096 15100
+19916 19920
 
 #### action *: str*
-15179 15183
+19999 20003
 
 #### entry *: dict[str, Any]*
-15294 15298
+20212 20216
 
 #### previous *: dict[str, Any] | None*
-15498 15502
+20416 20420
 
 #### duplicates *: int*
-15817 15821
+20746 20750
 
 #### target *: HookTarget*
-15972 15976
+20901 20905
+
+#### refusals *: tuple[Refusal, ...]*
+21031 21035
 
 #### *property* writes *: bool*
-16102 16106
+21504 21508
 
 #### describe() → str
-16193 16197
+21595 21599
 
 ### *class* outrage.install.HookTarget(name: str, template: Path, relative: Path, event: str, base: dict[str, ~typing.Any]=<factory>, context_field: str | None = None, payload_flag: str | None = None)
-16272 16278
+21674 21680
 
 #### name *: str*
-17379 17385
+22781 22787
 
 #### template *: Path*
-17501 17507
+22903 22909
 
 #### relative *: Path*
-18203 18209
+23605 23611
 
 #### event *: str*
-18342 18348
+23744 23750
 
 #### base *: dict[str, Any]*
-18478 18484
+23880 23886
 
 #### context_field *: str | None*
-18980 18986
+24382 24388
 
 #### payload_flag *: str | None*
-19533 19539
+24935 24941
 
 #### *property* fragment *: Path*
-20076 20082
+25478 25484
 
 #### path(project_dir: str | Path) → Path
-20372 20378
+25774 25780
 
 ### *exception* outrage.install.InstallError(code: str, \*\*details: Any)
-20668 20676
+26070 26078
 
-### *class* outrage.install.Installation(project_dir: Path, server: Change, codex_server: Change, cursor_server: Change, hooks: tuple[HookChange, ...], assets: tuple[FileChange, ...], codex_assets: tuple[FileChange, ...], copilot_assets: tuple[FileChange, ...], table: Starter)
-20962 20970
+### *class* outrage.install.InstallRecord(files: dict[str, str], version: int = 1)
+26364 26372
+
+#### files *: dict[str, str]*
+27073 27081
+
+#### version *: int*
+27490 27498
+
+#### *static* path_for(root: str | Path) → Path
+27569 27577
+
+#### *classmethod* read(root: str | Path) → InstallRecord | None
+27856 27866
+
+#### *classmethod* of(changes: Sequence[FileChange]) → InstallRecord
+28454 28466
+
+#### matches(relative: str, content: bytes) → bool
+28996 29010
+
+#### write(root: str | Path) → bool
+29273 29289
+
+### *class* outrage.install.Installation(project_dir: Path, server: Change, codex_server: Change, cursor_server: Change, hooks: tuple[HookChange, ...], assets: tuple[FileChange, ...], codex_assets: tuple[FileChange, ...], copilot_assets: tuple[FileChange, ...], table: Starter, refusals: tuple[Refusal, ...] = ())
+29683 29701
 
 #### project_dir *: Path*
-21943 21951
+30794 30812
 
 #### server *: Change*
-22033 22041
+30884 30902
 
 #### codex_server *: Change*
-22092 22100
+30943 30961
 
 #### cursor_server *: Change*
-22230 22238
+31081 31099
 
 #### hooks *: tuple[HookChange, ...]*
-22471 22479
+31322 31340
 
 #### assets *: tuple[FileChange, ...]*
-22672 22680
+31523 31541
 
 #### codex_assets *: tuple[FileChange, ...]*
-22833 22841
+31684 31702
 
 #### copilot_assets *: tuple[FileChange, ...]*
-22983 22991
+31834 31852
 
 #### table *: Starter*
-23141 23149
+31992 32010
+
+#### refusals *: tuple[Refusal, ...]*
+32131 32149
 
 #### *property* writes *: bool*
-23280 23288
+32563 32581
+
+### outrage.install.RECORD_NAME *= '.outrage.json'*
+32654 32672
+
+### outrage.install.RECORD_VERSION *= 1*
+32926 32944
+
+### *class* outrage.install.Uninstallation(project_dir: Path, forced: bool, server: Change, codex_server: Change, cursor_server: Change, hooks: tuple[HookChange, ...], assets: tuple[FileChange, ...], codex_assets: tuple[FileChange, ...], copilot_assets: tuple[FileChange, ...], receipts: tuple[Path, ...], file_refusals: tuple[Refusal, ...] = (), edits: tuple[Edit, ...] = ())
+33115 33133
+
+#### project_dir *: Path*
+34647 34665
+
+#### forced *: bool*
+34737 34755
+
+#### server *: Change*
+34817 34835
+
+#### codex_server *: Change*
+34876 34894
+
+#### cursor_server *: Change*
+34941 34959
+
+#### hooks *: tuple[HookChange, ...]*
+35007 35025
+
+#### assets *: tuple[FileChange, ...]*
+35135 35153
+
+#### codex_assets *: tuple[FileChange, ...]*
+35264 35282
+
+#### copilot_assets *: tuple[FileChange, ...]*
+35399 35417
+
+#### receipts *: tuple[Path, ...]*
+35536 35554
+
+#### file_refusals *: tuple[Refusal, ...]*
+35832 35850
+
+#### edits *: tuple[Edit, ...]*
+35970 35988
+
+#### *property* refusals *: tuple[Refusal, ...]*
+36086 36104
+
+#### *property* blocking *: tuple[Refusal, ...]*
+36298 36316
+
+#### *property* writes *: bool*
+36518 36536
+
+### outrage.install.apply_uninit(plan: Uninstallation) → None
+36609 36627
+
+### outrage.install.asset_refusals(changes: Sequence[FileChange]) → list[Refusal]
+37326 37346
 
 ### outrage.install.asset_sources() → list[tuple[Path, Path]]
-23371 23379
+37754 37776
 
 ### outrage.install.codex_asset_sources() → list[tuple[Path, Path]]
-23748 23758
+38131 38155
 
 ### outrage.install.copilot_asset_sources() → list[tuple[Path, Path]]
-24124 24136
+38507 38533
 
-### outrage.install.init(project_dir: str | Path, directory: str | Path | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False, root_mount: str | None = None, mounts: Sequence[str] = (), read_only_mounts: Sequence[str] = (), dry_run: bool = False) → Installation
-24505 24519
+### outrage.install.init(project_dir: str | Path, directory: str | Path | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False, root_mount: str | None = None, mounts: Sequence[str] = (), read_only_mounts: Sequence[str] = (), dry_run: bool = False, force: bool = False) → Installation
+38888 38916
 
 ### outrage.install.install(project_dir: str | Path, dry_run: bool = False, \*, target: HookTarget = CLAUDE_HOOK) → HookChange
-27754 27770
+42758 42788
 
 ### outrage.install.is_ours(entry: Any) → bool
-28318 28336
+43322 43354
 
 ### outrage.install.plan(path: Path, entry: dict[str, Any] | None = None, \*, target: HookTarget = CLAUDE_HOOK) → tuple[HookChange, dict[str, Any], str | None]
-29103 29123
+44107 44141
 
 ### outrage.install.plan_assets(project_dir: str | Path) → list[FileChange]
-30259 30281
+45263 45299
+
+### outrage.install.plan_hook_removal(path: Path, \*, target: HookTarget = CLAUDE_HOOK) → tuple[HookChange, dict[str, Any] | None, str | None]
+45624 45662
 
 ### outrage.install.plan_codex_assets(project_dir: str | Path) → list[FileChange]
-30620 30644
+47034 47074
 
 ### outrage.install.plan_copilot_assets(project_dir: str | Path) → list[FileChange]
-30985 31011
+47399 47441
+
+### outrage.install.plan_uninit(project_dir: str | Path, \*, force: bool = False) → Uninstallation
+47768 47812
+
+### outrage.install.removal_action(change: FileChange, \*, forced: bool = False) → str
+48732 48778
+
+### outrage.install.removal_refusals(changes: Sequence[FileChange]) → list[Refusal]
+49286 49334
 
 ### outrage.install.settings_path(project_dir: str | Path) → Path
-31354 31382
+50000 50050
+
+### outrage.install.uninit(project_dir: str | Path, \*, dry_run: bool = False, force: bool = False) → Uninstallation
+50315 50367
 
 ### outrage.install.sessionstart_command(executable: str | PathLike[str] | None = None, \*, target: HookTarget = CLAUDE_HOOK) → str
-31669 31699
+51670 51724
 
 ### outrage.install.sessionstart_payload(\*, target: HookTarget = CLAUDE_HOOK) → dict[str, Any]
-32867 32899
+52868 52924
 
 ### outrage.install.template_entry(target: HookTarget = CLAUDE_HOOK) → dict[str, Any]
-33528 33562
+53529 53587
 
-### outrage.install.write_assets(changes: list[FileChange]) → None
-34210 34246
+### outrage.install.write_assets(changes: list[FileChange], \*, force: bool = False) → None
+54211 54271

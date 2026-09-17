@@ -27,6 +27,7 @@ from conftest import raises_rendered
 from outrage import config as config_module
 from outrage import install as install_module
 from outrage.config import ConfigError
+from outrage.eventlog import DEFAULT as LOG_BESIDE_STORE
 from outrage.install import (
     CLAUDE_DIR,
     CLAUDE_HOOK,
@@ -551,17 +552,95 @@ def test_a_second_run_copies_nothing(tmp_path):
     assert actions(init(tmp_path).copilot_assets) == {"unchanged"}
 
 
-def test_an_edited_copy_is_replaced_by_the_packaged_one(tmp_path):
-    """The copy is output, not a document to keep: an upgrade has to reach it."""
+def test_an_edited_copy_is_refused_rather_than_replaced(tmp_path):
+    """The receipt makes this an edit rather than an old copy, so it is somebody's.
+
+    The rule the whole pair follows: neither command destroys what outrage did
+    not write. Before there was a receipt this file was overwritten, because
+    nothing here could tell an edit from an earlier release's copy.
+    """
     init(tmp_path)
     skill = installed(tmp_path, "skills/outrage/SKILL.md")
-    skill.write_text("something older", encoding="utf-8")
+    skill.write_text("mine now", encoding="utf-8")
 
-    changes = init(tmp_path).assets
+    done = init(tmp_path)
 
-    updated = [c for c in changes if c.path == skill]
-    assert [c.action for c in updated] == ["updated"]
-    assert skill.read_bytes() == updated[0].source.read_bytes()
+    assert [c.action for c in done.assets if c.path == skill] == ["edited"]
+    assert [r.code for r in done.refusals] == ["asset-edited"]
+    assert skill.read_text(encoding="utf-8") == "mine now", "refusing means writing nothing"
+
+
+def test_force_replaces_an_edited_copy(tmp_path):
+    """The override exists because the packaged file is still outrage's output."""
+    init(tmp_path)
+    skill = installed(tmp_path, "skills/outrage/SKILL.md")
+    skill.write_text("mine now", encoding="utf-8")
+
+    done = init(tmp_path, force=True)
+
+    assert not done.refusals
+    packaged = [c for c in done.assets if c.path == skill][0].source
+    assert skill.read_bytes() == packaged.read_bytes()
+
+
+def test_an_earlier_releases_copy_is_replaced_in_silence(tmp_path):
+    """The case a refusal must not fire on, which is every upgrade.
+
+    The file differs from what this build packages and matches what the receipt
+    says outrage wrote, so nobody touched it: it is simply old.
+    """
+    init(tmp_path)
+    skill = installed(tmp_path, "skills/outrage/SKILL.md")
+    older = b"what the last release shipped\n"
+    skill.write_bytes(older)
+    record = install_module.InstallRecord.read(tmp_path / CLAUDE_DIR)
+    install_module.InstallRecord(
+        files={**record.files, "skills/outrage/SKILL.md": install_module._digest(older)}
+    ).write(tmp_path / CLAUDE_DIR)
+
+    done = init(tmp_path)
+
+    assert [c.action for c in done.assets if c.path == skill] == ["updated"]
+    assert not done.refusals
+    assert skill.read_bytes() != older
+
+
+def test_a_file_no_receipt_covers_is_adopted_rather_than_refused(tmp_path):
+    """Every project predates the receipt, so the first run must not refuse.
+
+    It does what it did before receipts existed -- overwrite -- and records
+    what it wrote, so the check starts working one run later.
+    """
+    init(tmp_path)
+    skill = installed(tmp_path, "skills/outrage/SKILL.md")
+    skill.write_text("mine now", encoding="utf-8")
+    install_module.InstallRecord.path_for(tmp_path / CLAUDE_DIR).unlink()
+
+    done = init(tmp_path)
+
+    assert [c.action for c in done.assets if c.path == skill] == ["unrecorded"]
+    assert not done.refusals
+    assert skill.read_bytes() == [c for c in done.assets if c.path == skill][0].source.read_bytes()
+    assert install_module.InstallRecord.read(tmp_path / CLAUDE_DIR) is not None
+
+
+def test_the_receipt_is_not_rewritten_when_nothing_changed(tmp_path):
+    """One harness directory is committed, so a re-run must leave no diff."""
+    init(tmp_path)
+    receipt = install_module.InstallRecord.path_for(tmp_path / GITHUB_DIR)
+    before = receipt.stat().st_mtime_ns
+
+    init(tmp_path)
+
+    assert receipt.stat().st_mtime_ns == before
+
+
+def test_an_unreadable_receipt_makes_no_claim(tmp_path):
+    """It degrades to not making the check, never to making it wrongly."""
+    init(tmp_path)
+    install_module.InstallRecord.path_for(tmp_path / CLAUDE_DIR).write_text("{ nope")
+
+    assert install_module.InstallRecord.read(tmp_path / CLAUDE_DIR) is None
 
 
 def test_a_symlinked_file_is_left_alone(tmp_path):
@@ -1139,3 +1218,316 @@ def test_a_codex_config_that_does_not_parse_stops_the_whole_run(tmp_path):
 
     assert path.read_text() == "[broken\n"
     assert not (tmp_path / ".mcp.json").exists()
+
+
+# -- taking a project apart again ----------------------------------------
+#
+# The rule everything below guards: a removal destroys nothing outrage did not
+# write, and when it will not proceed it says *every* reason rather than the
+# first. The second is what makes the refusals values and the run two passes.
+
+
+def uninstalled(tmp_path: Path, force: bool = False):
+    return install_module.uninit(tmp_path, force=force)
+
+
+def test_uninit_takes_out_every_trigger(tmp_path):
+    init(tmp_path)
+
+    done = uninstalled(tmp_path)
+
+    assert not done.refusals
+    assert read_json(tmp_path / ".mcp.json")["mcpServers"] == {}
+    assert read_json(tmp_path / CURSOR_DIR / "mcp.json")["mcpServers"] == {}
+    assert tomllib.loads((tmp_path / CODEX_DIR / "config.toml").read_text()) == {}
+    for target in HOOK_TARGETS:
+        held = read_json(target.path(tmp_path))
+        assert held["hooks"][target.event] == [], f"{target.name} still fires"
+    for _, relative in asset_sources():
+        assert not (tmp_path / CLAUDE_DIR / relative).exists(), relative
+
+
+def test_uninit_leaves_every_file_and_directory_standing(tmp_path):
+    """An empty container triggers nothing, and removing a client's key is not ours.
+
+    The point of the command is that outrage stops being invoked, not that the
+    project looks as though it never was.
+    """
+    init(tmp_path)
+
+    uninstalled(tmp_path)
+
+    for path in (
+        tmp_path / ".mcp.json",
+        tmp_path / CLAUDE_DIR / "settings.json",
+        tmp_path / CODEX_DIR / "hooks.json",
+        tmp_path / CURSOR_DIR / "hooks.json",
+        tmp_path / GITHUB_DIR / "hooks" / "outrage.json",
+    ):
+        assert path.is_file(), path
+    assert (tmp_path / CLAUDE_DIR / "skills" / "outrage").is_dir()
+
+
+def test_uninit_never_touches_the_store_directory(tmp_path):
+    """It removes an integration, not anybody's documents."""
+    init(tmp_path)
+    store_dir = tmp_path / ".outrage"
+    store_dir.mkdir(exist_ok=True)
+    (store_dir / "store.sqlite").write_bytes(b"not really a database")
+    (store_dir / "mounts.toml").write_text("# hand maintained\n")
+
+    uninstalled(tmp_path)
+
+    assert (store_dir / "store.sqlite").read_bytes() == b"not really a database"
+    assert (store_dir / "mounts.toml").read_text() == "# hand maintained\n"
+
+
+def test_uninit_leaves_what_it_did_not_write(tmp_path):
+    write_json(settings_path(tmp_path), {"model": "opus", "hooks": {HOOK_EVENT: [FOREIGN]}})
+    write_json(tmp_path / ".mcp.json", {"mcpServers": {"other": {"command": "theirs"}}})
+    init(tmp_path)
+
+    uninstalled(tmp_path)
+
+    settings = read_json(settings_path(tmp_path))
+    assert settings["model"] == "opus"
+    assert settings["hooks"][HOOK_EVENT] == [FOREIGN]
+    assert read_json(tmp_path / ".mcp.json")["mcpServers"] == {"other": {"command": "theirs"}}
+
+
+def test_uninit_takes_every_duplicate_of_our_hook(tmp_path):
+    """One entry left behind is a hook that still fires."""
+    init(tmp_path)
+    held = read_json(settings_path(tmp_path))
+    ours = held["hooks"][HOOK_EVENT][0]
+    older = marked_by_a_former_name("older", "rage")
+    held["hooks"][HOOK_EVENT] = [marked("old"), ours, FOREIGN, older]
+    write_json(settings_path(tmp_path), held)
+
+    done = uninstalled(tmp_path)
+
+    assert entries(settings_path(tmp_path)) == [FOREIGN]
+    assert done.hooks[0].duplicates == 2
+
+
+def test_a_hand_added_field_refuses_and_writes_nothing(tmp_path):
+    """Deleting the entry would take the field with it, and nothing could get it back."""
+    init(tmp_path)
+    held = read_json(tmp_path / ".mcp.json")
+    held["mcpServers"]["outrage"]["env"] = {"OUTRAGE_X": "1"}
+    write_json(tmp_path / ".mcp.json", held)
+
+    done = uninstalled(tmp_path)
+
+    assert [r.code for r in done.server.refusals] == ["entry-unknown-field"]
+    assert done.server.action == "refused"
+    assert read_json(tmp_path / ".mcp.json")["mcpServers"]["outrage"]["env"] == {"OUTRAGE_X": "1"}
+    assert read_json(settings_path(tmp_path))["hooks"][HOOK_EVENT], "the run is all or nothing"
+
+
+def test_an_option_no_release_writes_refuses(tmp_path):
+    """A mount names a store outrage never chose, and the entry is its only record.
+
+    It is not special-cased. ``server_entry`` simply has no code path that
+    emits one any more, so it falls out of the derived whitelist -- which is
+    the direction that whitelist is meant to err in.
+    """
+    init(tmp_path)
+    held = read_json(tmp_path / ".mcp.json")
+    held["mcpServers"]["outrage"]["args"] += ["--mount", "ref=reference.sqlite"]
+    write_json(tmp_path / ".mcp.json", held)
+
+    done = uninstalled(tmp_path)
+
+    assert [r.code for r in done.server.refusals] == ["entry-unknown-option"]
+    assert dict(done.server.refusals[0].details)["option"] == "--mount"
+
+
+def test_an_option_outrage_does_write_does_not_refuse(tmp_path):
+    """Whoever asked for it. The entry is still the only record, so it is printed."""
+    init(tmp_path, log=LOG_BESIDE_STORE)
+
+    done = uninstalled(tmp_path)
+
+    assert not done.refusals
+    assert "--log" in done.server.previous["args"]
+
+
+def test_every_reason_is_reported_not_the_first(tmp_path):
+    """The whole shape of the feature. One at a time sends somebody round a loop."""
+    init(tmp_path)
+    held = read_json(tmp_path / ".mcp.json")
+    held["mcpServers"]["outrage"]["env"] = {"X": "1"}
+    held["mcpServers"]["outrage"]["cwd"] = "/somewhere"
+    held["mcpServers"]["outrage"]["args"] += ["--mount", "ref=r.sqlite"]
+    write_json(tmp_path / ".mcp.json", held)
+    installed(tmp_path, "skills/outrage/SKILL.md").write_text("mine", encoding="utf-8")
+
+    done = uninstalled(tmp_path)
+
+    assert sorted(r.code for r in done.refusals) == [
+        "asset-edited",
+        "entry-unknown-field",
+        "entry-unknown-field",
+        "entry-unknown-option",
+    ]
+
+
+def test_force_clears_what_a_flag_can_clear(tmp_path):
+    init(tmp_path)
+    held = read_json(tmp_path / ".mcp.json")
+    held["mcpServers"]["outrage"]["env"] = {"X": "1"}
+    write_json(tmp_path / ".mcp.json", held)
+
+    done = uninstalled(tmp_path, force=True)
+
+    # The reasons stay on the plan, so the report can say what was overridden.
+    assert done.refusals
+    assert not done.blocking
+    assert read_json(tmp_path / ".mcp.json")["mcpServers"] == {}
+
+
+def test_a_file_that_cannot_be_read_is_not_overridable(tmp_path):
+    """No flag makes rewriting one key of an unreadable file safe."""
+    init(tmp_path)
+    (tmp_path / CURSOR_DIR / "mcp.json").write_text("not json at all", encoding="utf-8")
+
+    done = uninstalled(tmp_path, force=True)
+
+    assert [r.code for r in done.blocking] == ["config-not-json"]
+    assert not any(r.overridable for r in done.blocking)
+    assert read_json(tmp_path / ".mcp.json")["mcpServers"], "all or nothing, force or no force"
+
+
+def test_a_codex_table_holding_more_than_the_launch_refuses(tmp_path):
+    """Codex writes its own keys there, and they are not ours to delete."""
+    init(tmp_path)
+    path = tmp_path / CODEX_DIR / "config.toml"
+    path.write_text(path.read_text() + '\napproval_mode = "on-request"\n', encoding="utf-8")
+
+    done = uninstalled(tmp_path)
+
+    assert [r.code for r in done.codex_server.refusals] == ["codex-table-extra-key"]
+
+
+def test_a_packaged_file_nothing_records_refuses_a_removal(tmp_path):
+    """Where init adopts, a removal will not: deleting is not reversible.
+
+    The receipt is the only thing that could say whether this is an earlier
+    release's copy or somebody's work, and there is none.
+    """
+    init(tmp_path)
+    installed(tmp_path, "skills/outrage/SKILL.md").write_text("who knows", encoding="utf-8")
+    install_module.InstallRecord.path_for(tmp_path / CLAUDE_DIR).unlink()
+
+    done = uninstalled(tmp_path)
+
+    assert "asset-unrecorded" in {r.code for r in done.refusals}
+
+
+def test_an_earlier_releases_copy_is_removed_without_complaint(tmp_path):
+    """It is still outrage's file; it is just old."""
+    init(tmp_path)
+    skill = installed(tmp_path, "skills/outrage/SKILL.md")
+    older = b"what the last release shipped\n"
+    skill.write_bytes(older)
+    record = install_module.InstallRecord.read(tmp_path / CLAUDE_DIR)
+    install_module.InstallRecord(
+        files={**record.files, "skills/outrage/SKILL.md": install_module._digest(older)}
+    ).write(tmp_path / CLAUDE_DIR)
+
+    done = uninstalled(tmp_path)
+
+    assert not done.refusals
+    assert not skill.exists()
+
+
+def test_the_receipts_go_too(tmp_path):
+    """One left behind would claim files that are gone, and mislead a later init."""
+    init(tmp_path)
+
+    uninstalled(tmp_path)
+
+    for directory in (CLAUDE_DIR, CODEX_DIR, GITHUB_DIR):
+        assert not install_module.InstallRecord.path_for(tmp_path / directory).exists()
+
+
+def test_a_symlinked_file_survives_a_removal(tmp_path):
+    """Deleting through the link would delete the package it points at."""
+    elsewhere = tmp_path / "source" / "outrage-search.md"
+    elsewhere.parent.mkdir(parents=True)
+    elsewhere.write_text("the linked agent", encoding="utf-8")
+    link = installed(tmp_path, "agents/outrage-search.md")
+    link.parent.mkdir(parents=True)
+    link.symlink_to(elsewhere)
+    init(tmp_path)
+
+    uninstalled(tmp_path)
+
+    assert link.is_symlink()
+    assert elsewhere.read_text(encoding="utf-8") == "the linked agent"
+
+
+def test_a_dry_run_writes_nothing_and_previews_what_a_run_would_do(tmp_path):
+    init(tmp_path)
+
+    preview = install_module.uninit(tmp_path, dry_run=True)
+    done = install_module.uninit(tmp_path)
+
+    assert [e.path for e in preview.edits] == [e.path for e in done.edits]
+    assert read_json(tmp_path / ".mcp.json")["mcpServers"] == {}
+
+
+def test_planning_never_writes_and_never_raises(tmp_path):
+    """Both halves of what makes the report complete."""
+    init(tmp_path)
+    (tmp_path / ".mcp.json").write_text("{ broken", encoding="utf-8")
+    (tmp_path / CURSOR_DIR / "mcp.json").write_text("{ broken too", encoding="utf-8")
+
+    plan = install_module.plan_uninit(tmp_path)
+
+    assert [r.code for r in plan.blocking] == ["config-not-json", "config-not-json"]
+    assert (tmp_path / ".mcp.json").read_text(encoding="utf-8") == "{ broken"
+
+
+def test_applying_takes_the_plan_and_not_the_project(tmp_path):
+    """So there is no second derivation that could disagree with the report.
+
+    Asserted by applying a plan made before the project changed underneath it:
+    what happens is what the plan said, not what a fresh look would find.
+    """
+    init(tmp_path)
+    plan = install_module.plan_uninit(tmp_path)
+    # A change a fresh look would answer differently: planning now would refuse
+    # over the field. Applying the plan does what the plan said.
+    held = read_json(tmp_path / ".mcp.json")
+    held["mcpServers"]["outrage"]["env"] = {"X": "1"}
+    write_json(tmp_path / ".mcp.json", held)
+    assert install_module.plan_uninit(tmp_path).blocking, "a fresh plan would refuse"
+
+    install_module.apply_uninit(plan)
+
+    assert read_json(tmp_path / ".mcp.json")["mcpServers"] == {}
+
+
+def test_the_option_whitelist_is_derived_rather_than_copied():
+    """A list kept beside the function that emits them is a list that goes wrong.
+
+    Asserted against ``server_entry`` itself, so an option added there tomorrow
+    joins the whitelist without anybody remembering to, and one that stops
+    being written falls out of it -- which is what makes a mount refuse.
+    """
+    every = config_module.server_entry(
+        Path("."),
+        command=["python", "-m", "outrage"],
+        log=LOG_BESIDE_STORE,
+        log_content="all",
+        no_info=True,
+        no_remount=True,
+        no_versioning=True,
+    )
+    emitted = {flag for flag, _ in config_module.split_args(every["args"]) if flag}
+
+    assert config_module.known_options() == emitted
+    assert not {"--mount", "--mount-ro", "--root-mount"} & config_module.known_options()
+    assert config_module.known_fields() == {"command", "args", "type"}

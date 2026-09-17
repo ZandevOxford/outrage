@@ -3172,3 +3172,83 @@ def test_asking_for_it_twice_over_is_reported_as_a_duplicate(tmp_path):
 
     assert status == 1
     assert "duplicate" in output
+
+
+# -- uninit ---------------------------------------------------------------
+
+
+def test_uninit_reports_every_reason_and_exits_non_zero(tmp_path, capsys):
+    """A person has to see the whole of what is in the way, in one run.
+
+    The status matters as much as the wording: a removal that refused and
+    exited 0 would be a script believing the project was clean.
+    """
+    run("init", "--project-dir", str(tmp_path))
+    capsys.readouterr()
+    entry = json.loads((tmp_path / ".mcp.json").read_text())
+    entry["mcpServers"]["outrage"]["env"] = {"X": "1"}
+    entry["mcpServers"]["outrage"]["args"] += ["--mount", "ref=r.sqlite"]
+    (tmp_path / ".mcp.json").write_text(json.dumps(entry), encoding="utf-8")
+
+    status, _ = run("uninit", "--project-dir", str(tmp_path))
+    written = capsys.readouterr().err
+
+    assert status == 1
+    assert "'env'" in written
+    assert "--mount" in written
+    assert "--force removes these anyway" in written
+
+
+def test_uninit_prints_the_entry_it_is_about_to_remove(tmp_path, capsys):
+    """The entry is the only record of the store it names, and it is going."""
+    run("init", "--project-dir", str(tmp_path))
+    capsys.readouterr()
+
+    _, shown = run("uninit", "--project-dir", str(tmp_path))
+
+    assert "removed" in shown
+    assert str(tmp_path / ".outrage") in shown, "the store directory it recorded"
+
+
+def test_uninit_says_when_force_cannot_reach_something(tmp_path, capsys):
+    run("init", "--project-dir", str(tmp_path))
+    capsys.readouterr()
+    (tmp_path / ".cursor" / "mcp.json").write_text("not json", encoding="utf-8")
+
+    status, _ = run("uninit", "--project-dir", str(tmp_path), "--force")
+    written = capsys.readouterr().err
+
+    assert status == 1
+    assert "cannot reach a file outrage cannot read" in written
+    assert json.loads((tmp_path / ".mcp.json").read_text())["mcpServers"], "all or nothing"
+
+
+def test_uninit_dry_run_writes_nothing(tmp_path, capsys):
+    run("init", "--project-dir", str(tmp_path))
+    capsys.readouterr()
+
+    status, shown = run("uninit", "--project-dir", str(tmp_path), "--dry-run")
+
+    assert status == 0
+    assert "would remove" in shown
+    assert "dry run, nothing changed" in capsys.readouterr().err
+    assert json.loads((tmp_path / ".mcp.json").read_text())["mcpServers"]
+
+
+def test_init_refuses_an_edited_packaged_file_and_says_so(tmp_path, capsys):
+    run("init", "--project-dir", str(tmp_path))
+    capsys.readouterr()
+    skill = tmp_path / ".claude" / "skills" / "outrage" / "SKILL.md"
+    skill.write_text("mine now", encoding="utf-8")
+
+    status, _ = run("init", "--project-dir", str(tmp_path))
+    written = capsys.readouterr().err
+
+    assert status == 1
+    assert "has been edited since outrage wrote it" in written
+    assert skill.read_text(encoding="utf-8") == "mine now"
+
+    status, _ = run("init", "--project-dir", str(tmp_path), "--force")
+
+    assert status == 0
+    assert skill.read_text(encoding="utf-8") != "mine now"

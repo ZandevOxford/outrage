@@ -52,83 +52,104 @@
 ### outrage.config.USER_CONFIG_NAME *= '.claude.json'*
 6675 6675
 
-### *class* outrage.config.Change(path: Path, scope: str, name: str, action: str, entry: dict[str, Any], previous: dict[str, Any] | None)
+### *class* outrage.config.Change(path: Path, scope: str, name: str, action: str, entry: dict[str, Any], previous: dict[str, Any] | None, refusals: tuple[Refusal, ...] = ())
 6882 6882
 
 #### path *: Path*
-7783 7783
+7913 7913
 
 #### scope *: str*
-7866 7866
+7996 7996
 
 #### name *: str*
-7942 7942
+8072 8072
 
 #### action *: str*
-8017 8017
+8147 8147
 
 #### entry *: dict[str, Any]*
-8132 8132
+8391 8391
 
 #### previous *: dict[str, Any] | None*
-8336 8336
+8595 8595
+
+#### refusals *: tuple[Refusal, ...]*
+8925 8925
 
 #### *property* writes *: bool*
-8655 8655
+9421 9421
 
 ### *exception* outrage.config.ConfigError(code: str, \*\*details: Any)
-8746 8746
+9799 9799
+
+### outrage.config.WRITING_ACTIONS *= frozenset({'created', 'removed', 'updated'})*
+10197 10197
 
 ### outrage.config.codex_config_path(project_dir: str | PathLike[str] | None = None) → Path
-9144 9144
+10409 10409
 
 ### outrage.config.config_path(scope: str, project_dir: str | PathLike[str] | None = None) → Path
-9600 9602
+10865 10867
 
 ### outrage.config.cursor_config_path(project_dir: str | PathLike[str] | None = None) → Path
-10089 10093
+11354 11358
 
 ### outrage.config.cursor_entry(entry: dict[str, Any]) → dict[str, Any]
-10766 10772
+12031 12037
 
 ### outrage.config.default_store_dir(project_dir: str | PathLike[str] | None = None) → Path
-11675 11683
+12940 12948
+
+### outrage.config.entry_refusals(entry: Mapping[str, Any]) → list[Refusal]
+13375 13385
 
 ### outrage.config.is_server_marker(value: Any) → bool
-12110 12120
+14280 14292
+
+### outrage.config.known_fields() → frozenset[str]
+14524 14538
+
+### outrage.config.known_options() → frozenset[str]
+14971 14987
 
 ### outrage.config.launch_command(executable: str | PathLike[str] | None = None) → list[str]
-12354 12366
+15800 15818
 
 ### outrage.config.merge_entry(previous: dict[str, Any] | None, entry: dict[str, Any]) → dict[str, Any]
-13159 13173
+16605 16625
 
 ### outrage.config.mounts_in(args: Sequence[str]) → list[str]
-16071 16087
+19517 19539
 
 ### outrage.config.plan(path: Path, scope: str, entry: dict[str, Any], name: str = SERVER_NAME) → tuple[Change, dict[str, Any], str | None]
-16770 16788
+20216 20240
 
 ### outrage.config.plan_codex(path: Path, entry: dict[str, Any], name: str = SERVER_NAME) → tuple[Change, TOMLDocument, str | None]
-17835 17855
+21281 21307
+
+### outrage.config.plan_codex_removal(path: Path, name: str = SERVER_NAME) → tuple[Change, TOMLDocument | None, str | None]
+22584 22612
+
+### outrage.config.plan_removal(path: Path, scope: str, name: str = SERVER_NAME) → tuple[Change, dict[str, Any] | None, str | None]
+23851 23881
 
 ### outrage.config.read_config(path: Path) → tuple[dict[str, Any], str | None]
-19138 19160
+25824 25856
 
 ### outrage.config.read_toml(path: Path) → tuple[TOMLDocument, str | None]
-19957 19981
+26643 26677
 
 ### outrage.config.script_command(script: str, executable: str | PathLike[str] | None = None) → list[str] | None
-20519 20545
+27205 27241
 
 ### outrage.config.server_entry(directory: str | PathLike[str], command: list[str] | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False, marked: bool = False) → dict[str, Any]
-21638 21666
+28324 28362
 
 ### outrage.config.split_args(args: Sequence[str]) → list[tuple[str, list[str]]]
-25455 25485
+32141 32181
 
 ### outrage.config.write_config(path: Path, config: dict[str, Any], original: str | None = None) → None
-26466 26498
+33152 33194
 
 ### outrage.config.write_toml(path: Path, document: TOMLDocument, original: str | None = None) → None
-27381 27415
+34067 34111

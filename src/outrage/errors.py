@@ -30,6 +30,18 @@ class, the code and the details, which is what a traceback or a log wants and
 is deliberately not what a user wants: anything that prints an error straight
 at somebody now looks wrong when it is read, rather than looking fine and
 naming a key that does not exist.
+
+## A refusal is the same facts, recorded instead of raised
+
+:class:`Refusal` is what a command uses when it has to report **every** reason
+it will not proceed rather than the first. An exception cannot do that: raising
+stops the survey that found it, so a caller fixes one thing, runs again, and
+meets the next. A refusal is therefore an ordinary value, collected as the work
+is planned and reported together.
+
+It carries a ``code`` and ``details`` because that is what a message is written
+from, so recording one invents **no second vocabulary**: the wording tables
+render a refusal exactly as they render the error it came from.
 """
 
 from __future__ import annotations
@@ -60,4 +72,59 @@ class OutrageError(Exception):
     __repr__ = __str__
 
 
-__all__ = ["OutrageError"]
+class Refusal:
+    """One reason a command will not proceed, recorded rather than raised.
+
+    **Built exactly as an error is** -- a code and details by name -- because
+    it is the same thing at a different moment, and because one rule then
+    guards both: a code here needs a sentence in the wording tables just as
+    much as a code that is thrown.
+    """
+
+    __slots__ = ("code", "details", "overridable")
+
+    def __init__(self, code: str, *, overridable: bool = True, **details: Any) -> None:
+        self.code = code
+        self.details: Mapping[str, Any] = details
+        self.overridable = overridable
+        """Whether a force option can proceed past this one.
+
+        False is for a refusal no flag can answer, and the case it exists for
+        is a configuration file that does not parse: nothing can rewrite one
+        key of a file it cannot read, so offering to try would be advice that
+        cannot work. A refusal about *content* -- something valid that this
+        command declines to destroy -- is the caller's to override, and is the
+        default.
+        """
+
+    @classmethod
+    def of(cls, error: OutrageError, *, overridable: bool = False) -> Refusal:
+        """Record ``error`` as a refusal instead of letting it propagate.
+
+        Not overridable by default: an error raised while *reading* is the kind
+        a flag cannot answer, and a caller who knows better says so.
+        """
+        return cls(error.code, overridable=overridable, **dict(error.details))
+
+    def as_error(self) -> OutrageError:
+        """This refusal as the error it would have been, for a caller wanting one."""
+        return OutrageError(self.code, **dict(self.details))
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Refusal):
+            return NotImplemented
+        return (self.code, dict(self.details), self.overridable) == (
+            other.code,
+            dict(other.details),
+            other.overridable,
+        )
+
+    def __hash__(self) -> int:
+        return hash((self.code, tuple(sorted(self.details.items(), key=str)), self.overridable))
+
+    def __repr__(self) -> str:
+        inside = ", ".join(f"{name}={value!r}" for name, value in self.details.items())
+        return f"Refusal({self.code!r}{', ' if inside else ''}{inside})"
+
+
+__all__ = ["OutrageError", "Refusal"]

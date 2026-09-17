@@ -142,7 +142,7 @@ replaces, which is what keeps unrelated servers in the file untouched.
 User scoped configuration, in the home directory. Holds a great deal besides
 MCP servers, which is why nothing here rewrites more of it than one key.
 
-### *class* outrage.config.Change(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str), name: [str](https://docs.python.org/3/builtins/stdtypes.html#str), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None))
+### *class* outrage.config.Change(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str), name: [str](https://docs.python.org/3/builtins/stdtypes.html#str), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str), entry: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], previous: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None), refusals: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...] = ())
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -156,21 +156,44 @@ What writing the configuration would do, or did.
 
 #### action *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-'created', 'updated' or 'unchanged'.
+What this change does to the entry: `created`, `updated` or
+`unchanged` when one is being written, and `removed`, `absent` or
+`refused` when one is being taken away.
 
 #### entry *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
 
 #### previous *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-The entry being replaced, when there was one.
+The entry being replaced or removed, when there was one.
+
+#### refusals *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Refusal](errors.md#outrage.errors.Refusal), ...]*
+
+Every reason this entry will not be touched, not merely the first.
+
+Empty unless [`action`](#outrage.config.Change.action) is `refused`, and then one per *reason*: an
+entry carrying both a field and an option that outrage does not write
+yields two, because fixing one of them leaves the run refused and a report
+naming only the first sends somebody round twice.
 
 #### *property* writes *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+Whether applying this change touches the file at all.
+
+Spelled as the set that *does* write rather than as everything bar
+`unchanged`. A removal added `absent` and `refused`, both of
+which leave the file alone, and a rule phrased as an exception would
+have had them writing by default.
 
 ### *exception* outrage.config.ConfigError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/builtins/exceptions.html#RuntimeError)
 
 Raised when existing configuration cannot be safely updated.
+
+### outrage.config.WRITING_ACTIONS *= frozenset({'created', 'removed', 'updated'})*
+
+The actions that mean the file is written. The others -- `unchanged`,
+`absent` and `refused` -- are answers rather than work.
 
 ### outrage.config.codex_config_path(project_dir: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 
@@ -202,9 +225,45 @@ otherwise be a second edit in [`outrage.install`](install.md#module-outrage.inst
 
 Where the store goes when the caller does not say.
 
+### outrage.config.entry_refusals(entry: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Refusal](errors.md#outrage.errors.Refusal)]
+
+Everything on `entry` that outrage did not write, as refusals.
+
+The question a removal has to ask: this command deletes the whole entry, so
+anything on it that no run of `outrage config` could have produced is
+about to be destroyed without being recoverable. Every reason is reported,
+never just the first.
+
+An option outrage *does* write -- a store directory, logging -- is not one
+of these, whoever asked for it. It is still the only record of a choice, so
+the caller prints the entry before removing it rather than refusing over it.
+
 ### outrage.config.is_server_marker(value: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
 Whether `value` is an outrage server marker, of any version or name.
+
+### outrage.config.known_fields() → [frozenset](https://docs.python.org/3/builtins/stdtypes.html#frozenset)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
+
+Every field this release can write onto a server entry, Cursor's included.
+
+Derived like [`known_options()`](#outrage.config.known_options), and for the same question: a `env` or
+a `cwd` on the entry is somebody else's and cannot be reconstructed from
+anything outrage knows.
+
+### outrage.config.known_options() → [frozenset](https://docs.python.org/3/builtins/stdtypes.html#frozenset)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
+
+Every command-line option this release can write onto a server entry.
+
+**Derived from :func:\`server_entry\` rather than listed**, by building an
+entry with every option asked for and taking it apart again. A list kept by
+hand beside the function that emits them is a list that goes wrong the first
+time somebody adds an option and does not think of it.
+
+What it is for is deciding whether an entry carries something outrage did
+not put there, so the direction it errs in matters: an option no release
+writes any more falls *out* of this set and is therefore treated as
+somebody else's, which is the safe way round. The mount options are exactly
+that case.
 
 ### outrage.config.launch_command(executable: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
@@ -290,6 +349,48 @@ table had and this run does not mention. A marker is taken out of the old
 arguments first: the new entry has its own at the front, and an old one
 inherited behind the options could land after `--log` and be read as
 its path.
+
+### outrage.config.plan_codex_removal(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = SERVER_NAME) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Change](#outrage.config.Change), TOMLDocument | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
+
+Work out what taking the server's table out of a Codex `config.toml` would change.
+
+The table removed is the one carrying a marker, else the one called
+`name` -- the same search [`plan_codex()`](#outrage.config.plan_codex) makes, so the two cannot
+disagree about which table is outrage's.
+
+**A table holding anything besides \`\`command\`\` and \`\`args\`\` refuses.** Codex
+writes its own keys into a server's table, a tool's approval mode among
+them, and those are not outrage's to delete along with the entry. Like the
+entry refusals, it is overridable: a caller who has read the table may mean
+to drop the lot.
+
+Nothing here raises, for the reason [`plan_removal()`](#outrage.config.plan_removal) gives. An empty
+`mcp_servers` is left behind rather than pruned.
+
+### outrage.config.plan_removal(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str), name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = SERVER_NAME) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Change](#outrage.config.Change), [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
+
+Work out what taking `name`'s entry out of `path` would change.
+
+Returns what [`plan()`](#outrage.config.plan) returns, so a caller previews and writes the same
+way, with `None` in place of the configuration when there is nothing to
+write.
+
+**Nothing here raises.** A file that will not parse is recorded as a
+refusal, not thrown, because a caller removing several entries at once has
+to be able to report every reason rather than stopping at the first one it
+meets. That refusal is not overridable: rewriting one key of a file that
+cannot be read is not something a flag can make safe.
+
+The entry itself refuses when it carries anything outrage does not write --
+[`entry_refusals()`](#outrage.config.entry_refusals) is the question -- and those refusals *are*
+overridable, because they are about content a caller may knowingly discard.
+The merged configuration is returned even then, so a forced run has
+something to write and does not have to plan a second time.
+
+Everything else in the file is left exactly as it was found, which is the
+rule the whole module follows. The servers object stays behind when the
+last entry leaves it: an empty one triggers nothing, and removing keys a
+client put there is not this function's business.
 
 ### outrage.config.read_config(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)], [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]
 

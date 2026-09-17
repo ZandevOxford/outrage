@@ -63,6 +63,7 @@ documented and do not improve on it.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import sys
@@ -75,7 +76,7 @@ from typing import Any
 import tomlkit
 import tomlkit.exceptions
 
-from .errors import OutrageError
+from .errors import OutrageError, Refusal
 from .eventlog import DEFAULT as LOG_BESIDE_STORE
 from .store import DEFAULT_DIR_NAME
 
@@ -146,6 +147,10 @@ SERVER_MARKER = f"{MARKER}:v1"
 
 _DEFAULT_INDENT = 2
 
+#: The actions that mean the file is written. The others -- ``unchanged``,
+#: ``absent`` and ``refused`` -- are answers rather than work.
+WRITING_ACTIONS = frozenset({"created", "updated", "removed"})
+
 
 def _path_text(path: str | os.PathLike[str]) -> str:
     """A path as JSON should carry it on this platform.
@@ -170,14 +175,33 @@ class Change:
     scope: str
     name: str
     action: str
-    """'created', 'updated' or 'unchanged'."""
+    """What this change does to the entry: ``created``, ``updated`` or
+    ``unchanged`` when one is being written, and ``removed``, ``absent`` or
+    ``refused`` when one is being taken away."""
+
     entry: dict[str, Any]
     previous: dict[str, Any] | None
-    """The entry being replaced, when there was one."""
+    """The entry being replaced or removed, when there was one."""
+
+    refusals: tuple[Refusal, ...] = ()
+    """Every reason this entry will not be touched, not merely the first.
+
+    Empty unless :attr:`action` is ``refused``, and then one per *reason*: an
+    entry carrying both a field and an option that outrage does not write
+    yields two, because fixing one of them leaves the run refused and a report
+    naming only the first sends somebody round twice.
+    """
 
     @property
     def writes(self) -> bool:
-        return self.action != "unchanged"
+        """Whether applying this change touches the file at all.
+
+        Spelled as the set that *does* write rather than as everything bar
+        ``unchanged``. A removal added ``absent`` and ``refused``, both of
+        which leave the file alone, and a rule phrased as an exception would
+        have had them writing by default.
+        """
+        return self.action in WRITING_ACTIONS
 
 
 def script_command(
@@ -401,6 +425,78 @@ def _is_string_list(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
 
 
+@functools.cache
+def known_options() -> frozenset[str]:
+    """Every command-line option this release can write onto a server entry.
+
+    **Derived from :func:`server_entry` rather than listed**, by building an
+    entry with every option asked for and taking it apart again. A list kept by
+    hand beside the function that emits them is a list that goes wrong the first
+    time somebody adds an option and does not think of it.
+
+    What it is for is deciding whether an entry carries something outrage did
+    not put there, so the direction it errs in matters: an option no release
+    writes any more falls *out* of this set and is therefore treated as
+    somebody else's, which is the safe way round. The mount options are exactly
+    that case.
+    """
+    entry = server_entry(
+        Path("."),
+        command=["python", "-m", "outrage"],
+        log=LOG_BESIDE_STORE,
+        log_content="all",
+        no_info=True,
+        no_remount=True,
+        no_versioning=True,
+    )
+    return frozenset(flag for flag, _ in split_args(entry["args"]) if flag)
+
+
+@functools.cache
+def known_fields() -> frozenset[str]:
+    """Every field this release can write onto a server entry, Cursor's included.
+
+    Derived like :func:`known_options`, and for the same question: a ``env`` or
+    a ``cwd`` on the entry is somebody else's and cannot be reconstructed from
+    anything outrage knows.
+    """
+    entry = server_entry(Path("."), command=["python"])
+    return frozenset(entry) | frozenset(cursor_entry(entry))
+
+
+def entry_refusals(entry: Mapping[str, Any]) -> list[Refusal]:
+    """Everything on ``entry`` that outrage did not write, as refusals.
+
+    The question a removal has to ask: this command deletes the whole entry, so
+    anything on it that no run of ``outrage config`` could have produced is
+    about to be destroyed without being recoverable. Every reason is reported,
+    never just the first.
+
+    An option outrage *does* write -- a store directory, logging -- is not one
+    of these, whoever asked for it. It is still the only record of a choice, so
+    the caller prints the entry before removing it rather than refusing over it.
+    """
+    found = [
+        Refusal("entry-unknown-field", field=name) for name in entry if name not in known_fields()
+    ]
+    args = entry.get("args")
+    if not _is_string_list(args):
+        return [*found, Refusal("entry-args-unreadable")]
+    known = known_options()
+    for flag, values in split_args(list(args)):
+        if not flag:
+            # The leading tokens, which for a marked entry are the marker. A
+            # positional outrage cannot account for is somebody else's too.
+            found += [
+                Refusal("entry-unknown-argument", argument=value)
+                for value in values
+                if not is_server_marker(value)
+            ]
+        elif flag not in known:
+            found.append(Refusal("entry-unknown-option", option=flag))
+    return found
+
+
 def config_path(scope: str, project_dir: str | os.PathLike[str] | None = None) -> Path:
     """Locate the configuration file for ``scope``."""
     if scope == "project":
@@ -479,6 +575,95 @@ def plan(
         previous=previous,
     )
     return change, merged, original
+
+
+def plan_removal(
+    path: Path,
+    scope: str,
+    name: str = SERVER_NAME,
+) -> tuple[Change, dict[str, Any] | None, str | None]:
+    """Work out what taking ``name``'s entry out of ``path`` would change.
+
+    Returns what :func:`plan` returns, so a caller previews and writes the same
+    way, with ``None`` in place of the configuration when there is nothing to
+    write.
+
+    **Nothing here raises.** A file that will not parse is recorded as a
+    refusal, not thrown, because a caller removing several entries at once has
+    to be able to report every reason rather than stopping at the first one it
+    meets. That refusal is not overridable: rewriting one key of a file that
+    cannot be read is not something a flag can make safe.
+
+    The entry itself refuses when it carries anything outrage does not write --
+    :func:`entry_refusals` is the question -- and those refusals *are*
+    overridable, because they are about content a caller may knowingly discard.
+    The merged configuration is returned even then, so a forced run has
+    something to write and does not have to plan a second time.
+
+    Everything else in the file is left exactly as it was found, which is the
+    rule the whole module follows. The servers object stays behind when the
+    last entry leaves it: an empty one triggers nothing, and removing keys a
+    client put there is not this function's business.
+    """
+    try:
+        loaded, original = read_config(path)
+    except ConfigError as exc:
+        return _refused(path, scope, name, Refusal.of(exc)), None, None
+
+    servers = loaded.get(SERVERS_FIELD, {})
+    if not isinstance(servers, dict):
+        refusal = Refusal(
+            "config-field-not-an-object",
+            overridable=False,
+            path=str(path),
+            field=SERVERS_FIELD,
+        )
+        return _refused(path, scope, name, refusal), None, original
+
+    previous = servers.get(name)
+    if previous is None:
+        return _absent(path, scope, name), None, original
+    if not isinstance(previous, dict):
+        refusal = Refusal(
+            "config-server-not-an-object",
+            overridable=False,
+            path=str(path),
+            server=name,
+        )
+        return _refused(path, scope, name, refusal), None, original
+
+    merged = dict(loaded)
+    merged[SERVERS_FIELD] = {held: entry for held, entry in servers.items() if held != name}
+
+    refusals = tuple(entry_refusals(previous))
+    change = Change(
+        path=path,
+        scope=scope,
+        name=name,
+        action="refused" if refusals else "removed",
+        entry={},
+        previous=previous,
+        refusals=refusals,
+    )
+    return change, merged, original
+
+
+def _absent(path: Path, scope: str, name: str) -> Change:
+    """There is no such entry, which is not a failure and not work either."""
+    return Change(path=path, scope=scope, name=name, action="absent", entry={}, previous=None)
+
+
+def _refused(path: Path, scope: str, name: str, *refusals: Refusal) -> Change:
+    """A change that will not happen, carrying why."""
+    return Change(
+        path=path,
+        scope=scope,
+        name=name,
+        action="refused",
+        entry={},
+        previous=None,
+        refusals=refusals,
+    )
 
 
 def write_config(path: Path, config: dict[str, Any], original: str | None = None) -> None:
@@ -653,6 +838,81 @@ def plan_codex(
     return change, document, original
 
 
+def plan_codex_removal(
+    path: Path,
+    name: str = SERVER_NAME,
+) -> tuple[Change, tomlkit.TOMLDocument | None, str | None]:
+    """Work out what taking the server's table out of a Codex ``config.toml`` would change.
+
+    The table removed is the one carrying a marker, else the one called
+    ``name`` -- the same search :func:`plan_codex` makes, so the two cannot
+    disagree about which table is outrage's.
+
+    **A table holding anything besides ``command`` and ``args`` refuses.** Codex
+    writes its own keys into a server's table, a tool's approval mode among
+    them, and those are not outrage's to delete along with the entry. Like the
+    entry refusals, it is overridable: a caller who has read the table may mean
+    to drop the lot.
+
+    Nothing here raises, for the reason :func:`plan_removal` gives. An empty
+    ``mcp_servers`` is left behind rather than pruned.
+    """
+    try:
+        document, original = read_toml(path)
+    except ConfigError as exc:
+        return _refused(path, "project", name, Refusal.of(exc)), None, None
+
+    servers = document.get(CODEX_SERVERS_FIELD)
+    if servers is None:
+        return _absent(path, "project", name), None, original
+    if not isinstance(servers, Mapping):
+        refusal = Refusal(
+            "config-field-not-a-table",
+            overridable=False,
+            path=str(path),
+            field=CODEX_SERVERS_FIELD,
+        )
+        return _refused(path, "project", name, refusal), None, original
+
+    found = _marked_server(servers)
+    if found is None:
+        found = name if name in servers else None
+    if found is None:
+        return _absent(path, "project", name), None, original
+
+    table = servers.get(found)
+    if not isinstance(table, Mapping):
+        refusal = Refusal(
+            "config-server-not-a-table",
+            overridable=False,
+            path=str(path),
+            server=found,
+        )
+        return _refused(path, "project", found, refusal), None, original
+
+    held = _plain(table)
+    refusals = [
+        Refusal("codex-table-extra-key", server=found, key=key)
+        for key in held
+        if key not in ("command", "args")
+    ]
+    previous = _launch_of(table)
+    refusals += entry_refusals(previous or {})
+
+    del document[CODEX_SERVERS_FIELD][found]
+
+    change = Change(
+        path=path,
+        scope="project",
+        name=found,
+        action="refused" if refusals else "removed",
+        entry={},
+        previous=previous or None,
+        refusals=tuple(refusals),
+    )
+    return change, document, original
+
+
 def write_toml(path: Path, document: tomlkit.TOMLDocument, original: str | None = None) -> None:
     """Write ``document`` to ``path``, atomically and keeping its permissions.
 
@@ -709,17 +969,23 @@ __all__ = [
     "USER_CONFIG_NAME",
     "Change",
     "ConfigError",
+    "WRITING_ACTIONS",
     "codex_config_path",
     "config_path",
     "cursor_config_path",
     "cursor_entry",
     "default_store_dir",
+    "entry_refusals",
     "is_server_marker",
+    "known_fields",
+    "known_options",
     "launch_command",
     "merge_entry",
     "mounts_in",
     "plan",
     "plan_codex",
+    "plan_codex_removal",
+    "plan_removal",
     "read_config",
     "read_toml",
     "script_command",

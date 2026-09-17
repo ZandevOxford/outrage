@@ -1573,6 +1573,63 @@ def _template_unmarked(name: Namer, /, *, marker: str, **_: Any) -> str:
     return f"packaged template's command does not carry the {marker!r} marker"
 
 
+@template("entry-unknown-field")
+def _entry_unknown_field(name: Namer, /, *, field: str, **_: Any) -> str:
+    return (
+        f"this entry carries {field!r}, which outrage did not write, "
+        f"and removing the entry would take it too"
+    )
+
+
+@template("entry-unknown-option")
+def _entry_unknown_option(name: Namer, /, *, option: str, **_: Any) -> str:
+    # Named as the option it is rather than as an unknown, because the case
+    # this exists for is a real one: a mount an older release wrote there names
+    # a store outrage never chose, and the entry is the only record of it.
+    return (
+        f"this entry carries {option}, which no outrage option writes, "
+        f"and removing the entry would take it too"
+    )
+
+
+@template("entry-unknown-argument")
+def _entry_unknown_argument(name: Namer, /, *, argument: str, **_: Any) -> str:
+    return (
+        f"this entry carries an argument outrage did not write, {argument!r}, "
+        f"and removing the entry would take it too"
+    )
+
+
+@template("entry-args-unreadable")
+def _entry_args_unreadable(name: Namer, /, **_: Any) -> str:
+    return "this entry's arguments are not a list of strings, so what it carries cannot be read"
+
+
+@template("codex-table-extra-key")
+def _codex_table_extra_key(name: Namer, /, *, server: str, key: str, **_: Any) -> str:
+    return (
+        f"the {server!r} table holds {key!r} besides the launch outrage wrote, "
+        f"and removing the table would take it too"
+    )
+
+
+@template("asset-edited")
+def _asset_edited(name: Namer, /, *, path: str, **_: Any) -> str:
+    return f"{path} has been edited since outrage wrote it"
+
+
+@template("asset-unrecorded")
+def _asset_unrecorded(name: Namer, /, *, path: str, **_: Any) -> str:
+    # Deliberately does not claim it was edited. There is no record covering
+    # it, so an earlier release's copy and somebody's work look the same here,
+    # and saying which would be inventing the evidence this refusal exists for
+    # the lack of.
+    return (
+        f"{path} differs from the packaged copy and nothing records what "
+        f"outrage wrote there, so whether it was edited cannot be told"
+    )
+
+
 @template("assets-missing")
 def _assets_missing(name: Namer, /, *, asset: str, path: str, **_: Any) -> str:
     return f"packaged {asset} missing at {path}"

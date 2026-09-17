@@ -31,6 +31,7 @@ from . import (
     bulk,
     cli_messages,
     contents,
+    errors,
     eventlog,
     home,
     info,
@@ -166,7 +167,62 @@ def argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Report what would change without writing anything.",
     )
+    init.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Replace a packaged skill or agent that has been edited since "
+            "outrage wrote it, which is otherwise refused. Every such file is "
+            "named first, so this is a decision taken once with the whole list "
+            "in view."
+        ),
+    )
     init.set_defaults(handler=_init_command)
+
+    uninit = subcommands.add_parser(
+        "uninit",
+        help="remove the MCP server entries, session hooks and packaged files",
+        description=(
+            "Undo what 'outrage init' installs: the server entry in .mcp.json, "
+            "in .codex/config.toml and in .cursor/mcp.json, the session-start "
+            "hook for each of the four harnesses, and the packaged skills and "
+            "agents. Only what outrage wrote is touched, and no file or "
+            "directory is deleted for being left empty - an empty servers "
+            "object and an empty hook list trigger nothing, and removing a key "
+            "a client put there is not this command's business. The store "
+            "directory is not touched at all: this removes an integration, not "
+            "anybody's documents, so the store, its mount table and its logs "
+            "stay exactly as they are. Refuses, and writes nothing whatever, "
+            "when removing something would destroy what outrage did not write "
+            "- a hand-added field or option on a server entry, or a packaged "
+            "file edited since outrage wrote it. Every reason is reported "
+            "together rather than one run at a time, and --force clears the "
+            "ones a flag can clear."
+        ),
+    )
+    uninit.add_argument(
+        "--project-dir",
+        metavar="PATH",
+        default=None,
+        help="Project directory to remove outrage from. Defaults to cwd.",
+    )
+    uninit.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be removed without writing anything.",
+    )
+    uninit.add_argument(
+        "--force",
+        action="store_true",
+        help=(
+            "Remove what is refused anyway. Reaches a hand-added field or "
+            "option on a server entry, a Codex table holding more than the "
+            "launch, and a packaged file that was edited or that nothing "
+            "records. It does not reach a file that cannot be read, which no "
+            "flag can make safe to rewrite."
+        ),
+    )
+    uninit.set_defaults(handler=_uninit_command)
 
     sessionstart = subcommands.add_parser(
         "sessionstart",
@@ -1380,6 +1436,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
         mounts=args.mounts,
         read_only_mounts=args.read_only_mounts,
         dry_run=args.dry_run,
+        force=args.force,
     )
 
     _report(done.server, out, dry_run=args.dry_run)
@@ -1410,11 +1467,84 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
         label="Copilot agents",
     )
 
+    if done.refusals:
+        # Before the dry-run line and on the same stream, because this is the
+        # reason nothing happened and the other is only a reminder that nothing
+        # was meant to.
+        _report_refusals(done.refusals, forced=False)
+        return 1
+
     if args.dry_run and done.writes:
         # Where the report is long enough to scroll, one line on stderr is what
         # says the run did nothing after the reader has stopped reading.
         print("outrage: dry run, nothing changed", file=sys.stderr)
     return 0
+
+
+def _uninit_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Remove outrage from a project, or say what removing it would do."""
+    project = Path(args.project_dir).expanduser() if args.project_dir else Path.cwd()
+    done = install.uninit(project, dry_run=args.dry_run, force=args.force)
+
+    _report(done.server, out, dry_run=args.dry_run)
+    _report(done.codex_server, out, dry_run=args.dry_run, label="Codex")
+    _report(done.cursor_server, out, dry_run=args.dry_run, label="Cursor")
+    for hook in done.hooks:
+        _report_hook(hook, out, dry_run=args.dry_run)
+    for changes, directory, label in (
+        (done.assets, install.CLAUDE_DIR, "skill and agents"),
+        (done.codex_assets, install.CODEX_DIR, "Codex skill"),
+        (done.copilot_assets, install.GITHUB_DIR, "Copilot agents"),
+    ):
+        _report_removed_assets(
+            changes,
+            out,
+            dry_run=args.dry_run,
+            root=done.project_dir / directory,
+            label=label,
+            forced=done.forced,
+        )
+    for receipt in done.receipts:
+        print(f"install receipt: {receipt}", file=out)
+        print(f"  {_said('removed', args.dry_run)}", file=out)
+
+    if done.blocking:
+        _report_refusals(done.refusals, forced=done.forced)
+        return 1
+
+    if args.dry_run and done.writes:
+        print("outrage: dry run, nothing changed", file=sys.stderr)
+    return 0
+
+
+def _report_refusals(refusals: tuple[errors.Refusal, ...], *, forced: bool) -> None:
+    """Say what is in the way, all of it, and which part a flag would clear.
+
+    To stderr, with this front end's other remarks about its own output: the
+    report above is the answer, and this is about why the answer is what it is.
+
+    Every reason, deliberately. One at a time sends somebody round the loop
+    once per problem, and the whole point of planning the project before
+    touching any of it is that the list can be complete.
+    """
+    standing = [r for r in refusals if not (forced and r.overridable)]
+    for refusal in standing:
+        said = messages.render(refusal.as_error(), spell=messages.flag)
+        print(f"outrage: {said}", file=sys.stderr)
+
+    if not standing:
+        return
+    if all(refusal.overridable for refusal in standing):
+        print(
+            f"outrage: nothing written. {messages.flag('force')} removes these anyway.",
+            file=sys.stderr,
+        )
+        return
+    print(
+        f"outrage: nothing written. {messages.flag('force')} cannot reach a file outrage "
+        f"cannot read, and the run is all or nothing, so repair or remove that one first.",
+        file=sys.stderr,
+    )
 
 
 def _sessionstart_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -2832,6 +2962,11 @@ _ACTIONS = {
     "updated": ("would update", "updated"),
     "unchanged": ("already current", "already current"),
     "linked": ("left linked", "left linked"),
+    "edited": ("would refuse", "refused"),
+    "unrecorded": ("would update", "updated"),
+    "removed": ("would remove", "removed"),
+    "absent": ("not there", "not there"),
+    "refused": ("would refuse", "refused"),
 }
 
 
@@ -2859,9 +2994,18 @@ def _report(
     print(f"  {change.name}: {verb}", file=out)
     if change.previous is not None and change.action == "updated":
         _print_command("  was:", change.previous, out)
-    _print_command("  now:" if change.action == "updated" else "  ", change.entry, out)
+    if change.action in ("removed", "refused") and change.previous is not None:
+        # The entry is about to stop existing, and it is the only record of the
+        # store directory it names and of any option somebody asked for. None
+        # of that refuses on its own, so printing it is what keeps it: the
+        # terminal holds what the file will not.
+        _print_command("  was:", change.previous, out)
+    elif change.action not in ("removed", "absent", "refused"):
+        _print_command("  now:" if change.action == "updated" else "  ", change.entry, out)
 
     still = config_module.mounts_in(change.entry.get("args", []))
+    if not change.entry:
+        still = []
     if still:
         # Not migrated, on purpose, and it goes on working: the entry's options
         # come after the file's and so win. Said out loud because a table in
@@ -2910,6 +3054,34 @@ def _report_assets(
             # Not a failure, and not silence either: a linked file is one this
             # run deliberately did not update, so the reader can see it is old.
             line += "  (a symlink, left as it is)"
+        print(line, file=out)
+
+
+def _report_removed_assets(
+    changes: tuple[install.FileChange, ...],
+    out: TextIO,
+    *,
+    dry_run: bool,
+    root: Path,
+    label: str,
+    forced: bool,
+) -> None:
+    """Say what happened to each packaged file, by its path within the project.
+
+    The same listing the installer prints, read the other way round:
+    :func:`outrage.install.removal_action` is what turns one shared comparison
+    into this command's answer, so the two can never disagree about a file.
+    """
+    print(f"{label}: {root}", file=out)
+    for change in changes:
+        action = install.removal_action(change, forced=forced)
+        line = f"  {_said(action, dry_run):<15} {change.relative or change.path}"
+        if action == "linked":
+            line += "  (a symlink, left as it is)"
+        elif action == "removed" and change.action in ("edited", "unrecorded"):
+            # Force got it. Said here rather than only in the refusal list,
+            # because this is the line somebody reads to see what went.
+            line += "  (forced)"
         print(line, file=out)
 
 
