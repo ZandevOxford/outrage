@@ -78,6 +78,9 @@ from .store import (
     _excerpt,
     _find_byte_occurrence,
     _find_occurrence,
+    _line_at_byte,
+    _line_byte_offset,
+    _line_excerpt,
     _logged,
     _now,
     _position,
@@ -1037,6 +1040,8 @@ class SqliteStore(FileStore):
         *,
         offset: int = 0,
         byte_offset: int | None = None,
+        line: int | None = None,
+        lines: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -1061,7 +1066,7 @@ class SqliteStore(FileStore):
         # short one, which costs nothing because it is short.
         columns = (
             f"*, {_CACHED_CHARS} AS cached"
-            if byte_offset is None
+            if byte_offset is None and line is None
             else f"rowid, key, format, updated_at, {_CACHED_CHARS} AS cached, {_CHARS} AS chars"
         )
         row = self._conn.execute(
@@ -1076,7 +1081,13 @@ class SqliteStore(FileStore):
             raise KeyNotFoundError("key-not-found", key=key)
 
         check_read_position(
-            key, offset=offset, byte_offset=byte_offset, pattern=pattern, occurrence=occurrence
+            key,
+            offset=offset,
+            byte_offset=byte_offset,
+            line=line,
+            lines=lines,
+            pattern=pattern,
+            occurrence=occurrence,
         )
 
         if row["cached"] is None:
@@ -1087,11 +1098,26 @@ class SqliteStore(FileStore):
             # filling the whole cache from one of those would be a scan nobody
             # asked for rather than a note taken in passing.
             self._remember_length(
-                row["key"], row["chars"] if byte_offset is not None else len(row["content"])
+                row["key"],
+                (
+                    row["chars"]
+                    if byte_offset is not None or line is not None
+                    else len(row["content"])
+                ),
             )
 
-        if byte_offset is not None:
-            return self._byte_read(row, key, byte_offset, pattern, occurrence, length, max_chars)
+        if byte_offset is not None or line is not None:
+            return self._byte_read(
+                row,
+                key,
+                byte_offset,
+                line,
+                lines,
+                pattern,
+                occurrence,
+                length,
+                max_chars,
+            )
 
         content = row["content"]
         start = offset
@@ -1112,7 +1138,9 @@ class SqliteStore(FileStore):
         self,
         row: sqlite3.Row,
         key: str,
-        byte_offset: int,
+        byte_offset: int | None,
+        line: int | None,
+        lines: int | None,
         pattern: str | None,
         occurrence: int,
         length: int | None,
@@ -1139,7 +1167,7 @@ class SqliteStore(FileStore):
             # so this is a guard rather than a path: it converts, exactly as a
             # backend with no fast path does.
             return self._byte_read_converted(
-                key, byte_offset, pattern, occurrence, length, max_chars
+                key, byte_offset, line, lines, pattern, occurrence, length, max_chars
             )
 
         with self._conn.blobopen("documents", "content", row["rowid"], readonly=True) as blob:
@@ -1149,9 +1177,14 @@ class SqliteStore(FileStore):
                 blob.seek(min(offset, total_bytes))
                 return blob.read(size)
 
-            start = byte_offset
+            start = (
+                byte_offset
+                if byte_offset is not None
+                else _line_byte_offset(read, total_bytes, line)
+            )
+            actual_line = line
             if pattern is not None:
-                found = _find_byte_occurrence(read, total_bytes, pattern, occurrence, byte_offset)
+                found = _find_byte_occurrence(read, total_bytes, pattern, occurrence, start)
                 if found is None:
                     raise PatternNotFoundError(
                         "pattern-not-found",
@@ -1160,8 +1193,26 @@ class SqliteStore(FileStore):
                         occurrence=occurrence,
                         offset=0,
                         byte_offset=byte_offset,
+                        line=line,
                     )
+                if line is not None:
+                    actual_line = _line_at_byte(read, start, line, found)
                 start = found
+
+            if line is not None:
+                return _line_excerpt(
+                    row["key"],
+                    row["format"],
+                    row["updated_at"],
+                    start,
+                    actual_line,
+                    lines,
+                    length,
+                    max_chars,
+                    read=read,
+                    total_bytes=total_bytes,
+                    total=row["chars"],
+                )
 
             return _byte_excerpt(
                 row["key"],
@@ -1178,7 +1229,9 @@ class SqliteStore(FileStore):
     def _byte_read_converted(
         self,
         key: str,
-        byte_offset: int,
+        byte_offset: int | None,
+        line: int | None,
+        lines: int | None,
         pattern: str | None,
         occurrence: int,
         length: int | None,
@@ -1190,9 +1243,10 @@ class SqliteStore(FileStore):
         ).fetchone()
         data = row["content"].encode()
         read = _sliced(data)
-        start = byte_offset
+        start = byte_offset if byte_offset is not None else _line_byte_offset(read, len(data), line)
+        actual_line = line
         if pattern is not None:
-            found = _find_byte_occurrence(read, len(data), pattern, occurrence, byte_offset)
+            found = _find_byte_occurrence(read, len(data), pattern, occurrence, start)
             if found is None:
                 raise PatternNotFoundError(
                     "pattern-not-found",
@@ -1201,8 +1255,26 @@ class SqliteStore(FileStore):
                     occurrence=occurrence,
                     offset=0,
                     byte_offset=byte_offset,
+                    line=line,
                 )
+            if line is not None:
+                actual_line = _line_at_byte(read, start, line, found)
             start = found
+
+        if line is not None:
+            return _line_excerpt(
+                row["key"],
+                row["format"],
+                row["updated_at"],
+                start,
+                actual_line,
+                lines,
+                length,
+                max_chars,
+                read=read,
+                total_bytes=len(data),
+                total=len(row["content"]),
+            )
 
         return _byte_excerpt(
             row["key"],

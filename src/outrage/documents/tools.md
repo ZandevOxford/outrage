@@ -10,17 +10,22 @@ client.
 
 Read the document or metadata stored at a key.
 
-Long documents are returned in slices: when `next_offset` is set, call again
-with that `offset` to continue.
+Long documents are returned in slices. Continue with the matching value the
+result supplies: `next_offset`, `next_byte_offset`, or `next_line`. A line read
+that must stop part way through its first line has no `next_line`; continue it
+with `next_byte_offset`.
 
 To jump to a section, pass `pattern` as a literal substring to start the read
-from.
+from, or use a character offset, UTF-8 byte offset, or 1-based line number from
+the document's `!contents` metadata.
 
 ### Parameters
 
 - `key` (string; required) — Key to read
 - `offset` (integer; default 0; minimum 0) — Character offset to start at
 - `byte_offset` (integer or null; default null; minimum 0) — UTF-8 byte offset to start at, instead of offset. One landing inside a character reads from that character's first byte, and byte_offset in the result says where the read began
+- `line` (integer or null; default null; minimum 1) — One-based line to start at, instead of offset or byte_offset
+- `lines` (integer or null; default null; greater than 0) — Maximum lines to return; requires line and is capped by max_chars
 - `pattern` (string or null; default null) — Literal substring to start the read from, not a regex
 - `occurrence` (integer; default 0; minimum 0) — Which appearance of pattern to use, 0 being the first
 - `max_chars` (integer; default 8000; greater than 0) — Maximum characters to return
@@ -31,13 +36,15 @@ from.
 - `content` (string; required) — The returned document content
 - `format` (string or null; required) — The stored content format
 - `updated_at` (string; required) — When the document was last written
-- `offset` (integer or null; optional) — Character offset where this excerpt starts, absent when the read was addressed in bytes
+- `offset` (integer or null; optional) — Character offset where this excerpt starts, absent when the read was addressed in bytes or lines
 - `returned` (integer; required) — Characters returned in this excerpt
-- `total` (integer or null; optional) — Total characters in the document. Absent only where the read was addressed in bytes and the store would have to read the whole document to count them; total_bytes is always given
+- `total` (integer or null; optional) — Total characters in the document. Absent only where the read was addressed in bytes or lines and the store would have to read the whole document to count them; total_bytes is always given
 - `next_offset` (integer or null; optional) — Where to resume, or null at the end
 - `byte_offset` (integer; required) — Byte offset where this excerpt starts, and where a byte offset given was snapped back to if it fell inside a character
 - `total_bytes` (integer; required) — Total UTF-8 bytes in the document
 - `next_byte_offset` (integer or null; optional) — Where to resume in bytes, or null at the end
+- `line` (integer or null; optional) — One-based line where a line-addressed read begins
+- `next_line` (integer or null; optional) — One-based line to resume from, when the read ended on a boundary
 - `truncated` (boolean; required) — Whether part of the document remains unread
 
 ## `store_document`
@@ -128,7 +135,8 @@ written.
 
 Markdown contents include ATX and setext headings; HTML contents include `h1`
 through `h6`. Each becomes a Markdown heading followed by its zero-based
-character and UTF-8 byte offsets in the source. Markdown headings inside fenced
+character and UTF-8 byte offsets and its 1-based line number in the source.
+Older indexes may have only the two offsets. Markdown headings inside fenced
 code blocks are ignored. HTML markup and link targets are removed while
 readable text remains.
 
@@ -256,13 +264,15 @@ whole document, use `read_document` on that document.
 - `content` (string; required) — The returned document content
 - `format` (string or null; required) — The stored content format
 - `updated_at` (string; required) — When the document was last written
-- `offset` (integer or null; optional) — Character offset where this excerpt starts, absent when the read was addressed in bytes
+- `offset` (integer or null; optional) — Character offset where this excerpt starts, absent when the read was addressed in bytes or lines
 - `returned` (integer; required) — Characters returned in this excerpt
-- `total` (integer or null; optional) — Total characters in the document. Absent only where the read was addressed in bytes and the store would have to read the whole document to count them; total_bytes is always given
+- `total` (integer or null; optional) — Total characters in the document. Absent only where the read was addressed in bytes or lines and the store would have to read the whole document to count them; total_bytes is always given
 - `next_offset` (integer or null; optional) — Where to resume, or null at the end
 - `byte_offset` (integer; required) — Byte offset where this excerpt starts, and where a byte offset given was snapped back to if it fell inside a character
 - `total_bytes` (integer; required) — Total UTF-8 bytes in the document
 - `next_byte_offset` (integer or null; optional) — Where to resume in bytes, or null at the end
+- `line` (integer or null; optional) — One-based line where a line-addressed read begins
+- `next_line` (integer or null; optional) — One-based line to resume from, when the read ended on a boundary
 - `truncated` (boolean; required) — Whether part of the document remains unread
 
 #### `MissingMeta` fields
@@ -334,6 +344,7 @@ continuing. Pass it as `after` until `next_cursor` is null.
 - `source` ("document" or "metadata"; required) — Whether body or metadata content matched
 - `start` (integer; required) — Inclusive character offset of the first match
 - `end` (integer; required) — Exclusive character offset of the first match
+- `line` (integer; required) — One-based line containing the first match
 
 ## `keys_missing_meta`
 

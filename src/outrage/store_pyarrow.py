@@ -103,6 +103,9 @@ from .store import (
     _excerpt,
     _find_byte_occurrence,
     _find_occurrence,
+    _line_at_byte,
+    _line_byte_offset,
+    _line_excerpt,
     _logged,
     _now,
     _position,
@@ -1138,6 +1141,8 @@ class PyarrowStore(FileStore):
         *,
         offset: int = 0,
         byte_offset: int | None = None,
+        line: int | None = None,
+        lines: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -1166,12 +1171,18 @@ class PyarrowStore(FileStore):
             raise KeyNotFoundError("key-not-found", key=key)
 
         check_read_position(
-            key, offset=offset, byte_offset=byte_offset, pattern=pattern, occurrence=occurrence
+            key,
+            offset=offset,
+            byte_offset=byte_offset,
+            line=line,
+            lines=lines,
+            pattern=pattern,
+            occurrence=occurrence,
         )
         row = index.row(position)
         content = self._content(row)
 
-        if byte_offset is None:
+        if byte_offset is None and line is None:
             start = offset
             if pattern is not None:
                 start = _find_occurrence(content, pattern, occurrence, offset)
@@ -1187,9 +1198,10 @@ class PyarrowStore(FileStore):
 
         data = content.encode()
         read = _sliced(data)
-        start = byte_offset
+        start = byte_offset if byte_offset is not None else _line_byte_offset(read, len(data), line)
+        actual_line = line
         if pattern is not None:
-            found = _find_byte_occurrence(read, len(data), pattern, occurrence, byte_offset)
+            found = _find_byte_occurrence(read, len(data), pattern, occurrence, start)
             if found is None:
                 raise PatternNotFoundError(
                     "pattern-not-found",
@@ -1198,8 +1210,26 @@ class PyarrowStore(FileStore):
                     occurrence=occurrence,
                     offset=offset,
                     byte_offset=byte_offset,
+                    line=line,
                 )
+            if line is not None:
+                actual_line = _line_at_byte(read, start, line, found)
             start = found
+
+        if line is not None:
+            return _line_excerpt(
+                row.key,
+                row.format,
+                row.updated_at,
+                start,
+                actual_line,
+                lines,
+                length,
+                max_chars,
+                read=read,
+                total_bytes=len(data),
+                total=len(content),
+            )
 
         return _byte_excerpt(
             row.key,

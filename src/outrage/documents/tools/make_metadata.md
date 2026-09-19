@@ -7,7 +7,8 @@ written.
 
 Markdown contents include ATX and setext headings; HTML contents include `h1`
 through `h6`. Each becomes a Markdown heading followed by its zero-based
-character and UTF-8 byte offsets in the source. Markdown headings inside fenced
+character and UTF-8 byte offsets and its 1-based line number in the source.
+Older indexes may have only the two offsets. Markdown headings inside fenced
 code blocks are ignored. HTML markup and link targets are removed while
 readable text remains.
 

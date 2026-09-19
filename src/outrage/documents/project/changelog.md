@@ -8,6 +8,19 @@ The default project readme now gives clearer guidance on recording settled
 decisions promptly, avoiding volatile state in links, and allowing long
 reference documents when a contents index keeps them navigable.
 
+Documents can now be read by 1-based line number through
+`Store.retrieve_document(line=...)`, MCP `read_document(line=...)`, and
+`outrage get --line`. An optional `lines` count limits the result, while
+`max_chars` remains the hard context cap. A capped line read backs up to a line
+boundary when possible and reports `next_line`; if its first line alone exceeds
+the cap, `next_byte_offset` remains the exact continuation.
+
+`find_documents` witnesses now report the 1-based line containing the match.
+Generated `!contents` indexes append that line after their zero-based character
+and UTF-8 byte offsets. Existing two-number indexes remain readable, but code
+that unpacks exactly two values must accept the optional third value. Regenerate
+an index to add line numbers.
+
 ## 1.0.0 - 2026-09-17
 
 1.0 release contains most of the initial intended functionality, and is

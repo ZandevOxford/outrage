@@ -304,6 +304,15 @@ def test_the_speller_is_what_makes_one_argument_two_spellings():
     assert "Pass the time you looked, or --on-conflict overwrite to replace" in typed
 
 
+def test_a_line_count_remedy_is_spelled_for_each_front_end():
+    error = OutrageError("lines-without-line", key="manual", lines=2)
+
+    assert messages.render(error) == "lines=2 needs a starting line; give line as well"
+    assert messages.render(error, spell=messages.flag) == (
+        "--lines 2 needs a starting line; give --line as well"
+    )
+
+
 def test_a_render_without_a_template_raises_rather_than_guessing():
     with pytest.raises(AssertionError, match="no message template"):
         messages.render(OutrageError("not-a-real-code"))

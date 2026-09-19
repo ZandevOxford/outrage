@@ -295,7 +295,7 @@ def test_make_metadata_writes_contents_and_title_by_default(server):
     result = call(server, "make_metadata", key="manual")
 
     detail = source.index("## Detail")
-    expected = f"# Store schema\n0 0\n\n## Detail\n{detail} {detail}\n"
+    expected = f"# Store schema\n0 0 1\n\n## Detail\n{detail} {detail} 5\n"
     assert result == {
         "source_key": "manual",
         "source_characters": len(source),
@@ -336,10 +336,10 @@ def test_make_metadata_can_keep_link_targets_in_contents(server):
     call(server, "store_document", key="manual", content=heading, format="markdown")
 
     call(server, "make_metadata", key="manual")
-    assert call(server, "read_document", key="manual/!contents")["content"] == "# Manual\n0 0\n"
+    assert call(server, "read_document", key="manual/!contents")["content"] == ("# Manual\n0 0 1\n")
 
     call(server, "make_metadata", key="manual", strip_links=False)
-    assert call(server, "read_document", key="manual/!contents")["content"] == f"{heading}0 0\n"
+    assert call(server, "read_document", key="manual/!contents")["content"] == (f"{heading}0 0 1\n")
 
 
 def test_make_metadata_indexes_html_and_prefers_its_title_element(server):
@@ -355,7 +355,7 @@ def test_make_metadata_indexes_html_and_prefers_its_title_element(server):
     assert result["headings"] == 1
     assert result["title"] == "Manual title"
     assert call(server, "read_document", key="manual/!contents")["content"] == (
-        f"## Detail\n{offset} {offset}\n"
+        f"## Detail\n{offset} {offset} 3\n"
     )
     assert call(server, "read_document", key="manual/!title")["content"] == "Manual title"
 
@@ -509,6 +509,8 @@ def test_tool_schemas_describe_their_results(exporting):
         "total",
         "next_offset",
         "next_byte_offset",
+        "line",
+        "next_line",
     }
     assert read["properties"]["next_offset"]["description"]
     assert read["properties"]["next_byte_offset"]["description"]
@@ -553,6 +555,23 @@ def test_read_document_by_pattern(server):
     assert result["offset"] == 16
 
 
+def test_read_document_by_line(server):
+    call(server, "store_document", key="lines", content="one\ntwo\nthree\nfour\n")
+    first = call(
+        server,
+        "read_document",
+        key="lines",
+        line=2,
+        lines=2,
+    )
+
+    assert first["content"] == "two\nthree\n"
+    assert first["line"] == 2
+    assert first["next_line"] == 4
+    assert "offset" not in first
+    assert "total" not in first
+
+
 def test_read_missing_key_is_a_tool_error(server):
     assert "context/zzzz" in call_expecting_error(server, "read_document", key="context/zzzz")
 
@@ -589,7 +608,7 @@ def test_store_document_round_trip(server):
     }
     assert call(server, "read_document", key="project/notes")["content"] == "# Notes"
     assert call(server, "read_document", key="project/notes/!contents")["content"] == (
-        "# Notes\n0 0\n"
+        "# Notes\n0 0 1\n"
     )
 
 
@@ -720,7 +739,9 @@ def test_store_document_encodes_automatically_generated_contents_for_transport(s
     )
 
     assert stored["contents_key"] == "manual/!contents"
-    assert call(server, "read_document", key="manual/!contents")["content"] == ("# Heading\n0 0\n")
+    assert call(server, "read_document", key="manual/!contents")["content"] == (
+        "# Heading\n0 0 1\n"
+    )
 
 
 def test_store_document_rejects_scaffolding_under_a_json_string_encoding(server):
@@ -969,6 +990,7 @@ def test_find_documents_searches_bodies_and_metadata(server):
         "source": "metadata",
         "start": 0,
         "end": 12,
+        "line": 1,
     }
 
 
@@ -2048,7 +2070,18 @@ def test_a_file_edited_on_disk_is_stored_back(exporting):
     read = call(exporting, "read_document", key="context/a1b2/design")
     assert read["content"] == "# Store schema, revised"
     contents = call(exporting, "read_document", key="context/a1b2/design/!contents")
-    assert contents["content"] == "# Store schema, revised\n0 0\n"
+    assert contents["content"] == "# Store schema, revised\n0 0 1\n"
+
+
+def test_a_contents_line_names_the_same_line_in_a_document_edit_export(exporting):
+    source = "# One\r\nbody\fstill\r\n## Two\r\n"
+    call(exporting, "store_document", key="manual", content=source, format="markdown")
+
+    index = call(exporting, "read_document", key="manual/!contents")["content"]
+    _, _, line = (int(number) for number in index.splitlines()[-1].split())
+    exported = call(exporting, "document_edit", key="manual")
+
+    assert Path(exported["path"]).read_bytes().split(b"\n")[line - 1].startswith(b"## Two")
 
 
 def test_document_edit_contents_generation_can_be_disabled(exporting):

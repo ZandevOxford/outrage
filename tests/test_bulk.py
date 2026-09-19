@@ -329,14 +329,15 @@ def test_an_exported_file_holds_the_documents_bytes_and_nothing_else(store, tmp_
     written = (tmp_path / "out" / "crlf.md").read_bytes()
 
     assert written == document.encode()
-    # And so the second number in an index of it names the heading in the file
-    # as well as in the store.
+    # And so the byte and line numbers in an index of it name the heading in
+    # the file as well as in the store.
     contents.make_contents(store, "crlf")
-    _, byte_offset = (
+    _, byte_offset, line = (
         int(number)
         for number in store.retrieve_document("crlf/!contents").content.splitlines()[-1].split()
     )
     assert written[byte_offset:].startswith(b"## Two")
+    assert written.splitlines()[line - 1].startswith(b"## Two")
 
 
 def test_an_untouched_export_imports_back_byte_for_byte(store, tmp_path):

@@ -460,6 +460,20 @@ def argument_parser() -> argparse.ArgumentParser:
             "reads from that character's first byte."
         ),
     )
+    get.add_argument(
+        "--line",
+        type=int,
+        default=None,
+        metavar="N",
+        help="One-based line to start at, instead of --offset or --byte-offset.",
+    )
+    get.add_argument(
+        "--lines",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Lines to return from --line, capped by --max-chars when supplied.",
+    )
     get.add_argument("--length", type=int, default=None, help="Characters to return.")
     get.add_argument("--pattern", default=None, help="Literal substring to start the read from.")
     get.add_argument(
@@ -1773,6 +1787,8 @@ def _get_command(args: argparse.Namespace, out: TextIO) -> int:
         slicing = {
             "offset": args.offset,
             "byte_offset": args.byte_offset,
+            "line": args.line,
+            "lines": args.lines,
             "length": args.length,
             "pattern": args.pattern,
             "occurrence": args.occurrence,
@@ -1813,7 +1829,12 @@ def _get_command(args: argparse.Namespace, out: TextIO) -> int:
         # separate question and some backends do now answer it, but a total is
         # not a position and mixing the two units in one sentence is how this
         # message went wrong before.
-        if excerpt.next_byte_offset is not None and excerpt.next_offset is None:
+        if excerpt.line is not None and excerpt.next_line is not None:
+            note = (
+                f"{excerpt.returned} characters from line {excerpt.line}; "
+                f"more from --line {excerpt.next_line}"
+            )
+        elif excerpt.next_byte_offset is not None and excerpt.next_offset is None:
             note = (
                 f"{excerpt.returned} characters, bytes {excerpt.byte_offset} to "
                 f"{excerpt.next_byte_offset} of {excerpt.total_bytes}; "

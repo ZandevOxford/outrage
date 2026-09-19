@@ -227,6 +227,8 @@ def test_the_two_backends_answer_every_read_identically(sqlite, arrow):
         answers_alike(sqlite, arrow, lambda s, k=key: s.latest_change(k))
         answers_alike(sqlite, arrow, lambda s, k=key: s.latest_change(k, whole_subtree=True))
         answers_alike(sqlite, arrow, lambda s, k=key: s.retrieve_document(k))
+        answers_alike(sqlite, arrow, lambda s, k=key: s.retrieve_document(k, line=1))
+        answers_alike(sqlite, arrow, lambda s, k=key: s.retrieve_document(k, line=1, lines=1))
         # The portability contract: a byte offset is the unit that survives
         # leaving a store, so the two backends have to return the same content
         # for one even though only one of them can seek to it. This is the

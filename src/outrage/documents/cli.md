@@ -227,9 +227,9 @@ person redirecting a document to a file. Ask for a slice and you get exactly the
 outrage get [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
             [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
             [--unmount KEY] [--mount-config FILE] [--no-mount-config]
-            [--offset OFFSET] [--byte-offset N] [--length LENGTH]
-            [--pattern PATTERN] [--occurrence OCCURRENCE]
-            [--max-chars MAX_CHARS]
+            [--offset OFFSET] [--byte-offset N] [--line N] [--lines N]
+            [--length LENGTH] [--pattern PATTERN]
+            [--occurrence OCCURRENCE] [--max-chars MAX_CHARS]
             key
 ```
 
@@ -248,6 +248,8 @@ outrage get [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `key` - Key to read, e.g. context/1/task, context/1/task/!title, or context/?last/task for the newest.
 - `--offset OFFSET` - Character offset to start at.
 - `--byte-offset N` - Byte offset to start at, instead of --offset. Counts UTF-8 bytes, which is the unit a file on disk is addressed in, so an offset from a contents index still names the same place after the document has been written out. A byte landing inside a character reads from that character's first byte.
+- `--line N` - One-based line to start at, instead of --offset or --byte-offset.
+- `--lines N` - Lines to return from --line, capped by --max-chars when supplied.
 - `--length LENGTH` - Characters to return.
 - `--pattern PATTERN` - Literal substring to start the read from.
 - `--occurrence OCCURRENCE` - Which appearance of --pattern to use, 0 being the first.

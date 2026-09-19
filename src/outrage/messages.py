@@ -636,13 +636,18 @@ def _pattern_not_found(
     occurrence: int,
     offset: int,
     byte_offset: int | None = None,
+    line: int | None = None,
     **_: Any,
 ) -> str:
     # Named in the unit the caller searched in. A byte-addressed read that was
     # told "at or after offset 400" would go looking for character 400, which
     # is a different place in the document and the sentence's own fault.
-    where = "offset" if byte_offset is None else "byte offset"
-    position = offset if byte_offset is None else byte_offset
+    if line is not None:
+        where, position = "line", line
+    elif byte_offset is not None:
+        where, position = "byte offset", byte_offset
+    else:
+        where, position = "offset", offset
     return (
         f"{pattern!r} does not occur {occurrence + 1} time(s) in {name(key)!r} "
         f"at or after {where} {position}"
@@ -663,6 +668,36 @@ def _offsets_both_given(
         f"{spell('offset', offset)} counts characters and "
         f"{spell('byte_offset', byte_offset)} counts bytes; give one or the other"
     )
+
+
+@template("positions-multiple")
+def _positions_multiple(
+    name: Namer,
+    /,
+    *,
+    key: str,
+    offset: int | None,
+    byte_offset: int | None,
+    line: int | None,
+    spell: Speller,
+    **_: Any,
+) -> str:
+    given = []
+    if offset is not None:
+        given.append(f"{spell('offset', offset)} counts characters")
+    if byte_offset is not None:
+        given.append(f"{spell('byte_offset', byte_offset)} counts bytes")
+    if line is not None:
+        given.append(f"{spell('line', line)} counts lines")
+    return (
+        f"cannot read {name(key)!r} from more than one place at once: "
+        f"{', '.join(given)}; give only one"
+    )
+
+
+@template("lines-without-line")
+def _lines_without_line(name: Namer, /, *, lines: int, spell: Speller, **_: Any) -> str:
+    return f"{spell('lines', lines)} needs a starting line; give {spell('line')} as well"
 
 
 @template("search-criteria-count")

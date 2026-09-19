@@ -222,7 +222,7 @@ class Excerpt:
     updated_at: str
     offset: int | None
     """Character offset within the document at which content starts, or None
-    when the read was addressed in bytes. A caller gets the unit they asked
+    when the read was addressed in bytes or lines. A caller gets the unit they asked
     in: converting back means decoding the prefix, which is the cost a byte
     offset exists to avoid, so it is reported unknown rather than paid for
     unasked. Both numbers for one position come from ``!contents``, where they
@@ -231,7 +231,7 @@ class Excerpt:
     """Number of characters returned."""
     total: int | None
     """Total length of the document in characters, or None when the read was
-    addressed in bytes and the backend would have to scan the whole document
+    addressed in bytes or lines and the backend would have to scan the whole document
     to count them. ``total_bytes`` is the size such a read reports."""
     next_offset: int | None
     """Where to resume in characters, or None if this excerpt reached the end
@@ -248,6 +248,13 @@ class Excerpt:
     """Where to resume in bytes, or None if this excerpt reached the end.
     Always on a character boundary, so paging by it reassembles the document
     exactly."""
+    line: int | None = None
+    """One-based line at which content starts for a line-addressed read, or
+    None when the caller addressed the document in characters or bytes."""
+    next_line: int | None = None
+    """One-based line at which a line-addressed read can resume, or None when
+    it reached the end or stopped part way through a line. In the latter case
+    ``next_byte_offset`` is the exact continuation."""
 
     @property
     def truncated(self) -> bool:
@@ -262,7 +269,10 @@ class Excerpt:
         while the document plainly continues, so the old definition reported
         every one of them as complete.
         """
-        return self.next_offset is not None or self.next_byte_offset is not None
+        return any(
+            continuation is not None
+            for continuation in (self.next_offset, self.next_byte_offset, self.next_line)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -471,6 +481,8 @@ class MatchWitness:
     source: SearchTarget
     start: int
     end: int
+    line: int = 1
+    """One-based line containing ``start``; only ``\\n`` advances it."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1469,6 +1481,8 @@ class Store(ABC):
         *,
         offset: int = 0,
         byte_offset: int | None = None,
+        line: int | None = None,
+        lines: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -1479,11 +1493,13 @@ class Store(ABC):
         ``pattern`` is a literal substring, not a regular expression; when
         given, the read starts at its ``occurrence``-th appearance at or after
         the offset. The result is capped at ``length`` or ``max_chars``,
-        whichever is smaller, and carries a continuation offset.
+        whichever is smaller, and carries a continuation in the unit used.
 
-        ``offset`` counts characters and ``byte_offset`` counts UTF-8 bytes of
-        the same document. Both are positions, so giving both is refused; a
-        byte offset landing inside a character reads from that character's
+        ``offset`` counts characters, ``byte_offset`` counts UTF-8 bytes and
+        ``line`` counts lines from one. They are three positions in the same
+        document, so giving more than one is refused. ``lines`` limits a
+        line-addressed read to that many lines and is capped by ``max_chars``.
+        A byte offset landing inside a character reads from that character's
         first byte, and the excerpt says where it actually began.
 
         **Every backend accepts a byte offset and returns identical content
@@ -1666,7 +1682,13 @@ class Store(ABC):
                 if criterion.target == "document":
                     span = matcher(body or "")
                     if span is not None:
-                        witness = MatchWitness(index, candidate.key, "document", *span)
+                        witness = MatchWitness(
+                            index,
+                            candidate.key,
+                            "document",
+                            *span,
+                            1 + (body or "").count("\n", 0, span[0]),
+                        )
                 else:
                     for source_key, content in metadata.items():
                         name = source_key.rpartition(keys.DELIMITER)[2][len(keys.META_PREFIX) :]
@@ -1674,7 +1696,13 @@ class Store(ABC):
                             continue
                         span = matcher(content)
                         if span is not None:
-                            witness = MatchWitness(index, source_key, "metadata", *span)
+                            witness = MatchWitness(
+                                index,
+                                source_key,
+                                "metadata",
+                                *span,
+                                1 + content.count("\n", 0, span[0]),
+                            )
                             break
                 if witness is not None:
                     witnesses.append(witness)
@@ -2387,7 +2415,7 @@ def open_store(
 
 
 def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
-    """Read a whole document, following ``next_offset`` until there is no more.
+    """Read a whole requested range, following its continuation until complete.
 
     A function beside the store rather than a method on it, deliberately.
     Whether the *library* should stop handing out silent partial documents is
@@ -2396,10 +2424,10 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
     obvious answer: a person redirecting a document to a file wants the
     document, and a slice is available by asking for one.
 
-    Asked for the whole document, the result reports it with ``next_offset`` of
-    ``None``, so a caller cannot tell it apart from a document that fitted.
-    That is the point. Asked for a ``length``, the result stops there and
-    carries a continuation offset, exactly as a single capped read does.
+    Asked for the whole document, the result reports no continuation, so a
+    caller cannot tell it apart from a document that fitted. That is the point.
+    Asked for a ``length`` or line count, the result stops there and carries
+    the appropriate continuation, exactly as a single capped read does.
     """
     first = store.retrieve_document(key, **kwargs)
     if not first.truncated:
@@ -2407,6 +2435,50 @@ def read_all(store: Store, key: str, **kwargs: Any) -> Excerpt:
 
     max_chars = kwargs.get("max_chars", DEFAULT_MAX_CHARS)
     wanted = kwargs.get("length")
+    wanted_lines = kwargs.get("lines")
+
+    if first.line is not None:
+        parts = [first.content]
+        last = first
+        content = first.content
+        while last.next_byte_offset is not None:
+            enough_characters = wanted is not None and len(content) >= wanted
+            enough_lines = wanted_lines is not None and content.count("\n") >= wanted_lines
+            if enough_characters or enough_lines:
+                break
+            last = store.retrieve_document(
+                key,
+                byte_offset=last.next_byte_offset,
+                max_chars=max_chars,
+            )
+            parts.append(last.content)
+            content = "".join(parts)
+
+        cut = len(content)
+        if wanted is not None:
+            cut = min(cut, wanted)
+        if wanted_lines is not None:
+            end = -1
+            for _ in range(wanted_lines):
+                end = content.find("\n", end + 1)
+                if end == -1:
+                    break
+            if end != -1:
+                cut = min(cut, end + 1)
+        content = content[:cut]
+        end_byte = first.byte_offset + len(content.encode())
+        at_end = end_byte >= first.total_bytes
+        return replace(
+            first,
+            content=content,
+            returned=len(content),
+            next_offset=None,
+            next_byte_offset=None if at_end else end_byte,
+            next_line=(
+                first.line + content.count("\n") if not at_end and content.endswith("\n") else None
+            ),
+        )
+
     # Resumed in the unit the caller addressed it in, which is the unit that
     # has a continuation: a byte-addressed read carries no character offset to
     # page by, and paging it by one would start the second slice somewhere
@@ -2992,13 +3064,12 @@ def _summarise(
     """
     match result:
         case Excerpt():
-            # `next_offset` is the truncation evidence: it is what says a
-            # caller was handed part of a document, and following the log
-            # forward is what says whether they ever came back for the rest.
             return {
                 "total": result.total,
                 "returned": result.returned,
                 "next_offset": result.next_offset,
+                "next_byte_offset": result.next_byte_offset,
+                "next_line": result.next_line,
                 "content": log.content_field(result.content),
             }
         case Backup():
@@ -3289,6 +3360,103 @@ def _byte_excerpt(
     )
 
 
+_LINE_SCAN_BYTES = 64 * 1024
+
+
+def _line_byte_offset(read: Callable[[int, int], bytes], total_bytes: int, line: int) -> int:
+    """Return the byte at which one 1-based ``line`` begins.
+
+    A line is defined only by ``b"\\n"``. Reading in chunks keeps seeking
+    backends from materialising the prefix, and finding the decisive newline
+    inside its chunk makes every backend land on the same byte.
+    """
+    if line < 1:
+        raise ValueError("line must be at least 1")
+    remaining = line - 1
+    if remaining == 0:
+        return 0
+    position = 0
+    while position < total_bytes:
+        chunk = read(position, min(_LINE_SCAN_BYTES, total_bytes - position))
+        if not chunk:
+            break
+        count = chunk.count(b"\n")
+        if count < remaining:
+            remaining -= count
+            position += len(chunk)
+            continue
+        found = -1
+        for _ in range(remaining):
+            found = chunk.find(b"\n", found + 1)
+        return position + found + 1
+    return total_bytes
+
+
+def _line_at_byte(read: Callable[[int, int], bytes], start: int, line: int, position: int) -> int:
+    """The line at ``position``, given a known line and its starting byte."""
+    return line + read(start, max(0, position - start)).count(b"\n")
+
+
+def _line_excerpt(
+    key: str,
+    format: str | None,
+    updated_at: str,
+    start: int,
+    line: int,
+    lines: int | None,
+    length: int | None,
+    max_chars: int,
+    *,
+    read: Callable[[int, int], bytes],
+    total_bytes: int,
+    total: int | None = None,
+) -> Excerpt:
+    """The shared slicing and continuation policy for a line-addressed read."""
+    excerpt = _byte_excerpt(
+        key,
+        format,
+        updated_at,
+        start,
+        length,
+        max_chars,
+        read=read,
+        total_bytes=total_bytes,
+        total=total,
+    )
+    content = excerpt.content
+    cut = len(content)
+
+    if lines is not None:
+        end = -1
+        for _ in range(lines):
+            end = content.find("\n", end + 1)
+            if end == -1:
+                break
+        if end != -1:
+            cut = min(cut, end + 1)
+
+    # A character cap that cuts a later line backs up to the last complete
+    # line. The first line is allowed to overrun, otherwise no progress would
+    # be possible and the exact byte continuation would never advance.
+    if cut == len(content) and excerpt.next_byte_offset is not None and not content.endswith("\n"):
+        boundary = content.rfind("\n") + 1
+        if boundary:
+            cut = boundary
+
+    content = content[:cut]
+    end_byte = excerpt.byte_offset + len(content.encode())
+    at_end = end_byte >= total_bytes
+    on_boundary = bool(content) and content.endswith("\n")
+    return replace(
+        excerpt,
+        content=content,
+        returned=len(content),
+        next_byte_offset=None if at_end else end_byte,
+        line=line,
+        next_line=line + content.count("\n") if not at_end and on_boundary else None,
+    )
+
+
 def _sliced(data: bytes) -> Callable[[int, int], bytes]:
     """The reader :func:`_byte_excerpt` takes, over bytes already in hand.
 
@@ -3330,6 +3498,8 @@ def check_read_position(
     *,
     offset: int,
     byte_offset: int | None,
+    line: int | None,
+    lines: int | None,
     pattern: str | None,
     occurrence: int,
 ) -> None:
@@ -3341,14 +3511,30 @@ def check_read_position(
     not that pair -- it cannot be told from silence, and does not need to be,
     since both spell the start of the document.
     """
-    if byte_offset is not None and offset:
+    if byte_offset is not None and offset and line is None:
         raise InvalidArgumentError(
             "offsets-both-given", key=key, offset=offset, byte_offset=byte_offset
+        )
+    positions = int(bool(offset)) + int(byte_offset is not None) + int(line is not None)
+    if positions > 1:
+        raise InvalidArgumentError(
+            "positions-multiple",
+            key=key,
+            offset=offset if offset else None,
+            byte_offset=byte_offset,
+            line=line,
         )
     if offset < 0:
         raise ValueError("offset must not be negative")
     if byte_offset is not None and byte_offset < 0:
         raise ValueError("byte_offset must not be negative")
+    if line is not None and line < 1:
+        raise ValueError("line must be at least 1")
+    if lines is not None:
+        if line is None:
+            raise InvalidArgumentError("lines-without-line", key=key, lines=lines)
+        if lines < 1:
+            raise ValueError("lines must be at least 1")
     if pattern is not None:
         if not pattern:
             raise InvalidArgumentError("pattern-empty")

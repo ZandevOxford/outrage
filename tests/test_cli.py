@@ -330,7 +330,7 @@ def test_make_contents_stores_and_reports_the_heading_index(tmp_path):
     assert "at manual/!contents" in output
     assert run("get", "--dir", str(directory), "manual") == (0, source)
     second = source.index("## Second")
-    expected = f"# First\n0 0\n\n## Second\n{second} {second}\n"
+    expected = f"# First\n0 0 1\n\n## Second\n{second} {second} 4\n"
     assert run("get", "--dir", str(directory), "manual/!contents") == (0, expected)
 
 
@@ -349,7 +349,10 @@ def test_make_contents_uses_the_requested_metadata_name(tmp_path):
 
     assert status == 0
     assert "manual/!outline" in output
-    assert run("get", "--dir", str(directory), "manual/!outline") == (0, "# First\n0 0\n")
+    assert run("get", "--dir", str(directory), "manual/!outline") == (
+        0,
+        "# First\n0 0 1\n",
+    )
 
 
 def test_make_contents_can_keep_link_targets(tmp_path):
@@ -359,7 +362,10 @@ def test_make_contents_can_keep_link_targets(tmp_path):
 
     run("make_contents", "--dir", str(directory), "--no-strip-links", "manual")
 
-    assert run("get", "--dir", str(directory), "manual/!contents") == (0, f"{heading}0 0\n")
+    assert run("get", "--dir", str(directory), "manual/!contents") == (
+        0,
+        f"{heading}0 0 1\n",
+    )
 
 
 def test_make_contents_indexes_html_without_an_extra_option(tmp_path):
@@ -383,7 +389,7 @@ def test_make_contents_indexes_html_without_an_extra_option(tmp_path):
     assert "stored 1 headings from manual" in output
     assert run("get", "--dir", str(directory), "manual/!contents") == (
         0,
-        f"# Manual\n{offset} {offset}\n",
+        f"# Manual\n{offset} {offset} 2\n",
     )
 
 
@@ -815,6 +821,39 @@ def test_get_by_byte_offset_reports_bytes_rather_than_characters(tmp_path, capsy
     # resume at a character offset it never computed would send the next read
     # somewhere else in the document.
     assert "4 characters, bytes 0 to 5 of 19; more from --byte-offset 5" in capsys.readouterr().err
+
+
+def test_get_by_line_reports_a_line_continuation(tmp_path, capsys):
+    directory = tmp_path / ".outrage"
+    run("set", "--dir", str(directory), "lines", "--content", "one\ntwo\nthree\nfour\n")
+
+    status, output = run(
+        "get",
+        "--dir",
+        str(directory),
+        "lines",
+        "--line",
+        "2",
+        "--lines",
+        "2",
+        "--max-chars",
+        "100",
+    )
+
+    assert status == 0
+    assert output == "two\nthree\n"
+    assert "more from --line 4" in capsys.readouterr().err
+
+
+def test_get_by_line_reads_the_requested_lines_without_an_explicit_cap(tmp_path):
+    directory = tmp_path / ".outrage"
+    content = "first line is long\nsecond\nthird\nfourth\n"
+    run("set", "--dir", str(directory), "lines", "--content", content)
+
+    status, output = run("get", "--dir", str(directory), "lines", "--line", "1", "--lines", "3")
+
+    assert status == 0
+    assert output == "first line is long\nsecond\nthird\n"
 
 
 def test_get_says_when_a_byte_offset_landed_inside_a_character(tmp_path, capsys):

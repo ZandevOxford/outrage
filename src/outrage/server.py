@@ -280,7 +280,7 @@ class _ExcerptResult(_ToolResult):
         Field(
             description=(
                 "Character offset where this excerpt starts, absent when the "
-                "read was addressed in bytes"
+                "read was addressed in bytes or lines"
             )
         ),
     ] = None
@@ -290,7 +290,7 @@ class _ExcerptResult(_ToolResult):
         Field(
             description=(
                 "Total characters in the document. Absent only where the read "
-                "was addressed in bytes and the store would have to read the "
+                "was addressed in bytes or lines and the store would have to read the "
                 "whole document to count them; total_bytes is always given"
             )
         ),
@@ -311,6 +311,14 @@ class _ExcerptResult(_ToolResult):
     next_byte_offset: Annotated[
         int | None,
         Field(description="Where to resume in bytes, or null at the end"),
+    ] = None
+    line: Annotated[
+        int | None,
+        Field(description="One-based line where a line-addressed read begins"),
+    ] = None
+    next_line: Annotated[
+        int | None,
+        Field(description="One-based line to resume from, when the read ended on a boundary"),
     ] = None
     truncated: Annotated[bool, Field(description="Whether part of the document remains unread")]
 
@@ -446,6 +454,7 @@ class _MatchWitnessResult(_ToolResult):
     source: Annotated[SearchTarget, Field(description="Whether body or metadata content matched")]
     start: Annotated[int, Field(description="Inclusive character offset of the first match")]
     end: Annotated[int, Field(description="Exclusive character offset of the first match")]
+    line: Annotated[int, Field(description="One-based line containing the first match")]
 
 
 class _DocumentMatchResult(_ToolResult):
@@ -1042,6 +1051,17 @@ def build_server(
                 ge=0,
             ),
         ] = None,
+        line: Annotated[
+            int | None,
+            Field(description="One-based line to start at, instead of offset or byte_offset", ge=1),
+        ] = None,
+        lines: Annotated[
+            int | None,
+            Field(
+                description="Maximum lines to return; requires line and is capped by max_chars",
+                gt=0,
+            ),
+        ] = None,
         pattern: Annotated[
             str | None,
             Field(description="Literal substring to start the read from, not a regex"),
@@ -1059,6 +1079,8 @@ def build_server(
                 _named_key(table, key),
                 offset=offset,
                 byte_offset=byte_offset,
+                line=line,
+                lines=lines,
                 pattern=pattern,
                 occurrence=occurrence,
                 max_chars=max_chars,
@@ -2153,6 +2175,9 @@ def _excerpt_result(excerpt: Excerpt) -> _ExcerptResult:
         # "you have the whole thing", which is what `_ToolResult` omits absent
         # fields for.
         for absent in ("offset", "total", "next_offset"):
+            del fields[absent]
+    if excerpt.line is None:
+        for absent in ("line", "next_line"):
             del fields[absent]
     return _ExcerptResult.model_validate(fields)
 

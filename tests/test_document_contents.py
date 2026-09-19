@@ -68,7 +68,7 @@ def test_the_sweep_can_keep_link_targets(tree):
     swept = document_contents.sweep(tree, strip_links=False)
 
     assert "linked" in swept.written
-    assert tree.retrieve_document("linked/!contents").content == f"{linked}0 0\n"
+    assert tree.retrieve_document("linked/!contents").content == f"{linked}0 0 1\n"
 
 
 def test_an_index_that_no_longer_matches_is_rewritten(tree):

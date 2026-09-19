@@ -34,15 +34,14 @@ def test_render_contents_keeps_literal_headings_and_replaces_bodies_with_offsets
 
     rendered = contents.render_contents(markdown)
 
-    # Two numbers per heading, character offset then byte offset. This
-    # document is ASCII, so they are the same number and the *shape* is what
-    # is being asserted; the pair coming apart is the test below.
+    # Character offset, byte offset, then 1-based line. This document is ASCII,
+    # so the offsets are equal and the shape is what is being asserted.
     assert rendered == (
-        "# Top\n0 0\n\n"
-        f"## Second ###\n{markdown.index('## Second')} {markdown.index('## Second')}\n\n"
+        "# Top\n0 0 1\n\n"
+        f"## Second ###\n{markdown.index('## Second')} {markdown.index('## Second')} 4\n\n"
         "Setext heading\n"
         "==============\n"
-        f"{markdown.index('Setext heading')} {markdown.index('Setext heading')}\n"
+        f"{markdown.index('Setext heading')} {markdown.index('Setext heading')} 12\n"
     )
 
 
@@ -53,7 +52,7 @@ def test_each_heading_carries_its_character_offset_and_its_byte_offset():
     # units, which is the whole reason both are written down. A reader with
     # the document as a string wants the first; a reader with the document as
     # a file wants the second.
-    assert contents.render_contents(markdown) == "# Héading\n3 4\n"
+    assert contents.render_contents(markdown) == "# Héading\n3 4 2\n"
     assert len("π\r\n".encode()) == 4
 
 
@@ -62,21 +61,21 @@ def test_link_targets_are_stripped_by_default_and_can_be_kept():
         '# A [string](https://example.test/types_(one)) and [*display text*](target "title")\n'
     )
 
-    assert contents.render_contents(markdown) == "# A string and *display text*\n0 0\n"
-    assert contents.render_contents(markdown, strip_links=False) == f"{markdown.rstrip()}\n0 0\n"
+    assert contents.render_contents(markdown) == "# A string and *display text*\n0 0 1\n"
+    assert contents.render_contents(markdown, strip_links=False) == f"{markdown.rstrip()}\n0 0 1\n"
 
 
 def test_an_unclosed_link_is_kept_literal():
     markdown = "# [Not a complete link](somewhere\n"
 
-    assert contents.render_contents(markdown) == "# [Not a complete link](somewhere\n0 0\n"
+    assert contents.render_contents(markdown) == "# [Not a complete link](somewhere\n0 0 1\n"
 
 
 def test_link_syntax_in_code_or_escaped_text_is_not_a_link():
     markdown = r"# `[code](target)` and \[literal](target) and [link](target)" + "\n"
 
     assert contents.render_contents(markdown) == (
-        r"# `[code](target)` and \[literal](target) and link" + "\n0 0\n"
+        r"# `[code](target)` and \[literal](target) and link" + "\n0 0 1\n"
     )
 
 
@@ -95,7 +94,7 @@ def test_a_byte_offset_from_an_index_lands_on_its_heading_in_every_backend(store
     tree.store_document("manual", markdown, format="markdown")
 
     last = store.retrieve_document("manual/!contents").content.splitlines()[-1]
-    characters, byte_offset = (int(number) for number in last.split())
+    characters, byte_offset, line = (int(number) for number in last.split())
 
     assert markdown[characters:].startswith("## Über")
     with tree:
@@ -103,6 +102,7 @@ def test_a_byte_offset_from_an_index_lands_on_its_heading_in_every_backend(store
             assert opened.retrieve_document("manual", byte_offset=byte_offset).content.startswith(
                 "## Über"
             )
+            assert opened.retrieve_document("manual", line=line).content.startswith("## Über")
 
 
 def test_an_index_of_a_crlf_source_is_lf_and_still_addresses_it(store, tmp_path):
@@ -129,18 +129,27 @@ def test_an_index_of_a_crlf_source_is_lf_and_still_addresses_it(store, tmp_path)
             assert index.source_bytes == len(markdown.encode())
             assert "\r" not in written
 
-            characters, byte_offset = (int(number) for number in written.splitlines()[-1].split())
+            characters, byte_offset, line = (
+                int(number) for number in written.splitlines()[-1].split()
+            )
             assert markdown[characters:].startswith("## Über")
             assert markdown.encode()[byte_offset:].startswith("## Über".encode())
             assert opened.retrieve_document("manual", byte_offset=byte_offset).content.startswith(
                 "## Über"
             )
+            assert opened.retrieve_document("manual", line=line).content.startswith("## Über")
 
 
 def test_a_multiline_setext_heading_is_kept_as_one_heading():
     markdown = "A long\nheading\n-------\nBody.\n"
 
-    assert contents.render_contents(markdown) == "A long\nheading\n-------\n0 0\n"
+    assert contents.render_contents(markdown) == "A long\nheading\n-------\n0 0 1\n"
+
+
+def test_only_newline_advances_a_heading_line_number():
+    markdown = "prose\fstill prose\u2028# Heading\n"
+
+    assert contents.render_contents(markdown) == "# Heading\n18 20 1\n"
 
 
 def test_an_empty_or_heading_free_document_has_an_empty_index():
@@ -158,7 +167,7 @@ def test_html_headings_become_plain_markdown_with_readable_text():
     second = html.index("<h2>")
 
     assert contents.render_html_contents(html) == (
-        f"# Guide for agents\n0 0\n\n## Café setup now map & key Next\n{second} {second}\n"
+        f"# Guide for agents\n0 0 1\n\n## Café setup now map & key Next\n{second} {second} 2\n"
     )
 
 
@@ -166,7 +175,7 @@ def test_html_headings_become_plain_markdown_with_readable_text():
 def test_each_html_heading_level_maps_to_the_same_markdown_level(level):
     html = f"<h{level}>Heading</h{level}>"
 
-    assert contents.render_html_contents(html) == f"{'#' * level} Heading\n0 0\n"
+    assert contents.render_html_contents(html) == f"{'#' * level} Heading\n0 0 1\n"
 
 
 def test_html_heading_offsets_address_the_original_non_ascii_crlf_source():
@@ -176,7 +185,7 @@ def test_html_heading_offsets_address_the_original_non_ascii_crlf_source():
 
     rendered = contents.render_html_contents(html)
 
-    assert rendered == f"## Über\n{offset} {byte_offset}\n"
+    assert rendered == f"## Über\n{offset} {byte_offset} 3\n"
     assert html[offset:].startswith("<H2")
     assert html.encode()[byte_offset:].startswith(b"<H2")
 
@@ -187,13 +196,15 @@ def test_html_non_visible_content_does_not_enter_a_heading():
         "<style>style</style>C<template><b>template</b></template>D</h1>"
     )
 
-    assert contents.render_html_contents(html) == "# ABCD\n0 0\n"
+    assert contents.render_html_contents(html) == "# ABCD\n0 0 1\n"
 
 
 def test_html_parser_bounds_recovery_for_unclosed_and_nested_headings():
     html = "<h1>One<h2>Two</h3><h4></h4>"
 
-    assert contents.render_html_contents(html) == ("# One\n0 0\n\n## Two\n7 7\n\n####\n19 19\n")
+    assert contents.render_html_contents(html) == (
+        "# One\n0 0 1\n\n## Two\n7 7 1\n\n####\n19 19 1\n"
+    )
 
 
 def test_html_without_headings_has_an_empty_index():
@@ -206,7 +217,7 @@ def test_make_contents_writes_default_metadata_and_leaves_source_unchanged(store
 
     result = contents.make_contents(store, "/manual/")
 
-    expected = "# One\n0 0\n\n## Two\n13 13\n"
+    expected = "# One\n0 0 1\n\n## Two\n13 13 4\n"
     assert result == contents.ContentsResult(
         source_key="manual",
         metadata_key="manual/!contents",
@@ -227,7 +238,7 @@ def test_make_contents_writes_an_html_index_and_leaves_source_unchanged(store):
     result = contents.make_contents(store, "manual", strip_links=False)
 
     offset = html.index("<h1>")
-    expected = f"# One\n{offset} {offset}\n"
+    expected = f"# One\n{offset} {offset} 2\n"
     assert result == contents.ContentsResult(
         source_key="manual",
         metadata_key="manual/!contents",
@@ -248,7 +259,7 @@ def test_custom_metadata_is_regenerated_in_place(store):
     result = contents.make_contents(store, "manual", metadata_name="outline")
 
     assert result.metadata_key == "manual/!outline"
-    assert store.retrieve_document("manual/!outline").content == "# Current\n0 0\n"
+    assert store.retrieve_document("manual/!outline").content == "# Current\n0 0 1\n"
 
 
 @pytest.mark.parametrize("metadata_name", ["", "!contents", "nested/contents"])
@@ -278,7 +289,7 @@ def test_root_document_gets_root_metadata(store):
     result = contents.make_contents(store, "")
 
     assert result.metadata_key == "!contents"
-    assert store.retrieve_document("!contents").content == "# Store\n0 0\n"
+    assert store.retrieve_document("!contents").content == "# Store\n0 0 1\n"
 
 
 def test_make_contents_reads_past_the_normal_document_page(store):
@@ -289,7 +300,7 @@ def test_make_contents_reads_past_the_normal_document_page(store):
 
     assert result.headings == 2
     assert store.retrieve_document("large/!contents").content.endswith(
-        f"## Last\n{markdown.index('## Last')} {markdown.index('## Last')}\n"
+        f"## Last\n{markdown.index('## Last')} {markdown.index('## Last')} 3\n"
     )
 
 
@@ -301,7 +312,7 @@ def test_source_and_generated_metadata_route_through_a_mount(store, tmp_path):
         result = contents.make_contents(table, "ref/manual")
 
         assert result.metadata_key == "ref/manual/!contents"
-        assert mounted.retrieve_document("manual/!contents").content == "# Mounted\n0 0\n"
+        assert mounted.retrieve_document("manual/!contents").content == "# Mounted\n0 0 1\n"
         assert not store.exists("ref/manual/!contents")
 
 
@@ -313,7 +324,7 @@ def test_html_source_and_generated_metadata_route_through_a_mount(store, tmp_pat
         result = contents.make_contents(table, "ref/manual")
 
         assert result.metadata_key == "ref/manual/!contents"
-        assert mounted.retrieve_document("manual/!contents").content == "# Mounted HTML\n0 0\n"
+        assert mounted.retrieve_document("manual/!contents").content == "# Mounted HTML\n0 0 1\n"
         assert not store.exists("ref/manual/!contents")
 
 

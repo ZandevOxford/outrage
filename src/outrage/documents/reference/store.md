@@ -84,7 +84,7 @@ answer from the registry rather than a list retyped in each place that
 needs to name them. An alias is listed because it is accepted; what it
 means is `_ALIASES`'s to say.
 
-### outrage.store.check_read_position(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int), byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), occurrence: [int](https://docs.python.org/3/builtins/functions.html#int)) → [None](https://docs.python.org/3/builtins/constants.html#None)
+### outrage.store.check_read_position(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int), byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), line: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), lines: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), occurrence: [int](https://docs.python.org/3/builtins/functions.html#int)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Refuse a read that names its position twice, or names it impossibly.
 
@@ -388,7 +388,7 @@ concerned. Comparing this against a count of listed kinds will disagree.
 
 Characters held across everything strictly below this one.
 
-### *class* outrage.store.Excerpt(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str), offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), returned: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), next_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int), total_bytes: [int](https://docs.python.org/3/builtins/functions.html#int), next_byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None))
+### *class* outrage.store.Excerpt(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str), offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), returned: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), next_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int), total_bytes: [int](https://docs.python.org/3/builtins/functions.html#int), next_byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), line: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, next_line: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -405,7 +405,7 @@ Some or all of one document's content.
 #### offset *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Character offset within the document at which content starts, or None
-when the read was addressed in bytes. A caller gets the unit they asked
+when the read was addressed in bytes or lines. A caller gets the unit they asked
 in: converting back means decoding the prefix, which is the cost a byte
 offset exists to avoid, so it is reported unknown rather than paid for
 unasked. Both numbers for one position come from `!contents`, where they
@@ -418,7 +418,7 @@ Number of characters returned.
 #### total *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Total length of the document in characters, or None when the read was
-addressed in bytes and the backend would have to scan the whole document
+addressed in bytes or lines and the backend would have to scan the whole document
 to count them. `total_bytes` is the size such a read reports.
 
 #### next_offset *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
@@ -443,6 +443,17 @@ Total length of the document in UTF-8 bytes.
 Where to resume in bytes, or None if this excerpt reached the end.
 Always on a character boundary, so paging by it reassembles the document
 exactly.
+
+#### line *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+One-based line at which content starts for a line-addressed read, or
+None when the caller addressed the document in characters or bytes.
+
+#### next_line *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+One-based line at which a line-addressed read can resume, or None when
+it reached the end or stopped part way through a line. In the latter case
+`next_byte_offset` is the exact continuation.
 
 #### *property* truncated *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
@@ -768,7 +779,7 @@ How one search criterion compares its pattern with a stored value.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['contains', 'line', 'regex']
 
-### *class* outrage.store.MatchWitness(criterion: [int](https://docs.python.org/3/builtins/functions.html#int), source_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), source: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata'], start: [int](https://docs.python.org/3/builtins/functions.html#int), end: [int](https://docs.python.org/3/builtins/functions.html#int))
+### *class* outrage.store.MatchWitness(criterion: [int](https://docs.python.org/3/builtins/functions.html#int), source_key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), source: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['document', 'metadata'], start: [int](https://docs.python.org/3/builtins/functions.html#int), end: [int](https://docs.python.org/3/builtins/functions.html#int), line: [int](https://docs.python.org/3/builtins/functions.html#int) = 1)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -783,6 +794,10 @@ The first stored span satisfying one search criterion.
 #### start *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 #### end *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
+#### line *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
+One-based line containing `start`; only `\n` advances it.
 
 ### outrage.store.MetaReader
 
@@ -1319,18 +1334,20 @@ descendants -- gets one corner wrong: metadata sits *at* a key rather
 than below it, so a key holding only metadata has no document and no
 descendants and still appears in the listing.
 
-#### *abstractmethod* retrieve_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, length: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](#outrage.store.Excerpt)
+#### *abstractmethod* retrieve_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, line: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lines: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, length: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](#outrage.store.Excerpt)
 
 Read the content stored at `key`.
 
 `pattern` is a literal substring, not a regular expression; when
 given, the read starts at its `occurrence`-th appearance at or after
 the offset. The result is capped at `length` or `max_chars`,
-whichever is smaller, and carries a continuation offset.
+whichever is smaller, and carries a continuation in the unit used.
 
-`offset` counts characters and `byte_offset` counts UTF-8 bytes of
-the same document. Both are positions, so giving both is refused; a
-byte offset landing inside a character reads from that character's
+`offset` counts characters, `byte_offset` counts UTF-8 bytes and
+`line` counts lines from one. They are three positions in the same
+document, so giving more than one is refused. `lines` limits a
+line-addressed read to that many lines and is capped by `max_chars`.
+A byte offset landing inside a character reads from that character's
 first byte, and the excerpt says where it actually began.
 
 **Every backend accepts a byte offset and returns identical content
@@ -1704,7 +1721,7 @@ the pattern happens to name is not a store's contents.
 
 ### outrage.store.read_all(store: [Store](#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Excerpt](#outrage.store.Excerpt)
 
-Read a whole document, following `next_offset` until there is no more.
+Read a whole requested range, following its continuation until complete.
 
 A function beside the store rather than a method on it, deliberately.
 Whether the *library* should stop handing out silent partial documents is
@@ -1713,10 +1730,10 @@ only what the command line does, which is a narrower question with an
 obvious answer: a person redirecting a document to a file wants the
 document, and a slice is available by asking for one.
 
-Asked for the whole document, the result reports it with `next_offset` of
-`None`, so a caller cannot tell it apart from a document that fitted.
-That is the point. Asked for a `length`, the result stops there and
-carries a continuation offset, exactly as a single capped read does.
+Asked for the whole document, the result reports no continuation, so a
+caller cannot tell it apart from a document that fitted. That is the point.
+Asked for a `length` or line count, the result stops there and carries
+the appropriate continuation, exactly as a single capped read does.
 
 ### outrage.store.resolve_directory(explicit: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)
 

@@ -139,6 +139,9 @@ from .store import (
     _excerpt,
     _find_byte_occurrence,
     _find_occurrence,
+    _line_at_byte,
+    _line_byte_offset,
+    _line_excerpt,
     _logged,
     _scope,
     _with_descendants,
@@ -916,6 +919,8 @@ class FilesystemStore(FileStore):
         *,
         offset: int = 0,
         byte_offset: int | None = None,
+        line: int | None = None,
+        lines: int | None = None,
         length: int | None = None,
         pattern: str | None = None,
         occurrence: int = 0,
@@ -941,11 +946,17 @@ class FilesystemStore(FileStore):
             raise KeyNotFoundError("key-not-found", key=key)
 
         check_read_position(
-            key, offset=offset, byte_offset=byte_offset, pattern=pattern, occurrence=occurrence
+            key,
+            offset=offset,
+            byte_offset=byte_offset,
+            line=line,
+            lines=lines,
+            pattern=pattern,
+            occurrence=occurrence,
         )
         row = self._row(parsed.key, path, measure=False)
 
-        if byte_offset is not None:
+        if byte_offset is not None or line is not None:
             # The extension names the format where it names one at all. Where
             # it does not, the content is read for it -- the whole content,
             # since `_detect_format` asks whether the document parses as JSON
@@ -955,7 +966,17 @@ class FilesystemStore(FileStore):
             if declared is None:
                 declared = _detect_format(_text(path, parsed.key))
             return self._byte_read(
-                row, path, key, declared, byte_offset, pattern, occurrence, length, max_chars
+                row,
+                path,
+                key,
+                declared,
+                byte_offset,
+                line,
+                lines,
+                pattern,
+                occurrence,
+                length,
+                max_chars,
             )
 
         content = _text(path, parsed.key)
@@ -984,7 +1005,9 @@ class FilesystemStore(FileStore):
         path: Path,
         key: str,
         format: str | None,
-        byte_offset: int,
+        byte_offset: int | None,
+        line: int | None,
+        lines: int | None,
         pattern: str | None,
         occurrence: int,
         length: int | None,
@@ -1013,11 +1036,14 @@ class FilesystemStore(FileStore):
                     handle.seek(min(offset, total_bytes))
                     return handle.read(size)
 
-                start = byte_offset
+                start = (
+                    byte_offset
+                    if byte_offset is not None
+                    else _line_byte_offset(read, total_bytes, line)
+                )
+                actual_line = line
                 if pattern is not None:
-                    found = _find_byte_occurrence(
-                        read, total_bytes, pattern, occurrence, byte_offset
-                    )
+                    found = _find_byte_occurrence(read, total_bytes, pattern, occurrence, start)
                     if found is None:
                         raise PatternNotFoundError(
                             "pattern-not-found",
@@ -1026,8 +1052,25 @@ class FilesystemStore(FileStore):
                             occurrence=occurrence,
                             offset=0,
                             byte_offset=byte_offset,
+                            line=line,
                         )
+                    if line is not None:
+                        actual_line = _line_at_byte(read, start, line, found)
                     start = found
+
+                if line is not None:
+                    return _line_excerpt(
+                        row.key,
+                        format,
+                        row.updated_at,
+                        start,
+                        actual_line,
+                        lines,
+                        length,
+                        max_chars,
+                        read=read,
+                        total_bytes=total_bytes,
+                    )
 
                 return _byte_excerpt(
                     row.key,

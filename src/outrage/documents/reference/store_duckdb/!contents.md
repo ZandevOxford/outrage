@@ -1,95 +1,95 @@
 # outrage.store_duckdb
-0 0
+0 0 1
 
 ### outrage.store_duckdb.AUDIT_CHUNK *= 8192*
-5613 5613
+5613 5613 86
 
 ### outrage.store_duckdb.BATCH *= 64*
-5850 5850
+5850 5850 92
 
 ### outrage.store_duckdb.BATCH_CEILING *= 4096*
-6185 6185
+6185 6185 99
 
 ### outrage.store_duckdb.DEFAULT_STORE_DIR *= 'parts'*
-6301 6301
+6301 6301 103
 
 ### outrage.store_duckdb.MEMORY_LIMIT *= '1GB'*
-6570 6570
+6570 6570 109
 
 ### outrage.store_duckdb.PART_SUFFIX *= '.parquet'*
-7071 7071
+7071 7071 118
 
 ### *class* outrage.store_duckdb.DuckdbStore(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, log: EventLog | None = None, mount_point: str | None = None)
-7297 7297
+7297 7297 124
 
 #### default_filename *: ClassVar[str]* *= 'parts'*
-8311 8311
+8311 8311 130
 
 #### backend_name *: ClassVar[str]* *= 'duckdb'*
-8810 8810
+8810 8810 138
 
 #### format_version *: ClassVar[int]* *= 2*
-9180 9180
+9180 9180 144
 
 #### writable *: ClassVar[bool]* *= False*
-9795 9795
+9795 9795 152
 
 #### versioned *: ClassVar[bool]* *= False*
-10405 10405
+10405 10405 162
 
 #### reads_patterns *: ClassVar[bool]* *= True*
-10941 10941
+10941 10941 171
 
 #### close() → None
-11364 11364
+11364 11364 178
 
 #### store_document(key: str, content: str, format: str | None = None, \*, title: str | None = None, contents: str | None = None, encoding: str | None = None, updated_at: str | None = None) → str
-11953 11955
+11953 11955 190
 
 #### delete(key: str, recursive: bool = False, \*, key_range: KeyRange = UNBOUNDED, unchanged_since: str | None = None, dry_run: bool = False) → list[str]
-13230 13234
+13230 13234 199
 
 #### exists(key: str) → bool
-13938 13944
+13938 13944 203
 
 #### level_entry(key: str) → Entry | None
-14122 14130
+14122 14130 207
 
 #### descendant_count(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → int
-14577 14587
+14577 14587 215
 
 #### subtree_totals(key: str, \*, key_range: KeyRange = UNBOUNDED, chars: bool = False) → SubtreeTotals
-15291 15303
+15291 15303 225
 
 #### latest_change(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → str | None
-16070 16084
+16070 16084 236
 
-#### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
-16564 16580
+#### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, line: int | None = None, lines: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
+16564 16580 240
 
 #### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
-17642 17660
+17923 17941 249
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-19722 19742
+20003 20023 274
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0, coverage: bool = False) → MissingMeta
-21188 21210
+21469 21491 284
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-22270 22294
+22551 22575 293
 
 #### backup(destination: str | PathLike[str] | None = None, \*, overwrite: bool = False) → Backup
-23305 23331
+23586 23612 300
 
 #### *property* stored_format_version *: int*
-24363 24391
+24644 24672 314
 
 #### audit_rows() → Iterator[AuditRow]
-24541 24569
+24822 24850 318
 
 #### check_file(report: Report) → None
-24954 24984
+25235 25265 326
 
 #### repair() → list[Repaired]
-25503 25535
+25784 25816 336

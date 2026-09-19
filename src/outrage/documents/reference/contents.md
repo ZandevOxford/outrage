@@ -2,7 +2,7 @@
 
 Build a small offset index from the headings in a Markdown or HTML document.
 
-Each heading carries **two** numbers, character offset then byte offset. The
+Each heading carries character offset, byte offset, then a 1-based line number. The
 character offset is a fact about the document as a Python string; the byte
 offset is the same position in its UTF-8, which is what survives the document
 being written out to a file. So an index generated here can drive a seeking
@@ -46,10 +46,11 @@ Store an offset outline of one Markdown or HTML document as metadata.
 
 The source document is not changed. Markdown ATX and setext headings or
 HTML h1-h6 elements are copied to direct metadata named by
-`metadata_name`; all section bodies are replaced by the heading's two
-zero-based offsets, character then byte. HTML markup is flattened to plain
-visible text. Markdown inline link destinations are stripped by default
-while their text remains; `strip_links=False` keeps Markdown headings
+`metadata_name`; all section bodies are replaced by the heading's
+zero-based character and byte offsets and its one-based line number. HTML
+markup is flattened to plain visible text. Markdown inline link
+destinations are stripped by default while their text remains;
+`strip_links=False` keeps Markdown headings
 byte for byte. Regenerating the contents overwrites that metadata value.
 
 The byte number is what makes this more than a table of contents: paired
@@ -59,15 +60,15 @@ into children first.
 
 ### outrage.contents.render_contents(markdown: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, strip_links: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
-Render each Markdown heading followed by its two source offsets.
+Render each Markdown heading followed by its source positions.
 
 Heading spelling is kept literal apart from inline link destinations,
 which are removed by default while their text is kept. Pass
 `strip_links=False` to preserve the complete heading. Everything between
 headings is omitted, and the numbers beneath each heading are the
 zero-based offsets at which that heading begins in `markdown`: the
-character offset first, then the UTF-8 byte offset, separated by a space.
-Headings inside fenced code blocks are ignored.
+character offset first, then the UTF-8 byte offset, then the one-based line
+number, separated by spaces. Headings inside fenced code blocks are ignored.
 
 Bare numbers, John's call, so **the token count on the line is the only
 thing that tells the two formats apart** -- an index written before this
@@ -76,7 +77,7 @@ of adopting this rather than housekeeping to get to later.
 
 ### outrage.contents.render_html_contents(html: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
-Render each HTML h1-h6 element as a plain Markdown heading and two offsets.
+Render each HTML h1-h6 element as Markdown with its source positions.
 
 Nested markup and link targets are omitted while readable text, decoded
 character references and image alternative text remain. The zero-based

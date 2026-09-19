@@ -515,18 +515,20 @@ legitimately restamp are copying something that was already stamped.
 Every refusal above is `_validated()`'s, which an implementation
 calls before it writes anything.
 
-#### retrieve_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, length: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
+#### retrieve_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, line: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lines: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, length: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
 
 Read the content stored at `key`.
 
 `pattern` is a literal substring, not a regular expression; when
 given, the read starts at its `occurrence`-th appearance at or after
 the offset. The result is capped at `length` or `max_chars`,
-whichever is smaller, and carries a continuation offset.
+whichever is smaller, and carries a continuation in the unit used.
 
-`offset` counts characters and `byte_offset` counts UTF-8 bytes of
-the same document. Both are positions, so giving both is refused; a
-byte offset landing inside a character reads from that character's
+`offset` counts characters, `byte_offset` counts UTF-8 bytes and
+`line` counts lines from one. They are three positions in the same
+document, so giving more than one is refused. `lines` limits a
+line-addressed read to that many lines and is capped by `max_chars`.
+A byte offset landing inside a character reads from that character's
 first byte, and the excerpt says where it actually began.
 
 **Every backend accepts a byte offset and returns identical content

@@ -1,6 +1,6 @@
 """Build a small offset index from the headings in a Markdown or HTML document.
 
-Each heading carries **two** numbers, character offset then byte offset. The
+Each heading carries character offset, byte offset, then a 1-based line number. The
 character offset is a fact about the document as a Python string; the byte
 offset is the same position in its UTF-8, which is what survives the document
 being written out to a file. So an index generated here can drive a seeking
@@ -53,6 +53,7 @@ class _Heading:
     markdown: str
     offset: int
     byte_offset: int
+    line: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,9 +147,10 @@ def _headings(markdown: str) -> list[_Heading]:
     found: list[_Heading] = []
     fence_character: str | None = None
     fence_length = 0
-    paragraph: list[tuple[str, int, int]] = []
+    paragraph: list[tuple[str, int, int, int]] = []
     offset = 0
     byte_offset = 0
+    line_number = 1
 
     for line in markdown.splitlines(keepends=True):
         text = _without_ending(line)
@@ -164,6 +166,7 @@ def _headings(markdown: str) -> list[_Heading]:
             paragraph = []
             offset += len(line)
             byte_offset += line_bytes
+            line_number += line.count("\n")
             continue
 
         possible_fence = _FENCE.fullmatch(text)
@@ -177,23 +180,27 @@ def _headings(markdown: str) -> list[_Heading]:
                 paragraph = []
                 offset += len(line)
                 byte_offset += line_bytes
+                line_number += line.count("\n")
                 continue
 
         if _ATX.match(text) is not None:
-            found.append(_Heading(text, offset, byte_offset))
+            found.append(_Heading(text, offset, byte_offset, line_number))
             paragraph = []
         elif _SETEXT.fullmatch(text) is not None and paragraph:
-            _, heading_offset, heading_byte_offset = paragraph[0]
-            heading = "\n".join(line for line, _, _ in paragraph)
-            found.append(_Heading(f"{heading}\n{text}", heading_offset, heading_byte_offset))
+            _, heading_offset, heading_byte_offset, heading_line = paragraph[0]
+            heading = "\n".join(line for line, *_ in paragraph)
+            found.append(
+                _Heading(f"{heading}\n{text}", heading_offset, heading_byte_offset, heading_line)
+            )
             paragraph = []
         elif text and not text.startswith(("    ", "\t")):
-            paragraph.append((text, offset, byte_offset))
+            paragraph.append((text, offset, byte_offset, line_number))
         else:
             paragraph = []
 
         offset += len(line)
         byte_offset += line_bytes
+        line_number += line.count("\n")
 
     return found
 
@@ -218,7 +225,7 @@ def _html_headings(html: str) -> list[_Heading]:
         byte_offset += len(between) if between.isascii() else len(between.encode())
         marker = "#" * heading.level
         markdown = f"{marker} {heading.text}" if heading.text else marker
-        found.append(_Heading(markdown, offset, byte_offset))
+        found.append(_Heading(markdown, offset, byte_offset, heading.line))
         previous_offset = offset
     return found
 
@@ -292,15 +299,15 @@ def _without_inline_link_targets(markdown: str) -> str:
 
 
 def render_contents(markdown: str, *, strip_links: bool = True) -> str:
-    """Render each Markdown heading followed by its two source offsets.
+    """Render each Markdown heading followed by its source positions.
 
     Heading spelling is kept literal apart from inline link destinations,
     which are removed by default while their text is kept. Pass
     ``strip_links=False`` to preserve the complete heading. Everything between
     headings is omitted, and the numbers beneath each heading are the
     zero-based offsets at which that heading begins in ``markdown``: the
-    character offset first, then the UTF-8 byte offset, separated by a space.
-    Headings inside fenced code blocks are ignored.
+    character offset first, then the UTF-8 byte offset, then the one-based line
+    number, separated by spaces. Headings inside fenced code blocks are ignored.
 
     Bare numbers, John's call, so **the token count on the line is the only
     thing that tells the two formats apart** -- an index written before this
@@ -313,7 +320,7 @@ def render_contents(markdown: str, *, strip_links: bool = True) -> str:
 
 
 def render_html_contents(html: str) -> str:
-    """Render each HTML h1-h6 element as a plain Markdown heading and two offsets.
+    """Render each HTML h1-h6 element as Markdown with its source positions.
 
     Nested markup and link targets are omitted while readable text, decoded
     character references and image alternative text remain. The zero-based
@@ -332,7 +339,7 @@ def _render(headings: list[_Heading], *, strip_links: bool = True) -> str:
     return (
         "\n\n".join(
             f"{_without_inline_link_targets(heading.markdown) if strip_links else heading.markdown}"
-            f"\n{heading.offset} {heading.byte_offset}"
+            f"\n{heading.offset} {heading.byte_offset} {heading.line}"
             for heading in headings
         )
         + "\n"
@@ -389,10 +396,11 @@ def make_contents(
 
     The source document is not changed. Markdown ATX and setext headings or
     HTML h1-h6 elements are copied to direct metadata named by
-    ``metadata_name``; all section bodies are replaced by the heading's two
-    zero-based offsets, character then byte. HTML markup is flattened to plain
-    visible text. Markdown inline link destinations are stripped by default
-    while their text remains; ``strip_links=False`` keeps Markdown headings
+    ``metadata_name``; all section bodies are replaced by the heading's
+    zero-based character and byte offsets and its one-based line number. HTML
+    markup is flattened to plain visible text. Markdown inline link
+    destinations are stripped by default while their text remains;
+    ``strip_links=False`` keeps Markdown headings
     byte for byte. Regenerating the contents overwrites that metadata value.
 
     The byte number is what makes this more than a table of contents: paired

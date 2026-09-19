@@ -785,6 +785,11 @@ that encoding, which is what makes an offset the store hands out valid against
 an exported file, and an offset landing inside a character reads from that
 character's first byte rather than splitting it.
 
+A line number is one plus the count of `\n` before a position. It is 1-based,
+and no other Unicode line separator advances it. That makes a line the store
+reports agree with `grep -n`, `sed`, git and an exported file; CRLF therefore
+counts as one line ending and a lone `\r` counts as none.
+
 **Text should typically be in NFC, but nothing normalises and nothing
 validates the form.** Two spellings of the same text are two different
 strings, and for keys two different keys. This is the same call made for the

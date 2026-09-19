@@ -186,6 +186,8 @@ def test_shuffled_parts_answer_every_read_as_sqlite_does(sqlite, duck):
         answers_alike(sqlite, duck, lambda s, k=key: s.latest_change(k))
         answers_alike(sqlite, duck, lambda s, k=key: s.latest_change(k, whole_subtree=True))
         answers_alike(sqlite, duck, lambda s, k=key: s.retrieve_document(k))
+        answers_alike(sqlite, duck, lambda s, k=key: s.retrieve_document(k, line=1))
+        answers_alike(sqlite, duck, lambda s, k=key: s.retrieve_document(k, line=1, lines=1))
         for at in _BYTE_OFFSETS:
             answers_alike(
                 sqlite, duck, lambda s, k=key, b=at: s.retrieve_document(k, byte_offset=b)

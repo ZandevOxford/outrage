@@ -1221,6 +1221,108 @@ def test_read_all_follows_the_unit_it_was_asked_in(store, wide):
     assert not whole.truncated
 
 
+# -- reading by line -----------------------------------------------------
+
+
+def test_a_line_read_counts_only_newlines(store):
+    content = "one\r\nTwo\fstill\u2028here\n三\nfour\n"
+    store.store_document("lines", content)
+
+    second = store.retrieve_document("lines", line=2)
+    third = store.retrieve_document("lines", line=3)
+
+    assert second.content == "Two\fstill\u2028here\n三\nfour\n"
+    assert second.line == 2
+    assert second.byte_offset == len(b"one\r\n")
+    assert second.offset is None
+    assert third.content == "三\nfour\n"
+    assert third.byte_offset == len("one\r\nTwo\fstill\u2028here\n".encode())
+
+
+def test_a_line_count_limits_the_read(store):
+    store.store_document("lines", "one\ntwo\nthree\nfour\n")
+
+    excerpt = store.retrieve_document("lines", line=2, lines=2)
+
+    assert excerpt.content == "two\nthree\n"
+    assert excerpt.next_line == 4
+    assert excerpt.next_byte_offset == len("one\ntwo\nthree\n")
+    assert excerpt.truncated
+
+
+def test_read_all_honours_a_line_count_across_pages(store):
+    store.store_document("lines", "first line is long\nsecond\nthird\nfourth\n")
+
+    excerpt = store_module.read_all(store, "lines", line=1, lines=3, max_chars=5)
+
+    assert excerpt.content == "first line is long\nsecond\nthird\n"
+    assert excerpt.next_line == 4
+    assert excerpt.next_byte_offset == len("first line is long\nsecond\nthird\n")
+
+
+def test_a_line_read_caps_at_a_complete_line(store):
+    store.store_document("lines", "one\nsecond\nthird\n")
+
+    excerpt = store.retrieve_document("lines", line=1, max_chars=9)
+
+    assert excerpt.content == "one\n"
+    assert excerpt.next_line == 2
+    assert excerpt.next_byte_offset == len("one\n")
+
+
+def test_a_first_line_longer_than_the_cap_can_be_split(store):
+    store.store_document("lines", "abcdefghij\nnext\n")
+
+    excerpt = store.retrieve_document("lines", line=1, max_chars=4)
+
+    assert excerpt.content == "abcd"
+    assert excerpt.next_line is None
+    assert excerpt.next_byte_offset == 4
+    assert excerpt.truncated
+
+
+def test_a_line_past_the_end_returns_nothing(store):
+    store.store_document("lines", "one\ntwo")
+
+    excerpt = store.retrieve_document("lines", line=99)
+
+    assert excerpt.content == ""
+    assert excerpt.line == 99
+    assert excerpt.byte_offset == len("one\ntwo")
+    assert not excerpt.truncated
+
+
+def test_a_pattern_searches_from_the_starting_line(store):
+    store.store_document("lines", "XX one\nnot this\nXX three\n")
+
+    excerpt = store.retrieve_document("lines", line=2, pattern="XX")
+
+    assert excerpt.content == "XX three\n"
+    assert excerpt.line == 3
+
+
+def test_a_pattern_a_line_read_cannot_find_says_which_line_it_started_at(store):
+    store.store_document("lines", "one\ntwo\nthree\n")
+
+    with raises_rendered(PatternNotFoundError, "'lines' at or after line 2"):
+        store.retrieve_document("lines", line=2, pattern="absent")
+
+
+def test_a_line_cannot_be_combined_with_another_position(store):
+    store.store_document("lines", "one\ntwo\n")
+
+    with pytest.raises(InvalidArgumentError):
+        store.retrieve_document("lines", offset=1, line=2)
+    with pytest.raises(InvalidArgumentError):
+        store.retrieve_document("lines", byte_offset=1, line=2)
+    with pytest.raises(InvalidArgumentError):
+        store.retrieve_document("lines", lines=2)
+    with pytest.raises(ValueError, match="line"):
+        store.retrieve_document("lines", line=0)
+    with pytest.raises(ValueError, match="lines"):
+        store.retrieve_document("lines", line=1, lines=0)
+
+
 # -- listing -------------------------------------------------------------
 
 
@@ -1589,7 +1691,10 @@ def test_find_documents_supports_whole_lines_and_python_regex(store):
     )
 
     witnesses = page.matches[0].witnesses
-    assert [(w.criterion, w.start, w.end) for w in witnesses] == [(0, 9, 15), (1, 16, 17)]
+    assert [(w.criterion, w.start, w.end, w.line) for w in witnesses] == [
+        (0, 9, 15, 2),
+        (1, 16, 17, 3),
+    ]
 
 
 def test_a_whole_line_criterion_matches_in_a_crlf_document(store):
@@ -1614,7 +1719,7 @@ def test_a_whole_line_criterion_matches_in_a_crlf_document(store):
     )
 
     witness = lines.matches[0].witnesses[0]
-    assert (witness.start, witness.end) == (9, 13)
+    assert (witness.start, witness.end, witness.line) == (9, 13, 3)
     assert anchored.matches == ()
 
 
@@ -1632,7 +1737,7 @@ def test_find_documents_groups_direct_metadata_evidence_onto_its_document(store)
     (match,) = page.matches
     assert match.document.key == "notes/1"
     assert match.witnesses == (
-        store_module.MatchWitness(0, "notes/1/!keywords", "metadata", 5, 11),
+        store_module.MatchWitness(0, "notes/1/!keywords", "metadata", 5, 11, 2),
     )
 
 
