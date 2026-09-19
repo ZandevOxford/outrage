@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 1.1.0 - 2026-09-19
 
 The default project readme now gives clearer guidance on recording settled
 decisions promptly, avoiding volatile state in links, and allowing long
