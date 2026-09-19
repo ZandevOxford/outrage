@@ -1,8 +1,7 @@
 # Outrage project structure
 
-This store keeps decisions, findings and task state that would otherwise be
-lost between sessions. Do not duplicate in bulk what the files or git history
-already say; do record what was done and why.
+This store is a durable memory for decisions, findings and task state
+across sessions.
 
 Documents in `outrage/` are the documentation for Outrage itself.
 You can read `outrage/workflow` for more advice on using the store,
@@ -18,22 +17,30 @@ documents cannot appear in a title survey.
 Give every document a title. Add a `!summary` when the title alone cannot say
 enough to decide whether the document is worth reading.
 
-Store durable knowledge as the work goes on, once it is settled, rather than
-saving it all for the end. Keep current documents current instead of appending
-stale snapshots. Before a session ends, is handed over or may be compacted,
-record anything still held only in the conversation, update the thread's
-state, and check that new documents have titles.
+When linking to other documents, avoid recording the state of the target,
+as this can easily get out of date.
 
-Keep one facet per document and about 8k characters or less, so it can be read
-in one `read_document` call. Add a numbered subdocument for further detail
-instead of making one document answer several questions.
+Store durable knowledge especially user decisions immediately as they are
+settled to avoid losing information if the session is interrupted.
+If you do know a session is about to end or be compacted, make sure you
+have recorded anything only held in the conversation; update the current
+context and check new documents have metadata.
+
+Usually keep to one facet per document and about 8k characters or less, so it
+can be read in one `read_document` call. Add a numbered subdocument for
+further detail instead of making one document answer several questions.
+However, particularly for reference documents, they can be longer if that
+makes sense as long as they have `!contents` metadata.
 
 Documents that are read often, particularly status and routing documents,
 should be as terse as possible.
 
-**A document is not finished until there is a route to it**. The conventions
-live in `readme`; the subject matter lives in `contents`. The routing may be
-via `contents`, but for some documents the `readme` conventions may be enough.
+Do not duplicate in bulk what the files or git history already say, but
+record what was done and why.
+
+**A document is not finished until there is a route to it**, though the
+conventions may be enough, for example for issues. The conventions
+live in `readme`; subject matter is linked from `contents`.
 
 ## Where to store information
 

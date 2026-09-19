@@ -53,7 +53,8 @@ describe change.
 ## One document, one facet
 
 A document should normally fit in one `read_document` call (8k characters) but
-scope matters more than the exact length.
+scope matters more than the exact length. Particularly for reference documents
+longer documents are fine as long as they have `!contents`.
 
 If one document answers several questions, you can split those questions into
 subdocuments and leave the parent as a short route to them. A key can hold a

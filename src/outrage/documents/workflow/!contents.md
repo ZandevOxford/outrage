@@ -14,10 +14,10 @@
 2262 2262
 
 ## Editing files
-2675 2675
+2772 2772
 
 ## Deleting documents
-4282 4282
+4379 4379
 
 ## Before handoff or compaction
-5460 5460
+5557 5557

@@ -2,6 +2,12 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+The default project readme now gives clearer guidance on recording settled
+decisions promptly, avoiding volatile state in links, and allowing long
+reference documents when a contents index keeps them navigable.
+
 ## 1.0.0 - 2026-09-17
 
 1.0 release contains most of the initial intended functionality, and is
