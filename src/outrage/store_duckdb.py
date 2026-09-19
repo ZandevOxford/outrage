@@ -888,53 +888,16 @@ class DuckdbStore(FileStore):
         The same three independent conditions -- inside ``subtree``, carrying
         the metadata asked for, inside ``key_range`` -- from the same
         functions, because what they compile to is dialect-neutral SQL and two
-        spellings of one selection are two chances to disagree. The one part
-        that is not shared is a read scoped *inside* a metadata namespace: see
-        :meth:`_scoped_inside`.
+        spellings of one selection are two chances to disagree.
         """
         where, params = _subtree_clauses(subtree)
-        scope = keys.parse(_scope(subtree.key))
-        if scope.is_metadata:
-            clauses, bounds = self._scoped_inside(scope, meta_name)
-        else:
-            clauses, bounds = _meta_clauses(scope, meta_name)
+        clauses, bounds = _meta_clauses(keys.parse(_scope(subtree.key)), meta_name)
         where += clauses
         params += bounds
         clauses, bounds = _range_clauses(key_range)
         where += clauses
         params += bounds
         return " AND ".join(where) if where else "true", params
-
-    def _scoped_inside(
-        self, scope: keys.Key, meta_name: str | Sequence[str] | None
-    ) -> tuple[list[str], list[object]]:
-        """The metadata test for a read scoped inside a metadata namespace, as keys.
-
-        From inside ``a/!changelog`` the stored ``meta_name`` is a segment above
-        the question, so the split has to be read relative to the scope --
-        :func:`outrage.keys.relative`, which is the only definition of it. The
-        SQLite backend calls that per row from SQL. duckdb can too, but a
-        Python function in duckdb needs numpy, which is a large thing to ask an
-        install to carry for one rare read; so the namespace's keys are read
-        out, tested here, and the ones that pass handed back as a list.
-
-        That costs a read of the namespace, which is what the per-row call
-        costs anyway, and a namespace is what is being read.
-        """
-        wanted = None if meta_name is None else _names(meta_name)
-        below, bounds = _below("key", scope.key)
-        candidates = self._all(
-            f"SELECT DISTINCT key FROM parts WHERE key = ? OR {below}", [scope.key, *bounds]
-        )
-        chosen = []
-        for (candidate,) in candidates:
-            seen = keys.relative(candidate, scope.key)
-            if wanted is None:
-                if seen.meta_name is None:
-                    chosen.append(candidate)
-            elif seen.meta_name in wanted and seen.meta_path is None:
-                chosen.append(candidate)
-        return ["key IN (SELECT unnest(?::VARCHAR[]))"], [chosen]
 
     def _missing(
         self, subtree: BoundedSubtree, key_range: KeyRange, names: list[str]

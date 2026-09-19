@@ -57,7 +57,8 @@ from outrage.store_sqlite import SqliteStore
 pytest.importorskip("duckdb", reason="reading a parquet store needs the parquet extra")
 pytest.importorskip("pyarrow", reason="building a part needs the parquet extra")
 
-import pyarrow as pa  # noqa: E402 - only once the skip above has had its say
+import duckdb  # noqa: E402 - only once the skip above has had its say
+import pyarrow as pa  # noqa: E402
 import pyarrow.parquet as pq  # noqa: E402
 from test_store_pyarrow import (  # noqa: E402
     _BYTE_OFFSETS,
@@ -67,6 +68,10 @@ from test_store_pyarrow import (  # noqa: E402
     _SUBTREES,
     CORPUS,
     _descendants,
+)
+from test_store_sqlite import (  # noqa: E402
+    SPLIT_META_NAMES,
+    assert_the_split_agrees_with_keys_relative,
 )
 
 from outrage.store_duckdb import DuckdbStore  # noqa: E402
@@ -321,6 +326,12 @@ def test_one_sorted_file_and_shuffled_parts_are_the_same_store(tmp_path, sqlite,
             answers_alike(arrow, duck, lambda s, k=key: walk_level(s, k))
         for subtree in _SUBTREES:
             answers_alike(arrow, duck, lambda s, t=subtree: walk_documents(s, t, UNBOUNDED, None))
+
+
+@pytest.mark.parametrize("meta_name", SPLIT_META_NAMES)
+def test_the_sql_metadata_split_agrees_with_keys_relative(meta_name):
+    """The expression SQLite uses, in duckdb's dialect, held to the same oracle."""
+    assert_the_split_agrees_with_keys_relative(duckdb.connect(), meta_name)
 
 
 # -- a key held in more than one part --------------------------------------

@@ -16,6 +16,7 @@ existed -- and then opens it through :class:`~outrage.store_sqlite.SqliteStore`
 and asks what came out.
 """
 
+import itertools
 import sqlite3
 import threading
 from pathlib import Path
@@ -560,6 +561,65 @@ def test_the_connection_is_the_backend_s_own(store):
     """
     assert isinstance(store.connection, sqlite3.Connection)
     assert not hasattr(store_module.Store, "connection")
+
+
+# -- the metadata split, as SQL ------------------------------------------
+
+# A segment of each kind the split has to tell apart: plain, numeric, a
+# metadata segment under two names, and a `!` that does not start a segment.
+_SPLIT_SEGMENTS = ("a", "10", "!m", "!n", "a!m")
+
+
+def _generated_keys(depth=4):
+    return [
+        keys.DELIMITER.join(segments)
+        for length in range(1, depth + 1)
+        for segments in itertools.product(_SPLIT_SEGMENTS, repeat=length)
+    ]
+
+
+#: Names to survey for: none (documents), one, several, and ``m/a``, which no
+#: key carries -- the tail ``/!m/a`` spells it, and is a path below ``m``
+#: rather than a value.
+SPLIT_META_NAMES = [None, "m", ["n", "m"], "m/a"]
+
+
+def assert_the_split_agrees_with_keys_relative(conn, meta_name):
+    """``_meta_clauses`` inside a metadata namespace, against its definition.
+
+    Every generated key is asked from every metadata scope above it, on
+    ``conn``: a bare connection holding one table ``t`` with a ``key`` column,
+    which this fills. Shared, so each SQL backend holds the one expression to
+    :func:`outrage.keys.relative` in its own dialect.
+    """
+    generated = _generated_keys()
+    conn.execute("CREATE TABLE t (key TEXT)")
+    conn.executemany("INSERT INTO t VALUES (?)", [(key,) for key in generated])
+    wanted = [meta_name] if isinstance(meta_name, str) else meta_name
+
+    scopes = [key for key in generated if keys.parse(key).is_metadata]
+    for scope in scopes:
+        below = {key for key in generated if keys.strip_prefix(scope, key) is not None}
+        clauses, params = sqlite_module._meta_clauses(keys.parse(scope), meta_name)
+        rows = conn.execute(f"SELECT key FROM t WHERE {' AND '.join(clauses)}", params)
+        chosen = {key for (key,) in rows.fetchall()} & below
+
+        expected = set()
+        for key in below:
+            seen = keys.relative(key, scope)
+            if wanted is None:
+                if seen.meta_name is None:
+                    expected.add(key)
+            elif seen.meta_name in wanted and seen.meta_path is None:
+                expected.add(key)
+        assert chosen == expected, scope
+
+
+@pytest.mark.parametrize("meta_name", SPLIT_META_NAMES)
+def test_the_sql_metadata_split_agrees_with_keys_relative(meta_name):
+    """On a connection with nothing registered, which is also the proof that
+    the expression needs nothing but SQL."""
+    assert_the_split_agrees_with_keys_relative(sqlite3.connect(":memory:"), meta_name)
 
 
 # -- the length cache ----------------------------------------------------

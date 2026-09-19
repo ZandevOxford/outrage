@@ -388,12 +388,6 @@ class SqliteStore(FileStore):
         # to order or bound them needs the same padding SQLite cannot express.
         # Registered per connection, because that is the scope SQLite gives it.
         conn.create_function("sort_form", 1, keys.sort_form, deterministic=True)
-        # The metadata split as seen from the key a read was scoped at, which
-        # is not the stored one when that scope is itself inside a metadata
-        # namespace. Only those reads use these: an ordinary scope sees the
-        # same split the columns already hold, and keeps its index.
-        conn.create_function("rel_meta_name", 2, _rel_meta_name, deterministic=True)
-        conn.create_function("rel_meta_path", 2, _rel_meta_path, deterministic=True)
         return conn
 
     @property
@@ -2109,22 +2103,6 @@ def _subtree_clauses(subtree: BoundedSubtree) -> tuple[list[str], list[object]]:
     return clauses, params
 
 
-def _rel_meta_name(key: str, scope: str) -> str | None:
-    """``key``'s metadata name as seen from ``scope``, for SQL to call per row.
-
-    Registered on the connection rather than written out as an expression:
-    what the split *is* belongs to ``keys``, and a second spelling of it in SQL
-    is a second definition to keep right. Only a read scoped inside a metadata
-    namespace reaches these, so the per row call is not on the common path.
-    """
-    return keys.relative(key, scope).meta_name
-
-
-def _rel_meta_path(key: str, scope: str) -> str | None:
-    """``key``'s metadata path as seen from ``scope``. See :func:`_rel_meta_name`."""
-    return keys.relative(key, scope).meta_path
-
-
 def _row_values(
     parsed: keys.Key, content: str, format: str | None, updated_at: str
 ) -> tuple[object, ...]:
@@ -2148,7 +2126,7 @@ def _row_values(
 
 
 def _meta_clauses(
-    scope: keys.Key, meta_name: str | Sequence[str] | None
+    scope: keys.Key, meta_name: str | Sequence[str] | None, *, find: str = "instr"
 ) -> tuple[list[str], list[object]]:
     """ "Is this a document" and "is this the value of a name", at ``scope``.
 
@@ -2165,6 +2143,13 @@ def _meta_clauses(
     a survey descends into a metadata namespace only when scoped inside one is
     implemented** -- from ``a``, ``a/!changelog/22`` carries a name and a path
     and so is neither a document nor a value.
+
+    The relative split is plain string arithmetic in SQL rather than a
+    registered Python function, so that every SQL backend can run the one
+    definition. ``find`` names the dialect's substring search -- ``instr`` here,
+    ``strpos`` in PostgreSQL -- which is the one thing that differs between them.
+    :func:`outrage.keys.relative` is still what the split *is*, and the tests
+    hold this expression to it.
     """
     names: list[str] | None = None
     if meta_name is not None:
@@ -2180,12 +2165,21 @@ def _meta_clauses(
             "meta_path IS NULL",
         ], list(names)
 
+    # What follows the scope, delimiter first: "/22/!title" for
+    # a/!changelog/22/!title from a/!changelog, and "" for the scope itself.
+    # Only keys at or below the scope are asked, which the subtree clause
+    # beside this one guarantees, so the scope's length is enough to cut it.
+    tail, start = "substr(key, ?)", len(scope.key) + 1
+    first = f"{find}({tail}, '{keys.DELIMITER}{keys.META_PREFIX}')"
     if names is None:
-        return ["rel_meta_name(key, ?) IS NULL"], [scope.key]
+        return [f"{first} = 0"], [start]
+    # From the first metadata segment of the tail onwards, without its "!":
+    # the name, then its path if there is one. Null for a document.
+    meta = f"CASE WHEN {first} > 0 THEN substr({tail}, {first} + 2) END"
     return [
-        f"rel_meta_name(key, ?) IN ({', '.join('?' * len(names))})",
-        "rel_meta_path(key, ?) IS NULL",
-    ], [scope.key, *names, scope.key]
+        f"{meta} IN ({', '.join('?' * len(names))})",
+        f"{find}({meta}, '{keys.DELIMITER}') = 0",
+    ], [start, start, start, *names, start, start, start]
 
 
 def _stored(row: sqlite3.Row) -> tuple[str, str, str | None, str]:
