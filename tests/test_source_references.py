@@ -30,6 +30,14 @@ test's coverage depend on whether the checkout had been initialised -- and a
 guard that checks more on one machine than another is the failure mode this
 repository keeps paying for.
 
+**``.outrage/`` is exempt for the second of those reasons**, added 2026-09-20.
+It is the store directory: gitignored, per machine, and holding whatever a
+past session happened to leave in ``archive/`` -- so a sweep over it checks a
+different set of files on every checkout. It is also the one place where a
+store key in a comment is *right*: a kept one-off script lives there because
+it is not the repository, and ``workflow`` says the store document that
+commissioned it gets the route.
+
 This is only the searchable part of the rule. A key written without its
 namespace root slips past it, and so does a comment narrating a change rather
 than saying why the code is shaped the way it is. ``context/`` is also the key
@@ -53,6 +61,7 @@ EXEMPT = frozenset(
         "tests",
         ".claude",
         ".codex",
+        ".outrage",
         "__pycache__",
         ".venv",
         ".git",
@@ -101,4 +110,4 @@ def test_the_sweep_reaches_every_tree_that_holds_source():
 
     # The exemptions, which are as much of the contract as the walk is.
     assert not [path for path in swept_paths if "tests" in path.parts]
-    assert not [path for path in swept_paths if path.parts[0] in {".claude", ".codex"}]
+    assert not [path for path in swept_paths if path.parts[0] in {".claude", ".codex", ".outrage"}]

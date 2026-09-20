@@ -41,10 +41,17 @@ Issues = "https://github.com/ZandevOxford/outrage/issues"
 parquet = ["pyarrow>=18", "duckdb>=1.5"]
 # Converting other document formats for `outrage ingest`.
 documents = ["markitdown[docx,pdf,pptx,xlsx]>=0.1.7,<0.2"]
+# A store kept in PostgreSQL, so that one store can be shared across devices.
+# `psycopg[binary]` rather than `psycopg`, which is pure Python and finds libpq
+# at runtime: an install that has to locate a system libpq is the one thing a
+# user installing an extra cannot be asked to debug, and the binary wheel
+# carries its own. Somebody who would rather link against their own libpq
+# installs `psycopg` and gets the same module.
+postgres = ["psycopg[binary]>=3.2"]
 # What the README recommends: every extra a user might want, named rather than
 # repeated so each requirement is written once. Not `dev` or `docs`, which are
 # for working on outrage itself; tests/test_packaging.py fails if one is missing.
-all = ["outrage[parquet,documents]"]
+all = ["outrage[documents,parquet,postgres]"]
 # build and hatchling let the suite build the sdist and the wheel and check what
 # they contain, which it otherwise skips: a build can drop a file silently, as
 # 0.1.0 did. twine is for releases, which run `twine check` before uploading.
@@ -53,6 +60,12 @@ dev = [
     "hatchling",
     "omnidep>=0.4",
     "pytest>=8",
+    # A temporary PostgreSQL cluster for the Postgres tests, on a machine that
+    # has the server binaries but no server set up. It is not how the tests
+    # find a server when one is already running: that is a DSN in
+    # OUTRAGE_TEST_POSTGRES, which is also the only way to reach a *remote*
+    # one, and localhost hides both round-trip cost and certificate checking.
+    "pytest-postgresql>=6",
     "PyYAML>=6",
     "ruff>=0.6",
     "twine>=5",
@@ -93,10 +106,15 @@ packages = ["src/outrage"]
 # omnidep 0.4 does not read PEP 621 optional dependencies, so it would report
 # the optional imports despite the extras above. One entry per optional import,
 # so adding one without listing it here fails the check.
-ignore-imports = ["pyarrow", "duckdb", "markitdown"]
+ignore-imports = ["pyarrow", "duckdb", "markitdown", "psycopg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Every test needing a PostgreSQL server carries this, so that `-m "not
+# postgres"` is a whole suite run on a machine without one. Registered here
+# rather than left to a warning, because a marker nobody declared is a marker
+# a typo silently turns into no marker at all.
+markers = ["postgres: needs a PostgreSQL server"]
 
 [tool.ruff]
 line-length = 100
