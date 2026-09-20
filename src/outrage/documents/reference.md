@@ -40,6 +40,12 @@ arrives in pieces; it refuses writes too. [`outrage.store_files`](reference/stor
 directory of files, one per key, which is what an export target and a working
 copy are -- the shape a person edits by hand.
 
+[`outrage.pgservice`](reference/pgservice.md#module-outrage.pgservice) is a backend's connection details rather than a
+backend: the libpq service file a PostgreSQL store is named by, read and
+validated without the driver and before any socket is opened, so that a
+misspelled parameter or a certificate that is not there is a refusal about a
+file rather than a connection failure later on.
+
 Which storage a store *file* is kept in follows from its extension --
 `outrage.store._backend_for()` -- and a directory has no extension to read,
 so a tree or a directory of parts is named with `type=` rather than
@@ -73,6 +79,7 @@ ordinary mount files are relative to `--dir`.
 * [outrage.store_pyarrow](reference/store_pyarrow.md)
 * [outrage.store_duckdb](reference/store_duckdb.md)
 * [outrage.store_files](reference/store_files.md)
+* [outrage.pgservice](reference/pgservice.md)
 * [outrage.mounts](reference/mounts.md)
 * [outrage.remount](reference/remount.md)
 * [outrage.mountfile](reference/mountfile.md)

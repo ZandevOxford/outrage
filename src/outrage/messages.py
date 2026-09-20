@@ -1922,6 +1922,77 @@ def _pyarrow_build_wildcard(name: Namer, /, *, key: str, **_: Any) -> str:
     )
 
 
+@template("service-file-missing")
+def _service_file_missing(name: Namer, /, *, path: str, **_: Any) -> str:
+    return (
+        f"there is no PostgreSQL service file at {path}. A mount naming one is "
+        f"saying which file to read, so no other is looked in; write the entry "
+        f"there, or name no file and let libpq's own lookup find it."
+    )
+
+
+@template("service-file-unreadable")
+def _service_file_unreadable(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
+    return f"the PostgreSQL service file at {path} could not be read: {reason}"
+
+
+@template("service-file-malformed")
+def _service_file_malformed(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
+    # configparser says where it gave up over three lines, quoting the line it
+    # choked on, which is useful and is not a sentence. Squashed, and put last,
+    # so the advice is not interrupted by it.
+    said = " ".join(str(reason).split())
+    return (
+        f"the PostgreSQL service file at {path} is not a service file. It is "
+        f"INI: a [service] header, then one name=value to a line, with "
+        f"# starting a comment. {said}"
+    )
+
+
+@template("service-not-found")
+def _service_not_found(name: Namer, /, *, service: str, searched: Any, **_: Any) -> str:
+    listed = ", ".join(str(one) for one in searched)
+    return (
+        f"no PostgreSQL service named {service!r} is defined in {listed}. A "
+        f"service is a [{service}] section of a service file listing the "
+        f"connection parameters; add one, or name another with `service=` on "
+        f"the mount."
+    )
+
+
+@template("service-entry-nested")
+def _service_entry_nested(name: Namer, /, *, service: str, path: str, **_: Any) -> str:
+    return (
+        f"the service {service!r} in {path} sets `service` itself, and one "
+        f"service cannot stand for another: libpq refuses a nested service "
+        f"specification and so does outrage. Write the parameters in the entry."
+    )
+
+
+@template("service-parameter-unknown")
+def _service_parameter_unknown(
+    name: Namer, /, *, service: str, path: str, parameter: str, **_: Any
+) -> str:
+    return (
+        f"the service {service!r} in {path} sets {parameter!r}, which libpq has "
+        f"no connection parameter by that name for. A misspelling is otherwise "
+        f"a setting that silently never applies, and for `sslmode` that means "
+        f"connecting without the protection the file asked for."
+    )
+
+
+@template("service-parameter-missing-file")
+def _service_parameter_missing_file(
+    name: Namer, /, *, service: str, path: str, parameter: str, file: str, **_: Any
+) -> str:
+    return (
+        f"the service {service!r} in {path} sets {parameter}={file}, and there "
+        f"is nothing there. A relative path in a service file is resolved "
+        f"against the file itself, not the working directory, which a server "
+        f"started by a client cannot rely on knowing."
+    )
+
+
 # -- the command line ------------------------------------------------------
 
 
