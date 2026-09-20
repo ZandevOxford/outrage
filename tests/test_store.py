@@ -3541,6 +3541,28 @@ def test_a_store_named_no_file_takes_its_own_backend_s_default(tmp_path):
     assert store_module.default_store_file() == SqliteStore.default_filename
 
 
+def test_a_default_file_name_is_not_a_backend_that_finds_its_own_store():
+    """The distinction a mount spec's empty FILE rests on.
+
+    :attr:`~outrage.store.FileStore.default_filename` is a *name to use* in
+    the store directory, which is not the same thing as knowing where the
+    store is -- so every backend has one and none of these may be mounted
+    without naming a file. Asserted about the two backends that are always
+    installed rather than about the whole registry, so that a backend which
+    does find its own store is an addition here rather than a failure.
+    """
+    assert FileStore.locates_own_store is False
+    assert store_module.locates_own_store("sqlite") is False
+    assert store_module.locates_own_store("files") is False
+    assert store_module.locates_own_store() is False
+
+    # The misspelling is what the reader can act on, so it is what is said --
+    # rather than this answering False and the mount then being told it needs
+    # a file it was right not to name.
+    with raises_rendered(store_module.BackendError, "there is no 'nonsense' backend"):
+        store_module.locates_own_store("nonsense")
+
+
 def test_what_the_interface_settles_is_settled_once(tmp_path):
     """Where the file is, and the directory around it, come from the base.
 

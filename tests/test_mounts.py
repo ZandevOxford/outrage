@@ -17,6 +17,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from conftest import answers_alike, page_facts, raises_rendered, walk_documents, walk_level
 from outrage import bulk, keys, messages
+from outrage import store as store_module
 from outrage.errors import OutrageError
 from outrage.eventlog import EventLog
 from outrage.mounts import (
@@ -1191,6 +1192,104 @@ def test_a_lock_that_is_neither_mode_is_refused(tmp_path):
     with raises_rendered(BackendError, "there is no lock='shared'"):
         with open_mounts(tmp_path, ["docs=tree,type=files,lock=shared"]):
             pass
+
+
+def test_a_spec_carries_a_service_and_renders_it_back():
+    """The option for a store reached over a connection rather than opened.
+
+    It travels with an empty FILE, which is the spelling for "the backend's
+    own default service file": the libpq default is a lookup -- the
+    environment, then the personal file, then the system one -- and writing
+    any one of those paths down would say something narrower.
+    """
+    spec = Spec(None, "postgres", None, None, None, "team")
+    assert parse_options(",type=postgres,service=team") == spec
+    assert parse_options(",service=team,type=postgres") == spec
+    assert unparse(spec) == ",type=postgres,service=team"
+    assert parse_spec("shared=,type=postgres,service=team") == ("shared", spec)
+    assert unparse(Spec(Path("work/pg_service.conf"), "postgres")) == (
+        "work/pg_service.conf,type=postgres"
+    )
+
+
+def test_a_store_opened_as_a_file_refuses_a_service(tmp_path):
+    """Refused rather than ignored, like ``lock`` and ``extensions``.
+
+    A service names an entry in a connection file, and a store this build
+    opens by path has no connection to name. Both shapes of backend are asked:
+    :class:`~outrage.store_files.FilesystemStore` spells ``in_directory``
+    itself, so its refusal is its own line rather than the base's -- which is
+    exactly the line an option added to the grammar forgets.
+    """
+    (tmp_path / "tree").mkdir()
+    for spec in ("ref=ref.sqlite,service=team", "docs=tree,type=files,service=team"):
+        with raises_rendered(BackendError, "cannot be asked for service=team"):
+            with open_mounts(tmp_path, [spec]):
+                pass
+
+
+def test_a_mount_leaves_its_file_out_only_when_it_names_a_backend():
+    """``shared=`` is still a mount that names no store file.
+
+    The empty FILE means "this backend's own store, wherever it keeps it", so
+    the backend is the one thing such a spec cannot leave unsaid. Which
+    backends may be meant is not decided here -- see
+    :func:`test_a_backend_that_opens_a_file_refuses_a_mount_that_names_none`.
+    """
+    with raises_rendered(MountError, "names no store file"):
+        parse_options("")
+    with raises_rendered(MountError, "names no store file"):
+        parse_options(",versioning=off")
+    with raises_rendered(MountError, "names no store file"):
+        parse_spec("shared=")
+
+
+def test_a_backend_that_opens_a_file_refuses_a_mount_that_names_none(tmp_path):
+    """And says so rather than opening the directory's default store.
+
+    That is the failure worth a refusal of its own: ``filename=None`` means
+    "this backend's default file name" everywhere inside the store, so a spec
+    with no file, left to fall through, would mount ``store.sqlite`` -- the
+    root's own store -- under somebody else's mount point and look like it had
+    worked.
+    """
+    with raises_rendered(MountError, "a sqlite store has to be named"):
+        with open_mounts(tmp_path, ["shared=,type=sqlite"]):
+            pass
+    assert not (tmp_path / "ignored").exists()
+
+    # Two things wrong with it, and the misspelling is the one to report.
+    with raises_rendered(BackendError, "there is no 'nonsense' backend"):
+        with open_mounts(tmp_path, ["shared=,type=nonsense"]):
+            pass
+
+
+class _FoundStore(SqliteStore):
+    """A backend that finds its own store, which none of the shipped ones do yet.
+
+    The PostgreSQL backend is the real one and is not built (step 4 of
+    ``plans/postgres/build``), so the half of the grammar that *accepts* an
+    empty FILE would otherwise reach nothing at all. It is a SQLite store
+    under another name and another default file, which is enough to show the
+    one thing in question: the mount named no file and the backend supplied
+    one.
+    """
+
+    backend_name = "found"
+    default_filename = "found.sqlite"
+    locates_own_store = True
+
+
+def test_a_backend_that_finds_its_own_store_is_mounted_without_a_file(tmp_path, monkeypatch):
+    """The accepting half: no file named, and the store is not the root's."""
+    monkeypatch.setitem(store_module._BACKENDS, "found", (__name__, "_FoundStore"))
+    with open_mounts(tmp_path, ["shared=,type=found"]) as table:
+        table.store_document("shared/note", "found")
+        assert {mount.name: mount.store.path.name for mount in table} == {
+            "/": "store.sqlite",
+            "shared": "found.sqlite",
+        }
+    assert (tmp_path / "found.sqlite").exists()
 
 
 def test_a_named_backend_that_does_not_exist_is_refused(tmp_path):

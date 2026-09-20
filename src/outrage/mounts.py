@@ -157,11 +157,29 @@ VERSIONING_OPTION = "versioning"
 #: :meth:`outrage.store.FileStore.in_directory`.
 LOCK_OPTION = "lock"
 
+#: The option that names which entry of a connection file this store is, for a
+#: backend whose store is reached over a connection rather than opened as a
+#: file. The value is a service name in a libpq connection service file --
+#: ``pg_service.conf`` -- and the file itself is the spec's FILE, so
+#: ``shared=,type=postgres,service=team`` is the ``[team]`` entry of the
+#: default service file.
+#:
+#: **Why the connection is not spelled in the spec.** A connection carries
+#: credentials and a certificate path, and a mount spec is written on a command
+#: line and in a mount configuration -- both of them things that get committed,
+#: pasted and logged. So the spec names an entry in a file kept per device, and
+#: the file says the rest. See :mod:`outrage.pgservice`.
+#:
+#: Only a backend connecting through such a file takes it, and every other
+#: refuses it rather than ignoring it --
+#: :meth:`outrage.store.FileStore.in_directory`.
+SERVICE_OPTION = "service"
+
 #: Every option a spec may carry. Anything else is refused rather than ignored,
 #: which is the rule ``mounts.toml`` already follows for a field it does not
 #: know: a mount that quietly did something other than what it says is the
 #: failure a mount configuration is least able to notice.
-OPTIONS = (TYPE_OPTION, EXTENSIONS_OPTION, VERSIONING_OPTION, LOCK_OPTION)
+OPTIONS = (TYPE_OPTION, EXTENSIONS_OPTION, VERSIONING_OPTION, LOCK_OPTION, SERVICE_OPTION)
 
 #: The ``kind`` a listing reports for a key that is a mount point. A fourth
 #: kind beside 'document', 'metadata' and 'implicit', because a mount point is
@@ -1917,9 +1935,14 @@ class Spec:
     ``path`` is relative to the store directory, as every store file is;
     ``store_file`` applies that when the store is opened rather than here, so
     this stays a parse of the argument and touches nothing.
+
+    ``path`` of None is a spec that names **no** file, which only a backend
+    that finds its own store can mean -- see :meth:`opened`.
     """
 
-    path: Path
+    path: Path | None
+    """The store file, relative to the store directory, or None where the spec
+    named none and the backend is to find its own."""
     type: str | None = None
     """The backend, when the argument named one, else None for the file to say."""
     extensions: str | None = None
@@ -1932,6 +1955,9 @@ class Spec:
     lock: str | None = None
     """How far a tree's write lock reaches, when the argument said; else the
     backend's own default. See :data:`LOCK_OPTION`."""
+    service: str | None = None
+    """Which entry of a connection file this store is, when the argument said;
+    else the backend's own default. See :data:`SERVICE_OPTION`."""
 
     def opened(
         self,
@@ -1953,7 +1979,19 @@ class Spec:
         it is somebody reading the keys.
 
         ``versioning`` is the run's default, which the spec's own option beats.
+
+        **A spec naming no file is refused here** unless the backend it names
+        finds its own store, which is the one thing about an omitted FILE that
+        cannot be settled while the argument is being parsed: whether it is
+        allowed depends on the backend, and naming the backends in the grammar
+        is the duplicate vocabulary :func:`parse_options` is written to avoid.
+        So the grammar accepts the shape and this refuses the ones that mean
+        nothing -- a spec with no file, opened under a backend whose store is a
+        file in the store directory, would otherwise silently mount that
+        directory's default store under somebody else's mount point.
         """
+        if self.path is None and not store_module.locates_own_store(self.type):
+            raise MountError("mount-file-not-optional", backend=self.type, mount=mount_point)
         return store_module.default_store(
             directory,
             filename=self.path,
@@ -1962,6 +2000,7 @@ class Spec:
             versioning=self.versioning,
             versioning_default=versioning,
             lock=self.lock,
+            service=self.service,
             log=log,
             mount_point=mount_point,
         )
@@ -1987,11 +2026,17 @@ def parse_options(value: str, *, spec: str | None = None) -> Spec:
     refuses in its own words when the store is opened; a second list of
     backend names kept here to refuse it a moment earlier is exactly the
     duplicate vocabulary this grammar is written to avoid.
+
+    **An empty FILE is a spec that names no file**, and is accepted only when
+    the spec also says ``type``: a backend that finds its own store is the only
+    thing it can mean, and ``type`` is the only place it can say which. Whether
+    the backend named is such a backend is decided where every other statement
+    about a backend is -- when the store is opened, by :meth:`Spec.opened` --
+    for the reason in the paragraph above. ``ref=`` alone stays a mount that
+    names no store file.
     """
     quoted = value if spec is None else spec
     file, _, rest = value.partition(OPTION_DELIMITER)
-    if not file:
-        raise MountError("mount-spec-has-no-file", spec=quoted)
     options: dict[str, str] = {}
     while rest:
         option, _, rest = rest.partition(OPTION_DELIMITER)
@@ -2008,12 +2053,15 @@ def parse_options(value: str, *, spec: str | None = None) -> Spec:
         if name in options:
             raise MountError("mount-option-repeated", spec=quoted, option=name)
         options[name] = setting
+    if not file and TYPE_OPTION not in options:
+        raise MountError("mount-spec-has-no-file", spec=quoted)
     return Spec(
-        Path(file),
+        Path(file) if file else None,
         options.get(TYPE_OPTION),
         options.get(EXTENSIONS_OPTION),
         options.get(VERSIONING_OPTION),
         options.get(LOCK_OPTION),
+        options.get(SERVICE_OPTION),
     )
 
 
@@ -2030,8 +2078,12 @@ def unparse(spec: Spec) -> str:
     the way in, because this is the direction a file reaches: an entry written
     as ``{ path = "a,b" }`` in TOML never passed through a spec, and rendering
     it would produce an argument that parses back as something else.
+
+    A spec naming no file renders as the empty FILE the grammar spells it
+    with, ``,type=postgres``, which is how an entry a TOML table wrote without
+    a ``path`` survives the splice into a command line.
     """
-    file = str(spec.path)
+    file = "" if spec.path is None else str(spec.path)
     if OPTION_DELIMITER in file:
         raise MountError("mount-file-unspellable", file=file, delimiter=OPTION_DELIMITER)
     # In :data:`OPTIONS` order rather than in the order they were written,
@@ -2043,6 +2095,7 @@ def unparse(spec: Spec) -> str:
         (EXTENSIONS_OPTION, spec.extensions),
         (VERSIONING_OPTION, spec.versioning),
         (LOCK_OPTION, spec.lock),
+        (SERVICE_OPTION, spec.service),
     ]
     return file + "".join(
         f"{OPTION_DELIMITER}{name}{OPTION_ASSIGNMENT}{value}"
@@ -2130,10 +2183,12 @@ _CONFIGURATION_ERROR_CODES = frozenset(
     {
         "backend-takes-no-extensions",
         "backend-takes-no-lock",
+        "backend-takes-no-service",
         "backend-takes-no-versioning",
         "backend-unknown",
         "extensions-unknown",
         "lock-unknown",
+        "mount-file-not-optional",
         "store-file-absolute",
         "store-file-escapes",
         "store-file-pattern",
@@ -2279,7 +2334,10 @@ def open_mounts(
         for read_only, configured in ((False, writable), (True, refusing)):
             for prefix, spec in configured:
                 try:
-                    if read_only and not store_present(base, spec.path):
+                    # A spec naming no file has nothing in this directory to be
+                    # missing: its backend finds its own store, and whether that
+                    # store is there is the backend's to say when it opens it.
+                    if read_only and spec.path is not None and not store_present(base, spec.path):
                         database = store_file(base, spec.path)
                         raise MountError(
                             "mount-read-only-missing", mount=prefix, path=str(database)
@@ -2317,6 +2375,7 @@ __all__ = [
     "OPTION_DELIMITER",
     "READ_ONLY_MOUNT_KIND",
     "ROOT_KIND",
+    "SERVICE_OPTION",
     "SPEC_DELIMITER",
     "TYPE_OPTION",
     "VERSIONING_OPTION",

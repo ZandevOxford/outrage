@@ -107,6 +107,10 @@ that is not an option: `{ path = "docs", type = "files" }` is a store and
 how to open it. Spelled `path` rather than `file` because that is what a
 mount option would have called it, and the other fields *are* options.
 
+**An entry may leave it out** when it names a `type` whose backend finds
+its own store file, which is the command line's empty FILE said the easy
+way -- see [`outrage.mounts.parse_options()`](mounts.md#outrage.mounts.parse_options).
+
 ### outrage.mountfile.MOUNT_FLAG *= '--mount'*
 
 Another store, under a mount point.

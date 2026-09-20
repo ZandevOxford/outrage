@@ -2717,7 +2717,18 @@ def _mount_row(
     hide the one thing about it that cannot be inferred from the name.
     """
     filename = mounts.unparse(spec)
-    if store.store_present(directory, spec.path):
+    if spec.path is None:
+        # A mount that names no file has nothing in this directory to look for:
+        # the backend it names finds its own store, wherever that is, and only
+        # opening it can say whether the store is there.
+        #
+        # The column answers *presence*, not whether the spec is a good one:
+        # this report does not resolve a backend, so a `type=` this build does
+        # not know already reaches a row rather than a refusal, and a file left
+        # out under a backend that needed one is the same kind of mistake. Both
+        # are refused, in their own words, when the store opens.
+        state = "unknown"
+    elif store.store_present(directory, spec.path):
         state = "ok"
     elif kind == READ_ONLY_MOUNT_KIND:
         # The refusal `open_mounts` would make, said here instead of at the
@@ -2897,7 +2908,12 @@ def _open_existing(args: argparse.Namespace):
     bill of health.
     """
     root = _root(args)
-    directory = maintenance.require_store(store.resolve_directory(args.directory), root.path)
+    directory = store.resolve_directory(args.directory)
+    # A root that names no file has no store in this directory to look for:
+    # its backend finds its own, and only opening it can say whether it is
+    # there. The check is about a mistyped --dir, which is not that question.
+    if root.path is not None:
+        maintenance.require_store(directory, root.path)
     return contextlib.closing(root.opened(directory, versioning=_versioning(args)))
 
 
@@ -2923,7 +2939,10 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
     """
     directory = store.resolve_directory(args.directory)
     root = _root(args)
-    if not create:
+    if not create and root.path is not None:
+        # A root that names no file has no store in this directory for the
+        # check to look for: its backend finds its own, and whether it is there
+        # is the backend's to say when it opens it.
         maintenance.require_store(directory, root.path)
     if not (args.mounts or args.read_only_mounts or args.mount_docs or args.mount_home):
         with contextlib.closing(root.opened(directory, versioning=_versioning(args))) as opened:

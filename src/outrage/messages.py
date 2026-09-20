@@ -1287,6 +1287,26 @@ def _mount_spec_has_no_file(name: Namer, /, *, spec: str, **_: Any) -> str:
     return f"mount {spec!r} names no store file"
 
 
+@template("mount-file-not-optional")
+def _mount_file_not_optional(
+    name: Namer, /, *, backend: str, mount: str | None = None, **_: Any
+) -> str:
+    where = (
+        "a mount"
+        if mount is None
+        else "the root mount"
+        if mount == keys.ROOT
+        else f"mount {keys.displayed(mount)!r}"
+    )
+    return (
+        f"{where} names no store file, and a {backend} store has to be named: "
+        f"it is a file in the store directory, so an empty FILE says nothing "
+        f"about which one. Only a backend that finds its own store file -- one "
+        f"reached through a connection file kept elsewhere -- may be mounted "
+        f"without naming it."
+    )
+
+
 @template("mount-option-malformed")
 def _mount_option_malformed(
     name: Namer, /, *, spec: str, option: str, assignment: str = "=", **_: Any
@@ -1470,8 +1490,8 @@ def _mount_config_section_is_an_entry(
 ) -> str:
     return (
         f"[{field}] in the mount configuration at {path!r} is one entry's "
-        f"fields rather than a table of mounts: {key!r} belongs inside an "
-        f'entry, as in docs = {{ {key} = "documents", type = "files" }}'
+        f"fields rather than a table of mounts: they belong inside an entry, "
+        f'as in docs = {{ {key} = "documents", type = "files" }}'
     )
 
 
@@ -1750,6 +1770,18 @@ def _backend_takes_no_versioning(
         f"the {backend} store{about} cannot be asked for versioning={versioning}: "
         f"only a SQLite store keeps the versions a write replaces, so this one "
         f"has none to switch on or off. Drop the option for this store."
+    )
+
+
+@template("backend-takes-no-service")
+def _backend_takes_no_service(
+    name: Namer, /, *, backend: str, filename: str, service: str, **_: Any
+) -> str:
+    about = f" {filename!r}" if filename else ""
+    return (
+        f"the {backend} store{about} cannot be asked for service={service}: a "
+        f"service names an entry in a connection file, and only a store "
+        f"reached over a connection has one. Drop the option."
     )
 
 

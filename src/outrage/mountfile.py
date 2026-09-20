@@ -55,6 +55,7 @@ from .mounts import (
     LOCK_OPTION,
     OPTION_DELIMITER,
     OPTIONS,
+    SERVICE_OPTION,
     SPEC_DELIMITER,
     TYPE_OPTION,
     VERSIONING_OPTION,
@@ -159,6 +160,10 @@ READ_ONLY_FIELD = "mount-ro"
 #: that is not an option: ``{ path = "docs", type = "files" }`` is a store and
 #: how to open it. Spelled ``path`` rather than ``file`` because that is what a
 #: mount option would have called it, and the other fields *are* options.
+#:
+#: **An entry may leave it out** when it names a ``type`` whose backend finds
+#: its own store file, which is the command line's empty FILE said the easy
+#: way -- see :func:`outrage.mounts.parse_options`.
 PATH_FIELD = "path"
 
 #: Every field an entry's table form may hold: the store file, and each option
@@ -442,13 +447,27 @@ def _value(spec: Spec) -> str:
     The two spellings the file has, and which one is written follows from what
     there is to say rather than from a preference: ``"notes.sqlite"`` is a
     store file and nothing else, and an entry carrying an option has to be a
-    table to carry it. Both are the same spec -- ``mounts.parse_options`` reads
-    the string form as the value of a ``--mount``, options and all -- so
-    nothing is expressible in one and not the other.
+    table to carry it, whichever option it is. Both are the same spec --
+    ``mounts.parse_options`` reads the string form as the value of a
+    ``--mount``, options and all -- so nothing is expressible in one and not
+    the other, including an entry that names no store file at all.
     """
-    if spec.type is None:
+    options = [
+        (TYPE_OPTION, spec.type),
+        (EXTENSIONS_OPTION, spec.extensions),
+        (VERSIONING_OPTION, spec.versioning),
+        (LOCK_OPTION, spec.lock),
+        (SERVICE_OPTION, spec.service),
+    ]
+    written = [(name, value) for name, value in options if value is not None]
+    if not written:
+        # A spec with no options is its file, and a spec with no file has to
+        # have some: `parse_options` refuses an empty FILE that says nothing
+        # else, so this is not a case the reader can reach.
         return _string(str(spec.path))
-    return f"{{ path = {_string(str(spec.path))}, {TYPE_OPTION} = {_string(spec.type)} }}"
+    fields = [] if spec.path is None else [f"{PATH_FIELD} = {_string(str(spec.path))}"]
+    fields += [f"{name} = {_string(value)}" for name, value in written]
+    return "{ " + ", ".join(fields) + " }"
 
 
 def _key(point: str) -> str:
@@ -573,8 +592,19 @@ def _is_entry(section: dict[str, object]) -> bool:
     result is a store mounted where nobody meant and nothing reads, while a
     mount point named after the field that names store files is a thing nobody
     has wanted. ``--mount path=...`` still says it.
+
+    ``type`` counts as well as ``path``, and has to since an entry may leave
+    ``path`` out: ``[mount]`` followed by ``type = "postgres"`` is otherwise a
+    perfectly good table mounting a store file called ``postgres`` at the key
+    ``type``, which is the same silent mounting-where-nobody-meant this
+    function exists to catch. The cost is the same one, paid for a second
+    field name nobody has wanted as a mount point.
     """
-    return bool(section) and set(section) <= set(_ENTRY_FIELDS) and PATH_FIELD in section
+    return (
+        bool(section)
+        and set(section) <= set(_ENTRY_FIELDS)
+        and not {PATH_FIELD, TYPE_OPTION}.isdisjoint(section)
+    )
 
 
 def _spec(value: object, *, field: str, path: Path) -> Spec | None:
@@ -626,20 +656,27 @@ def _spec(value: object, *, field: str, path: Path) -> Spec | None:
                 got=type(setting).__name__,
             )
     file = value.get(PATH_FIELD)
-    if not file:
+    # An entry may leave the store file out, exactly as the command line's
+    # empty FILE does and under the same rule: only a backend that finds its
+    # own store can mean it, and `type` is the only place an entry can say
+    # which backend that is. Which backends those are is settled where the
+    # store opens -- `outrage.mounts.Spec.opened` -- rather than by a list of
+    # backend names kept here.
+    if not file and not value.get(TYPE_OPTION):
         raise MountFileError("mount-config-no-path", path=str(path), field=field, key=PATH_FIELD)
-    if OPTION_DELIMITER in file:
+    if file and OPTION_DELIMITER in file:
         # The one refusal a table form earns from the *other* spelling: an
         # entry is defined as the option it stands for, and this one has no
         # spelling that reads back as itself. Refused where it is written
         # rather than where it is rendered, which is a splice away from here.
         raise MountError("mount-file-unspellable", file=file, delimiter=OPTION_DELIMITER)
     return Spec(
-        Path(file),
+        Path(file) if file else None,
         value.get(TYPE_OPTION),
         value.get(EXTENSIONS_OPTION),
         value.get(VERSIONING_OPTION),
         value.get(LOCK_OPTION),
+        value.get(SERVICE_OPTION),
     )
 
 

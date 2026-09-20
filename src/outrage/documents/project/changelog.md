@@ -2,6 +2,28 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+Mount specs gained two spellings for a store that is not a file inside the
+store directory, both of them groundwork for the PostgreSQL backend.
+
+`service=NAME` names an entry in a libpq connection service file, for a store
+reached over a connection rather than opened by path. A backend that opens a
+file refuses it, as it already refuses `extensions=` and `lock=`.
+
+FILE may be left empty when the spec names a `type` whose backend finds its own
+store file, as in `--mount shared=,type=postgres`; a `mounts.toml` entry says
+the same thing by omitting `path`. `shared=` alone is still a mount that names
+no store file, and a backend whose store *is* a file in the store directory
+refuses a mount that names none rather than quietly opening that directory's
+default store. `outrage mounts` reports such a mount as `unknown` rather than
+guessing at a file that is not there.
+
+`outrage init` now writes every option a mount carries into the table it
+starts. It wrote `path` and `type` alone, so
+`--mount docs=bundle,type=files,extensions=keep` produced an entry mounting the
+bundle under the other mapping between file names and keys.
+
 ## 1.1.0 - 2026-09-19
 
 The default project readme now gives clearer guidance on recording settled

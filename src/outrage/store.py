@@ -1837,6 +1837,22 @@ class FileStore(Store):
     #: store literally called ``*.sqlite``.
     reads_patterns: ClassVar[bool] = False
 
+    #: Whether this backend finds its own store when a mount names no file.
+    #:
+    #: False for every backend whose store is a file inside the store
+    #: directory: :attr:`default_filename` is a *name* to use in that
+    #: directory, which is not the same thing as knowing where the store is.
+    #: True for a backend reached through a configuration file of somebody
+    #: else's -- a libpq service file, whose location is a lookup and not one
+    #: fixed path -- where naming the file explicitly would say something
+    #: narrower than the default rather than the same thing.
+    #:
+    #: It is what lets a mount spec leave FILE empty, and the *only* thing
+    #: that does: ``outrage.mounts.Spec.opened`` refuses an omitted file for
+    #: every backend that answers False, because such a mount would otherwise
+    #: open this directory's default store under somebody else's mount point.
+    locates_own_store: ClassVar[bool] = False
+
     def __init__(
         self,
         directory: str | os.PathLike[str] | None = None,
@@ -1877,6 +1893,7 @@ class FileStore(Store):
         extensions: str | None = None,
         versioning: bool | None = None,
         lock: str | None = None,
+        service: str | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
     ) -> Self:
@@ -1915,6 +1932,10 @@ class FileStore(Store):
         ``lock`` is ``extensions``' shape exactly: how far a tree's write lock
         reaches, which a store kept in one file answers with its own locking,
         so only :class:`~outrage.store_files.FilesystemStore` takes it.
+
+        ``service`` is that shape once more, from the far side: which entry of
+        a connection file this store is. A backend that opens a file has no
+        connection to name, and refuses it rather than ignoring it.
         """
         if lock is not None:
             raise BackendError(
@@ -1930,6 +1951,7 @@ class FileStore(Store):
                 filename="" if filename is None else str(filename),
                 extensions=extensions,
             )
+        cls._refuse_service(filename, service)
         cls._refuse_versioning(filename, versioning)
         return cls(
             directory,
@@ -1938,6 +1960,22 @@ class FileStore(Store):
             mount_point=mount_point,
             **({} if versioning is None else {"versioning": versioning}),
         )
+
+    @classmethod
+    def _refuse_service(cls, filename: str | os.PathLike[str] | None, service: str | None) -> None:
+        """Refuse a ``service`` statement this backend cannot act on.
+
+        Its own method for :meth:`_refuse_versioning`'s reason: a backend that
+        overrides :meth:`in_directory` has to make the same refusal, in the
+        same words, rather than a second one.
+        """
+        if service is not None:
+            raise BackendError(
+                "backend-takes-no-service",
+                backend=cls.backend_name,
+                filename="" if filename is None else str(filename),
+                service=service,
+            )
 
     @classmethod
     def _refuse_versioning(
@@ -2303,6 +2341,24 @@ def backend_names() -> tuple[str, ...]:
     return tuple(sorted({*_BACKENDS, *_ALIASES}))
 
 
+def locates_own_store(backend: str | None = None) -> bool:
+    """Whether a mount of ``backend`` may leave its store file unsaid.
+
+    :attr:`FileStore.locates_own_store`, asked by name rather than by class,
+    for the one caller outside this module that has to ask: a mount spec is a
+    backend's *name* and a file that may be absent, and whether that is a spec
+    at all is this registry's answer.
+
+    An unknown name is refused here, in :func:`_backend_for`'s words, rather
+    than answered False. A spec that named no file and misspelled its backend
+    has two things wrong with it and the misspelling is the one to report:
+    "no backend of that name" is what the reader can act on, where "this
+    backend needs a file" would send them to look for a file they were right
+    not to name.
+    """
+    return _backend_for(None, backend).locates_own_store
+
+
 def default_store_file() -> str:
     """What the default backend calls its store file.
 
@@ -2328,6 +2384,7 @@ def default_store(
     versioning: str | None = None,
     versioning_default: bool = True,
     lock: str | None = None,
+    service: str | None = None,
     log: EventLog | None = None,
     mount_point: str | None = None,
 ) -> FileStore:
@@ -2348,8 +2405,8 @@ def default_store(
     ``extensions`` is the mount option of the same name, and is carried here
     for the same reason ``backend`` is: it is what an argument said, and the
     backend it reaches either takes it or refuses it --
-    :meth:`FileStore.in_directory` is where that happens. ``lock`` is carried
-    the same way and for the same reason.
+    :meth:`FileStore.in_directory` is where that happens. ``lock`` and
+    ``service`` are carried the same way and for the same reason.
 
     ``versioning`` is the mount option too, as typed -- :data:`VERSIONING_ON`,
     :data:`VERSIONING_OFF` or None -- and ``versioning_default`` is what a run
@@ -2369,6 +2426,7 @@ def default_store(
         extensions=extensions,
         versioning=stated,
         lock=lock,
+        service=service,
         log=log,
         mount_point=mount_point,
     )
@@ -2393,6 +2451,7 @@ def open_store(
     versioning: str | None = None,
     versioning_default: bool = True,
     lock: str | None = None,
+    service: str | None = None,
     log: EventLog | None = None,
     mount_point: str | None = None,
 ) -> Iterator[FileStore]:
@@ -2405,6 +2464,7 @@ def open_store(
         versioning=versioning,
         versioning_default=versioning_default,
         lock=lock,
+        service=service,
         log=log,
         mount_point=mount_point,
     )
@@ -3605,6 +3665,7 @@ __all__ = [
     "default_store_file",
     "entry_kind",
     "is_pattern",
+    "locates_own_store",
     "meta_reader",
     "open_store",
     "pattern_matches",

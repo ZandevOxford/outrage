@@ -78,7 +78,7 @@ none of the three: it may hold content, and it always has a store behind it.
 A caller that does not know the word still learns that the key exists, which
 is the part that matters for navigating to it.
 
-### outrage.mounts.OPTIONS *= ('type', 'extensions', 'versioning', 'lock')*
+### outrage.mounts.OPTIONS *= ('type', 'extensions', 'versioning', 'lock', 'service')*
 
 Every option a spec may carry. Anything else is refused rather than ignored,
 which is the rule `mounts.toml` already follows for a field it does not
@@ -127,6 +127,25 @@ claims. Not a `kind` any listing uses -- the root is never an entry in one,
 since it is the level everything else is listed *below* -- so it is spelled
 here rather than on [`Mount.kind`](#outrage.mounts.Mount.kind), and used by the reports that put the
 root in a table beside the mounts.
+
+### outrage.mounts.SERVICE_OPTION *= 'service'*
+
+The option that names which entry of a connection file this store is, for a
+backend whose store is reached over a connection rather than opened as a
+file. The value is a service name in a libpq connection service file --
+`pg_service.conf` -- and the file itself is the spec's FILE, so
+`shared=,type=postgres,service=team` is the `[team]` entry of the
+default service file.
+
+**Why the connection is not spelled in the spec.** A connection carries
+credentials and a certificate path, and a mount spec is written on a command
+line and in a mount configuration -- both of them things that get committed,
+pasted and logged. So the spec names an entry in a file kept per device, and
+the file says the rest. See [`outrage.pgservice`](pgservice.md#module-outrage.pgservice).
+
+Only a backend connecting through such a file takes it, and every other
+refuses it rather than ignoring it --
+[`outrage.store.FileStore.in_directory()`](store.md#outrage.store.FileStore.in_directory).
 
 ### outrage.mounts.SPEC_DELIMITER *= '='*
 
@@ -868,7 +887,7 @@ an answer rather than an empty result. Such a segment is still
 *counted* -- totals describe the whole collection and have never
 depended on where the reader had got to.
 
-### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), type: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lock: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
+### *class* outrage.mounts.Spec(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None), type: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lock: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -883,7 +902,13 @@ grammar and has no mount point to be returned beside.
 `store_file` applies that when the store is opened rather than here, so
 this stays a parse of the argument and touches nothing.
 
-#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+`path` of None is a spec that names **no** file, which only a backend
+that finds its own store can mean -- see [`opened()`](#outrage.mounts.Spec.opened).
+
+#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+The store file, relative to the store directory, or None where the spec
+named none and the backend is to find its own.
 
 #### type *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
@@ -905,6 +930,11 @@ whatever the run defaults to. See [`VERSIONING_OPTION`](#outrage.mounts.VERSIONI
 How far a tree's write lock reaches, when the argument said; else the
 backend's own default. See [`LOCK_OPTION`](#outrage.mounts.LOCK_OPTION).
 
+#### service *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+Which entry of a connection file this store is, when the argument said;
+else the backend's own default. See [`SERVICE_OPTION`](#outrage.mounts.SERVICE_OPTION).
+
 #### opened(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [FileStore](store.md#outrage.store.FileStore)
 
 The store this spec names, opened in `directory`.
@@ -919,6 +949,16 @@ for. Nothing raises and no suite goes red, so the only thing that finds
 it is somebody reading the keys.
 
 `versioning` is the run's default, which the spec's own option beats.
+
+**A spec naming no file is refused here** unless the backend it names
+finds its own store, which is the one thing about an omitted FILE that
+cannot be settled while the argument is being parsed: whether it is
+allowed depends on the backend, and naming the backends in the grammar
+is the duplicate vocabulary [`parse_options()`](#outrage.mounts.parse_options) is written to avoid.
+So the grammar accepts the shape and this refuses the ones that mean
+nothing -- a spec with no file, opened under a backend whose store is a
+file in the store directory, would otherwise silently mount that
+directory's default store under somebody else's mount point.
 
 ### outrage.mounts.mount_point(prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
@@ -1029,6 +1069,14 @@ refuses in its own words when the store is opened; a second list of
 backend names kept here to refuse it a moment earlier is exactly the
 duplicate vocabulary this grammar is written to avoid.
 
+**An empty FILE is a spec that names no file**, and is accepted only when
+the spec also says `type`: a backend that finds its own store is the only
+thing it can mean, and `type` is the only place it can say which. Whether
+the backend named is such a backend is decided where every other statement
+about a backend is -- when the store is opened, by [`Spec.opened()`](#outrage.mounts.Spec.opened) --
+for the reason in the paragraph above. `ref=` alone stays a mount that
+names no store file.
+
 ### outrage.mounts.parse_spec(spec: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Spec](#outrage.mounts.Spec)]
 
 Split a `KEY=FILE[,NAME=VALUE]...` mount argument, or say why it is
@@ -1064,3 +1112,7 @@ A store file holding the option delimiter is refused *here* as well as on
 the way in, because this is the direction a file reaches: an entry written
 as `{ path = "a,b" }` in TOML never passed through a spec, and rendering
 it would produce an argument that parses back as something else.
+
+A spec naming no file renders as the empty FILE the grammar spells it
+with, `,type=postgres`, which is how an entry a TOML table wrote without
+a `path` survives the splice into a command line.

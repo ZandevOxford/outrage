@@ -1,173 +1,176 @@
 # Changelog
 0 0 1
 
-## 1.1.0 - 2026-09-19
+## Unreleased
 108 108 5
 
+## 1.1.0 - 2026-09-19
+1256 1256 27
+
 ## 1.0.0 - 2026-09-17
-1113 1113 24
+2261 2261 46
 
 ## 0.15.0 - 2026-09-16
-6509 6509 117
+7657 7657 139
 
 ## 0.14.0 - 2026-09-14
-11680 11680 202
+12828 12828 224
 
 ## 0.13.0 - 2026-09-13
-13638 13638 237
+14786 14786 259
 
 ## 0.12.0 - 2026-09-12
-17615 17615 302
+18763 18763 324
 
 ## 0.11.0 - 2026-09-11
-18255 18255 315
+19403 19403 337
 
 ## 0.10.3 - 2026-09-10
-21889 21889 378
+23037 23037 400
 
 ## 0.10.2 - 2026-09-08
-24340 24340 418
+25488 25488 440
 
 ## 0.10.1 - 2026-09-07
-25941 25941 447
+27089 27089 469
 
 ## 0.10.0 - 2026-09-06
-29883 29891 510
+31031 31039 532
 
 ## 0.9.0 - 2026-09-05
-38362 38370 648
+39510 39518 670
 
 ## 0.8.1 - 2026-09-05
-41681 41689 705
+42829 42837 727
 
 ## 0.8.0 - 2026-09-05
-43887 43901 741
+45035 45049 763
 
 ## 0.7.0 - 2026-09-04
-47501 47515 797
+48649 48663 819
 
 ## 0.6.0 - 2026-09-02
-51246 51260 853
+52394 52408 875
 
 ## 0.5.1 - 2026-09-02
-53048 53062 882
+54196 54210 904
 
 ## 0.5.0 - 2026-09-01
-54063 54077 900
+55211 55225 922
 
 ## 0.4.4 - 2026-08-31
-55346 55360 923
+56494 56508 945
 
 ## 0.4.3 - 2026-08-31
-56256 56270 939
+57404 57418 961
 
 ## 0.4.2 - 2026-08-30
-57524 57538 963
+58672 58686 985
 
 ## 0.4.1 - 2026-08-30
-58282 58296 980
+59430 59444 1002
 
 ## 0.4.0 - 2026-08-29
-59418 59432 1003
+60566 60580 1025
 
 ### Nothing shipped names the machine it was built on
-60699 60713 1028
+61847 61861 1050
 
 ### Python 3.12 is enough
-62112 62126 1052
+63260 63274 1074
 
 ### A failure a caller can fix now says so
-62869 62883 1066
+64017 64031 1088
 
 ### The store's `readme` is named in the server's instructions, not carried in them
-64592 64606 1096
+65740 65754 1118
 
 ### A mount can say which backend keeps it, so a directory of files is mountable
-66121 66135 1120
+67269 67283 1142
 
 ### A subtree copy, as a tool
-68003 68017 1157
+69151 69165 1179
 
 ### A copy can re-root a subtree, not only nest it deeper
-69513 69527 1181
+70661 70675 1203
 
 ### Outrage's own documentation, as a store
-70605 70619 1199
+71753 71767 1221
 
 ### One document through a file, as a tool
-72187 72201 1227
+73335 73349 1249
 
 ## 0.3.0 - 2026-08-27
-74244 74258 1262
+75392 75406 1284
 
 ### A mount table in a file, and a command line that reads it
-75498 75512 1285
+76646 76660 1307
 
 ### `Store` and `FileStore`: a store, and a store kept in a file
-80208 80222 1361
+81356 81370 1383
 
 ### Every store can back itself up
-81545 81559 1384
+82693 82707 1406
 
 ### `Store.copy_from`: every bulk move is a copy between two stores
-82729 82743 1406
+83877 83891 1428
 
 ### `outrage export` and `outrage import` are copies
-84092 84106 1428
+85240 85254 1450
 
 ### Copying ranges from the command line
-85424 85438 1451
+86572 86586 1473
 
 ### A write may carry the timestamp it is copying
-86303 86317 1468
+87451 87465 1490
 
 ### A `!` segment opens a metadata namespace
-87169 87183 1484
+88317 88331 1506
 
 ### A mount table is now a `Store`, and `Mounts` is renamed
-90121 90135 1531
+91269 91283 1553
 
 ### A directory of files is now a `Store`
-90929 90943 1547
+92077 92091 1569
 
 ### The root document can be exported, and comes back
-91989 92003 1568
+93137 93151 1590
 
 ### A key can no longer be exported outside the directory it was given
-92383 92397 1576
+93531 93545 1598
 
 ### Six fixes at a mount boundary
-92877 92891 1585
+94025 94039 1607
 
 ### A shortened delete preview counts what it previews
-94516 94530 1612
+95664 95678 1634
 
 ## 0.2.0 - 2026-08-24
-95384 95398 1627
+96532 96546 1649
 
 ### Parquet stores written by 0.1.x no longer open
-95601 95615 1633
+96749 96763 1655
 
 ### The MCP server is named `outrage`, so every tool is renamed
-96045 96059 1644
+97193 97207 1666
 
 ### Environment variables
-96600 96614 1655
+97748 97762 1677
 
 ### Public API
-96975 96995 1665
+98123 98143 1687
 
 ### Skill and agents
-97126 97148 1670
+98274 98296 1692
 
 ### Fixed
-97395 97417 1677
+98543 98565 1699
 
 ## 0.1.2 - 2026-08-23
-97838 97860 1686
+98986 99008 1708
 
 ## 0.1.1 - 2026-08-22
-98271 98293 1696
+99419 99441 1718
 
 ## 0.1.0 - 2026-08-22
-98424 98446 1701
+99572 99594 1723

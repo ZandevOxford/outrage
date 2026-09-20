@@ -3043,6 +3043,25 @@ def test_mounts_opens_nothing_and_so_creates_nothing(tmp_path):
     assert sorted(p.name for p in (tmp_path / ".outrage").iterdir()) == before
 
 
+def test_mounts_says_it_cannot_know_about_a_mount_that_names_no_file(tmp_path):
+    """The state column answers presence, and there is nothing here to look for.
+
+    A mount with an empty FILE is a backend that finds its own store, which is
+    not in this directory and not knowable without opening it. "would create"
+    would be a claim about a file that is not the store, and a failure would
+    stop `outrage check` over a table that is perfectly good.
+    """
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "mounts", "--dir", str(tmp_path / ".outrage"), "--mount", "shared=,type=postgres"
+    )
+
+    assert status == 0
+    assert "unknown" in output
+    assert ",type=postgres" in output
+
+
 def test_mounts_fails_on_a_table_that_would_not_open(tmp_path):
     """A read-only mount that is not there is the refusal `open_mounts` makes,
     said here rather than at the moment a server failed to start."""

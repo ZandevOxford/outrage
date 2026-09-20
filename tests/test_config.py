@@ -412,6 +412,31 @@ def test_a_mount_is_written_to_the_table_beside_the_stores(tmp_path):
     assert "# Mounted read-write." in table.text
 
 
+def test_a_written_entry_says_everything_the_mount_it_stands_for_said(tmp_path):
+    """A starter table wrote ``path`` and ``type`` and dropped the rest.
+
+    Found while the ``service`` option was being added, 2026-09-20: the entry
+    writer named two fields rather than rendering the options a spec carries,
+    so ``outrage init --mount docs=bundle,type=files,extensions=keep`` wrote a
+    table mounting the bundle under the *other* mapping -- a store that reads
+    as simply the wrong keys, with nothing raised and nothing to see. The
+    round trip through the file is the assertion, since that is the trip the
+    mount actually makes.
+    """
+    table = mountfile.plan_starter(
+        tmp_path / "base",
+        mounts=["docs=bundle,type=files,extensions=keep,lock=interprocess"],
+        read_only_mounts=["ref=reference.sqlite,versioning=off"],
+    )
+    mountfile.write_starter(table)
+
+    written = mountfile.read(table.path)
+    assert written.mounts == (
+        ("docs", mounts.Spec(Path("bundle"), "files", "keep", None, "interprocess")),
+    )
+    assert written.read_only == (("ref", mounts.Spec(Path("reference.sqlite"), None, None, "off")),)
+
+
 def test_the_root_mount_is_written_only_when_it_is_not_the_default(tmp_path):
     # An entry that never asked for one is not written to say what it already
     # meant -- which is what keeps a re-run reporting "already current".

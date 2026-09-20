@@ -166,6 +166,25 @@ def test_an_entry_can_name_a_trees_lock(tmp_path):
     assert table.options() == ["--mount", "tree=tree,type=files,lock=interprocess"]
 
 
+def test_an_entry_may_leave_the_store_file_out(tmp_path):
+    """The TOML half of the command line's empty FILE, and it is the easy half.
+
+    A table simply omits ``path``; only the command line has to spell "no
+    file" at all, and the splice is where the two meet -- the entry renders
+    back as the argument ``shared=,type=postgres,service=team``, which parses
+    as the entry again.
+    """
+    path = write(
+        tmp_path / "mounts.toml",
+        '[mount]\nshared = { type = "postgres", service = "team" }\n',
+    )
+
+    table = mountfile.read(path)
+    assert dict(table.mounts) == {"shared": mounts.Spec(None, "postgres", service="team")}
+    assert table.options() == ["--mount", "shared=,type=postgres,service=team"]
+    assert mounts.parse_spec(table.options()[1]) == ("shared", table.mounts[0][1])
+
+
 def test_an_entry_that_says_something_no_mount_can_say_is_refused(tmp_path):
     """Refused rather than ignored, and naming the file, like every field here.
 
@@ -177,7 +196,9 @@ def test_an_entry_that_says_something_no_mount_can_say_is_refused(tmp_path):
     with raises_rendered(MountFileError, "not something a mount can say"):
         mountfile.read(unknown)
 
-    nameless = write(tmp_path / "b.toml", '[mount]\ndocs = { type = "files" }\n')
+    # An entry may leave `path` out when it says `type`, for a backend that
+    # finds its own store; saying neither names nothing at all.
+    nameless = write(tmp_path / "b.toml", '[mount]\ndocs = { versioning = "off" }\n')
     with raises_rendered(MountFileError, "names no store file"):
         mountfile.read(nameless)
 
@@ -205,6 +226,13 @@ def test_a_section_that_is_one_entry_is_not_a_table_of_them(tmp_path):
     path = write(tmp_path / "mounts.toml", '[mount]\npath = "main.sqlite"\n')
     with raises_rendered(MountFileError, "one entry's fields rather than a table"):
         mountfile.read(path)
+
+    # `type` counts too, and has to since an entry may leave `path` out: this
+    # is otherwise a table mounting a store file called "postgres" at the key
+    # "type", which is the mounting-where-nobody-meant above exactly.
+    typed = write(tmp_path / "typed.toml", '[mount]\ntype = "postgres"\nservice = "team"\n')
+    with raises_rendered(MountFileError, "one entry's fields rather than a table"):
+        mountfile.read(typed)
 
 
 def test_an_entry_carrying_an_option_is_overridden_whole(tmp_path):
