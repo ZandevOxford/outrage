@@ -868,10 +868,22 @@ class PostgresStore(FileStore):
         back the server's vacuum and a lock on every table it touched -- for as
         long as the store is open. A write asks for its transaction by name,
         in :meth:`_transaction`.
+
+        **With automatic prepared statements off** (``prepare_threshold``).
+        psycopg prepares a statement on the server once it has been run five
+        times, and remembers that it did. A transaction in a pipeline that the
+        server aborts -- which a serialization failure does -- can take the
+        ``PREPARE`` down with it while psycopg goes on believing it happened,
+        and the retry then names a prepared statement that does not exist.
+        Measured, in the test of two devices writing one key. What is given up
+        is the server re-planning a statement it could have cached, which is
+        not a round trip.
         """
         psycopg = _psycopg()
         try:
-            conn = psycopg.connect(**dict(self.service.parameters), autocommit=True)
+            conn = psycopg.connect(
+                **dict(self.service.parameters), autocommit=True, prepare_threshold=None
+            )
         except psycopg.OperationalError as exc:
             raise BackendError(
                 "postgres-unreachable",
@@ -921,9 +933,27 @@ class PostgresStore(FileStore):
         """A cursor inside a transaction, committed on success and rolled back on failure.
 
         The connection is in autocommit, so this is the only place a
-        transaction is ever opened. The isolation level is named every time,
-        so a transaction never inherits the last one's, and psycopg sends it
-        with the ``BEGIN`` rather than as a statement of its own.
+        transaction is ever opened, and the isolation level is named in every
+        ``BEGIN``, so a transaction never inherits the last one's.
+
+        **``BEGIN`` and ``COMMIT`` are queued in a pipeline, not sent on their
+        own**, because each would otherwise be a round trip: psycopg's
+        ``transaction()`` block sends ``BEGIN`` the moment it is entered and
+        waits for it, and ``COMMIT`` the same way on leaving -- two of the
+        three round trips an ordinary write took. Queued, ``BEGIN`` goes out
+        with the first statement whose result is read, and ``COMMIT`` with
+        the synchronisation that ends the pipeline, so a write that reads
+        nothing back is one round trip. A statement whose result *is* read
+        still waits for it, which is what keeps a walk, a lock or a check ahead
+        of whatever depends on it. (psycopg's own block inside a pipeline was
+        measured costing more round trips than it saved: it synchronises on
+        the way in and out.)
+
+        The cost is when errors arrive: a failure is reported at the next
+        synchronisation rather than by the statement that caused it, which
+        :meth:`_writing` does not mind -- it looks at what failed, not at where
+        it was raised. Whatever fails, a transaction the server still has open
+        is rolled back before the error goes on.
 
         ``READ COMMITTED`` unless asked: what opening a store does is under an
         advisory lock, and a lock is only worth waiting for if the statements
@@ -932,11 +962,18 @@ class PostgresStore(FileStore):
         one that waits -- measured against PostgreSQL 18, not inferred. A write
         that wants the net goes through :meth:`_writing`, which also retries it.
         """
-        isolation = _psycopg().IsolationLevel
         conn = self._conn
-        conn.isolation_level = isolation.SERIALIZABLE if serializable else isolation.READ_COMMITTED
-        with conn.transaction(), conn.cursor() as cursor:
-            yield cursor
+        level = "SERIALIZABLE" if serializable else "READ COMMITTED"
+        try:
+            with conn.pipeline(), conn.cursor() as cursor:
+                conn.execute(f"BEGIN ISOLATION LEVEL {level}")
+                yield cursor
+                conn.execute("COMMIT")
+        except BaseException:
+            idle = _psycopg().pq.TransactionStatus.IDLE
+            if not conn.closed and conn.info.transaction_status != idle:
+                conn.execute("ROLLBACK")
+            raise
 
     def _writing(
         self,

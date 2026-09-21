@@ -58,8 +58,14 @@ pytestmark = pytest.mark.postgres
 
 
 def query(store, statement, parameters=()):
-    """One statement against the store's own connection, for asking the server."""
-    with store._transaction() as cursor:
+    """One statement against the store's own connection, for asking the server.
+
+    In a plain transaction rather than the store's pipelined one, because
+    whether a statement returned rows is only known once a pipeline is
+    synchronised, and this asks before fetching.
+    """
+    conn = store._conn
+    with conn.transaction(), conn.cursor() as cursor:
         cursor.execute(statement, parameters)
         return cursor.fetchall() if cursor.description else []
 
@@ -1401,6 +1407,124 @@ def test_a_deletes_unchanged_since_is_atomic(tmp_path, postgres_service, monkeyp
     finally:
         first.close()
         second.close()
+
+
+# -- round trips -------------------------------------------------------------
+
+
+class _RoundTrips:
+    """A TCP proxy in front of the test server that counts round trips.
+
+    A round trip starts each time the client sends after the server has
+    answered, which is what a remote server charges for; counting bytes or
+    statements would miss exactly the difference that matters here, between
+    statements queued together and statements each waited for.
+    """
+
+    def __init__(self, host, port):
+        import socket
+
+        self.count = 0
+        self._lock = threading.Lock()
+        self._target = (host, port)
+        self._server = socket.create_server(("127.0.0.1", 0))
+        self.port = self._server.getsockname()[1]
+        threading.Thread(target=self._accept, daemon=True).start()
+
+    def _accept(self):
+        import socket
+
+        while True:
+            try:
+                client, _ = self._server.accept()
+            except OSError:
+                return
+            upstream = socket.create_connection(self._target)
+            last = {"side": None}
+            for src, dst, side in ((client, upstream, "client"), (upstream, client, "server")):
+                threading.Thread(
+                    target=self._pump, args=(src, dst, side, last), daemon=True
+                ).start()
+
+    def _pump(self, src, dst, side, last):
+        while True:
+            try:
+                data = src.recv(65536)
+            except OSError:
+                data = b""
+            if not data:
+                try:
+                    dst.close()
+                except OSError:
+                    pass
+                return
+            with self._lock:
+                if side == "client" and last["side"] != "client":
+                    self.count += 1
+                last["side"] = side
+            try:
+                dst.sendall(data)
+            except OSError:
+                return
+
+    def close(self):
+        self._server.close()
+
+
+@pytest.fixture
+def counted_store(tmp_path, postgres_service):
+    """An open store whose connection goes through :class:`_RoundTrips`, and the counter."""
+    psycopg = pytest.importorskip("psycopg")
+    _path, service, schema = postgres_service
+    parameters = psycopg.conninfo.conninfo_to_dict(postgres_dsn())
+    proxy = _RoundTrips(parameters.get("host", "localhost"), int(parameters.get("port", 5432)))
+    parameters.update(host="127.0.0.1", port=str(proxy.port), options=f"-csearch_path={schema}")
+    path = tmp_path / "counted.conf"
+    written = "\n".join(f"{name}={value}" for name, value in sorted(parameters.items()))
+    path.write_text(f"[{service}]\n{written}\n", encoding="utf-8")
+    try:
+        with PostgresStore(tmp_path / "counted", filename=path, service=service) as opened:
+            opened.store_document("c/1/task", "x")
+            yield opened, proxy
+    finally:
+        proxy.close()
+
+
+@pytest.mark.parametrize(
+    ("operation", "trips"),
+    [
+        (lambda s: s.store_document("a", "x"), 1),
+        (lambda s: s.store_document("a", "x", title="T", contents="C"), 1),
+        (lambda s: s.store_document("c/?/task", "x", title="T"), 3),
+        (lambda s: s.delete("c/1/task"), 2),
+    ],
+    ids=["write", "write-with-metadata", "allocate", "delete"],
+)
+def test_a_write_costs_the_round_trips_it_has_to(counted_store, operation, trips):
+    """``BEGIN`` and ``COMMIT`` ride with the statements beside them.
+
+    The rest is what each operation cannot avoid: a write reads nothing back,
+    an allocation waits for its walk and then its claim, and a delete waits
+    for the keys it took. psycopg's own transaction block would add two to
+    each, and pass every other test.
+    """
+    opened, proxy = counted_store
+    before = proxy.count
+    operation(opened)
+    assert proxy.count - before == trips
+
+
+def test_a_write_that_fails_leaves_no_transaction_open(postgres_store):
+    """Rolled back by hand, since ``BEGIN`` is: a failure inside must not strand one."""
+    psycopg = pytest.importorskip("psycopg")
+    postgres_store.store_document("a", "x", updated_at="2026-12-01T00:00:00+00:00")
+    with pytest.raises(store_module.ChangedSinceError):
+        postgres_store.delete("a", unchanged_since="2026-06-01T00:00:00+00:00")
+    assert postgres_store._conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+    query(postgres_store, f"UPDATE {SCHEMA_TABLE} SET write_floor = %s", (SCHEMA_VERSION + 1,))
+    with pytest.raises(ReadOnlyStoreError):
+        postgres_store.store_document("b", "x")
+    assert postgres_store._conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
 
 
 # -- the write floor, at the server ----------------------------------------
