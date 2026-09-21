@@ -2612,6 +2612,22 @@ def test_copy_dry_run_writes_nothing(tmp_path):
     assert "preview/team/plans/q3" not in listed
 
 
+def test_the_moment_reported_is_the_guarded_stores_own_clock(tmp_path, capsys, monkeypatch):
+    """Both commands ask the store they guard, as the tools do."""
+    from outrage.store_sqlite import SqliteStore
+
+    monkeypatch.setattr(SqliteStore, "now", lambda self, key="", **_: "2001-02-03T04:05:06+00:00")
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    run("copy", "--dir", str(directory), "team/plans", "preview", "--dry-run")
+    copied = capsys.readouterr().err
+    run("rm", "--dir", str(directory), "team/plans", "--recursive", "--dry-run")
+    removed = capsys.readouterr().err
+
+    assert "--unchanged-since 2001-02-03T04:05:06+00:00" in copied
+    assert "--unchanged-since 2001-02-03T04:05:06+00:00" in removed
+
+
 def test_copy_dry_run_reports_the_moment_to_pass_back(tmp_path, capsys):
     """Look, then write only what has not moved: the second call needs the first's time.
 

@@ -630,6 +630,21 @@ mount at `lib/ref` puts `lib` in a listing, and no store holds a row
 there; [`descendant_count()`](#outrage.mounts.MountedStore.descendant_count) has never counted those either, and
 answering differently here is precisely the disagreement above.
 
+#### now(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = keys.ROOT, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
+
+The earliest clock of the stores `key`'s subtree spans.
+
+A watermark over a subtree holding another mount is compared with
+stamps from more than one store, each written by its own clock. The
+earliest of them cannot miss a change in any: every store's stamps
+after this moment are at or after its own clock, which is at or after
+the earliest. What it can do is refuse over a change made just before,
+in a store whose clock is ahead, which is a refusal bounded by the skew
+rather than a write over work nobody saw.
+
+A store on this machine answers without any I/O, so a table of local
+stores costs nothing here.
+
 #### latest_change(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The newest change any mount the range touches holds below `key`.

@@ -1409,6 +1409,71 @@ def test_a_deletes_unchanged_since_is_atomic(tmp_path, postgres_service, monkeyp
         second.close()
 
 
+# -- the server's clock -----------------------------------------------------
+
+
+@pytest.fixture
+def wrong_local_clock(monkeypatch):
+    """This machine's clock set far from the server's, so a stamp says whose clock made it."""
+    monkeypatch.setattr(store_module, "_now", lambda: "1999-01-01T00:00:00+00:00")
+
+
+def _server_time(store):
+    return query(
+        store,
+        """SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"+00:00"')""",
+    )[0][0]
+
+
+def _close(a, b, seconds=5):
+    from datetime import datetime
+
+    return abs((datetime.fromisoformat(a) - datetime.fromisoformat(b)).total_seconds()) <= seconds
+
+
+def test_a_write_naming_no_time_is_stamped_by_the_server(postgres_store, wrong_local_clock):
+    postgres_store.store_document("a", "x", title="T")
+    postgres_store.store_document("c/?/task", "x", title="T")
+
+    stamps = {
+        key: postgres_store.retrieve_document(key).updated_at
+        for key in ("a", "a/!title", "c/1/task", "c/1/task/!title")
+    }
+    assert all(_close(stamp, _server_time(postgres_store)) for stamp in stamps.values()), stamps
+    # A document and its metadata carry one stamp, as on every other backend.
+    assert stamps["a"] == stamps["a/!title"]
+    assert stamps["c/1/task"] == stamps["c/1/task/!title"]
+
+
+def test_a_write_naming_its_time_keeps_it(postgres_store):
+    """What a copy does: the source's stamp travels with the document."""
+    postgres_store.store_document("a", "x", title="T", updated_at="2020-05-06T07:08:09+00:00")
+    assert postgres_store.retrieve_document("a").updated_at == "2020-05-06T07:08:09+00:00"
+    assert postgres_store.retrieve_document("a/!title").updated_at == "2020-05-06T07:08:09+00:00"
+
+
+def test_the_store_tells_the_time_by_the_servers_clock(postgres_store, wrong_local_clock):
+    told = postgres_store.now("anything")
+    assert _close(told, _server_time(postgres_store))
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00", told)
+
+
+def test_a_watermark_from_the_server_guards_a_write_this_machine_would_miss(
+    postgres_store, monkeypatch
+):
+    """The hole itself, in the direction that loses work: this machine's clock ahead.
+
+    A watermark from a clock ahead of the stamps is later than a write made
+    after the look, and the guarded delete goes ahead over it.
+    """
+    monkeypatch.setattr(store_module, "_now", lambda: "2099-01-01T00:00:00+00:00")
+    looked = postgres_store.now("a")
+    time.sleep(1.1)
+    postgres_store.store_document("a/b", "written after the look")
+    with pytest.raises(store_module.ChangedSinceError):
+        postgres_store.delete("a", recursive=True, unchanged_since=looked)
+
+
 # -- round trips -------------------------------------------------------------
 
 

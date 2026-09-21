@@ -26,7 +26,9 @@ follows from that is most of what is written down here.
   `COLLATE "C"` -- see `_TABLE`.
 * **The server's clock stamps writes**, not this process's, because two
   devices with skewed clocks would otherwise let a precondition pass over a
-  newer write.
+  newer write. A write that carries no `updated_at` is stamped inside the
+  statement that writes it (`_STAMP`), and [`PostgresStore.now()`](#outrage.store_postgres.PostgresStore.now)
+  answers from the same clock, which is what a watermark is taken from.
 * **The database's encoding is checked on the way in.** `_utf8()`'s guard in
   the SQLite backend, moved to the one moment a connection can answer it: a
   database that is not UTF8 would make every byte-addressed read a conversion,
@@ -77,7 +79,7 @@ parts rather than one.
 
 ## What is *not* here yet
 
-The server's clock, or the maintenance half of the interface: [`PostgresStore.check_file()`](#outrage.store_postgres.PostgresStore.check_file)
+The maintenance half of the interface: [`PostgresStore.check_file()`](#outrage.store_postgres.PostgresStore.check_file)
 and [`PostgresStore.repair()`](#outrage.store_postgres.PostgresStore.repair) raise [`NotImplementedError`](https://docs.python.org/3/builtins/exceptions.html#NotImplementedError). The
 backend is deliberately left **out** of `outrage.store._BACKENDS` while that
 is true, so no mount spec can reach a half-built store and no configuration
@@ -452,6 +454,13 @@ on this backend it is atomic: the check reads through the same
 connection, and a write that lands between the check and the delete
 makes the serializable transaction fail and start again, check and
 all. A dry run checks it the ordinary way.
+
+#### now(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = keys.ROOT, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
+
+The server's time, from the clock that stamps this store's writes.
+
+One statement, and `key` does not change the answer: the whole store
+is stamped by the one server.
 
 #### descendant_count(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [int](https://docs.python.org/3/builtins/functions.html#int)
 

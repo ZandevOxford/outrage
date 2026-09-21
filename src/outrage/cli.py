@@ -2377,7 +2377,7 @@ def _copy_command(args: argparse.Namespace, out: TextIO) -> int:
         key_range = store.KeyRange(**{name: getattr(args, name) for name in _RANGE_ARGUMENTS})
         # Read before the walk starts, so that anything written while the copy
         # runs is later than what a second call would be measured against.
-        checked_at = store._now()
+        checked_at = opened.now(target)
         transfers = opened.copy_from(
             opened,
             store.BoundedSubtree(source, args.depth),
@@ -2557,7 +2557,7 @@ def _rm_command(args: argparse.Namespace, out: TextIO) -> int:
     """Delete a key, saying what went and what stayed."""
     with _open_table(args) as opened:
         _resolved(opened, args)
-        checked_at = store._now()
+        checked_at = opened.now(args.key)
         beneath = opened.descendant_count(args.key)
         if args.dry_run:
             # The delete's own selection, asked of the store: it walked the

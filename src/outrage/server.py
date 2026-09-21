@@ -82,7 +82,6 @@ from .store import (
     SearchCriterion,
     SearchTarget,
     Store,
-    _now,
 )
 
 
@@ -1642,7 +1641,7 @@ def build_server(
         # Read before the delete, so that anything written while this call runs
         # is later than the moment a second call is measured against. The copy's
         # dry run takes its watermark the same way and for the same reason.
-        checked_at = _now()
+        checked_at = table.now(at)
         deleted = table.delete(
             at, recursive=recursive, unchanged_since=unchanged_since, dry_run=dry_run
         )
@@ -1804,7 +1803,7 @@ def build_server(
         )
         # Read before the walk starts, so that a document written while this
         # call runs is later than the moment a second call is measured against.
-        checked_at = _now()
+        checked_at = table.now(at_target)
         transfers = table.copy_from(
             table,
             BoundedSubtree(at_source, depth),

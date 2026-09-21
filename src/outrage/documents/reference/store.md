@@ -1307,6 +1307,18 @@ See [`outrage.keys.meta_range()`](keys.md#outrage.keys.meta_range).
 that includes keys a mount has made unreachable tells a caller to pass
 `recursive` to remove keys that are not there to remove.
 
+#### now(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = keys.ROOT, \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
+
+The time by the clock that stamps writes under `key`, as a stamp is spelled.
+
+What a watermark is taken from: `checked_at` is handed back as
+`unchanged_since` and compared with the stamps this store wrote, so
+it has to come from the same clock or the skew between the two is a
+window in which a change goes unseen. For a store on this machine that
+is this machine's clock, which is this default. A store stamped by a
+clock elsewhere -- a database server -- answers from that one, and a
+mount table answers with the earliest of the clocks under `key`.
+
 #### latest_change(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
 The newest `updated_at` below `key`, or None where nothing is.

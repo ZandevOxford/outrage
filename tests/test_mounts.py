@@ -2860,3 +2860,48 @@ def test_an_error_from_inside_a_mount_names_the_key_the_caller_passed(tmp_path):
         with raises_rendered(KeyNotFoundError, "'ref/nope'") as raised:
             table.retrieve_document("ref/nope")
         assert raised.value.details["key"] == "ref/nope"
+
+
+# -- whose clock a watermark comes from -----------------------------------------
+
+
+class _Clocked(SqliteStore):
+    """A store stamped by a clock that is not this machine's, as a database server's is."""
+
+    def __init__(self, *args, reading, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.reading = reading
+
+    def now(self, key=keys.ROOT, *, key_range=UNBOUNDED):
+        return self.reading
+
+
+def test_a_table_answers_with_the_earliest_clock_under_the_key(tmp_path):
+    """One watermark faces every store the subtree spans; the earliest misses none of them."""
+    with (
+        _Clocked(tmp_path / "outer", reading="2026-09-21T10:00:05+00:00") as outer,
+        _Clocked(tmp_path / "inner", reading="2026-09-21T10:00:02+00:00") as inner,
+        _Clocked(tmp_path / "apart", reading="2026-09-21T09:00:00+00:00") as apart,
+    ):
+        table = MountedStore({"": outer, "a/shared": inner, "b": apart})
+
+        assert table.now("a") == "2026-09-21T10:00:02+00:00"
+        assert table.now("a/shared/x") == "2026-09-21T10:00:02+00:00"
+        # A mount outside the subtree is not one the watermark will face.
+        assert table.now("a/other") == "2026-09-21T10:00:05+00:00"
+
+
+def test_checked_at_comes_from_the_clock_of_the_store_being_guarded(tmp_path):
+    """Not this machine's: the watermark is compared with the stamps that store wrote."""
+    reading = "2001-02-03T04:05:06+00:00"
+    with SqliteStore(tmp_path / "root") as root, _Clocked(tmp_path / "far", reading=reading) as far:
+        far.store_document("doc", "x", updated_at="2000-01-01T00:00:00+00:00")
+        server = build_server(MountedStore({"": root, "far": far}))
+
+        looked = call(server, "delete_keys", key="far/doc", dry_run=True)
+        copied = call(server, "copy_tree", source="far/doc", target="far/copy", dry_run=True)
+        local = call(server, "delete_keys", key="elsewhere", dry_run=True)
+
+    assert looked["checked_at"] == reading
+    assert copied["checked_at"] == reading
+    assert local["checked_at"] != reading

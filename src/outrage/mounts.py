@@ -1552,6 +1552,26 @@ class MountedStore(Store):
             documents += totals.documents + at
         return SubtreeTotals(keys=counted, documents=documents, chars=measured if chars else None)
 
+    def now(self, key: str = keys.ROOT, *, key_range: KeyRange = UNBOUNDED) -> str:
+        """The earliest clock of the stores ``key``'s subtree spans.
+
+        A watermark over a subtree holding another mount is compared with
+        stamps from more than one store, each written by its own clock. The
+        earliest of them cannot miss a change in any: every store's stamps
+        after this moment are at or after its own clock, which is at or after
+        the earliest. What it can do is refuse over a change made just before,
+        in a store whose clock is ahead, which is a refusal bounded by the skew
+        rather than a write over work nobody saw.
+
+        A store on this machine answers without any I/O, so a table of local
+        stores costs nothing here.
+        """
+        readings = []
+        for segment in self.segments(self.resolve(key).outer, key_range=key_range):
+            with _renamed(segment.mount):
+                readings.append(segment.store.now(segment.subtree.key, key_range=segment.key_range))
+        return min(readings, default=None) or super().now(key)
+
     def latest_change(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
     ) -> str | None:

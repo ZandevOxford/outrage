@@ -5,205 +5,208 @@
 493 493 11
 
 ## Where the store is, inside the database
-2179 2179 35
+2420 2420 37
 
 ## Round trips
-2713 2713 45
+2954 2954 47
 
 ## Concurrent writers
-3364 3364 57
+3605 3605 59
 
 ## What is *not* here yet
-4518 4518 78
+4759 4759 80
 
 ### outrage.store_postgres.ARCHIVE_TABLE *= 'document_archive'*
-5054 5054 86
+5272 5272 88
 
 ### outrage.store_postgres.AUDIT_CHUNK *= 8192*
-5343 5343 92
+5561 5561 94
 
 ### outrage.store_postgres.BATCH *= 64*
-5421 5421 96
+5639 5639 98
 
 ### outrage.store_postgres.BATCH_CEILING *= 4096*
-5871 5871 105
+6089 6089 107
 
 ### outrage.store_postgres.CLIENT_VERSION_SETTING *= 'outrage.client_version'*
-5991 5991 109
+6209 6209 111
 
 ### outrage.store_postgres.DEFAULT_SERVICE_FILE *= 'pg_service.conf'*
-6330 6330 116
+6548 6548 118
 
 ### outrage.store_postgres.MIGRATIONS *: Mapping[int, Sequence[str]]* *= {}*
-6867 6867 125
+7085 7085 127
 
 ### outrage.store_postgres.MIN_SCHEMA_VERSION *= 1*
-7552 7552 133
+7770 7770 135
 
 ### outrage.store_postgres.READAHEAD *= 1048576*
-7830 7830 139
+8048 8048 141
 
 ### outrage.store_postgres.RETRY_PAUSE *= 0.01*
-8454 8454 150
+8672 8672 152
 
 ### outrage.store_postgres.SCHEMA_TABLE *= 'outrage_schema'*
-8675 8675 156
+8893 8893 158
 
 ### outrage.store_postgres.SCHEMA_VERSION *= 1*
-8788 8788 160
+9006 9006 162
 
 ### outrage.store_postgres.VERSIONING_OFF *= 'off'*
-8975 8975 165
+9193 9193 167
 
 ### outrage.store_postgres.VERSIONING_SETTING *= 'outrage.versioning'*
-9141 9141 169
+9359 9359 171
 
 ### outrage.store_postgres.VERSIONS *: Mapping[int, SchemaVersion]* *= {1: SchemaVersion(version=1, read_floor=1, write_floor=1)}*
-9571 9571 177
+9789 9789 179
 
 ### outrage.store_postgres.WRITE_ATTEMPTS *= 5*
-10306 10306 187
+10524 10524 189
 
 ### outrage.store_postgres.WRITE_FLOOR_SQLSTATE *= 'OR001'*
-10630 10630 194
+10848 10848 196
 
 ### *class* outrage.store_postgres.Compatibility(stored: SchemaVersion, operating: int, writable: bool)
-10980 10980 201
+11198 11198 203
 
 #### stored *: SchemaVersion*
-11542 11542 211
+11760 11760 213
 
 #### operating *: int*
-11709 11709 215
+11927 11927 217
 
 #### writable *: bool*
-12137 12137 224
+12355 12355 226
 
 #### *property* read_only_reason *: Refusal | None*
-12273 12273 228
+12491 12491 230
 
 ### *class* outrage.store_postgres.PostgresStore(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, service: str | None = None, log: EventLog | None = None, mount_point: str | None = None, versioning: bool = True, report: bool = False)
-12498 12498 232
+12716 12716 234
 
 #### default_filename *: ClassVar[str]* *= 'pg_service.conf'*
-13806 13806 238
+14024 14024 240
 
 #### backend_name *: ClassVar[str]* *= 'postgres'*
-14315 14315 246
+14533 14533 248
 
 #### format_version *: ClassVar[int]* *= 1*
-14687 14687 252
+14905 14905 254
 
 #### writable *: ClassVar[bool]* *= True*
-15306 15306 260
+15524 15524 262
 
 #### versioned *: ClassVar[bool]* *= True*
-15665 15665 266
+15883 15883 268
 
 #### manages_schema *: ClassVar[bool]* *= True*
-15942 15942 271
+16160 16160 273
 
 #### locates_own_store *: ClassVar[bool]* *= True*
-16385 16385 278
+16603 16603 280
 
 #### service_name
-16951 16951 286
+17169 17169 288
 
 #### service
-17018 17018 290
+17236 17236 292
 
 #### path
-17204 17204 295
+17422 17422 297
 
 #### versioning
-17407 17407 301
+17625 17625 303
 
 #### problem *: Refusal | None*
-17602 17602 306
+17820 17820 308
 
 #### encoding
-17851 17851 311
+18069 18069 313
 
 #### schema
-18030 18030 317
+18248 18248 319
 
 #### stored *: SchemaVersion | None*
-18107 18107 321
+18325 18325 323
 
 #### compatibility *: Compatibility | None*
-18359 18359 326
+18577 18577 328
 
 #### *static* service_file(directory: str | PathLike[str] | None, filename: str | PathLike[str] | None) → Path | None
-18591 18591 331
+18809 18809 333
 
 #### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, lock: str | None = None, service: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
-20176 20178 350
+20394 20396 352
 
 #### *classmethod* reporting(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, service: str | None = None, log: EventLog | None = None) → Self
-22216 22220 361
+22434 22438 363
 
 #### close() → None
-23454 23460 370
+23672 23678 372
 
 #### *property* has_store *: bool*
-24097 24105 384
+24315 24323 386
 
 #### schema_state() → SchemaState
-24250 24258 388
+24468 24476 390
 
 #### create_schema(version: int | None = None) → SchemaVersion
-24589 24599 396
+24807 24817 398
 
 #### *property* stored_format_version *: int*
-25532 25544 412
+25750 25762 414
 
 #### store_document(key: str, content: str, format: str | None = None, \*, title: str | None = None, contents: str | None = None, encoding: str | None = None, updated_at: str | None = None) → str
-25972 25984 421
+26190 26202 423
 
 #### delete(key: str, recursive: bool = False, \*, key_range: KeyRange = UNBOUNDED, unchanged_since: str | None = None, dry_run: bool = False) → list[str]
-27694 27708 438
+27912 27926 440
+
+#### now(key: str = keys.ROOT, \*, key_range: KeyRange = UNBOUNDED) → str
+29360 29376 458
 
 #### descendant_count(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → int
-29142 29158 456
+29750 29768 465
 
 #### subtree_totals(key: str, \*, key_range: KeyRange = UNBOUNDED, chars: bool = False) → SubtreeTotals
-29530 29548 460
+30138 30158 469
 
 #### latest_change(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → str | None
-30126 30146 469
+30734 30756 478
 
 #### exists(key: str) → bool
-30841 30863 477
+31449 31473 486
 
 #### level_entry(key: str) → Entry | None
-31032 31056 481
+31640 31666 490
 
 #### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, line: int | None = None, lines: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
-31503 31529 489
+32111 32139 498
 
 #### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
-32945 32973 499
+33553 33583 508
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-34496 34526 516
+35104 35136 525
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0, coverage: bool = False) → MissingMeta
-36211 36243 531
+36819 36853 540
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-37293 37327 540
+37901 37937 549
 
 #### audit_rows() → Iterator[AuditRow]
-38320 38356 547
+38928 38966 556
 
 #### check_file(report: Report) → None
-38749 38787 556
+39357 39397 565
 
 #### repair() → list[Repaired]
-39509 39549 570
+40117 40159 579
 
 ### *exception* outrage.store_postgres.ServiceUnusable(code: str, \*\*details: Any)
-40309 40351 584
+40917 40961 593
 
 ### outrage.store_postgres.compatibility(stored: SchemaVersion) → Compatibility
-41126 41168 597
+41734 41778 606

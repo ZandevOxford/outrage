@@ -24,7 +24,9 @@ follows from that is most of what is written down here.
   ``COLLATE "C"`` -- see :data:`_TABLE`.
 * **The server's clock stamps writes**, not this process's, because two
   devices with skewed clocks would otherwise let a precondition pass over a
-  newer write.
+  newer write. A write that carries no ``updated_at`` is stamped inside the
+  statement that writes it (:data:`_STAMP`), and :meth:`PostgresStore.now`
+  answers from the same clock, which is what a watermark is taken from.
 * **The database's encoding is checked on the way in.** ``_utf8()``'s guard in
   the SQLite backend, moved to the one moment a connection can answer it: a
   database that is not UTF8 would make every byte-addressed read a conversion,
@@ -75,7 +77,7 @@ parts rather than one.
 
 ## What is *not* here yet
 
-The server's clock, or the maintenance half of the interface: :meth:`PostgresStore.check_file`
+The maintenance half of the interface: :meth:`PostgresStore.check_file`
 and :meth:`PostgresStore.repair` raise :class:`NotImplementedError`. The
 backend is deliberately left **out** of ``outrage.store._BACKENDS`` while that
 is true, so no mount spec can reach a half-built store and no configuration
@@ -131,7 +133,6 @@ from .store import (
     _line_byte_offset,
     _line_excerpt,
     _logged,
-    _now,
     _scope,
     _with_descendants,
     check_read_position,
@@ -285,6 +286,21 @@ _ARCHIVE_INDEX = "CREATE INDEX IF NOT EXISTS idx_archive_key ON {archive} (key, 
 
 #: The stored columns of a row, in :func:`outrage.store_sqlite._row_values`'s order.
 _COLUMNS = "(key, doc_key, meta_name, meta_path, parent, content, format, updated_at, sort_key)"
+
+#: The server's time, spelled as every stamp is: UTC to the second, the
+#: spelling :func:`outrage.store._now` writes, so a stamp from either clock
+#: compares with one from the other as text. Both truncate rather than round.
+#:
+#: ``now()`` is the time the transaction began, so a document and its
+#: metadata carry one stamp, as they do on every other backend. That is
+#: before the transaction commits, and a write is invisible until it does, so
+#: a watermark taken in between is later than a write it could not see. The
+#: window is one write transaction, which is well inside the second a stamp
+#: is truncated to.
+_STAMP = """to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"+00:00"')"""
+
+#: One row's values, with the stamp left to the server where the caller gave none.
+_ROW = f"%s, %s, %s, %s, %s, %s, %s, coalesce(%s, {_STAMP}), %s"
 
 #: What an upsert moves when the key is already there: the three columns that
 #: are not derived from the key.
@@ -1412,7 +1428,9 @@ class PostgresStore(FileStore):
         if holding:
             raise InvalidArgumentError("postgres-nul-character", key=key, fields=holding)
         self._writable(key, "write")
-        stamp = updated_at or _now()
+        # None where the caller named no time: the server stamps it, in the
+        # statement that writes it -- see _STAMP.
+        stamp = updated_at
 
         def meta_rows(target: keys.Key) -> list[tuple[object, ...]]:
             return [
@@ -1429,8 +1447,7 @@ class PostgresStore(FileStore):
         def write(cursor: Any) -> str:
             rows = [_row_values(parsed, content, format, stamp), *meta_rows(parsed)]
             cursor.executemany(
-                f"INSERT INTO {self._documents} {_COLUMNS} "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                f"INSERT INTO {self._documents} {_COLUMNS} VALUES ({_ROW}) "
                 f"ON CONFLICT (key) DO UPDATE SET {_UPSERTED}",
                 rows,
             )
@@ -1451,7 +1468,7 @@ class PostgresStore(FileStore):
         parsed: keys.Key,
         content: str,
         format: str | None,
-        stamp: str,
+        stamp: str | None,
         meta_rows: Callable[[keys.Key], list[tuple[object, ...]]],
     ) -> str:
         """Write ``parsed`` under the first number free among its parent's children.
@@ -1505,7 +1522,7 @@ class PostgresStore(FileStore):
                 rows = [_row_values(target, content, format, stamp), *meta_rows(target)]
                 claimed = (
                     f"WITH claimed AS (INSERT INTO {self._documents} {_COLUMNS} "
-                    "SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s "
+                    f"SELECT {_ROW} "
                     f"WHERE NOT EXISTS (SELECT 1 FROM {self._documents} "
                     f"WHERE key = %s OR {_native(below)}) "
                     "ON CONFLICT (key) DO NOTHING RETURNING key)"
@@ -1515,7 +1532,7 @@ class PostgresStore(FileStore):
                     claimed += (
                         f", meta AS (INSERT INTO {self._documents} {_COLUMNS} "
                         "SELECT * FROM (VALUES "
-                        + ", ".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s)"] * (len(rows) - 1))
+                        + ", ".join([f"({_ROW})"] * (len(rows) - 1))
                         + ") AS row WHERE EXISTS (SELECT 1 FROM claimed) "
                         f"ON CONFLICT (key) DO UPDATE SET {_UPSERTED})"
                     )
@@ -1612,6 +1629,16 @@ class PostgresStore(FileStore):
             write_floor=decided.stored.write_floor,
             build=SCHEMA_VERSION,
         )
+
+    def now(self, key: str = keys.ROOT, *, key_range: KeyRange = UNBOUNDED) -> str:
+        """The server's time, from the clock that stamps this store's writes.
+
+        One statement, and ``key`` does not change the answer: the whole store
+        is stamped by the one server.
+        """
+        row = self._one(f"SELECT {_STAMP}")
+        assert row is not None  # noqa: S101 - a SELECT without FROM returns a row
+        return str(row[0])
 
     # -- aggregates ----------------------------------------------------------
 
