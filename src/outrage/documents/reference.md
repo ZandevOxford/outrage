@@ -40,7 +40,16 @@ arrives in pieces; it refuses writes too. [`outrage.store_files`](reference/stor
 directory of files, one per key, which is what an export target and a working
 copy are -- the shape a person edits by hand.
 
-[`outrage.pgservice`](reference/pgservice.md#module-outrage.pgservice) is a backend's connection details rather than a
+[`outrage.store_postgres`](reference/store_postgres.md#module-outrage.store_postgres) is the first backend whose store is not on this
+machine: one schema in a PostgreSQL database, shared by every device that can
+reach it. What follows from that is most of the module -- the schema version
+lives at the far end and a client operates at the version it finds rather than
+migrating one somebody else is using, the server's clock stamps writes because
+two devices' clocks are not the same clock, and the ordering every page in
+this package assumes has to be *declared*, since a Postgres database normally
+sorts by a locale rather than by bytes.
+
+[`outrage.pgservice`](reference/pgservice.md#module-outrage.pgservice) is that backend's connection details rather than a
 backend: the libpq service file a PostgreSQL store is named by, read and
 validated without the driver and before any socket is opened, so that a
 misspelled parameter or a certificate that is not there is a refusal about a
@@ -79,6 +88,7 @@ ordinary mount files are relative to `--dir`.
 * [outrage.store_pyarrow](reference/store_pyarrow.md)
 * [outrage.store_duckdb](reference/store_duckdb.md)
 * [outrage.store_files](reference/store_files.md)
+* [outrage.store_postgres](reference/store_postgres.md)
 * [outrage.pgservice](reference/pgservice.md)
 * [outrage.mounts](reference/mounts.md)
 * [outrage.remount](reference/remount.md)

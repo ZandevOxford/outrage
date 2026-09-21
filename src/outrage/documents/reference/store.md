@@ -75,6 +75,21 @@ The backend a store is kept in when nobody says otherwise, and so the one an
 unrecognised extension falls back to. See `_backend_for()` for why the
 fallback is a fallback rather than a refusal.
 
+### outrage.store.backend_for(filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, backend: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [type](mounts.md#outrage.mounts.Spec.type)[[FileStore](#outrage.store.FileStore)]
+
+The backend class a store file, or a `type=`, names.
+
+`_backend_for()` under a public name, for the one thing a front end
+sometimes has to do before it opens anything: ask a *question about the
+backend*. Whether a store carries a schema somebody migrates decides
+whether `outrage schema` has anything to do with it at all, and it has
+to be answered before the store is opened, because the answer changes how
+it is opened.
+
+Everything else about a store is asked of the store. This is deliberately
+not a way to construct one: [`default_store()`](#outrage.store.default_store) is, and it is what
+applies the option refusals a mount spec earns.
+
 ### outrage.store.backend_names() → [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...]
 
 Every word a `type=` option may say: each backend's name, and each alias.
@@ -534,6 +549,25 @@ that does: `outrage.mounts.Spec.opened` refuses an omitted file for
 every backend that answers False, because such a mount would otherwise
 open this directory's default store under somebody else's mount point.
 
+#### manages_schema *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= False*
+
+Whether this backend's storage carries a schema version somebody
+**migrates**, rather than one this build brings forward itself when it
+opens a store.
+
+False for every backend whose store is a file on this machine: the
+build that opens it is the only build that has it, so migrating in
+place at open is safe and is what [`format_version`](#outrage.store.FileStore.format_version) means there.
+True for a store several devices share, where a migration by one client
+must not lock the others out without warning -- so the version is read
+rather than raised, a client operates at the version it finds, and
+changing it is a command somebody runs.
+
+It is what `outrage schema` dispatches on. The command is generic
+across database backends rather than spelled for one, so a backend that
+answers False refuses it and names itself, instead of being told apart
+from PostgreSQL by name anywhere in the front ends.
+
 #### *classmethod* in_directory(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lock: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
 This backend's store, named as a file inside a store directory.
@@ -575,6 +609,28 @@ so only [`FilesystemStore`](store_files.md#outrage.store_files.FilesystemStore) 
 `service` is that shape once more, from the far side: which entry of
 a connection file this store is. A backend that opens a file has no
 connection to name, and refuses it rather than ignoring it.
+
+#### *classmethod* reporting(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
+
+This backend's store, opened to be **asked about** rather than used.
+
+The one open that must not create anything: a command reporting on a
+schema has to leave an empty one empty, and a command creating one has
+to find nothing there before it writes. It also has to survive meeting
+a store this build could not operate at, since that is exactly the
+store a report is worth having about.
+
+Only a backend whose schema is *managed* has either problem --
+[`manages_schema`](#outrage.store.FileStore.manages_schema) -- so the base refuses rather than offering an
+open that would be indistinguishable from the ordinary one. A front
+end asks [`manages_schema`](#outrage.store.FileStore.manages_schema) first and says so in its own words;
+this is the guard for a caller that did not.
+
+Deliberately **not** reached through `Spec.opened`. Every field a
+spec carries is a statement about how to open a store, and this is a
+statement about what the open is *for* -- so threading it through the
+spec would put a caller's intent into a value that is meant to be a
+configuration, where a mount table could then carry it.
 
 #### opened_at(path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
@@ -1546,6 +1602,83 @@ free of absolute paths that stop being true when a project moves. An
 absolute path, or one climbing out with `..`, is refused here rather than
 quietly opening a database somewhere nobody was looking.
 
+### *class* outrage.store.SchemaState(backend: [str](https://docs.python.org/3/builtins/stdtypes.html#str), service: [str](https://docs.python.org/3/builtins/stdtypes.html#str), path: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), schema: [str](https://docs.python.org/3/builtins/stdtypes.html#str), stored: [SchemaVersion](#outrage.store.SchemaVersion) | [None](https://docs.python.org/3/builtins/constants.html#None), oldest: [int](https://docs.python.org/3/builtins/functions.html#int), newest: [int](https://docs.python.org/3/builtins/functions.html#int), operating: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), writable: [bool](https://docs.python.org/3/builtins/functions.html#bool), problem: [Refusal](errors.md#outrage.errors.Refusal) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
+
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
+
+Everything `outrage schema status` reports, as one value.
+
+Here rather than in a backend because it is the *vocabulary* a managed
+schema is answered in, like [`Report`](maintenance.md#outrage.maintenance.Report) for a
+check: the second database backend answers in these terms too, and
+`outrage schema` is written against them rather than against one
+backend. A value rather than a printed report, for the reason every other
+answer in this package is one: the wording belongs to a front end, and two
+front ends asking the same question must not reach two different decisions
+about what it means. `outrage check` reports the same fields.
+
+`stored` is None where the schema holds no store yet, which is the one
+state a *question* can meet and an open cannot. `problem` is the reason
+this build cannot fully use what it found -- a version below its floor, or
+a store only newer builds may write -- and is None when there is none.
+
+#### backend *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
+
+Which backend answered, named in every line of the report.
+
+#### service *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
+
+The service entry the store was reached through.
+
+#### path *: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path)*
+
+The service file that entry was read from.
+
+#### schema *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
+
+The schema inside the database the store is, or would be, in.
+
+#### stored *: [SchemaVersion](#outrage.store.SchemaVersion) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+The store's own three numbers, or None where there is no store.
+
+#### oldest *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
+The oldest version this build operates at.
+
+#### newest *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
+The newest version this build knows, and what it would create at.
+
+#### operating *: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+The version this build would work at, or None where it could not.
+
+#### writable *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+Whether this build would be able to write what it found.
+
+#### problem *: [Refusal](errors.md#outrage.errors.Refusal) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+Why it could not, or could only read, when that is the answer.
+
+### *class* outrage.store.SchemaVersion(version: [int](https://docs.python.org/3/builtins/functions.html#int), read_floor: [int](https://docs.python.org/3/builtins/functions.html#int), write_floor: [int](https://docs.python.org/3/builtins/functions.html#int))
+
+Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
+
+One schema version, and the builds it leaves able to use the store.
+
+`read_floor` and `write_floor` are the oldest build that may read and
+the oldest that may write a store at this version. A migration declares
+the floors it leaves behind, which is what lets an older client be turned
+away precisely rather than left to write rows a newer schema alone reads.
+
+#### version *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
+#### read_floor *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
+#### write_floor *: [int](https://docs.python.org/3/builtins/functions.html#int)*
+
 ### *class* outrage.store.SubtreeTotals(keys: [int](https://docs.python.org/3/builtins/functions.html#int), documents: [int](https://docs.python.org/3/builtins/functions.html#int), chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None))
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
@@ -1706,21 +1839,33 @@ it holds, so `notes[old].sqlite` goes on opening as itself. That half is
 decided where there is a directory to look in -- [`store_present()`](#outrage.store.store_present) and
 the backend -- and this is the half that needs none.
 
-### outrage.store.locates_own_store(backend: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
+### outrage.store.locates_own_store(backend: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, unknown: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
-Whether a mount of `backend` may leave its store file unsaid.
+Whether a mount of `backend` finds its own store, wherever that is.
 
 [`FileStore.locates_own_store`](#outrage.store.FileStore.locates_own_store), asked by name rather than by class,
-for the one caller outside this module that has to ask: a mount spec is a
-backend's *name* and a file that may be absent, and whether that is a spec
-at all is this registry's answer.
+for the callers outside this module that have to ask. Two questions turn
+out to be the same one. Whether a spec may leave its store file unsaid is
+the first: a mount spec is a backend's *name* and a file that may be
+absent, and whether that is a spec at all is this registry's answer. The
+second is whether a file it *does* name is a store inside `--dir` --
+which for such a backend it is not, so resolving it there and asking
+whether it is present would answer a question about the wrong file.
 
-An unknown name is refused here, in `_backend_for()`'s words, rather
-than answered False. A spec that named no file and misspelled its backend
-has two things wrong with it and the misspelling is the one to report:
-"no backend of that name" is what the reader can act on, where "this
-backend needs a file" would send them to look for a file they were right
-not to name.
+`unknown` is what to answer for a backend name this build does not
+recognise, and the default refuses it in `_backend_for()`'s words. A
+spec that named no file and misspelled its backend has two things wrong
+with it and the misspelling is the one to report: "no backend of that
+name" is what the reader can act on, where "this backend needs a file"
+would send them to look for a file they were right not to name.
+
+A caller that is **reporting** rather than opening passes False instead,
+because it has already decided not to resolve a backend at all --
+`outrage mounts` prints a row for a `type=` nobody knows rather than
+refusing one, since it reports a table rather than validating it. Such a
+caller wants the unknown backend treated as it always was, and the refusal
+made where every other statement about a backend is refused: when the
+store is opened.
 
 ### outrage.store.meta_reader(scope: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)], [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)]]
 

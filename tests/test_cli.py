@@ -21,6 +21,8 @@ from outrage import home, mountfile, mounts, shipped
 from outrage import ingest as ingest_module
 from outrage import install as install_module
 from outrage.cli import main, parse_args
+from outrage.store import _BACKENDS
+from outrage.store_sqlite import SqliteStore
 
 
 def run(*argv: str) -> tuple[int, str]:
@@ -3060,6 +3062,76 @@ def test_mounts_says_it_cannot_know_about_a_mount_that_names_no_file(tmp_path):
     assert status == 0
     assert "unknown" in output
     assert ",type=postgres" in output
+
+
+class _ElsewhereStore(SqliteStore):
+    """A backend whose file is not a store inside ``--dir``.
+
+    The PostgreSQL backend is the real one and is not registered yet, so the
+    half of the rule about a mount that *does* name a file would otherwise
+    reach nothing. It is a SQLite store under another name, opened at its own
+    default whatever file the spec named -- which is exactly the shape of a
+    backend named by somebody else's configuration file.
+    """
+
+    backend_name = "elsewhere"
+    default_filename = "elsewhere.sqlite"
+    locates_own_store = True
+
+    @classmethod
+    def in_directory(cls, directory=None, *, filename=None, **rest):
+        return super().in_directory(directory, filename=None, **rest)
+
+
+def test_mounts_says_it_cannot_know_about_a_file_that_is_not_a_store(tmp_path, monkeypatch):
+    """A named file is not knowable either, when the backend's file is not the store.
+
+    The service file a PostgreSQL mount names is a connection's configuration:
+    it may be absolute, it may be in the home directory, and finding it says
+    nothing about whether there is a store at the other end. Resolving it
+    against ``--dir`` would report presence of the wrong file, and for an
+    absolute one would refuse a mount that is perfectly good.
+    """
+    monkeypatch.setitem(_BACKENDS, "elsewhere", (__name__, "_ElsewhereStore"))
+    a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run(
+        "mounts",
+        "--dir",
+        str(tmp_path / ".outrage"),
+        "--mount",
+        "shared=/etc/pg_service.conf,type=elsewhere",
+    )
+
+    assert status == 0
+    assert "unknown" in output
+    assert "/etc/pg_service.conf,type=elsewhere" in output
+
+
+def test_backup_does_not_look_for_such_a_store_in_the_directory(tmp_path, monkeypatch):
+    """The third place that resolves a store file before opening one.
+
+    ``backup`` refuses a store that is not there, because opening one would
+    create it and backing up a store the caller never had is a success that
+    answers the wrong question. For a backend whose file is not the store that
+    check asks about the wrong file, and would refuse an absolute path
+    outright -- so it is skipped and the backend is opened instead.
+    """
+    monkeypatch.setitem(_BACKENDS, "elsewhere", (__name__, "_ElsewhereStore"))
+    directory = tmp_path / ".outrage"
+
+    status, output = run(
+        "backup",
+        "--dir",
+        str(directory),
+        "--store",
+        "/etc/pg_service.conf,type=elsewhere",
+        "--dry-run",
+    )
+
+    assert status == 0
+    assert "would back up" in output
+    assert "elsewhere.sqlite" in output
 
 
 def test_mounts_fails_on_a_table_that_would_not_open(tmp_path):

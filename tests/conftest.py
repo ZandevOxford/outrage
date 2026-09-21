@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import os
 import re
 import threading
+import uuid
 from collections.abc import Iterator
 from typing import Any
 
@@ -170,3 +172,80 @@ def long_options(parser: argparse.ArgumentParser) -> set[str]:
                 if isinstance(inner, argparse.ArgumentParser):
                     found |= long_options(inner)
     return found
+
+
+# -- a PostgreSQL server, where the machine running the suite has one --------
+
+#: Where the suite looks for a server. A DSN rather than a service file,
+#: because it is one line somebody exports and because every other tool takes
+#: one; the fixtures below turn it into the service file the backend reads, so
+#: that the connection path under test is the one a user takes.
+POSTGRES_DSN_VARIABLE = "OUTRAGE_TEST_POSTGRES"
+
+
+def postgres_dsn() -> str | None:
+    """The DSN the suite was given, or None where it was given none.
+
+    Absence is a skip and never a failure: a machine with no PostgreSQL is a
+    perfectly ordinary place to run this suite, which is the whole reason the
+    ``postgres`` marker exists beside this.
+    """
+    return os.environ.get(POSTGRES_DSN_VARIABLE) or None
+
+
+@pytest.fixture
+def postgres_schema():
+    """A schema name nothing else is using, dropped when the test ends.
+
+    A schema per test rather than a database per test: creating a database is
+    seconds and a schema is milliseconds, and a schema is what the backend
+    puts a store in anyway -- so the isolation is the same mechanism the
+    product uses rather than one invented for the suite.
+    """
+    dsn = postgres_dsn()
+    if dsn is None:
+        pytest.skip(f"{POSTGRES_DSN_VARIABLE} is not set")
+    psycopg = pytest.importorskip("psycopg")
+    name = f"outrage_test_{uuid.uuid4().hex[:12]}"
+    yield name
+    with psycopg.connect(dsn, connect_timeout=5) as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                psycopg.sql.SQL("DROP SCHEMA IF EXISTS {} CASCADE").format(
+                    psycopg.sql.Identifier(name)
+                )
+            )
+        conn.commit()
+
+
+@pytest.fixture
+def postgres_service(tmp_path, postgres_schema):
+    """A service file naming the test server, and the schema for this test.
+
+    **The suite is handed a DSN and the backend reads a service file**, so
+    this is where the two meet. Writing the file is not a convenience: the
+    service file *is* the connection path -- the lookup, the validation, the
+    paths resolved against the file -- and a fixture that connected from the
+    DSN directly would exercise a route no user takes.
+
+    Returns the file, the service name in it, and the schema the store will
+    be in. ``options=-csearch_path=`` is libpq's own spelling for that, and it
+    is what ``plans/postgres/connection-file`` tells a person to write.
+    """
+    psycopg = pytest.importorskip("psycopg")
+    parameters = psycopg.conninfo.conninfo_to_dict(postgres_dsn())
+    parameters["options"] = f"-csearch_path={postgres_schema}"
+    path = tmp_path / "pg_service.conf"
+    written = "\n".join(f"{name}={value}" for name, value in sorted(parameters.items()))
+    path.write_text(f"[outrage]\n{written}\n", encoding="utf-8")
+    return path, "outrage", postgres_schema
+
+
+@pytest.fixture
+def postgres_store(tmp_path, postgres_service):
+    """An open store in a schema of this test's own, closed when it ends."""
+    from outrage.store_postgres import PostgresStore
+
+    path, service, _schema = postgres_service
+    with PostgresStore(tmp_path / "dir", filename=path, service=service) as opened:
+        yield opened

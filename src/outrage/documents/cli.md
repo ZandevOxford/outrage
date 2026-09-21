@@ -8,7 +8,7 @@ Command line tool for the Outrage document store
 
 ```text
 outrage [-h] [--version]
-        {init,uninit,sessionstart,config,backup,log,get,set,ingest,make_contents,ls,dump,copy,export,import,pack,rm,check,mounts,info}
+        {init,uninit,sessionstart,config,backup,log,get,set,ingest,make_contents,ls,dump,copy,export,import,pack,rm,check,schema,mounts,info}
         ...
 ```
 
@@ -37,6 +37,7 @@ outrage [-h] [--version]
 - [`pack`](#pack) - build a read-only parquet store from a tree or another store
 - [`rm`](#rm) - delete a key
 - [`check`](#check) - check the store, and optionally repair it
+- [`schema`](#schema) - report or create the schema of a store that carries a managed one
 - [`mounts`](#mounts) - report the mount table a command line would open
 - [`info`](#info) - report this installation, and the stores it has open
 
@@ -660,6 +661,41 @@ outrage check [-h] [--dir PATH] [--store FILE] [--repair]
 - `--dir PATH` - Store directory. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
 - `--store FILE, --root-mount FILE` - Which store in that directory, as a file relative to it (default: store.sqlite). On a command that takes mounts this is the root mount -- the store answering for every key no mount claims -- and --root-mount is the same option. Takes the same options a --mount does, so --store documents,type=files reads a directory of files as the whole store.
 - `--repair` - Fix what the check found and the backend can act on: for SQLite, fold the write-ahead log back into the database and compact it. No repair changes a document, and a backend with nothing a repair could move says so rather than claiming to have acted.
+
+## `schema`
+
+Ask a store what schema version it is at, or create one at a chosen version. Only a store several
+devices share has either question: a store in a file on this machine is migrated in place by the
+build that opens it, because that build is the only one that has it. A shared store is not, so a
+client operates at the version it finds and changing that version is this command. `migrate` arrives
+with the first schema version there is a step to run for; until then a store is at the only version
+there is.
+
+### Usage
+
+```text
+outrage schema [-h] [--version N] [--dir PATH] [--store FILE]
+               [--mount KEY=FILE] [--mount-ro KEY=FILE] [--mount-docs]
+               [--mount-home] [--unmount KEY] [--mount-config FILE]
+               [--no-mount-config]
+               {status,create} [KEY]
+```
+
+### Arguments
+
+- `-h, --help` - show this help message and exit
+- `{status,create}` - status: the store's version and floors, what this build operates at, and what it would do on open. create: a blank store at --version, refusing a schema that already holds one.
+- `KEY` - Which mount, by mount point, so that this command names a store the same way every other configuration does. Defaults to the root store.
+- `--version N` - For create: which schema version to create, defaulting to the newest this build knows. A team whose oldest client knows an older version gets a store that client can use by naming it here.
+- `--dir PATH` - Store directory. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
+- `--store FILE, --root-mount FILE` - Which store in that directory, as a file relative to it (default: store.sqlite). On a command that takes mounts this is the root mount -- the store answering for every key no mount claims -- and --root-mount is the same option. Takes the same options a --mount does, so --store documents,type=files reads a directory of files as the whole store.
+- `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
+- `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
+- `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
+- `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
+- `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 
 ## `mounts`
 

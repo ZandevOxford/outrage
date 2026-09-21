@@ -2334,10 +2334,19 @@ def open_mounts(
         for read_only, configured in ((False, writable), (True, refusing)):
             for prefix, spec in configured:
                 try:
-                    # A spec naming no file has nothing in this directory to be
-                    # missing: its backend finds its own store, and whether that
-                    # store is there is the backend's to say when it opens it.
-                    if read_only and spec.path is not None and not store_present(base, spec.path):
+                    # A spec whose backend finds its own store has nothing in
+                    # this directory to be missing, whether or not it named a
+                    # file: what it names is a connection's configuration and
+                    # not the store, so its presence answers the wrong
+                    # question, and it may be an absolute path this rule would
+                    # refuse. Whether the store is there is the backend's to
+                    # say when it opens it.
+                    if (
+                        read_only
+                        and spec.path is not None
+                        and not store_module.locates_own_store(spec.type, unknown=False)
+                        and not store_present(base, spec.path)
+                    ):
                         database = store_file(base, spec.path)
                         raise MountError(
                             "mount-read-only-missing", mount=prefix, path=str(database)

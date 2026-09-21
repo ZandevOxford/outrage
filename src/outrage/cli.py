@@ -77,6 +77,7 @@ MOUNTED = (
     "import",
     "mounts",
     "info",
+    "schema",
 )
 
 #: The rules a command with no watermark can offer. ``overwrite-unchanged``
@@ -932,6 +933,55 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     check.set_defaults(handler=_check_command)
 
+    schema = subcommands.add_parser(
+        "schema",
+        help="report or create the schema of a store that carries a managed one",
+        description=(
+            "Ask a store what schema version it is at, or create one at a "
+            "chosen version. Only a store several devices share has either "
+            "question: a store in a file on this machine is migrated in place "
+            "by the build that opens it, because that build is the only one "
+            "that has it. A shared store is not, so a client operates at the "
+            "version it finds and changing that version is this command. "
+            "`migrate` arrives with the first schema version there is a step "
+            "to run for; until then a store is at the only version there is."
+        ),
+    )
+    schema.add_argument(
+        "action",
+        choices=("status", "create"),
+        help=(
+            "status: the store's version and floors, what this build "
+            "operates at, and what it would do on open. create: a blank store "
+            "at --version, refusing a schema that already holds one."
+        ),
+    )
+    schema.add_argument(
+        "mount",
+        nargs="?",
+        default=None,
+        metavar="KEY",
+        help=(
+            "Which mount, by mount point, so that this command names a store "
+            "the same way every other configuration does. Defaults to the "
+            "root store."
+        ),
+    )
+    schema.add_argument(
+        "--version",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "For create: which schema version to create, defaulting to the "
+            "newest this build knows. A team whose oldest client knows an "
+            "older version gets a store that client can use by naming it here."
+        ),
+    )
+    _store_option(schema)
+    _table_options(schema)
+    schema.set_defaults(handler=_schema_command)
+
     mounts_ = subcommands.add_parser(
         "mounts",
         help="report the mount table a command line would open",
@@ -1647,11 +1697,19 @@ def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
     """Snapshot the store, or say where the snapshot would go."""
     directory = store.resolve_directory(args.directory)
     root = _root(args)
-    database = store.store_file(directory, root.path)
-    if not store.store_present(directory, root.path):
-        # Opening one would create it, and backing up a store the caller never
-        # had is a success that answers the wrong question.
-        raise store.BackupError("check-no-store", path=str(database))
+    # A backend that finds its own store is skipped here rather than checked.
+    # The check resolves a name against `--dir` and asks whether it is there,
+    # and for such a backend neither half holds: the file may be an absolute
+    # path this rule would refuse, and it is the connection's configuration
+    # rather than the store, so finding it says nothing about whether there is
+    # a store to back up. That question is the backend's, and it is answered
+    # when the store opens a line below.
+    if not store.locates_own_store(root.type, unknown=False):
+        database = store.store_file(directory, root.path)
+        if not store.store_present(directory, root.path):
+            # Opening one would create it, and backing up a store the caller
+            # never had is a success that answers the wrong question.
+            raise store.BackupError("check-no-store", path=str(database))
 
     with contextlib.closing(root.opened(directory)) as opened:
         if args.dry_run:
@@ -2596,6 +2654,110 @@ def _report_remainder(
     )
 
 
+def _schema_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Report or create the managed schema of one mount.
+
+    **Addressed by mount point**, so that a store is named here the way it is
+    named everywhere else: through the same table that ``mounts.toml``,
+    ``--mount`` and ``service=`` build. What it does *not* do is open that
+    table -- opening a read-write mount creates its store, which is the one
+    thing a command that reports on a schema, or refuses to overwrite one,
+    must not do. So the spec is resolved from the line and the one store it
+    names is opened on its own, through
+    :meth:`~outrage.store.FileStore.reporting`.
+
+    **Generic across backends, dispatched on a capability.** Nothing here
+    names PostgreSQL: a backend that carries a managed schema answers
+    :attr:`~outrage.store.FileStore.manages_schema`, and one that does not is
+    refused by name. The next database backend adds the capability and needs
+    no change here.
+    """
+    directory = store.resolve_directory(args.directory)
+    point, spec = _schema_mount(args)
+    opener = store.backend_for(spec.path, spec.type)
+    if not opener.manages_schema:
+        raise store.BackendError(
+            "backend-manages-no-schema-here",
+            backend=opener.backend_name,
+            mount=point,
+        )
+
+    with contextlib.closing(
+        opener.reporting(directory, filename=spec.path, service=spec.service)
+    ) as opened:
+        if args.action == "create":
+            created = opened.create_schema(args.version)
+            state = opened.schema_state()
+            print(
+                f"{state.backend}: created a store at schema version "
+                f"{created.version} in schema {state.schema}",
+                file=out,
+            )
+            return 0
+        state = opened.schema_state()
+        _print_schema(state, point, out)
+        # Non-zero only for a store this build could not open. A schema
+        # holding no store yet is not a failure: it is what every store looks
+        # like before its first open, and `outrage mounts` makes the same
+        # distinction about a file that is not there.
+        return 1 if state.stored is not None and state.operating is None else 0
+
+
+def _schema_mount(args: argparse.Namespace) -> tuple[str, mounts.Spec]:
+    """Which mount ``outrage schema`` was pointed at, as the spec that names it.
+
+    The root when nothing was named, which is the store every other command
+    acts on by default. A key that no mount on this line claims is refused
+    rather than falling back to the root: the whole point of naming one is
+    that there is more than one, and acting on the wrong store is the kind of
+    success nobody reads twice.
+    """
+    if args.mount is None:
+        return keys.ROOT, _root(args)
+    point = mounts.mount_point(args.mount)
+    if point == keys.ROOT:
+        return keys.ROOT, _root(args)
+    for spec in (*args.mounts, *args.read_only_mounts):
+        named, parsed = mounts.parse_spec(spec)
+        if named == point:
+            return named, parsed
+    raise mounts.MountError("schema-mount-unknown", mount=point)
+
+
+def _print_schema(state: store.SchemaState, point: str, out: TextIO) -> None:
+    """The report, in the order somebody reads it: where, what, and what follows.
+
+    Every line names the backend, because the command is generic and a report
+    that did not would be one a reader has to already know the answer to.
+    Never a secret: the service and the file it was read from are the whole of
+    what identifies the connection here, which is the rule the service file
+    exists for.
+    """
+    print(f"mount       {keys.displayed(point)}", file=out)
+    print(f"backend     {state.backend}", file=out)
+    print(f"service     {state.service} in {state.path}", file=out)
+    print(f"schema      {state.schema}", file=out)
+    if state.stored is None:
+        print("store       none: this schema holds no outrage store yet", file=out)
+    else:
+        print(
+            f"store       version {state.stored.version} "
+            f"(read floor {state.stored.read_floor}, "
+            f"write floor {state.stored.write_floor})",
+            file=out,
+        )
+    print(f"this build  operates at {state.oldest} to {state.newest}", file=out)
+    if state.stored is None:
+        print(f"on open     would create a store at version {state.newest}", file=out)
+    elif state.operating is None:
+        print("on open     refused", file=out)
+    else:
+        doing = "read and write" if state.writable else "read only"
+        print(f"on open     {doing}, at version {state.operating}", file=out)
+    if state.problem is not None:
+        print(f"            {messages.render(state.problem.as_error())}", file=out)
+
+
 def _mounts_command(args: argparse.Namespace, out: TextIO) -> int:
     """Report the table this command line names, without opening any of it.
 
@@ -2717,16 +2879,19 @@ def _mount_row(
     hide the one thing about it that cannot be inferred from the name.
     """
     filename = mounts.unparse(spec)
-    if spec.path is None:
-        # A mount that names no file has nothing in this directory to look for:
-        # the backend it names finds its own store, wherever that is, and only
-        # opening it can say whether the store is there.
+    if spec.path is None or store.locates_own_store(spec.type, unknown=False):
+        # A mount whose backend finds its own store has nothing in this
+        # directory to look for, whether or not it named a file: the file it
+        # names is a *connection's* configuration and not the store, so its
+        # presence would answer a question nobody asked. Only opening it can
+        # say whether the store is there.
         #
         # The column answers *presence*, not whether the spec is a good one:
-        # this report does not resolve a backend, so a `type=` this build does
-        # not know already reaches a row rather than a refusal, and a file left
-        # out under a backend that needed one is the same kind of mistake. Both
-        # are refused, in their own words, when the store opens.
+        # this report does not resolve a backend to validate it, so a `type=`
+        # this build does not know still reaches a row rather than a refusal --
+        # which is why the question above is asked with `unknown=False`. A file
+        # left out under a backend that needed one is the same kind of mistake.
+        # Both are refused, in their own words, when the store opens.
         state = "unknown"
     elif store.store_present(directory, spec.path):
         state = "ok"

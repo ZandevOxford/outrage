@@ -2025,6 +2025,212 @@ def _service_parameter_missing_file(
     )
 
 
+@template("postgres-service-unusable")
+def _postgres_service_unusable(
+    name: Namer, /, *, service: str, searched: Any, reasons: Any, spell: Speller, **_: Any
+) -> str:
+    """Every reason at once, each in the sentence its own code already has.
+
+    :func:`outrage.pgservice.resolve` reports refusals as values so that a file
+    with three things wrong with it is one run rather than three, and an open
+    has to raise. This is the join, and it invents **no wording**: each reason
+    is rendered through the template its own refusal would have used, which is
+    what keeps the aggregate from drifting away from the parts.
+
+    A reason that is not a code and its details is printed as it stands. That
+    is not politeness towards a caller who passed the wrong shape: rendering
+    must not be the thing that fails when something else already has, which is
+    the rule ``test_every_template_renders_from_the_details_its_raise_site_passes``
+    exists to hold.
+    """
+    lines = []
+    for one in reasons:
+        if isinstance(one, Mapping) and isinstance(one.get("code"), str):
+            lines.append(
+                render(OutrageError(one["code"], **dict(one.get("details", {}))), name, spell=spell)
+            )
+        else:
+            lines.append(str(one))
+    listed = " ".join(f"({index}) {line}" for index, line in enumerate(lines, start=1))
+    where = ", ".join(str(one) for one in searched)
+    return (
+        f"the PostgreSQL service {service!r} cannot be used, for "
+        f"{'this reason' if len(lines) == 1 else 'these reasons'}, in {where}: {listed}"
+    )
+
+
+@template("postgres-needs-psycopg")
+def _postgres_needs_psycopg(name: Namer, /, *, reason: str, **_: Any) -> str:
+    return (
+        f"a PostgreSQL store needs psycopg, which is not installed: {reason}. "
+        f"Install it with `pip install 'outrage[postgres]'`."
+    )
+
+
+@template("postgres-unreachable")
+def _postgres_unreachable(name: Namer, /, *, service: str, path: str, reason: str, **_: Any) -> str:
+    # Named as the *server* being out of reach rather than as the store being
+    # missing, because the two ask for opposite things: a store that is not
+    # there is created, and a server that is not answering is waited for. The
+    # driver's own sentence is kept because it is the half that says which --
+    # a refused connection, a name that does not resolve, a timeout.
+    said = " ".join(str(reason).split())
+    return (
+        f"cannot reach the PostgreSQL server for service {service!r} in {path}: "
+        f"{said}. The store is elsewhere, so this says nothing about whether it "
+        f"is there; a mount of it is left unavailable rather than refused."
+    )
+
+
+@template("postgres-store-closed")
+def _postgres_store_closed(name: Namer, /, *, service: str, path: str, **_: Any) -> str:
+    return (
+        f"the PostgreSQL store for service {service!r} in {path} was closed "
+        f"while this call was running, so no connection was opened for it"
+    )
+
+
+@template("postgres-encoding")
+def _postgres_encoding(
+    name: Namer, /, *, service: str, database: str, encoding: str, **_: Any
+) -> str:
+    return (
+        f"the database {database!r} named by service {service!r} stores text as "
+        f"{encoding}, and a store here has to be UTF8: every offset outrage hands "
+        f"out is a UTF-8 one, so another encoding would be silently converted on "
+        f"every byte-addressed read. Create the database with `ENCODING 'UTF8'`."
+    )
+
+
+@template("postgres-no-schema")
+def _postgres_no_schema(
+    name: Namer, /, *, service: str, path: str, search_path: str, **_: Any
+) -> str:
+    return (
+        f"the connection for service {service!r} in {path} has an empty search "
+        f"path ({search_path!r}), so there is no schema for the store to be in. "
+        f"Name one with `options=-csearch_path=<name>` in the service entry."
+    )
+
+
+@template("postgres-no-store")
+def _postgres_no_store(name: Namer, /, *, service: str, schema: str, path: str, **_: Any) -> str:
+    return (
+        f"there is no outrage store in schema {schema!r} on the server named by "
+        f"service {service!r} in {path}. Opening one would create it; this asked "
+        f"about a store rather than for one."
+    )
+
+
+@template("postgres-store-exists")
+def _postgres_store_exists(
+    name: Namer, /, *, service: str, schema: str, path: str, **_: Any
+) -> str:
+    return (
+        f"schema {schema!r} on the server named by service {service!r} in {path} "
+        f"already holds an outrage store. Creating one over it would be a new "
+        f"store where somebody has documents, so it is refused rather than "
+        f"merged into."
+    )
+
+
+@template("postgres-version-unsupported")
+def _postgres_version_unsupported(
+    name: Namer, /, *, version: Any, oldest: Any, newest: Any, **_: Any
+) -> str:
+    return (
+        f"this build cannot create a PostgreSQL store at schema version "
+        f"{version}: it knows versions {oldest} to {newest}. A store for a team "
+        f"whose oldest client is older than that has to be created by a build "
+        f"that still knows the version they need."
+    )
+
+
+@template("postgres-schema-too-old")
+def _postgres_schema_too_old(
+    name: Namer, /, *, version: Any, supported: Any, build: Any, **_: Any
+) -> str:
+    return (
+        f"the PostgreSQL store is at schema version {version}, and this build "
+        f"operates at {supported} to {build}. Bring it forward with "
+        f"`outrage schema migrate`, which is the only thing that changes a "
+        f"shared store's version -- opening one never does."
+    )
+
+
+@template("postgres-schema-too-new")
+def _postgres_schema_too_new(
+    name: Namer, /, *, version: Any, read_floor: Any, build: Any, **_: Any
+) -> str:
+    return (
+        f"the PostgreSQL store is at schema version {version}, which may only be "
+        f"read by a build that knows version {read_floor} or later; this one "
+        f"knows {build}. Upgrade outrage."
+    )
+
+
+@template("postgres-below-write-floor")
+def _postgres_below_write_floor(
+    name: Namer,
+    /,
+    *,
+    version: Any,
+    write_floor: Any,
+    build: Any,
+    key: str | None = None,
+    action: str = "write",
+    **_: Any,
+) -> str:
+    # No flag to drop, for `store-read-only`'s reason: what makes this call
+    # succeed is a newer outrage, and the sentence names it rather than
+    # offering something that cannot work. The key and the action are the
+    # raise site's and absent from the refusal, which reports the store's
+    # state rather than one call's.
+    about = "" if key is None else f" {name(key)!r}"
+    return (
+        f"cannot {action}{about}: the PostgreSQL store is at schema version "
+        f"{version}, which only a build that knows version {write_floor} or later "
+        f"may write, and this one knows {build}. It is open for reading. Upgrade "
+        f"outrage to write to it."
+    )
+
+
+@template("backend-manages-no-schema")
+def _backend_manages_no_schema(name: Namer, /, *, backend: str, **_: Any) -> str:
+    return (
+        f"a {backend} store carries no schema anybody migrates: it is a file "
+        f"on this machine, and the build that opens it brings it forward "
+        f"itself. Only a store several devices share has a version to be "
+        f"asked about, because a migration by one of them reaches the rest."
+    )
+
+
+@template("backend-manages-no-schema-here")
+def _backend_manages_no_schema_here(
+    name: Namer, /, *, backend: str, mount: str | None = None, **_: Any
+) -> str:
+    where = (
+        "the root store"
+        if mount is None or mount == keys.ROOT
+        else f"the store at {keys.displayed(mount)!r}"
+    )
+    return (
+        f"{where} is a {backend} store, which carries no schema anybody "
+        f"migrates: a store in a file is brought forward by the build that "
+        f"opens it. `outrage check` reports its format version."
+    )
+
+
+@template("schema-mount-unknown")
+def _schema_mount_unknown(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"no mount on this command line is at {keys.displayed(mount)!r}. A "
+        f"store is named here by mount point, through the same table every "
+        f"other command reads, so the mount has to be one this line would "
+        f"open; `outrage mounts` lists them."
+    )
+
+
 # -- the command line ------------------------------------------------------
 
 

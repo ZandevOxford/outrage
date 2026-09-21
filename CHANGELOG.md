@@ -16,8 +16,24 @@ store file, as in `--mount shared=,type=postgres`; a `mounts.toml` entry says
 the same thing by omitting `path`. `shared=` alone is still a mount that names
 no store file, and a backend whose store *is* a file in the store directory
 refuses a mount that names none rather than quietly opening that directory's
-default store. `outrage mounts` reports such a mount as `unknown` rather than
-guessing at a file that is not there.
+default store.
+
+`outrage schema` is a new subcommand, for a store whose schema version is
+migrated by a command rather than brought forward by the build that opens it.
+`outrage schema status [KEY]` reports the version a store is at, the floors it
+declares, the range this build operates at, and what this build would do on
+open; `outrage schema create [KEY] --version N` creates a blank store at a
+chosen version and refuses one that already holds a store. A mount is named by
+mount point, through the same table every other command reads. A store kept in
+a file on this machine has no such version, and says so.
+
+An absolute service file, or one starting with `~`, may now be named by a mount
+whose backend finds its own store. Every other backend's store file stays
+relative to the store directory, and `..` is refused for all of them. Because
+the file such a mount names is a connection's configuration rather than the
+store, `outrage mounts` reports it as `unknown` whether or not a file was
+named, and `outrage backup` opens the store rather than looking for it in the
+store directory.
 
 `outrage init` now writes every option a mount carries into the table it
 starts. It wrote `path` and `type` alone, so

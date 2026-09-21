@@ -1267,17 +1267,25 @@ def test_a_backend_that_opens_a_file_refuses_a_mount_that_names_none(tmp_path):
 class _FoundStore(SqliteStore):
     """A backend that finds its own store, which none of the shipped ones do yet.
 
-    The PostgreSQL backend is the real one and is not built (step 4 of
-    ``plans/postgres/build``), so the half of the grammar that *accepts* an
-    empty FILE would otherwise reach nothing at all. It is a SQLite store
-    under another name and another default file, which is enough to show the
-    one thing in question: the mount named no file and the backend supplied
-    one.
+    The PostgreSQL backend is the real one and is not registered yet, so the
+    half of the grammar that *accepts* an empty FILE would otherwise reach
+    nothing at all. It is a SQLite store under another name and another
+    default file, which is enough to show the one thing in question: the mount
+    named no file and the backend supplied one.
+
+    ``in_directory`` drops the file the spec named, which is the other half of
+    what such a backend is: what it is named is somebody else's configuration
+    file -- a libpq service file, for the real one -- and the store is at the
+    far end of whatever that describes.
     """
 
     backend_name = "found"
     default_filename = "found.sqlite"
     locates_own_store = True
+
+    @classmethod
+    def in_directory(cls, directory=None, *, filename=None, **rest):
+        return super().in_directory(directory, filename=None, **rest)
 
 
 def test_a_backend_that_finds_its_own_store_is_mounted_without_a_file(tmp_path, monkeypatch):
@@ -1290,6 +1298,27 @@ def test_a_backend_that_finds_its_own_store_is_mounted_without_a_file(tmp_path, 
             "shared": "found.sqlite",
         }
     assert (tmp_path / "found.sqlite").exists()
+
+
+def test_a_read_only_mount_of_such_a_backend_is_not_looked_for_in_the_directory(
+    tmp_path, monkeypatch
+):
+    """The check that refuses a missing read-only store does not apply to it.
+
+    That check resolves a name against ``--dir`` and asks whether it is there.
+    For a backend whose file is a *connection's* configuration neither half
+    holds: the file may be an absolute path the rule would refuse outright,
+    and finding it would say nothing about whether there is a store at the
+    other end. So the question is left to the backend, which is the only thing
+    that can answer it.
+    """
+    monkeypatch.setitem(store_module._BACKENDS, "found", (__name__, "_FoundStore"))
+    named = tmp_path / "elsewhere" / "service.conf"
+    with open_mounts(tmp_path, read_only_specs=[f"shared={named},type=found"]) as table:
+        assert {mount.name: mount.store.path.name for mount in table} == {
+            "/": "store.sqlite",
+            "shared": "found.sqlite",
+        }
 
 
 def test_a_named_backend_that_does_not_exist_is_refused(tmp_path):
