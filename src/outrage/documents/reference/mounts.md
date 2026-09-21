@@ -950,7 +950,7 @@ backend's own default. See [`LOCK_OPTION`](#outrage.mounts.LOCK_OPTION).
 Which entry of a connection file this store is, when the argument said;
 else the backend's own default. See [`SERVICE_OPTION`](#outrage.mounts.SERVICE_OPTION).
 
-#### opened(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [FileStore](store.md#outrage.store.FileStore)
+#### opened(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, create: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [FileStore](store.md#outrage.store.FileStore)
 
 The store this spec names, opened in `directory`.
 
@@ -964,6 +964,9 @@ for. Nothing raises and no suite goes red, so the only thing that finds
 it is somebody reading the keys.
 
 `versioning` is the run's default, which the spec's own option beats.
+
+`create` of False asks for a store that is already there, which is
+what a read-only mount means -- see [`refuse_missing_read_only()`](#outrage.mounts.refuse_missing_read_only).
 
 **A spec naming no file is refused here** unless the backend it names
 finds its own store, which is the one thing about an omitted FILE that
@@ -1112,6 +1115,20 @@ The options after the file are [`parse_options()`](#outrage.mounts.parse_options
 mount can say beyond *where* it is goes there. One flag remains one mount,
 which is what keeps overriding an entry from a mount configuration a matter
 of replacing it whole -- see [`OPTION_DELIMITER`](#outrage.mounts.OPTION_DELIMITER).
+
+### outrage.mounts.refuse_missing_read_only(directory: [Path](https://docs.python.org/3/library/pathlib.html#pathlib.Path), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), file: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None), backend: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)) → [None](https://docs.python.org/3/builtins/constants.html#None)
+
+Refuse a read-only mount whose store file is not in `directory`.
+
+A read-only mount is never created: a mistyped name would mount as an
+empty store that no write could ever contradict. For a store kept in a file
+that is decided here, before opening, because opening one creates it.
+
+**A backend that finds its own store is left to say so itself**, when it
+is opened with `create` False. What such a mount names is a connection's
+configuration rather than the store, so whether that file is present
+answers the wrong question -- and it may be an absolute path, which
+resolving it inside `directory` would refuse as though it were a mistake.
 
 ### outrage.mounts.unparse(spec: [Spec](#outrage.mounts.Spec)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 

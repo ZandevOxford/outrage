@@ -31,26 +31,29 @@
 #### mounts *: tuple[MountInfo, ...]*
 4391 4391 67
 
-### *class* outrage.info.MountInfo(mount: str, path: str | None, kind: str, read_only: bool, versioned: bool | None = None)
+### *class* outrage.info.MountInfo(mount: str, path: str | None, kind: str, read_only: bool, versioned: bool | None = None, target: dict[str, str] | None = None)
 4570 4570 71
 
 #### mount *: str*
-5206 5206 77
+5471 5471 77
 
 #### path *: str | None*
-5346 5346 81
+5611 5611 81
 
 #### kind *: str*
-5658 5658 87
+5923 5923 87
 
 #### read_only *: bool*
-5913 5913 92
+6178 6178 92
 
 #### versioned *: bool | None*
-6046 6046 96
+6311 6311 96
+
+#### target *: dict[str, str] | None*
+6774 6774 105
 
 ### outrage.info.describe(opened: Store, \*, directory: str | PathLike[str] | None = None, mount_config: Sequence[str] = (), log: EventLog | None = None) → Info
-6509 6509 105
+7314 7314 111
 
 ### outrage.info.mount_infos(opened: Store) → tuple[MountInfo, ...]
-7887 7889 120
+8692 8694 126

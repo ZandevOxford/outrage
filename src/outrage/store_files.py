@@ -1455,6 +1455,7 @@ class FilesystemStore(FileStore):
         service: str | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
+        create: bool = True,
     ) -> Self:
         """The tree ``filename`` names inside a store directory.
 
@@ -1477,7 +1478,8 @@ class FilesystemStore(FileStore):
 
         ``versioning`` is refused as the base refuses it: a tree keeps no
         earlier versions, and a statement about them is a mistake to report.
-        ``service`` likewise: a tree is opened, not connected to.
+        ``service`` likewise: a tree is opened, not connected to. ``create``
+        is the base's, and has been checked before this is reached.
         """
         cls._refuse_service(filename, service)
         cls._refuse_versioning(filename, versioning)

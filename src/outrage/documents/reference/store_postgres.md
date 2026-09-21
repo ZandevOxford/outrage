@@ -80,10 +80,9 @@ parts rather than one.
 ## What is *not* here yet
 
 The maintenance half of the interface: [`PostgresStore.check_file()`](#outrage.store_postgres.PostgresStore.check_file)
-and [`PostgresStore.repair()`](#outrage.store_postgres.PostgresStore.repair) raise [`NotImplementedError`](https://docs.python.org/3/builtins/exceptions.html#NotImplementedError). The
-backend is deliberately left **out** of `outrage.store._BACKENDS` while that
-is true, so no mount spec can reach a half-built store and no configuration
-can be written against one.
+and [`PostgresStore.repair()`](#outrage.store_postgres.PostgresStore.repair) raise [`NotImplementedError`](https://docs.python.org/3/builtins/exceptions.html#NotImplementedError), so
+`outrage check` over a PostgreSQL mount fails with a traceback rather than a
+report.
 
 ### outrage.store_postgres.ARCHIVE_TABLE *= 'document_archive'*
 
@@ -231,7 +230,7 @@ False for a store this build may read and not write.
 
 Why writing is refused, when it is, as the facts a sentence is written from.
 
-### *class* outrage.store_postgres.PostgresStore(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, report: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
+### *class* outrage.store_postgres.PostgresStore(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, report: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, create: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True)
 
 Bases: [`FileStore`](store.md#outrage.store.FileStore)
 
@@ -349,7 +348,7 @@ earns every refusal [`outrage.store.store_file()`](store.md#outrage.store.store_
 climbing out of it included, which is the half of that rule that was
 never about relocatability.
 
-#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lock: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
+#### *classmethod* in_directory(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lock: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, create: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
 This backend's store, named by a service file and an entry in it.
 
@@ -359,6 +358,8 @@ reaches the constructor as itself. The refusals are the base's, in the
 base's words -- `extensions` and `lock` are a tree's options and
 are refused here as everywhere else -- and `service` is the one this
 backend is the reason for, so it is taken rather than refused.
+`create` is checked by the store itself, since nothing on this
+machine can say whether a schema on the server holds one.
 
 #### *classmethod* reporting(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, filename: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Self](https://docs.python.org/3/library/typing.html#typing.Self)
 
@@ -368,6 +369,14 @@ The base refuses this, because for a store in a file on this machine
 there is no difference between asking about one and opening it. Here
 there is: an empty schema stays empty, and a version this build cannot
 operate at is recorded rather than raised.
+
+#### *property* target *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
+
+The service, the schema, and the connection with its secrets redacted.
+
+[`outrage.pgservice.Service.redacted`](pgservice.md#outrage.pgservice.Service.redacted) whole, rather than chosen
+fields, for the reason it gives: a report built from it cannot reach a
+secret by growing a field.
 
 #### close() → [None](https://docs.python.org/3/builtins/constants.html#None)
 

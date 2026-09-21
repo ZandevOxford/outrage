@@ -85,26 +85,26 @@
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
 24560 24584 344
 
-#### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, lock: str | None = None, service: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
+#### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, lock: str | None = None, service: str | None = None, log: EventLog | None = None, mount_point: str | None = None, create: bool = True) → Self
 25719 25745 353
 
 #### opened_at(path: Path) → Self
-28436 28464 378
+28584 28612 379
 
 #### *property* stored_format_version *: int*
-29821 29851 402
+29969 29999 403
 
 #### audit_rows() → Iterator[AuditRow]
-30450 30480 414
+30598 30628 415
 
 #### check_file(report: Report) → None
-30991 31023 424
+31139 31171 425
 
 #### repair() → list[Repaired]
-31556 31590 434
+31704 31738 435
 
 ### *exception* outrage.store_files.NotTextError(code: str, \*\*details: Any)
-32113 32149 444
+32261 32297 445
 
 ### *exception* outrage.store_files.StoreBusyError(code: str, \*\*details: Any)
-32719 32755 454
+32867 32903 455

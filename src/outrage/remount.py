@@ -49,7 +49,7 @@ from types import MappingProxyType
 from . import home, keys, shipped
 from . import store as store_module
 from .eventlog import EventLog
-from .mounts import MountedStore, MountError
+from .mounts import MountedStore, MountError, refuse_missing_read_only
 from .notes import Note
 from .store import Store, store_file, store_present
 
@@ -168,8 +168,13 @@ class Live:
         """
         prefix = keys.parse(key).key
         with self._lock:
-            mount_path = None if file is None else store_file(self._directory, file)
-            created = file is not None and not store_present(self._directory, file)
+            # A backend that finds its own store names a connection's
+            # configuration rather than a store file, which may be absolute and
+            # whose presence says nothing about the store. So it is neither
+            # resolved in the store directory nor reported as created there.
+            located = file is not None and not store_module.locates_own_store(type, unknown=False)
+            mount_path = store_file(self._directory, file) if located else None
+            created = located and not store_present(self._directory, file)
             store, builtin = self._opened(prefix, file, type, extensions, read_only)
             # Everything up to the swap is inside this, `open_mounts`'s own
             # shape: a failure anywhere closes what was opened and leaves the
@@ -189,7 +194,7 @@ class Live:
                     after,
                     prefix,
                     replaced=replaced,
-                    builtin=file is None,
+                    builtin=builtin is not None,
                     created=str(mount_path) if created else None,
                 )
             except Exception:
@@ -230,7 +235,7 @@ class Live:
         read_only: bool,
     ) -> tuple[Store, Builtin | None]:
         """The store to mount and its built-in descriptor, when file-less."""
-        if file is None:
+        if file is None and (type is None or not store_module.locates_own_store(type)):
             builtin = BUILTINS.get(prefix)
             if builtin is None:
                 raise MountError("mount-nothing-builtin", mount=prefix, builtins=sorted(BUILTINS))
@@ -243,9 +248,7 @@ class Live:
                 arguments["versioning"] = self._versioning
             return builtin.opener(**arguments), builtin
         if read_only:
-            if not store_present(self._directory, file):
-                database = store_file(self._directory, file)
-                raise MountError("mount-read-only-missing", mount=prefix, path=str(database))
+            refuse_missing_read_only(self._directory, prefix, file, type)
         return store_module.default_store(
             self._directory,
             filename=file,
@@ -254,6 +257,7 @@ class Live:
             versioning_default=self._versioning,
             log=self._log,
             mount_point=prefix,
+            create=not read_only,
         ), None
 
     def _swap(self, after: MountedStore, notes: list[Note]) -> Changed:

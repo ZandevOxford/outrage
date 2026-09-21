@@ -605,6 +605,7 @@ a built-in needs nothing written down because startup restores it.
 - `kind` (string; required) — 'root', 'mount' or 'read-only mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
 - `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to
+- `target` (object[string, string] or null; optional) — Present only for a store reached over a connection: its service, schema and connection parameters, with every secret redacted
 
 ## `unmount`
 
@@ -647,6 +648,7 @@ this server; a mount configuration file is what survives a restart.
 - `kind` (string; required) — 'root', 'mount' or 'read-only mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
 - `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to
+- `target` (object[string, string] or null; optional) — Present only for a store reached over a connection: its service, schema and connection parameters, with every secret redacted
 
 ## `info`
 
@@ -695,3 +697,4 @@ None.
 - `kind` (string; required) — 'root', 'mount' or 'read-only mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
 - `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to
+- `target` (object[string, string] or null; optional) — Present only for a store reached over a connection: its service, schema and connection parameters, with every secret redacted

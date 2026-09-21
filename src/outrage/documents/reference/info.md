@@ -68,7 +68,7 @@ How much document text that log keeps, or None when there is no log.
 
 The stores behind the namespace, as they were opened.
 
-### *class* outrage.info.MountInfo(mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str), path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), kind: [str](https://docs.python.org/3/builtins/stdtypes.html#str), read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool), versioned: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
+### *class* outrage.info.MountInfo(mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str), path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), kind: [str](https://docs.python.org/3/builtins/stdtypes.html#str), read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool), versioned: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, target: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -101,6 +101,12 @@ None for a backend with no such thing.
 Three states rather than two because a front end reports only False. A
 flat bool would make every parquet and tree mount say versioning was off,
 which reads as *switched* off -- as though it could be on.
+
+#### target *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+Where a store reached over a connection is -- its service, schema and
+connection parameters, secrets redacted -- or None for one kept in the
+file [`path`](#outrage.info.MountInfo.path) names. See [`outrage.store.FileStore.target`](store.md#outrage.store.FileStore.target).
 
 ### outrage.info.describe(opened: [Store](store.md#outrage.store.Store), \*, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Info](#outrage.info.Info)
 

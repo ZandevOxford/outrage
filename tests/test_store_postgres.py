@@ -30,11 +30,11 @@ import pytest
 from test_store_sqlite import SPLIT_META_NAMES, assert_the_split_agrees_with_keys_relative
 
 from conftest import answers_alike, in_threads, postgres_dsn, raises_rendered
-from outrage import keys, messages, pgservice
+from outrage import keys, messages, pgservice, store_postgres
 from outrage import store as store_module
 from outrage.cli import main
 from outrage.errors import OutrageError
-from outrage.mounts import open_mounts
+from outrage.mounts import ReadOnlyMountError, open_mounts
 from outrage.store import (
     BackendError,
     InvalidArgumentError,
@@ -68,21 +68,6 @@ def query(store, statement, parameters=()):
     with conn.transaction(), conn.cursor() as cursor:
         cursor.execute(statement, parameters)
         return cursor.fetchall() if cursor.description else []
-
-
-@pytest.fixture
-def registered(monkeypatch):
-    """``type=postgres`` made spellable for the length of one test.
-
-    The backend is deliberately out of the registry until its operations are
-    built -- ``test_the_backend_is_not_registered_until_its_operations_are_built``
-    at the end of this file is the guard -- and this is the one place that
-    steps around it. What needs it is the half of the work that is about the
-    *schema* and the *mount* rather than about any operation: a tolerant
-    startup and ``outrage schema``, neither of which reads or writes a
-    document.
-    """
-    monkeypatch.setitem(store_module._BACKENDS, "postgres", (".store_postgres", "PostgresStore"))
 
 
 def run(*argv):
@@ -592,7 +577,7 @@ def test_closing_twice_is_allowed(postgres_store):
 # -- a tolerant startup ----------------------------------------------------
 
 
-def test_a_server_that_is_down_leaves_the_other_mounts_working(tmp_path, registered):
+def test_a_server_that_is_down_leaves_the_other_mounts_working(tmp_path):
     """The whole point of classing an unreachable server as not-a-mistake.
 
     An offline laptop starts, its local mounts answer, and the shared one is
@@ -616,12 +601,251 @@ def test_a_server_that_is_down_leaves_the_other_mounts_working(tmp_path, registe
     assert failures == [("shared", "postgres-unreachable")]
 
 
+def service_file_like(tmp_path, postgres_service, **changed):
+    """A second service file, the fixture's with some parameters changed."""
+    psycopg = pytest.importorskip("psycopg")
+    _path, service, schema = postgres_service
+    parameters = psycopg.conninfo.conninfo_to_dict(postgres_dsn())
+    parameters["options"] = f"-csearch_path={schema}"
+    parameters.update(changed)
+    path = tmp_path / "changed_service.conf"
+    written = "\n".join(f"{name}={value}" for name, value in sorted(parameters.items()))
+    path.write_text(f"[{service}]\n{written}\n", encoding="utf-8")
+    return path
+
+
+def tables_in(schema):
+    """The tables a schema holds, asked of the server directly."""
+    psycopg = pytest.importorskip("psycopg")
+    with psycopg.connect(postgres_dsn(), connect_timeout=5) as conn:
+        rows = conn.execute(
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = %s",
+            (schema,),
+        ).fetchall()
+    return sorted(row[0] for row in rows)
+
+
+@pytest.mark.parametrize(
+    ("said", "code"),
+    [
+        # As psycopg 3.3 reports them against PostgreSQL 18, one line per
+        # address `localhost` resolved to, measured rather than composed.
+        (
+            'connection failed: connection to server at "127.0.0.1", port 5432 failed: '
+            'FATAL:  database "nope" does not exist\nMultiple connection attempts failed.',
+            "postgres-database-missing",
+        ),
+        (
+            'connection failed: connection to server at "::1", port 5432 failed: '
+            'FATAL:  role "nobody" does not exist',
+            "postgres-login-rejected",
+        ),
+        ('FATAL:  password authentication failed for user "john"', "postgres-login-rejected"),
+        (
+            'FATAL:  no pg_hba.conf entry for host "10.0.0.2", user "john", database "x"',
+            "postgres-login-rejected",
+        ),
+        ("fe_sendauth: no password supplied", "postgres-login-rejected"),
+        (
+            'connection failed: connection to server at "127.0.0.1", port 1 failed: '
+            "Connection refused",
+            None,
+        ),
+        ("failed to resolve host 'no-such-host.invalid'", None),
+        # A server whose lc_messages is German says the same thing in words
+        # nothing here matches, and is tolerated rather than guessed at.
+        ("FATAL:  Datenbank »nope« existiert nicht", None),
+    ],
+)
+def test_a_failed_connect_is_told_apart_by_what_the_server_said(said, code):
+    """No SQLSTATE reaches a connection that never opened, so the text decides."""
+    assert store_postgres._connect_refusal(said) == code
+
+
+def test_a_failed_connect_says_its_reason_once_when_every_attempt_agrees():
+    """``localhost`` resolves twice, and psycopg then says everything three times."""
+    same = (
+        'connection failed: connection to server at "127.0.0.1", port 5432 failed: '
+        'FATAL:  database "nope" does not exist\n'
+        "Multiple connection attempts failed. All failures were:\n"
+        "- host: 'localhost', port: None, hostaddr: '::1': connection failed: connection "
+        'to server at "::1", port 5432 failed: FATAL:  database "nope" does not exist\n'
+        "- host: 'localhost', port: None, hostaddr: '127.0.0.1': connection failed: "
+        'connection to server at "127.0.0.1", port 5432 failed: FATAL:  database "nope" '
+        "does not exist\n"
+    )
+    assert store_postgres._connect_reason(same) == same.split("\n")[0]
+    differing = same.replace(
+        '"::1", port 5432 failed: FATAL:  database "nope" does not exist',
+        '"::1", port 5432 failed: Connection refused',
+    )
+    assert store_postgres._connect_reason(differing) == differing.strip()
+    assert store_postgres._connect_reason("  one line only\n") == "one line only"
+
+
+def test_the_backend_is_reached_by_either_name(tmp_path, postgres_service):
+    """``type=postgres`` and the server's own name, ``postgresql``, are one backend."""
+    path, _service, _schema = postgres_service
+    with open_mounts(
+        tmp_path / "dir",
+        [f"shared={path},type=postgres", f"alias={path},type=postgresql"],
+    ) as table:
+        table.store_document("shared/note", "written through one name")
+        assert table.retrieve_document("alias/note").content == "written through one name"
+        assert {mount.name: mount.store.backend_name for mount in table}["alias"] == "postgres"
+
+
+@pytest.mark.parametrize(
+    ("changed", "code"),
+    [
+        ({"dbname": "outrage_no_such_database"}, "postgres-database-missing"),
+        ({"user": "outrage_no_such_role"}, "postgres-login-rejected"),
+    ],
+)
+def test_a_server_that_refuses_is_a_configuration_error(tmp_path, postgres_service, changed, code):
+    """The server is there, so waiting for it will not help: fatal, not tolerated."""
+    path = service_file_like(tmp_path, postgres_service, **changed)
+    failures = []
+    with pytest.raises(BackendError) as raised:
+        open_mounts(
+            tmp_path / "dir",
+            [f"shared={path},type=postgres", "local=local.sqlite"],
+            on_open_error=lambda *failure: failures.append(failure),
+        )
+    assert raised.value.code == code
+    assert failures == []
+
+
+def test_a_service_file_that_cannot_be_used_is_a_configuration_error(tmp_path):
+    """A missing entry is fatal under a tolerant open, as the design says."""
+    path = tmp_path / "pg_service.conf"
+    path.write_text("[somebody_else]\nhost=localhost\n", encoding="utf-8")
+    with pytest.raises(ServiceUnusable):
+        open_mounts(
+            tmp_path / "dir",
+            [f"shared={path},type=postgres"],
+            on_open_error=lambda *_failure: pytest.fail("a configuration error was tolerated"),
+        )
+
+
+def test_a_read_only_mount_of_an_empty_schema_is_refused_and_left_empty(tmp_path, postgres_service):
+    """The protection ``mount-read-only-missing`` gives every other backend.
+
+    Checked on the server rather than trusted from the refusal: the point is
+    that the schema is still empty afterwards, since a read-only mount that
+    created its store would mount as one no write could ever contradict.
+    """
+    path, _service, schema = postgres_service
+    with raises_rendered(BackendError, "read-only mount at 'shared' has no store") as raised:
+        open_mounts(tmp_path / "dir", read_only_specs=[f"shared={path},type=postgres"])
+    assert raised.value.code == "postgres-read-only-missing"
+    assert tables_in(schema) == []
+
+
+def test_a_read_only_mount_of_a_missing_store_is_tolerated_at_startup(tmp_path, postgres_service):
+    """Missing is not misconfigured: the same judgement the file backends get."""
+    path, _service, _schema = postgres_service
+    failures = []
+    with open_mounts(
+        tmp_path / "dir",
+        read_only_specs=[f"shared={path},type=postgres"],
+        on_open_error=lambda point, spec, ro, exc: failures.append((point, ro, exc.code)),
+    ) as table:
+        assert [mount.name for mount in table] == ["/"]
+    assert failures == [("shared", True, "postgres-read-only-missing")]
+
+
+def test_a_read_only_mount_of_a_store_reads_and_refuses_writes(tmp_path, postgres_service):
+    path, _service, _schema = postgres_service
+    with open_mounts(tmp_path / "dir", [f"shared={path},type=postgres"]) as table:
+        table.store_document("shared/note", "there already")
+    with open_mounts(tmp_path / "dir", read_only_specs=[f"shared={path},type=postgres"]) as table:
+        assert table.retrieve_document("shared/note").content == "there already"
+        with pytest.raises(ReadOnlyMountError):
+            table.store_document("shared/note", "overwritten")
+
+
+def test_info_says_where_the_store_is_and_never_the_password(tmp_path, postgres_service):
+    """The redacted target, through both front ends' shared description.
+
+    A password planted in the service file: trust authentication ignores it,
+    so the store opens, and it must appear in neither the tool's result nor
+    the command line's table.
+    """
+    from outrage import info
+    from outrage.cli import _info_rows
+
+    secret = "planted-secret-9f3a"
+    path = service_file_like(tmp_path, postgres_service, password=secret)
+    _original, service, schema = postgres_service
+    with open_mounts(tmp_path / "dir", [f"shared={path},type=postgres"]) as table:
+        described = info.describe(table)
+    shared = next(mount for mount in described.mounts if mount.mount == "shared")
+    assert shared.path == str(path.resolve())
+    assert shared.target["service"] == service
+    assert shared.target["schema"] == schema
+    assert shared.target["password"] == pgservice.REDACTION
+    assert shared.target["dbname"] == "outrage_test"
+    assert secret not in repr(described)
+    row = next(row for row in _info_rows(described) if row[0] == "shared")
+    assert f"schema={schema}" in row[3]
+    assert secret not in " ".join(row)
+    root = next(mount for mount in described.mounts if mount.mount == "/")
+    assert root.target is None
+
+
+def test_the_mount_tool_takes_a_service_file_outside_the_store_directory(
+    tmp_path, postgres_service
+):
+    """An absolute FILE, as the usual ``~/.pg_service.conf`` is.
+
+    The tool resolved every FILE inside the store directory before opening
+    anything, which refuses an absolute path as a mistake -- so the backend was
+    registered and still out of the tool's reach.
+    """
+    from outrage.remount import Live
+
+    path, _service, schema = postgres_service
+    with open_mounts(tmp_path / "dir") as table, Live(table, directory=tmp_path / "dir") as live:
+        with raises_rendered(BackendError, "has no store in schema"):
+            live.mount("shared", file=str(path), type="postgres", read_only=True)
+        assert tables_in(schema) == []
+        changed = live.mount("shared", file=str(path), type="postgres")
+        assert "mount-created-store" not in [note.code for note in changed.notes]
+        live.table.store_document("shared/note", "through the tool")
+        assert live.table.retrieve_document("shared/note").content == "through the tool"
+
+
+def test_the_mount_tool_reads_no_file_with_a_type_as_libpqs_own_lookup(
+    tmp_path, postgres_service, monkeypatch
+):
+    """No FILE means a built-in only when nothing says a backend finds its own store."""
+    from outrage.remount import Live
+
+    path, _service, _schema = postgres_service
+    monkeypatch.setenv(pgservice.SERVICE_FILE_VARIABLE, str(path))
+    with open_mounts(tmp_path / "dir") as table, Live(table, directory=tmp_path / "dir") as live:
+        live.mount("shared", type="postgres")
+        shared = {mount.name: mount.store for mount in live.table}["shared"]
+        assert shared.path == path
+
+
 # -- the command line ------------------------------------------------------
 
 
-def test_schema_status_reports_an_empty_schema_without_filling_it(
-    tmp_path, postgres_service, registered
-):
+def test_info_on_the_command_line_names_the_target(tmp_path, postgres_service):
+    path, _service, schema = postgres_service
+    with open_mounts(tmp_path / "dir"):
+        pass  # `info` reports on a store that is there, so the root is made first
+    status, output = run(
+        "info", "--dir", str(tmp_path / "dir"), "--mount", f"shared={path},type=postgres"
+    )
+    assert status == 0
+    assert f"schema={schema}" in output
+    assert "service=outrage" in output
+
+
+def test_schema_status_reports_an_empty_schema_without_filling_it(tmp_path, postgres_service):
     """The whole reason ``status`` does not open the store the ordinary way.
 
     Opening a read-write mount creates its store, so a report that went
@@ -646,7 +870,7 @@ def test_schema_status_reports_an_empty_schema_without_filling_it(
     assert f"would create a store at version {SCHEMA_VERSION}" in output
 
 
-def test_schema_create_then_status_reports_the_store(tmp_path, postgres_service, registered):
+def test_schema_create_then_status_reports_the_store(tmp_path, postgres_service):
     path, _service, _schema = postgres_service
     where = ("--dir", str(tmp_path / "dir"), "--mount", f"shared={path},type=postgres")
 
@@ -664,7 +888,7 @@ def test_schema_create_then_status_reports_the_store(tmp_path, postgres_service,
 
 
 def test_schema_create_refuses_a_schema_that_already_holds_a_store(
-    tmp_path, postgres_service, registered, capsys
+    tmp_path, postgres_service, capsys
 ):
     path, _service, _schema = postgres_service
     where = ("--dir", str(tmp_path / "dir"), "--mount", f"shared={path},type=postgres")
@@ -677,7 +901,7 @@ def test_schema_create_refuses_a_schema_that_already_holds_a_store(
 
 
 def test_schema_status_says_what_this_build_would_do_with_a_store_it_cannot_use(
-    tmp_path, postgres_service, registered
+    tmp_path, postgres_service
 ):
     """A report on a store that cannot be opened is the report worth having."""
     path, service, _schema = postgres_service
@@ -1656,21 +1880,6 @@ def test_a_session_that_declares_no_build_is_not_the_floors_business(
 
 
 # -- the module itself -----------------------------------------------------
-
-
-def test_the_backend_is_not_registered_until_its_operations_are_built():
-    """Step 8's job, and the reason a half-built backend is safe to have here.
-
-    Nothing can spell ``type=postgres`` in a mount while the backend is half
-    built -- no server clock, no check or repair -- so it cannot be
-    reached by a configuration. This is the guard
-    that says so, and it is the one test here that should be *deleted* at step
-    8 rather than changed.
-    """
-    from outrage import store as store_module
-
-    assert "postgres" not in store_module._BACKENDS
-    assert "postgres" not in store_module.backend_names()
 
 
 def test_the_backend_imports_no_driver_at_module_scope():

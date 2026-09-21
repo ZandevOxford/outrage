@@ -78,10 +78,9 @@ parts rather than one.
 ## What is *not* here yet
 
 The maintenance half of the interface: :meth:`PostgresStore.check_file`
-and :meth:`PostgresStore.repair` raise :class:`NotImplementedError`. The
-backend is deliberately left **out** of ``outrage.store._BACKENDS`` while that
-is true, so no mount spec can reach a half-built store and no configuration
-can be written against one.
+and :meth:`PostgresStore.repair` raise :class:`NotImplementedError`, so
+``outrage check`` over a PostgreSQL mount fails with a traceback rather than a
+report.
 """
 
 from __future__ import annotations
@@ -90,6 +89,7 @@ import hashlib
 import json
 import os
 import random
+import re
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -216,6 +216,34 @@ RETRY_PAUSE = 0.01
 #: The SQLSTATEs that mean "try the whole transaction again": a serialization
 #: failure, and a deadlock, which the server resolves by failing one side.
 _RETRYABLE = frozenset({"40001", "40P01"})
+
+#: What a failed connect says when the server answered and refused, as the
+#: code each refusal is raised under. **Matched in the text, because there is
+#: nothing else to match**: psycopg carries no SQLSTATE for a connection that
+#: never opened -- measured against psycopg 3.3 and PostgreSQL 18, where a
+#: missing database, a missing role and a refused port all arrive as an
+#: ``OperationalError`` whose ``sqlstate`` is None.
+#:
+#: These are configuration mistakes rather than a server to wait for, so a
+#: tolerant open treats them as fatal. **The server writes them in its own
+#: language** (``lc_messages``), so a localised server matches none of them,
+#: and its refusals fall through to ``postgres-unreachable``: tolerated, with
+#: the full reason reported. That is the side a miss should fall on.
+_CONNECT_REFUSALS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("postgres-database-missing", re.compile(r'database "[^"]*" does not exist')),
+    (
+        "postgres-login-rejected",
+        re.compile(
+            r"authentication failed for user"
+            r"|no pg_hba\.conf entry for"
+            r"|pg_hba\.conf rejects connection"
+            r'|role "[^"]*" does not exist'
+            r'|role "[^"]*" is not permitted to log in'
+            r"|permission denied for database"
+            r"|no password supplied"
+        ),
+    ),
+)
 
 #: The documents table, and the whole of why every text column names a
 #: collation.
@@ -512,6 +540,43 @@ def _psycopg() -> Any:
     return psycopg
 
 
+#: How psycopg introduces the attempts after the first line of a failed
+#: connect, one per address a host resolved to.
+_ATTEMPTS = "\nMultiple connection attempts failed."
+
+
+def _connect_reason(said: str) -> str:
+    """The driver's message about a failed connect, said once where it can be.
+
+    ``localhost`` is two addresses, so psycopg reports the failure once as a
+    summary and then once per attempt -- the same sentence three times, where
+    a reader needs it once. **Only when every attempt failed the same way**:
+    attempts that failed differently are each worth reading, and are kept.
+    """
+    said = said.strip()
+    first, marker, rest = said.partition(_ATTEMPTS)
+    if not marker:
+        return said
+    attempts = [line for line in rest.splitlines() if line.startswith("- ")]
+    failure = first.rpartition(" failed: ")[2]
+    if attempts and all(line.rpartition(" failed: ")[2] == failure for line in attempts):
+        return first.strip()
+    return said
+
+
+def _connect_refusal(reason: str) -> str | None:
+    """The code a failed connect is refused under, or None where it is unreachable.
+
+    ``reason`` is the driver's whole message, which holds one attempt per
+    address tried, so a refusal from any of them is found. See
+    :data:`_CONNECT_REFUSALS` for why this reads text.
+    """
+    for code, said in _CONNECT_REFUSALS:
+        if said.search(reason):
+            return code
+    return None
+
+
 def _lock_number(schema: str) -> int:
     """The advisory lock a first open of ``schema`` takes, as a signed bigint.
 
@@ -665,6 +730,7 @@ class PostgresStore(FileStore):
         mount_point: str | None = None,
         versioning: bool = True,
         report: bool = False,
+        create: bool = True,
     ) -> None:
         """Resolve the service, connect, and settle the schema.
 
@@ -682,6 +748,12 @@ class PostgresStore(FileStore):
         opposite of asking about it. Nothing else changes, and a store opened
         this way still answers no operation: :meth:`_opened` refuses in the
         words the open would have used.
+
+        ``create`` of False is the half of ``report`` a **read-only mount**
+        needs: an empty schema is left empty, and the open is refused as
+        ``postgres-read-only-missing`` rather than mounting a store no write
+        could ever fill. A version this build cannot operate at is refused as
+        on any other open.
 
         The base constructor is deliberately not called. It settles two things
         this backend answers differently -- that the store file is a name
@@ -763,7 +835,15 @@ class PostgresStore(FileStore):
             )
             #: The store's own three numbers, or None where the schema holds
             #: no store. Only a ``report`` open ever sees the second.
-            self.stored: SchemaVersion | None = self._settle_stored(report=report)
+            self.stored: SchemaVersion | None = self._settle_stored(report=report or not create)
+            if self.stored is None and not report:
+                raise BackendError(
+                    "postgres-read-only-missing",
+                    mount="" if mount_point is None else mount_point,
+                    service=self.service_name,
+                    schema=self.schema,
+                    path=str(self.path),
+                )
             if self.stored is not None:
                 try:
                     self.compatibility = compatibility(self.stored)
@@ -818,6 +898,7 @@ class PostgresStore(FileStore):
         service: str | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
+        create: bool = True,
     ) -> Self:
         """This backend's store, named by a service file and an entry in it.
 
@@ -827,6 +908,8 @@ class PostgresStore(FileStore):
         base's words -- ``extensions`` and ``lock`` are a tree's options and
         are refused here as everywhere else -- and ``service`` is the one this
         backend is the reason for, so it is taken rather than refused.
+        ``create`` is checked by the store itself, since nothing on this
+        machine can say whether a schema on the server holds one.
         """
         if lock is not None:
             raise BackendError(
@@ -848,6 +931,7 @@ class PostgresStore(FileStore):
             service=service,
             log=log,
             mount_point=mount_point,
+            create=create,
             **({} if versioning is None else {"versioning": versioning}),
         )
 
@@ -869,6 +953,16 @@ class PostgresStore(FileStore):
         """
         return cls(directory, filename=filename, service=service, log=log, report=True)
 
+    @property
+    def target(self) -> dict[str, str]:
+        """The service, the schema, and the connection with its secrets redacted.
+
+        :attr:`outrage.pgservice.Service.redacted` whole, rather than chosen
+        fields, for the reason it gives: a report built from it cannot reach a
+        secret by growing a field.
+        """
+        return {"service": self.service_name, "schema": self.schema, **self.service.redacted}
+
     # -- the connection ---------------------------------------------------
 
     def _connect(self) -> Any:
@@ -882,15 +976,9 @@ class PostgresStore(FileStore):
         A connection that cannot be made is ``postgres-unreachable``, which is
         **not** a configuration error: an offline laptop should start with its
         other mounts working, and a server that is down is the case that
-        judgement exists for.
-
-        **The classification is coarser than it will be.** psycopg reports a
-        rejected password and a database that does not exist as
-        ``OperationalError`` too, and those are configuration mistakes rather
-        than a server to wait for -- so they are currently tolerated where
-        they should be fatal, and the error names the reason in full. Telling
-        them apart means reading the SQLSTATE, which is where the rest of the
-        tolerant-open classification is done.
+        judgement exists for. A server that answered and refused -- a login
+        it rejects, a database it does not have -- is a mistake in the
+        configuration instead, told apart by :func:`_connect_refusal`.
 
         **In autocommit**, so that a read is a statement and nothing more.
         psycopg otherwise opens a transaction on a connection's first
@@ -916,11 +1004,27 @@ class PostgresStore(FileStore):
                 **dict(self.service.parameters), autocommit=True, prepare_threshold=None
             )
         except psycopg.OperationalError as exc:
+            reason = _connect_reason(str(exc))
+            refused = _connect_refusal(reason)
+            if refused == "postgres-login-rejected":
+                raise BackendError(
+                    "postgres-login-rejected",
+                    service=self.service_name,
+                    path=str(self.path),
+                    reason=reason,
+                ) from exc
+            if refused == "postgres-database-missing":
+                raise BackendError(
+                    "postgres-database-missing",
+                    service=self.service_name,
+                    path=str(self.path),
+                    reason=reason,
+                ) from exc
             raise BackendError(
                 "postgres-unreachable",
                 service=self.service_name,
                 path=str(self.path),
-                reason=str(exc).strip(),
+                reason=reason,
             ) from exc
         try:
             with conn.cursor() as cursor:
@@ -2483,14 +2587,10 @@ def _unbuilt(operation: str) -> NotImplementedError:
 
     ``NotImplementedError`` rather than an :class:`~outrage.errors.OutrageError`
     deliberately: this is not a failure a caller asked for and can act on, it
-    is a call that should not have been reachable. The backend is out of
-    ``_BACKENDS`` until the operations are there, so reaching one of these is a
-    bug in outrage and a traceback is the right output for a bug.
+    is a part of the backend that is missing, and a traceback is the right
+    output for that.
     """
-    return NotImplementedError(
-        f"PostgresStore.{operation} is not built yet; the backend is left out "
-        f"of the registry until every operation is, so nothing should reach this"
-    )
+    return NotImplementedError(f"PostgresStore.{operation} is not built yet")
 
 
 def _sql(statement: str, *, schema: str) -> Any:

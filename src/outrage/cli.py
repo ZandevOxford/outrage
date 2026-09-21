@@ -43,6 +43,7 @@ from . import (
     messages,
     mountfile,
     mounts,
+    pgservice,
     shipped,
     store,
     store_files,
@@ -1399,13 +1400,17 @@ def _table_options(parser: argparse.ArgumentParser) -> None:
             f"A tree also takes {mounts.EXTENSIONS_OPTION}=, one of "
             f"{', '.join(bulk.EXTENSION_MODES)}: `keep` makes a file name and "
             "a key the same string, for a bundle whose documents link to each "
-            f"other by name. A SQLite store also takes {mounts.VERSIONING_OPTION}=, "
+            f"other by name. A SQLite or PostgreSQL store also takes {mounts.VERSIONING_OPTION}=, "
             f"one of {', '.join(store.VERSIONING_SETTINGS)}, over the run's "
             f"default. A tree takes {mounts.LOCK_OPTION}=, one of "
             f"{', '.join(store_files.LOCK_MODES)}: `interprocess` keeps writers "
             "in other processes apart too, and every writer of the tree has to "
-            "say it. Repeatable. Reads, writes, surveys and recursive "
-            "deletes cross mount boundaries."
+            "say it. A PostgreSQL store's FILE is its libpq service file, "
+            "which may be absolute or start with ~, or empty after "
+            f"{mounts.TYPE_OPTION}=postgres for libpq's own lookup; it takes "
+            f"{mounts.SERVICE_OPTION}=, the entry in that file (default "
+            f"{pgservice.DEFAULT_SERVICE}). Repeatable. Reads, writes, surveys "
+            "and recursive deletes cross mount boundaries."
         ),
     )
     parser.add_argument(
@@ -2971,16 +2976,35 @@ def _info_rows(described: info.Info) -> list[tuple[str, str, str, str]]:
 
     Versioning is a fourth column written only where it is off, as the tool
     reports it: on is the default, and a backend with none has nothing to say.
+    A store reached over a connection says where it is there too, since its
+    file is only the configuration that named it.
     """
     return [
         (
             mount.mount,
             mount.path or "",
             mount.kind,
-            "versioning off" if mount.versioned is False else "",
+            "  ".join(
+                [
+                    *(["versioning off"] if mount.versioned is False else []),
+                    *_target_words(mount.target),
+                ]
+            ),
         )
         for mount in described.mounts
     ]
+
+
+#: What of a connection the ``info`` table shows, in this order. The tool
+#: reports the whole redacted mapping; a row has room for where the store is.
+_TARGET_FIELDS = ("service", "host", "port", "dbname", "user", "schema")
+
+
+def _target_words(target: dict[str, str] | None) -> list[str]:
+    """A connection as ``name=value`` words, or none for a store in a file."""
+    if target is None:
+        return []
+    return [f"{name}={target[name]}" for name in _TARGET_FIELDS if name in target]
 
 
 def _check_command(args: argparse.Namespace, out: TextIO) -> int:

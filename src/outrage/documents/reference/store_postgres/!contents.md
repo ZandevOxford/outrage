@@ -17,196 +17,199 @@
 4759 4759 80
 
 ### outrage.store_postgres.ARCHIVE_TABLE *= 'document_archive'*
-5272 5272 88
+5175 5175 87
 
 ### outrage.store_postgres.AUDIT_CHUNK *= 8192*
-5561 5561 94
+5464 5464 93
 
 ### outrage.store_postgres.BATCH *= 64*
-5639 5639 98
+5542 5542 97
 
 ### outrage.store_postgres.BATCH_CEILING *= 4096*
-6089 6089 107
+5992 5992 106
 
 ### outrage.store_postgres.CLIENT_VERSION_SETTING *= 'outrage.client_version'*
-6209 6209 111
+6112 6112 110
 
 ### outrage.store_postgres.DEFAULT_SERVICE_FILE *= 'pg_service.conf'*
-6548 6548 118
+6451 6451 117
 
 ### outrage.store_postgres.MIGRATIONS *: Mapping[int, Sequence[str]]* *= {}*
-7085 7085 127
+6988 6988 126
 
 ### outrage.store_postgres.MIN_SCHEMA_VERSION *= 1*
-7770 7770 135
+7673 7673 134
 
 ### outrage.store_postgres.READAHEAD *= 1048576*
-8048 8048 141
+7951 7951 140
 
 ### outrage.store_postgres.RETRY_PAUSE *= 0.01*
-8672 8672 152
+8575 8575 151
 
 ### outrage.store_postgres.SCHEMA_TABLE *= 'outrage_schema'*
-8893 8893 158
+8796 8796 157
 
 ### outrage.store_postgres.SCHEMA_VERSION *= 1*
-9006 9006 162
+8909 8909 161
 
 ### outrage.store_postgres.VERSIONING_OFF *= 'off'*
-9193 9193 167
+9096 9096 166
 
 ### outrage.store_postgres.VERSIONING_SETTING *= 'outrage.versioning'*
-9359 9359 171
+9262 9262 170
 
 ### outrage.store_postgres.VERSIONS *: Mapping[int, SchemaVersion]* *= {1: SchemaVersion(version=1, read_floor=1, write_floor=1)}*
-9789 9789 179
+9692 9692 178
 
 ### outrage.store_postgres.WRITE_ATTEMPTS *= 5*
-10524 10524 189
+10427 10427 188
 
 ### outrage.store_postgres.WRITE_FLOOR_SQLSTATE *= 'OR001'*
-10848 10848 196
+10751 10751 195
 
 ### *class* outrage.store_postgres.Compatibility(stored: SchemaVersion, operating: int, writable: bool)
-11198 11198 203
+11101 11101 202
 
 #### stored *: SchemaVersion*
-11760 11760 213
+11663 11663 212
 
 #### operating *: int*
-11927 11927 217
+11830 11830 216
 
 #### writable *: bool*
-12355 12355 226
+12258 12258 225
 
 #### *property* read_only_reason *: Refusal | None*
-12491 12491 230
+12394 12394 229
 
-### *class* outrage.store_postgres.PostgresStore(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, service: str | None = None, log: EventLog | None = None, mount_point: str | None = None, versioning: bool = True, report: bool = False)
-12716 12716 234
+### *class* outrage.store_postgres.PostgresStore(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, service: str | None = None, log: EventLog | None = None, mount_point: str | None = None, versioning: bool = True, report: bool = False, create: bool = True)
+12619 12619 233
 
 #### default_filename *: ClassVar[str]* *= 'pg_service.conf'*
-14024 14024 240
+14006 14006 239
 
 #### backend_name *: ClassVar[str]* *= 'postgres'*
-14533 14533 248
+14515 14515 247
 
 #### format_version *: ClassVar[int]* *= 1*
-14905 14905 254
+14887 14887 253
 
 #### writable *: ClassVar[bool]* *= True*
-15524 15524 262
+15506 15506 261
 
 #### versioned *: ClassVar[bool]* *= True*
-15883 15883 268
+15865 15865 267
 
 #### manages_schema *: ClassVar[bool]* *= True*
-16160 16160 273
+16142 16142 272
 
 #### locates_own_store *: ClassVar[bool]* *= True*
-16603 16603 280
+16585 16585 279
 
 #### service_name
-17169 17169 288
+17151 17151 287
 
 #### service
-17236 17236 292
+17218 17218 291
 
 #### path
-17422 17422 297
+17404 17404 296
 
 #### versioning
-17625 17625 303
+17607 17607 302
 
 #### problem *: Refusal | None*
-17820 17820 308
+17802 17802 307
 
 #### encoding
-18069 18069 313
+18051 18051 312
 
 #### schema
-18248 18248 319
+18230 18230 318
 
 #### stored *: SchemaVersion | None*
-18325 18325 323
+18307 18307 322
 
 #### compatibility *: Compatibility | None*
-18577 18577 328
+18559 18559 327
 
 #### *static* service_file(directory: str | PathLike[str] | None, filename: str | PathLike[str] | None) → Path | None
-18809 18809 333
+18791 18791 332
 
-#### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, lock: str | None = None, service: str | None = None, log: EventLog | None = None, mount_point: str | None = None) → Self
-20394 20396 352
+#### *classmethod* in_directory(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, extensions: str | None = None, versioning: bool | None = None, lock: str | None = None, service: str | None = None, log: EventLog | None = None, mount_point: str | None = None, create: bool = True) → Self
+20376 20378 351
 
 #### *classmethod* reporting(directory: str | PathLike[str] | None = None, \*, filename: str | PathLike[str] | None = None, service: str | None = None, log: EventLog | None = None) → Self
-22434 22438 363
+22616 22620 364
+
+#### *property* target *: dict[str, str]*
+23854 23860 373
 
 #### close() → None
-23672 23678 372
+24351 24357 381
 
 #### *property* has_store *: bool*
-24315 24323 386
+24994 25002 395
 
 #### schema_state() → SchemaState
-24468 24476 390
+25147 25155 399
 
 #### create_schema(version: int | None = None) → SchemaVersion
-24807 24817 398
+25486 25496 407
 
 #### *property* stored_format_version *: int*
-25750 25762 414
+26429 26441 423
 
 #### store_document(key: str, content: str, format: str | None = None, \*, title: str | None = None, contents: str | None = None, encoding: str | None = None, updated_at: str | None = None) → str
-26190 26202 423
+26869 26881 432
 
 #### delete(key: str, recursive: bool = False, \*, key_range: KeyRange = UNBOUNDED, unchanged_since: str | None = None, dry_run: bool = False) → list[str]
-27912 27926 440
+28591 28605 449
 
 #### now(key: str = keys.ROOT, \*, key_range: KeyRange = UNBOUNDED) → str
-29360 29376 458
+30039 30055 467
 
 #### descendant_count(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → int
-29750 29768 465
+30429 30447 474
 
 #### subtree_totals(key: str, \*, key_range: KeyRange = UNBOUNDED, chars: bool = False) → SubtreeTotals
-30138 30158 469
+30817 30837 478
 
 #### latest_change(key: str, \*, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False) → str | None
-30734 30756 478
+31413 31435 487
 
 #### exists(key: str) → bool
-31449 31473 486
+32128 32152 495
 
 #### level_entry(key: str) → Entry | None
-31640 31666 490
+32319 32345 499
 
 #### retrieve_document(key: str, \*, offset: int = 0, byte_offset: int | None = None, line: int | None = None, lines: int | None = None, length: int | None = None, pattern: str | None = None, occurrence: int = 0, max_chars: int = DEFAULT_MAX_CHARS) → Excerpt
-32111 32139 498
+32790 32818 507
 
 #### list_keys(key: str | None = None, \*, limit: int | None = None, cursor: str | None = None, descendant_counts: bool = False, descendant_chars: bool = False) → Page[Entry]
-33553 33583 508
+34232 34262 517
 
 #### get_documents(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] | None = None, max_chars: int = DEFAULT_BULK_MAX_CHARS, limit: int | None = None, max_total_chars: int | None = None) → Page[Excerpt]
-35104 35136 525
+35783 35815 534
 
 #### missing_meta_stats(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, window: KeyRange = UNBOUNDED, meta_name: str | Sequence[str] = 'title', sample: int = 0, coverage: bool = False) → MissingMeta
-36819 36853 540
+37498 37532 549
 
 #### keys_missing_meta(subtree: BoundedSubtree = EVERYTHING, \*, key_range: KeyRange = UNBOUNDED, cursor: str | None = None, meta_name: str | Sequence[str] = 'title', limit: int | None = None) → Page[str]
-37901 37937 549
+38580 38616 558
 
 #### audit_rows() → Iterator[AuditRow]
-38928 38966 556
+39607 39645 565
 
 #### check_file(report: Report) → None
-39357 39397 565
+40036 40076 574
 
 #### repair() → list[Repaired]
-40117 40159 579
+40796 40838 588
 
 ### *exception* outrage.store_postgres.ServiceUnusable(code: str, \*\*details: Any)
-40917 40961 593
+41596 41640 602
 
 ### outrage.store_postgres.compatibility(stored: SchemaVersion) → Compatibility
-41734 41778 606
+42413 42457 615

@@ -654,6 +654,15 @@ class _MountInfoResult(_ToolResult):
             )
         ),
     ] = True
+    target: Annotated[
+        dict[str, str] | None,
+        Field(
+            description=(
+                "Present only for a store reached over a connection: its service, "
+                "schema and connection parameters, with every secret redacted"
+            )
+        ),
+    ] = None
 
 
 class _MountsResult(_ToolResult):
@@ -2069,9 +2078,12 @@ def _mount_info(mount: dict[str, Any]) -> dict[str, Any]:
 
     John's call: a report that named versioning on every SQLite mount, and
     none on the backends that have none, would be information nobody needed.
+    A ``target`` is said only where there is one, for the same reason.
     """
     if mount.get("versioned") is not False:
         mount.pop("versioned", None)
+    if mount.get("target") is None:
+        mount.pop("target", None)
     return mount
 
 

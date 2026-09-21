@@ -1951,6 +1951,17 @@ class FileStore(Store):
     #: from PostgreSQL by name anywhere in the front ends.
     manages_schema: ClassVar[bool] = False
 
+    @property
+    def target(self) -> dict[str, str] | None:
+        """Where the store is, for a backend whose store is not :attr:`path`.
+
+        None for every store kept in a file, which :attr:`path` already names.
+        A backend that connects to its store answers with what a report may
+        show of the connection -- never a secret -- so that ``info`` can say
+        where a mount *is* and not only which configuration named it.
+        """
+        return None
+
     def __init__(
         self,
         directory: str | os.PathLike[str] | None = None,
@@ -1994,6 +2005,7 @@ class FileStore(Store):
         service: str | None = None,
         log: EventLog | None = None,
         mount_point: str | None = None,
+        create: bool = True,
     ) -> Self:
         """This backend's store, named as a file inside a store directory.
 
@@ -2034,6 +2046,14 @@ class FileStore(Store):
         ``service`` is that shape once more, from the far side: which entry of
         a connection file this store is. A backend that opens a file has no
         connection to name, and refuses it rather than ignoring it.
+
+        ``create`` of False asks for a store that is already there, which is
+        what a read-only mount means. **It is checked here only for a backend
+        that finds its own store**, which has to check it itself: a store kept
+        in a file on this machine is looked for before it is opened, by
+        :func:`outrage.mounts.refuse_missing_read_only`, so that the refusal
+        can name the mount. A file backend therefore takes it and has nothing
+        left to do with it.
         """
         if lock is not None:
             raise BackendError(
@@ -2346,6 +2366,7 @@ _BACKENDS: dict[str, tuple[str, str]] = {
     "pyarrow": (".store_pyarrow", "PyarrowStore"),
     "files": (".store_files", "FilesystemStore"),
     "duckdb": (".store_duckdb", "DuckdbStore"),
+    "postgres": (".store_postgres", "PostgresStore"),
 }
 
 #: Other words a ``type=`` option may say, as the backend each one means.
@@ -2354,8 +2375,13 @@ _BACKENDS: dict[str, tuple[str, str]] = {
 #: backend a ``.parquet`` store file opens with anyway, so ``ref=parts,type=parquet``
 #: and ``ref=parts/*.parquet`` are the same store. A store opened through an
 #: alias reports the backend's own name, since that is what opened it.
+#:
+#: ``postgresql`` is the server's own name for itself, and the word libpq
+#: spells its connection URIs with, so it is what a person reaching for the
+#: backend is as likely to type as ``postgres``.
 _ALIASES: dict[str, str] = {
     "parquet": "duckdb",
+    "postgresql": "postgres",
 }
 
 #: The extension each backend claims, as the name it resolves to. A store file
@@ -2553,6 +2579,7 @@ def default_store(
     service: str | None = None,
     log: EventLog | None = None,
     mount_point: str | None = None,
+    create: bool = True,
 ) -> FileStore:
     """A store of the backend this build opens when nobody names one.
 
@@ -2581,6 +2608,9 @@ def default_store(
     beats a default**, and only a statement is refused by a backend that
     cannot version. The default is only passed on to a backend that can, so a
     run whose table holds a parquet store can still turn versioning off.
+
+    ``create`` of False asks for a store that is already there; see
+    :meth:`FileStore.in_directory`.
     """
     opener = _backend_for(filename, backend)
     stated = _versioning_setting(versioning)
@@ -2595,6 +2625,7 @@ def default_store(
         service=service,
         log=log,
         mount_point=mount_point,
+        create=create,
     )
 
 

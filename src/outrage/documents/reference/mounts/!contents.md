@@ -232,20 +232,23 @@
 #### service *: str | None*
 58905 58965 948
 
-#### opened(directory: str | PathLike[str] | None = None, \*, log: EventLog | None = None, mount_point: str | None = None, versioning: bool = True) → FileStore
+#### opened(directory: str | PathLike[str] | None = None, \*, log: EventLog | None = None, mount_point: str | None = None, versioning: bool = True, create: bool = True) → FileStore
 59209 59269 953
 
 ### outrage.mounts.mount_point(prefix: str, \*, spec: str | None = None) → str
-61198 61260 978
+61455 61517 981
 
 ### outrage.mounts.open_mounts(directory: str | PathLike[str] | None, specs: Sequence[str] = (), read_only_specs: Sequence[str] = (), \*, root_mount: str | PathLike[str] | Spec | None = None, log: EventLog | None = None, attached: Mapping[str, Store] = MappingProxyType({}), owned: Mapping[str, Store] = MappingProxyType({}), builtin: Collection[str] = (), versioning: bool = True, on_open_error: Callable[[str, Spec, bool, OutrageError], None] | None = None) → MountedStore
-61980 62044 989
+62237 62301 992
 
 ### outrage.mounts.parse_options(value: str, \*, spec: str | None = None) → Spec
-68550 68616 1065
+68807 68873 1068
 
 ### outrage.mounts.parse_spec(spec: str) → tuple[str, Spec]
-70356 70424 1095
+70613 70681 1098
+
+### outrage.mounts.refuse_missing_read_only(directory: Path, prefix: str, file: str | PathLike[str] | None, backend: str | None) → None
+71907 71977 1119
 
 ### outrage.mounts.unparse(spec: Spec) → str
-71650 71720 1116
+73203 73275 1133

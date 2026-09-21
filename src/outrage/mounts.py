@@ -1986,6 +1986,7 @@ class Spec:
         log: EventLog | None = None,
         mount_point: str | None = None,
         versioning: bool = True,
+        create: bool = True,
     ) -> store_module.FileStore:
         """The store this spec names, opened in ``directory``.
 
@@ -1999,6 +2000,9 @@ class Spec:
         it is somebody reading the keys.
 
         ``versioning`` is the run's default, which the spec's own option beats.
+
+        ``create`` of False asks for a store that is already there, which is
+        what a read-only mount means -- see :func:`refuse_missing_read_only`.
 
         **A spec naming no file is refused here** unless the backend it names
         finds its own store, which is the one thing about an omitted FILE that
@@ -2023,7 +2027,30 @@ class Spec:
             service=self.service,
             log=log,
             mount_point=mount_point,
+            create=create,
         )
+
+
+def refuse_missing_read_only(
+    directory: Path, prefix: str, file: str | os.PathLike[str] | None, backend: str | None
+) -> None:
+    """Refuse a read-only mount whose store file is not in ``directory``.
+
+    A read-only mount is never created: a mistyped name would mount as an
+    empty store that no write could ever contradict. For a store kept in a file
+    that is decided here, before opening, because opening one creates it.
+
+    **A backend that finds its own store is left to say so itself**, when it
+    is opened with ``create`` False. What such a mount names is a connection's
+    configuration rather than the store, so whether that file is present
+    answers the wrong question -- and it may be an absolute path, which
+    resolving it inside ``directory`` would refuse as though it were a mistake.
+    """
+    if file is None or store_module.locates_own_store(backend, unknown=False):
+        return
+    if not store_present(directory, file):
+        database = store_file(directory, file)
+        raise MountError("mount-read-only-missing", mount=prefix, path=str(database))
 
 
 def parse_options(value: str, *, spec: str | None = None) -> Spec:
@@ -2199,6 +2226,12 @@ def mount_point(prefix: str, *, spec: str | None = None) -> str:
 # backend whose module is not installed -- a parquet mount without the extra --
 # is exactly the temporarily unavailable store this list exists to distinguish
 # a mistake from. The name is spelled right; the install is short.
+#
+# A PostgreSQL mount is fatal for what is wrong in its configuration -- the
+# service file, a login or database the server refuses, a database that is not
+# UTF8, a search path naming no schema -- and tolerated for a server that is
+# not answering and for a store at a version this build cannot open, which
+# wait on something other than the configuration: the server, or an upgrade.
 _CONFIGURATION_ERROR_CODES = frozenset(
     {
         "backend-takes-no-extensions",
@@ -2209,6 +2242,11 @@ _CONFIGURATION_ERROR_CODES = frozenset(
         "extensions-unknown",
         "lock-unknown",
         "mount-file-not-optional",
+        "postgres-database-missing",
+        "postgres-encoding",
+        "postgres-login-rejected",
+        "postgres-no-schema",
+        "postgres-service-unusable",
         "store-file-absolute",
         "store-file-escapes",
         "store-file-pattern",
@@ -2354,25 +2392,14 @@ def open_mounts(
         for read_only, configured in ((False, writable), (True, refusing)):
             for prefix, spec in configured:
                 try:
-                    # A spec whose backend finds its own store has nothing in
-                    # this directory to be missing, whether or not it named a
-                    # file: what it names is a connection's configuration and
-                    # not the store, so its presence answers the wrong
-                    # question, and it may be an absolute path this rule would
-                    # refuse. Whether the store is there is the backend's to
-                    # say when it opens it.
-                    if (
-                        read_only
-                        and spec.path is not None
-                        and not store_module.locates_own_store(spec.type, unknown=False)
-                        and not store_present(base, spec.path)
-                    ):
-                        database = store_file(base, spec.path)
-                        raise MountError(
-                            "mount-read-only-missing", mount=prefix, path=str(database)
-                        )
+                    if read_only:
+                        refuse_missing_read_only(base, prefix, spec.path, spec.type)
                     opened[prefix] = spec.opened(
-                        base, log=log, mount_point=prefix, versioning=versioning
+                        base,
+                        log=log,
+                        mount_point=prefix,
+                        versioning=versioning,
+                        create=not read_only,
                     )
                     if read_only:
                         opened_read_only.append(prefix)
@@ -2419,5 +2446,6 @@ __all__ = [
     "open_mounts",
     "parse_options",
     "parse_spec",
+    "refuse_missing_read_only",
     "unparse",
 ]

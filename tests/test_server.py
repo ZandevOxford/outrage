@@ -1498,6 +1498,8 @@ def test_info_says_versioning_only_where_it_is_off(tmp_path):
 
     versioned = {one["mount"]: one.get("versioned", "absent") for one in result["mounts"]}
     assert versioned == {"/": "absent", "off": False, "on": "absent", "tree": "absent"}
+    # A target likewise: only a store reached over a connection has one.
+    assert [one for one in result["mounts"] if "target" in one] == []
 
 
 def test_parse_args_reports_the_configuration_files_it_read(tmp_path):

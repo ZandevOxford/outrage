@@ -61,6 +61,11 @@ class MountInfo:
     flat bool would make every parquet and tree mount say versioning was off,
     which reads as *switched* off -- as though it could be on."""
 
+    target: dict[str, str] | None = None
+    """Where a store reached over a connection is -- its service, schema and
+    connection parameters, secrets redacted -- or None for one kept in the
+    file :attr:`path` names. See :attr:`outrage.store.FileStore.target`."""
+
 
 @dataclass(frozen=True, slots=True)
 class Info:
@@ -161,6 +166,7 @@ def _mount(mount: mounts_module.Mount) -> MountInfo:
         kind=mounts_module.ROOT_KIND if mount.is_root else mount.kind,
         read_only=mount.read_only,
         versioned=_versioned(mount.store),
+        target=mount.store.target if isinstance(mount.store, store_module.FileStore) else None,
     )
 
 

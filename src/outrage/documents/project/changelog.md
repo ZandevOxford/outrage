@@ -4,6 +4,24 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+A PostgreSQL backend, `type=postgres` (or `type=postgresql`), for one store
+shared by several devices. It needs the `postgres` extra. A mount names a libpq
+service file and an entry in it, as in
+`--mount shared=~/.pg_service.conf,type=postgres,service=outrage`, and the
+store is the connection's schema, created with its tables on first open. `info`
+reports each such mount's service, schema and connection parameters, with every
+secret replaced by `(not shown)`. A read-only mount of a schema holding no store
+is refused rather than created, as for every other backend. The MCP `mount` tool
+takes an absolute service file, and with no file reads `type=postgres` as
+libpq's own lookup rather than a built-in store. At startup a server that cannot
+be reached leaves the mount unavailable and the other mounts working; a service
+file that cannot be used, a login the server rejects, a database it does not
+have, one that is not UTF8, or a search path naming no schema is a
+configuration error and stops the start. A rejected login and a missing
+database are recognised in the server's English messages, so a server replying
+in another language is treated as unreachable, and the reason is still shown in
+full. `outrage check` and backups do not yet support it.
+
 Mount specs gained two spellings for a store that is not a file inside the
 store directory, both of them groundwork for the PostgreSQL backend.
 

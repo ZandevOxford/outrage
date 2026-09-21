@@ -2082,6 +2082,33 @@ def _postgres_unreachable(name: Namer, /, *, service: str, path: str, reason: st
     )
 
 
+@template("postgres-login-rejected")
+def _postgres_login_rejected(
+    name: Namer, /, *, service: str, path: str, reason: str, **_: Any
+) -> str:
+    # Distinct from `postgres-unreachable` because it asks for the opposite:
+    # the server is there, and waiting for it will not help. The driver's
+    # sentence is kept because it says which part of the login it refused.
+    said = " ".join(str(reason).split())
+    return (
+        f"the PostgreSQL server for service {service!r} in {path} refused the "
+        f"login: {said}. Check the user, the password (a password file or "
+        f"PGPASSWORD, never the service file) and the server's pg_hba.conf."
+    )
+
+
+@template("postgres-database-missing")
+def _postgres_database_missing(
+    name: Namer, /, *, service: str, path: str, reason: str, **_: Any
+) -> str:
+    said = " ".join(str(reason).split())
+    return (
+        f"the PostgreSQL server for service {service!r} in {path} has no such "
+        f"database: {said}. outrage creates the schema and its tables, but not "
+        f"the database; check dbname in the service, or create it."
+    )
+
+
 @template("postgres-store-closed")
 def _postgres_store_closed(name: Namer, /, *, service: str, path: str, **_: Any) -> str:
     return (
@@ -2119,6 +2146,20 @@ def _postgres_no_store(name: Namer, /, *, service: str, schema: str, path: str, 
         f"there is no outrage store in schema {schema!r} on the server named by "
         f"service {service!r} in {path}. Opening one would create it; this asked "
         f"about a store rather than for one."
+    )
+
+
+@template("postgres-read-only-missing")
+def _postgres_read_only_missing(
+    name: Namer, /, *, mount: str, service: str, schema: str, path: str, **_: Any
+) -> str:
+    # The same refusal as `mount-read-only-missing`, and for the same reason,
+    # said about a schema on a server rather than a file in a directory.
+    return (
+        f"the read-only mount at {keys.displayed(mount)!r} has no store in schema "
+        f"{schema!r} on the server named by service {service!r} in {path}. A "
+        f"read-only mount is not created, since a mistyped name would mount as an "
+        f"empty store that no write could ever contradict."
     )
 
 
