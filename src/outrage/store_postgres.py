@@ -287,17 +287,32 @@ _ARCHIVE_INDEX = "CREATE INDEX IF NOT EXISTS idx_archive_key ON {archive} (key, 
 #: The stored columns of a row, in :func:`outrage.store_sqlite._row_values`'s order.
 _COLUMNS = "(key, doc_key, meta_name, meta_path, parent, content, format, updated_at, sort_key)"
 
-#: The server's time, spelled as every stamp is: UTC to the second, the
-#: spelling :func:`outrage.store._now` writes, so a stamp from either clock
-#: compares with one from the other as text. Both truncate rather than round.
+
+def _stamp_sql(moment: str) -> str:
+    """SQL spelling the time ``moment`` as :func:`outrage.store._stamp` does.
+
+    UTC, to the millisecond, the milliseconds written only when they are not
+    zero, so that a stamp from either clock compares with one from the other
+    as text. ``to_char``'s ``MS`` truncates, as the Python spelling does; a
+    test holds the two to each other.
+    """
+    utc = f"({moment} AT TIME ZONE 'UTC')"
+    return (
+        f"""to_char({utc}, 'YYYY-MM-DD"T"HH24:MI:SS') || """
+        f"CASE to_char({utc}, 'MS') WHEN '000' THEN '' ELSE '.' || to_char({utc}, 'MS') END "
+        "|| '+00:00'"
+    )
+
+
+#: The server's time as a stamp.
 #:
 #: ``now()`` is the time the transaction began, so a document and its
 #: metadata carry one stamp, as they do on every other backend. That is
 #: before the transaction commits, and a write is invisible until it does, so
 #: a watermark taken in between is later than a write it could not see. The
-#: window is one write transaction, which is well inside the second a stamp
-#: is truncated to.
-_STAMP = """to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"+00:00"')"""
+#: window is one write transaction -- a round trip or two -- which is the
+#: price of the shared stamp.
+_STAMP = _stamp_sql("now()")
 
 #: One row's values, with the stamp left to the server where the caller gave none.
 _ROW = f"%s, %s, %s, %s, %s, %s, %s, coalesce(%s, {_STAMP}), %s"

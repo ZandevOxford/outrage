@@ -144,6 +144,7 @@ from .store import (
     _line_excerpt,
     _logged,
     _scope,
+    _stamp,
     _with_descendants,
     _within,
     check_read_position,
@@ -712,8 +713,12 @@ class FilesystemStore(FileStore):
             # the corpus that is not a document. So a copy that carries a
             # timestamp in sets the file's, and the tree reads back what it was
             # told rather than when the copy happened.
-            moment = datetime.fromisoformat(updated_at).timestamp()
-            os.utime(path, (moment, moment))
+            # In whole nanoseconds, set here and read back by `_stamp_ns`, so
+            # the stamp read is the stamp written by construction. A float
+            # second cannot hold most millisecond fractions exactly, and reading
+            # the mtime back exactly would floor one below its millisecond.
+            ns = _nanoseconds(datetime.fromisoformat(updated_at))
+            os.utime(path, ns=(ns, ns))
         for other in self._files_for(key):
             if other != path:
                 other.unlink()
@@ -1430,7 +1435,7 @@ class FilesystemStore(FileStore):
             meta_name=parsed.meta_name,
             meta_path=parsed.meta_path,
             format=bulk.FORMAT_BY_EXTENSION.get(path.suffix),
-            updated_at=datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(timespec="seconds"),
+            updated_at=_stamp_ns(stat.st_mtime_ns),
             sort_key=keys.sort_form(parsed.key),
             chars=chars,
             path=path,
@@ -1800,6 +1805,20 @@ def _entry(row: _Row) -> Entry:
         updated_at=row.updated_at,
     )
 
+
+def _nanoseconds(moment: datetime) -> int:
+    """``moment`` as whole nanoseconds since the epoch, exactly."""
+    elapsed = moment.astimezone(UTC) - _EPOCH
+    return (elapsed.days * 86_400 + elapsed.seconds) * 1_000_000_000 + elapsed.microseconds * 1000
+
+
+def _stamp_ns(ns: int) -> str:
+    """An mtime in nanoseconds as a stored timestamp, without passing through a float."""
+    seconds, remainder = divmod(ns, 1_000_000_000)
+    return _stamp(datetime.fromtimestamp(seconds, UTC).replace(microsecond=remainder // 1000))
+
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 __all__ = [
     "DEFAULT_TREE_NAME",

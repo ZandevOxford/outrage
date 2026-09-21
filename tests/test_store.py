@@ -17,7 +17,7 @@ import json
 import pathlib
 import sqlite3
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -450,6 +450,46 @@ def test_updated_at_must_be_a_timestamp(store, updated_at, error, match):
         store.retrieve_document("a/b")
 
 
+def test_stamps_sort_as_text_in_the_order_of_the_moments_they_name():
+    """What every comparison of two stamps relies on, whole seconds and fractions mixed."""
+    import random
+
+    rng = random.Random(20260921)
+    base = datetime(2026, 9, 21, 10, 0, 0, tzinfo=UTC)
+    moments = [
+        base + timedelta(microseconds=offset)
+        for offset in (0, 999, 1000, 1001, 999_000, 999_999, 1_000_000, 1_001_000)
+    ] + [base + timedelta(microseconds=rng.randrange(0, 5_000_000)) for _ in range(500)]
+    stamps = [store_module._stamp(moment) for moment in moments]
+
+    by_moment = [stamp for _, stamp in sorted(zip(moments, stamps, strict=True))]
+    assert sorted(stamps) == by_moment
+    # And a stamp never names a moment later than its own.
+    assert all(
+        datetime.fromisoformat(stamp) <= moment
+        for moment, stamp in zip(moments, stamps, strict=True)
+    )
+
+
+def test_a_whole_second_is_spelled_as_it_always_was():
+    """So a stamp written before milliseconds, carried in by a copy, is not respelled."""
+    assert store_module._timestamp("2026-09-13T10:00:00Z") == "2026-09-13T10:00:00+00:00"
+    assert store_module._timestamp("2026-09-13T11:00:00.000+01:00") == "2026-09-13T10:00:00+00:00"
+    assert (
+        store_module._timestamp("2026-09-13T10:00:00.4567+00:00") == "2026-09-13T10:00:00.456+00:00"
+    )
+
+
+def test_a_change_inside_the_second_of_the_watermark_is_seen(store):
+    """The window a whole-second stamp left open: looked at .300, written at .400."""
+    store.store_document("a", "x", updated_at="2026-09-13T10:00:00.100+00:00")
+    store.store_document("a/b", "after the look", updated_at="2026-09-13T10:00:00.400+00:00")
+
+    with pytest.raises(store_module.ChangedSinceError):
+        store.delete("a", recursive=True, unchanged_since="2026-09-13T10:00:00.300+00:00")
+    assert store.delete("a", recursive=True, unchanged_since="2026-09-13T10:00:00.400+00:00")
+
+
 def test_a_write_that_names_no_timestamp_is_now(store):
     """None is the storage's own answer rather than one settled in front of it.
 
@@ -462,7 +502,7 @@ def test_a_write_that_names_no_timestamp_is_now(store):
 
 
 def _now():
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return store_module._stamp(datetime.now(UTC))
 
 
 def test_a_key_may_mirror_a_file_path(store):

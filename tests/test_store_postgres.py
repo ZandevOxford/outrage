@@ -957,7 +957,9 @@ def both(tmp_path, postgres_store, monkeypatch):
     monkeypatch.setattr(store_postgres, "READAHEAD", 11)
     with SqliteStore(tmp_path / "oracle") as oracle:
         for store in (oracle, postgres_store):
-            store.store_document("doc", _LONG, "text")
+            # One stamp for both, or the comparison is of two clocks a few
+            # milliseconds apart rather than of two ways of reading.
+            store.store_document("doc", _LONG, "text", updated_at="2026-09-21T10:00:00+00:00")
         yield oracle, postgres_store
 
 
@@ -1419,10 +1421,9 @@ def wrong_local_clock(monkeypatch):
 
 
 def _server_time(store):
-    return query(
-        store,
-        """SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"+00:00"')""",
-    )[0][0]
+    from outrage.store_postgres import _STAMP
+
+    return query(store, f"SELECT {_STAMP}")[0][0]
 
 
 def _close(a, b, seconds=5):
@@ -1445,6 +1446,25 @@ def test_a_write_naming_no_time_is_stamped_by_the_server(postgres_store, wrong_l
     assert stamps["c/1/task"] == stamps["c/1/task/!title"]
 
 
+@pytest.mark.parametrize(
+    "microseconds", [0, 999, 1000, 1001, 123_456, 999_000, 999_999], ids=lambda n: f"{n}us"
+)
+def test_the_server_spells_a_stamp_as_this_package_does(postgres_store, microseconds):
+    """Two spellings of one rule, held together: ``_stamp`` here, ``_stamp_sql`` there."""
+    from datetime import UTC, datetime
+
+    from outrage.store import _stamp
+    from outrage.store_postgres import _stamp_sql
+
+    moment = datetime(2026, 9, 21, 10, 0, 0, microseconds, tzinfo=UTC)
+    spelled = query(
+        postgres_store,
+        f"SELECT {_stamp_sql('given.t')} FROM (SELECT %s::timestamptz AS t) AS given",
+        (moment,),
+    )[0][0]
+    assert spelled == _stamp(moment)
+
+
 def test_a_write_naming_its_time_keeps_it(postgres_store):
     """What a copy does: the source's stamp travels with the document."""
     postgres_store.store_document("a", "x", title="T", updated_at="2020-05-06T07:08:09+00:00")
@@ -1455,7 +1475,7 @@ def test_a_write_naming_its_time_keeps_it(postgres_store):
 def test_the_store_tells_the_time_by_the_servers_clock(postgres_store, wrong_local_clock):
     told = postgres_store.now("anything")
     assert _close(told, _server_time(postgres_store))
-    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\+00:00", told)
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(\.\d{3})?\+00:00", told)
 
 
 def test_a_watermark_from_the_server_guards_a_write_this_machine_would_miss(

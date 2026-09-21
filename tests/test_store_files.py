@@ -36,7 +36,7 @@ from outrage.store import (
     KeyRange,
     StoreFileError,
 )
-from outrage.store_files import DEFAULT_TREE_NAME, FilesystemStore, NotTextError
+from outrage.store_files import DEFAULT_TREE_NAME, FilesystemStore, NotTextError, _nanoseconds
 from outrage.store_sqlite import SqliteStore
 
 #: The corpus ``test_store_pyarrow.py`` chose, for the same reasons and with
@@ -147,8 +147,8 @@ def tree(tmp_path, sqlite):
         for key, content in CORPUS:
             store.store_document(key, content)
         for key, _ in CORPUS:
-            when = datetime.fromisoformat(sqlite.retrieve_document(key).updated_at).timestamp()
-            os.utime(store._file_for(key), (when, when))
+            when = _nanoseconds(datetime.fromisoformat(sqlite.retrieve_document(key).updated_at))
+            os.utime(store._file_for(key), ns=(when, when))
         yield store
 
 
@@ -481,6 +481,18 @@ def test_a_backup_is_a_copy_that_was_read_back(files, tmp_path):
     assert copy.documents == 3
     with FilesystemStore(copy.path) as restored:
         assert restored.retrieve_document("a/b").content == "below"
+
+
+def test_a_stamp_to_the_millisecond_survives_being_an_mtime(files):
+    """What a copy into a tree relies on: the stamp read back is the stamp it was given."""
+    for stamp in (
+        "2026-09-21T10:00:00.123+00:00",
+        "2026-09-21T10:00:00.001+00:00",
+        "2026-09-21T10:00:00.999+00:00",
+        "2026-09-21T10:00:01+00:00",
+    ):
+        files.store_document("stamped", "x", updated_at=stamp)
+        assert files.retrieve_document("stamped").updated_at == stamp
 
 
 def test_a_backup_carries_the_metadata_and_the_timestamps(files, tmp_path):
@@ -897,8 +909,8 @@ def kept_pair(tmp_path):
             sqlite.store_document(key, content)
             kept.store_document(key, content)
         for key, _ in _KEPT_CORPUS:
-            when = datetime.fromisoformat(sqlite.retrieve_document(key).updated_at).timestamp()
-            os.utime(kept._file_for(key), (when, when))
+            when = _nanoseconds(datetime.fromisoformat(sqlite.retrieve_document(key).updated_at))
+            os.utime(kept._file_for(key), ns=(when, when))
         yield sqlite, kept
 
 

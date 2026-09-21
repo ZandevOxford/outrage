@@ -1340,11 +1340,13 @@ says nothing about what was *removed* from it. A guard built on this
 covers edits and no more; when an archive exists, asking it the same
 question over the same range is what answers the other half.
 
-Timestamps are normalised to seconds ([`store_document()`](#outrage.store.Store.store_document)), so a
-write inside the same second as a watermark is invisible to a
+Timestamps are stamped to the millisecond (`_stamp()`), so a
+write inside the same millisecond as a watermark is invisible to a
 comparison against one. That is the weakness `content_sha256` exists
 to avoid elsewhere, inherited here deliberately: a watermark over a
-whole subtree has no single content to hash.
+whole subtree has no single content to hash. A row stamped before
+stamps carried milliseconds reads as the start of its second, so the
+window over those rows is still the second it was truncated to.
 
 The default implementation walks the subtree and takes the maximum,
 which is every store's answer until it has a better one: a database

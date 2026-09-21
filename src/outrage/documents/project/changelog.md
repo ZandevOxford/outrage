@@ -35,6 +35,18 @@ store, `outrage mounts` reports it as `unknown` whether or not a file was
 named, and `outrage backup` opens the store rather than looking for it in the
 store directory.
 
+Timestamps are now stamped to the millisecond, so an `unchanged_since` guard
+sees a change made later in the same second as the look, which a whole-second
+stamp hid. The milliseconds are written only when they are not zero:
+`2026-09-21T10:00:00.123+00:00`, but `2026-09-21T10:00:00+00:00` as before,
+so every timestamp already stored keeps its spelling, and stamps still sort as
+text in the order of the moments they name. A caller's `updated_at` and
+`unchanged_since` keep their milliseconds instead of being truncated to the
+second. A filesystem store sets and reads its modification times in whole
+nanoseconds, so a millisecond stamp copied into a tree reads back unchanged.
+An older outrage reads the new stamps correctly, but truncates them to the
+second when it copies them.
+
 `outrage init` now writes every option a mount carries into the table it
 starts. It wrote `path` and `type` alone, so
 `--mount docs=bundle,type=files,extensions=keep` produced an entry mounting the

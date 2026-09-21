@@ -1363,11 +1363,13 @@ class Store(ABC):
         covers edits and no more; when an archive exists, asking it the same
         question over the same range is what answers the other half.
 
-        Timestamps are normalised to seconds (:meth:`store_document`), so a
-        write inside the same second as a watermark is invisible to a
+        Timestamps are stamped to the millisecond (:func:`_stamp`), so a
+        write inside the same millisecond as a watermark is invisible to a
         comparison against one. That is the weakness ``content_sha256`` exists
         to avoid elsewhere, inherited here deliberately: a watermark over a
-        whole subtree has no single content to hash.
+        whole subtree has no single content to hash. A row stamped before
+        stamps carried milliseconds reads as the start of its second, so the
+        window over those rows is still the second it was truncated to.
 
         The default implementation walks the subtree and takes the maximum,
         which is every store's answer until it has a better one: a database
@@ -3204,7 +3206,34 @@ def _within(key_range: KeyRange) -> Callable[[str], bool]:
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return _stamp(datetime.now(UTC))
+
+
+def _stamp(moment: datetime) -> str:
+    """``moment`` as every stored timestamp is spelled: UTC, to the millisecond.
+
+    **The milliseconds are written only when they are not zero**, which is
+    what lets this spelling sort as the moments do while leaving every stamp
+    written before it as it was. Stamps are compared as text, and ``+``
+    sorts before ``.``, so ``10:00:00+00:00`` is before ``10:00:00.001+00:00``,
+    which is before ``10:00:01+00:00``. Always writing ``.000`` would sort the
+    same, but it would respell every whole-second stamp a copy carries in, so
+    copying an unchanged subtree again would count each one as a change.
+
+    Truncated rather than rounded, as ``isoformat`` truncates, so a stamp is
+    never later than the moment it names.
+
+    >>> _stamp(datetime(2026, 9, 21, 10, 0, 0, 123456, tzinfo=UTC))
+    '2026-09-21T10:00:00.123+00:00'
+    >>> _stamp(datetime(2026, 9, 21, 10, 0, 0, 999, tzinfo=UTC))
+    '2026-09-21T10:00:00+00:00'
+    """
+    moment = moment.astimezone(UTC)
+    whole = moment.replace(microsecond=0).isoformat(timespec="seconds")
+    millis = moment.microsecond // 1000
+    if not millis:
+        return whole
+    return f"{whole[:-6]}.{millis:03d}{whole[-6:]}"
 
 
 def _timestamp(updated_at: str | None) -> str | None:
@@ -3213,9 +3242,9 @@ def _timestamp(updated_at: str | None) -> str | None:
     Normalised rather than taken as given, so that a timestamp a copy carried
     in is the same shape as one :func:`_now` wrote: every stored value is then
     comparable as a string, which is how a listing sorts them and how a check
-    reads them. UTC at second precision for the same reason - the corpus has
-    never held anything else, and a store where half the rows carry an offset
-    is one where a string comparison quietly stops meaning what it says.
+    reads them. UTC, in :func:`_stamp`'s spelling, for the same reason - a
+    store where half the rows carry an offset is one where a string
+    comparison quietly stops meaning what it says.
 
     A naive timestamp is read as UTC. It is the only reading that agrees with
     the rest of the package: :func:`_now` is UTC, and so is the mtime the
@@ -3231,7 +3260,7 @@ def _timestamp(updated_at: str | None) -> str | None:
         raise ValueError(f"updated_at must be an ISO 8601 timestamp, got {updated_at!r}") from exc
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
-    return moment.astimezone(UTC).isoformat(timespec="seconds")
+    return _stamp(moment)
 
 
 def _ms(started: int) -> float:
