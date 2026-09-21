@@ -65,9 +65,10 @@ parts rather than one.
   replaced. The same function makes the archive complete for any writer,
   ``psql`` included. A statement trigger beside it refuses a session that
   declared a build below ``write_floor``.
-* **A ``?`` is allocated under a per-parent lock**, :func:`_allocation_lock`,
-  in a ``READ COMMITTED`` transaction -- see :meth:`PostgresStore._writing` for
-  why that one transaction is not serializable.
+* **A ``?`` claims its number with a lock on the number**, taken without
+  waiting, in a ``READ COMMITTED`` transaction -- see
+  :meth:`PostgresStore._allocate`, and :meth:`PostgresStore._writing` for why
+  that one transaction is not serializable.
 * **Every other write is ``SERIALIZABLE`` and retried** when the server says
   it could not be serialised. The net under any read-decide-write that the
   two targeted fixes do not cover, a delete's ``unchanged_since`` among them.
@@ -282,6 +283,13 @@ CREATE TABLE IF NOT EXISTS {archive} (
 
 _ARCHIVE_INDEX = "CREATE INDEX IF NOT EXISTS idx_archive_key ON {archive} (key, updated_at)"
 
+#: The stored columns of a row, in :func:`outrage.store_sqlite._row_values`'s order.
+_COLUMNS = "(key, doc_key, meta_name, meta_path, parent, content, format, updated_at, sort_key)"
+
+#: What an upsert moves when the key is already there: the three columns that
+#: are not derived from the key.
+_UPSERTED = "content = excluded.content, format = excluded.format, updated_at = excluded.updated_at"
+
 #: Copy the row a write replaces or a delete takes into the archive.
 #:
 #: **A row trigger, not a statement of the client's**, for the case the SQLite
@@ -404,9 +412,26 @@ _USER_SCHEMA = "$user"
 #: change: a lock two builds compute differently is not a lock.
 _LOCK_NAMESPACE = b"outrage.schema."
 
-#: Salt for the lock a ``?`` allocation takes, so that it can never be the
-#: same number as a schema's lock, whatever the two are named.
+#: Salt for the parent half of the lock a ``?`` allocation takes on a number.
+#: That lock is PostgreSQL's two-integer form, whose keys are a space apart
+#: from the one-bigint form the schema lock uses, so the two cannot meet
+#: whatever they hash to; the salt keeps the parent half this backend's own.
 _ALLOCATION_NAMESPACE = b"outrage.allocate."
+
+#: Try the lock on one candidate number, as SQL: the parent's half as a
+#: parameter and the number's as the expression ``{number}``, which is
+#: wrapped into 32 bits. PostgreSQL's two-integer form takes two ``int4``, and
+#: a number is any run of digits. A wrap that lands two numbers on one lock
+#: only makes an allocator skip a number it did not need to, which is the
+#: whole cost of it.
+_TRY_NUMBER = (
+    "pg_try_advisory_xact_lock(%s, ((({number})::numeric %% 4294967296) - 2147483648)::int)"
+)
+
+#: A numeric segment, as the server tests it. The same rule as
+#: :data:`outrage.keys.NUMERIC_RE`, ASCII digits and nothing else, which a
+#: test holds the two to.
+_NUMERIC_SQL = "'^[0-9]+$'"
 
 #: How many rows a paged read asks for when the caller named no limit, and
 #: what a run of reads grows from, doubling up to :data:`BATCH_CEILING`. The
@@ -466,34 +491,24 @@ def _lock_number(schema: str) -> int:
     return _hashed_lock(_LOCK_NAMESPACE, schema)
 
 
-def _allocation_lock(schema: str, parent: str) -> int:
-    """The advisory lock a ``?`` allocation under ``parent`` takes, as a signed bigint.
+def _allocation_space(schema: str, parent: str) -> int:
+    """The parent's half of the lock an allocation takes on a number, as a signed int4.
 
-    **Per parent**, because what an allocation must not share is a number
-    among the children of one key, and two allocations under different parents
-    cannot collide. Held for the transaction, so the number read under it is
-    committed before the next allocator under that parent reads the level --
-    and under ``READ COMMITTED`` that allocator's next statement sees it.
-
-    **Only under ``READ COMMITTED``.** A serializable transaction takes its
-    snapshot at its first statement, which is the one that waits here, so an
-    allocator that queued behind another would read the level as it was
-    before that one committed -- measured against PostgreSQL 18, not inferred.
-
-    Two parents hashing to one number only serialise two allocations that
-    did not need it, which is the whole cost of a collision.
+    Per parent, because what an allocation must not share is a number among
+    the children of one key. Two parents hashing alike only make an
+    allocator skip a number held under the other one.
     """
-    return _hashed_lock(_ALLOCATION_NAMESPACE, schema, parent)
+    return _hashed_lock(_ALLOCATION_NAMESPACE, schema, parent, size=4)
 
 
-def _hashed_lock(namespace: bytes, *parts: str) -> int:
-    """A 64-bit advisory lock number for ``parts`` under ``namespace``.
+def _hashed_lock(namespace: bytes, *parts: str, size: int = 8) -> int:
+    """An advisory lock number of ``size`` bytes for ``parts`` under ``namespace``.
 
     The parts are joined with NUL, which neither a schema name nor a key can
     hold, so no two different tuples of parts join to the same bytes.
     """
     joined = "\0".join(parts).encode("utf-8")
-    digest = hashlib.blake2b(namespace + joined, digest_size=8).digest()
+    digest = hashlib.blake2b(namespace + joined, digest_size=size).digest()
     return int.from_bytes(digest, "big", signed=True)
 
 
@@ -912,9 +927,10 @@ class PostgresStore(FileStore):
 
         ``READ COMMITTED`` unless asked: what opening a store does is under an
         advisory lock, and a lock is only worth waiting for if the statements
-        after it see what its last holder committed -- see
-        :func:`_allocation_lock`. A write that wants the net goes through
-        :meth:`_writing`, which also retries it.
+        after it see what its last holder committed. A serializable
+        transaction's snapshot is taken by its first statement, which is the
+        one that waits -- measured against PostgreSQL 18, not inferred. A write
+        that wants the net goes through :meth:`_writing`, which also retries it.
         """
         isolation = _psycopg().IsolationLevel
         conn = self._conn
@@ -941,13 +957,14 @@ class PostgresStore(FileStore):
         given, not from a previous attempt.
 
         **A ``?`` allocation asks for ``READ COMMITTED`` instead**, because its
-        guard is :func:`_allocation_lock` and that lock does nothing for a
-        serializable transaction: the snapshot is taken by the statement that
-        waits for it. Every allocator that queued would then be failed by the
-        server and retried, and eight allocating under one parent at once
-        were measured running out of :data:`WRITE_ATTEMPTS` altogether. The
-        rest of that transaction is upserts, which the archive trigger keeps
-        correct at either level.
+        guard needs every statement to see what was committed before it: a
+        lock on the number, then a check that nothing is there yet
+        (:meth:`_allocate`). Under one serializable snapshot the check would
+        read the level as it was when the transaction began. Without any lock
+        at all, the server's own conflict detection does keep the numbers
+        apart, but by failing every allocator but one each time they meet:
+        eight under one parent were measured needing up to twelve attempts
+        each against a simulated remote server.
 
         A refusal from the write-floor trigger becomes the refusal
         :meth:`_writable` makes, from the numbers the server refused on --
@@ -1360,56 +1377,118 @@ class PostgresStore(FileStore):
         self._writable(key, "write")
         stamp = updated_at or _now()
 
-        def write(cursor: Any) -> str:
-            target = parsed
-            if target.has_wildcard:
-                cursor.execute(
-                    "SELECT pg_advisory_xact_lock(%s)",
-                    (_allocation_lock(self.schema, target.wildcard_parent),),
+        def meta_rows(target: keys.Key) -> list[tuple[object, ...]]:
+            return [
+                _row_values(
+                    keys.parse(f"{target.key}{keys.DELIMITER}{keys.META_PREFIX}{name}"),
+                    value,
+                    "markdown",
+                    stamp,
                 )
-                allocated = self._next_number(cursor, target.wildcard_parent)
-                target = keys.parse(keys.substitute_wildcard(target.key, allocated))
-            rows = [_row_values(target, content, format, stamp)]
-            for name, value in (("title", title), ("contents", contents)):
-                if value is not None:
-                    meta = keys.parse(f"{target.key}{keys.DELIMITER}{keys.META_PREFIX}{name}")
-                    rows.append(_row_values(meta, value, "markdown", stamp))
+                for name, value in (("title", title), ("contents", contents))
+                if value is not None
+            ]
+
+        def write(cursor: Any) -> str:
+            rows = [_row_values(parsed, content, format, stamp), *meta_rows(parsed)]
             cursor.executemany(
-                f"INSERT INTO {self._documents} (key, doc_key, meta_name, meta_path, parent, "
-                "content, format, updated_at, sort_key) "
+                f"INSERT INTO {self._documents} {_COLUMNS} "
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (key) DO UPDATE SET content = excluded.content, "
-                "format = excluded.format, updated_at = excluded.updated_at",
+                f"ON CONFLICT (key) DO UPDATE SET {_UPSERTED}",
                 rows,
             )
-            return target.key
+            return parsed.key
 
-        return self._writing(write, key=key, action="write", serializable=not parsed.has_wildcard)
+        if parsed.has_wildcard:
+            return self._writing(
+                lambda cursor: self._allocate(cursor, parsed, content, format, stamp, meta_rows),
+                key=key,
+                action="write",
+                serializable=False,
+            )
+        return self._writing(write, key=key, action="write")
 
-    def _next_number(self, cursor: Any, parent: str) -> str:
-        """A numeric segment not already in use among the children of ``parent``.
+    def _allocate(
+        self,
+        cursor: Any,
+        parsed: keys.Key,
+        content: str,
+        format: str | None,
+        stamp: str,
+        meta_rows: Callable[[keys.Key], list[tuple[object, ...]]],
+    ) -> str:
+        """Write ``parsed`` under the first number free among its parent's children.
 
         The SQLite backend's rule -- one past the highest number in use, over
-        implicit children too -- over the same level walk :meth:`list_keys`
-        takes, so the two cannot disagree about which children there are.
+        implicit children too, over the same level walk :meth:`list_keys`
+        takes -- made safe for several devices by **locking the number rather
+        than the parent**:
 
-        **Safe because the caller holds :func:`_allocation_lock`** for the
-        transaction. Without it, two devices under ``READ COMMITTED`` both read
-        the same highest number -- and ``ON CONFLICT`` on the written key would
-        not catch it, because ``c/?/doc`` and ``c/?/task`` allocated at once
-        become two *different* keys sharing one number. What the lock does not
-        order is a write naming a number outright, which is the caller's own
-        choice of number rather than an allocation.
+        1. The walk finds the candidate and tries its lock, in one statement.
+        2. Holding the lock, the document is inserted only if **nothing is
+           under that number yet** -- a second statement, so its snapshot is
+           taken after the lock was. The metadata rides in the same
+           statement, and is written only if the document was.
+        3. A lock somebody holds, or a number somebody took, moves the
+           candidate on by one and tries again, without waiting.
+
+        Correct because a holder keeps its number's lock until it commits: any
+        other allocator either finds the lock held, or -- in a statement
+        begun after the release -- sees the committed row. The walk's own
+        snapshot may be older, which only makes the first candidate one that
+        step 2 turns down. ``c/?/doc`` and ``c/?/task`` are kept apart because
+        what is checked is everything under ``c/5``, not the key; a plain
+        ``ON CONFLICT`` on the key would let both have 5.
+
+        ``ON CONFLICT DO NOTHING`` stays on as well, for a write naming the
+        same key outright that has not committed yet: the insert waits for it
+        and then passes the number over, rather than writing over it.
+
+        A number whose holder rolls back is left unused, which the one
+        allocator at a time the SQLite backend allows never does.
         """
+        parent = parsed.wildcard_parent
+        assert parent is not None
+        space = _allocation_space(self.schema, parent)
+        cut = 1 if parent == keys.ROOT else len(parent) + 2
         walk, params = self._walk(parent)
-        cursor.execute(f"{walk} SELECT child FROM level", params)
-        cut = 0 if parent == keys.ROOT else len(parent) + 1
-        used = [
-            int(name)
-            for (child,) in cursor.fetchall()
-            if keys.NUMERIC_RE.match(name := child[cut:])
-        ]
-        return str(max(used) + 1) if used else "1"
+        cursor.execute(
+            f"{walk}, candidate AS ("
+            "SELECT coalesce(max(substr(child, %s)::numeric), 0) + 1 AS n FROM level "
+            f"WHERE substr(child, %s) ~ {_NUMERIC_SQL}"
+            f") SELECT n::text, {_TRY_NUMBER.format(number='n')} FROM candidate",
+            [*params, cut, cut, space],
+        )
+        number, held = cursor.fetchone()
+        while True:
+            if held:
+                numbered = keys.with_prefix(parent, number)
+                target = keys.parse(keys.substitute_wildcard(parsed.key, number))
+                below, bounds = _below("key", numbered)
+                rows = [_row_values(target, content, format, stamp), *meta_rows(target)]
+                claimed = (
+                    f"WITH claimed AS (INSERT INTO {self._documents} {_COLUMNS} "
+                    "SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s "
+                    f"WHERE NOT EXISTS (SELECT 1 FROM {self._documents} "
+                    f"WHERE key = %s OR {_native(below)}) "
+                    "ON CONFLICT (key) DO NOTHING RETURNING key)"
+                )
+                values: list[object] = [*rows[0], numbered, *bounds]
+                if len(rows) > 1:
+                    claimed += (
+                        f", meta AS (INSERT INTO {self._documents} {_COLUMNS} "
+                        "SELECT * FROM (VALUES "
+                        + ", ".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s)"] * (len(rows) - 1))
+                        + ") AS row WHERE EXISTS (SELECT 1 FROM claimed) "
+                        f"ON CONFLICT (key) DO UPDATE SET {_UPSERTED})"
+                    )
+                    values += [value for row in rows[1:] for value in row]
+                cursor.execute(f"{claimed} SELECT key FROM claimed", values)
+                if cursor.fetchone() is not None:
+                    return target.key
+            number = str(int(number) + 1)
+            cursor.execute(f"SELECT {_TRY_NUMBER.format(number='%s')}", (space, number))
+            (held,) = cursor.fetchone()
 
     @_logged("delete")
     def delete(

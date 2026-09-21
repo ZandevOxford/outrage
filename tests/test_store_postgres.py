@@ -820,13 +820,104 @@ def test_allocations_under_one_parent_never_share_a_number_whatever_follows_it(
     assert sorted(allocated, key=int) == [str(n) for n in range(1, 121)]
 
 
-def test_the_allocation_lock_is_per_parent_and_apart_from_the_schema_lock():
-    from outrage.store_postgres import _allocation_lock, _lock_number
+def test_the_allocation_space_is_per_parent_and_fits_an_int4():
+    from outrage.store_postgres import _allocation_space
 
-    assert _allocation_lock("s", "a") == _allocation_lock("s", "a")
-    assert _allocation_lock("s", "a") != _allocation_lock("s", "b")
-    assert _allocation_lock("s", "a") != _allocation_lock("t", "a")
-    assert _allocation_lock("s", "") != _lock_number("s")
+    assert _allocation_space("s", "a") == _allocation_space("s", "a")
+    assert _allocation_space("s", "a") != _allocation_space("s", "b")
+    assert _allocation_space("s", "a") != _allocation_space("t", "a")
+    assert all(-(2**31) <= _allocation_space("s", str(n)) < 2**31 for n in range(1000))
+
+
+def _hold_number(postgres_service, store, parent, number):
+    """An outside session holding ``number`` under ``parent``, as another allocator would."""
+    from outrage.store_postgres import _TRY_NUMBER, _allocation_space
+
+    conn = _outsider(postgres_service)
+    conn.execute("BEGIN")
+    held = conn.execute(
+        f"SELECT {_TRY_NUMBER.format(number='%s')}",
+        (_allocation_space(store.schema, parent), str(number)),
+    ).fetchone()[0]
+    assert held
+    return conn
+
+
+def test_a_number_another_allocator_holds_is_passed_over_without_waiting(
+    postgres_store, postgres_service
+):
+    """And its title goes with the number taken, not the one passed over."""
+    for n in range(1, 5):
+        postgres_store.store_document(f"c/{n}/task", "x")
+    holder = _hold_number(postgres_service, postgres_store, "c", 5)
+    try:
+        assert postgres_store.store_document("c/?/task", "mine", title="T") == "c/6/task"
+    finally:
+        holder.close()
+    assert postgres_store.retrieve_document("c/6/task/!title").content == "T"
+    assert not postgres_store.exists("c/5")
+    assert postgres_store.list_keys("c/5").items == []
+    # The holder went away without writing, so 5 is left as a hole.
+    assert postgres_store.store_document("c/?/task", "next") == "c/7/task"
+
+
+def test_an_uncommitted_write_naming_the_number_outright_is_not_written_over(
+    postgres_store, postgres_service
+):
+    """The allocation waits for it, then passes the number over.
+
+    The walk cannot see a write that has not committed, so the candidate is
+    that write's number; the insert meets the uncommitted key and waits, and
+    once it commits the number is taken. An upsert would have replaced it.
+    """
+    psycopg = pytest.importorskip("psycopg")
+    postgres_store.store_document("c/4/task", "x")
+    outcome = {}
+
+    def allocate():
+        outcome["key"] = postgres_store.store_document("c/?/task", "allocated")
+
+    with _outsider(postgres_service) as conn:
+        with conn.transaction():
+            conn.execute(
+                "INSERT INTO documents (key, doc_key, parent, content, updated_at, sort_key) "
+                "VALUES ('c/5/task', 'c/5/task', 'c/5', 'by hand', 'now', %s)",
+                (keys.sort_form("c/5/task"),),
+            )
+            allocator = threading.Thread(target=allocate)
+            allocator.start()
+            assert _blocked_on_a_lock(psycopg), "the allocation never met the uncommitted key"
+    allocator.join(10)
+    assert outcome["key"] == "c/6/task"
+    assert postgres_store.retrieve_document("c/5/task").content == "by hand"
+
+
+@pytest.mark.parametrize(
+    ("children", "expected"),
+    [
+        ([], "1"),
+        (["9", "10", "doc"], "11"),
+        (["3", "\u0663", "12a", "a12", "\u00b9"], "4"),  # Arabic-Indic three, superscript one
+        (["99999999999999999999"], "100000000000000000000"),
+    ],
+    ids=["empty", "numeric-order", "ascii-digits-only", "past-a-bigint"],
+)
+def test_the_server_counts_a_segment_as_a_number_exactly_as_keys_does(
+    postgres_store, children, expected
+):
+    """Two statements of one rule: ``keys.NUMERIC_RE`` here, a regex at the server."""
+    for child in children:
+        postgres_store.store_document(f"p/{child}", "x")
+    numbers = [int(c) for c in children if keys.NUMERIC_RE.match(c)]
+    assert str(max(numbers, default=0) + 1) == expected
+    assert postgres_store.store_document("p/?", "x") == f"p/{expected}"
+
+
+def test_a_number_at_the_root_is_allocated_too(postgres_store):
+    postgres_store.store_document("7", "x")
+    postgres_store.store_document("seven", "x")
+    assert postgres_store.store_document("?/doc", "x", title="T") == "8/doc"
+    assert postgres_store.retrieve_document("8/doc/!title").content == "T"
 
 
 def test_a_nul_character_is_refused_naming_every_field_that_holds_one(postgres_store):
@@ -1252,15 +1343,12 @@ def test_contention_that_outlasts_the_retries_is_reported_and_writes_nothing(
     assert postgres_store.retrieve_document("k").content == "theirs"
 
 
-def test_allocations_queue_on_their_lock_rather_than_retrying(
-    tmp_path, postgres_service, monkeypatch
-):
-    """Why a ``?`` write is ``READ COMMITTED``: under a serializable one the lock does nothing.
+def test_allocations_move_on_rather_than_retrying(tmp_path, postgres_service, monkeypatch):
+    """Why a ``?`` write is ``READ COMMITTED``: the server never has to fail one.
 
-    The snapshot is taken by the statement that waits for the lock, so an
-    allocator that queued would read the level as it stood before its
-    predecessor committed, and be failed and retried by the server -- often
-    enough, at eight allocators, to run out of attempts.
+    Under a serializable transaction the check after the lock would read an
+    old snapshot, and allocators would be kept apart only by the server
+    failing all but one of them each time they met.
     """
     from outrage import store_postgres
 

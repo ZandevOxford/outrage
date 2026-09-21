@@ -67,9 +67,10 @@ parts rather than one.
   replaced. The same function makes the archive complete for any writer,
   `psql` included. A statement trigger beside it refuses a session that
   declared a build below `write_floor`.
-* **A \`\`?\`\` is allocated under a per-parent lock**, `_allocation_lock()`,
-  in a `READ COMMITTED` transaction -- see `PostgresStore._writing()` for
-  why that one transaction is not serializable.
+* **A \`\`?\`\` claims its number with a lock on the number**, taken without
+  waiting, in a `READ COMMITTED` transaction -- see
+  `PostgresStore._allocate()`, and `PostgresStore._writing()` for why
+  that one transaction is not serializable.
 * **Every other write is \`\`SERIALIZABLE\`\` and retried** when the server says
   it could not be serialised. The net under any read-decide-write that the
   two targeted fixes do not cover, a delete's `unchanged_since` among them.
