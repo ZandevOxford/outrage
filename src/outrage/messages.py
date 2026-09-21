@@ -2215,6 +2215,19 @@ def _postgres_document_unsettled(name: Namer, /, *, key: str, attempts: Any, **_
     )
 
 
+@template("postgres-write-contended")
+def _postgres_write_contended(
+    name: Namer, /, *, key: str, action: str, attempts: Any, **_: Any
+) -> str:
+    # Nothing was written: every attempt was rolled back whole, which is the
+    # one thing a reader deciding whether to try again needs to know.
+    return (
+        f"could not {action} {name(key)!r}: another writer to the same PostgreSQL "
+        f"store touched the same documents at the same moment, {attempts} times "
+        f"running, and nothing was written. Try again once that has stopped."
+    )
+
+
 @template("backend-manages-no-schema")
 def _backend_manages_no_schema(name: Namer, /, *, backend: str, **_: Any) -> str:
     return (

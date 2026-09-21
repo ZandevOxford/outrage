@@ -52,12 +52,29 @@ themselves -- which rows a subtree, a range or a survey means -- are the SQLite
 backend's own functions, so that the two cannot come to disagree about what
 a selection is.
 
+## Concurrent writers
+
+Several devices write one store, so what a transaction on SQLite gets by
+holding the whole file has to be arranged here, and it is arranged in three
+parts rather than one.
+
+* **The archive is a trigger** (:data:`_ARCHIVE_FUNCTION`). Two writers to one
+  existing key are not an insert conflict, so nothing on the client could
+  keep both of the versions they replaced; a row trigger runs after the
+  update has taken the row's lock, so each one copies the version it actually
+  replaced. The same function makes the archive complete for any writer,
+  ``psql`` included. A statement trigger beside it refuses a session that
+  declared a build below ``write_floor``.
+* **A ``?`` is allocated under a per-parent lock**, :func:`_allocation_lock`,
+  in a ``READ COMMITTED`` transaction -- see :meth:`PostgresStore._writing` for
+  why that one transaction is not serializable.
+* **Every other write is ``SERIALIZABLE`` and retried** when the server says
+  it could not be serialised. The net under any read-decide-write that the
+  two targeted fixes do not cover, a delete's ``unchanged_since`` among them.
+
 ## What is *not* here yet
 
-The rest of the concurrency the design settles on -- the archive trigger and
-serializable writes with a retry -- so nothing is archived yet. A ``?`` is
-already allocated under a lock, :func:`_allocation_lock`. Nor the server's
-clock, or the maintenance half of the interface: :meth:`PostgresStore.check_file`
+The server's clock, or the maintenance half of the interface: :meth:`PostgresStore.check_file`
 and :meth:`PostgresStore.repair` raise :class:`NotImplementedError`. The
 backend is deliberately left **out** of ``outrage.store._BACKENDS`` while that
 is true, so no mount spec can reach a half-built store and no configuration
@@ -67,13 +84,16 @@ can be written against one.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import random
 import threading
-from collections.abc import Iterator, Mapping, Sequence
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Self
+from typing import Any, Self, TypeVar
 
 from . import keys, pgservice
 from .errors import Refusal
@@ -121,6 +141,8 @@ from .store import (
 )
 from .store_sqlite import _below, _meta_clauses, _range_clauses, _row_values, _subtree_clauses
 
+_T = TypeVar("_T")
+
 #: What a service file is called when a mount names one inside the store
 #: directory. Not what this backend opens when a mount names nothing -- that
 #: is libpq's own lookup, which is a search and not a path, and is why
@@ -153,14 +175,45 @@ SCHEMA_TABLE = "outrage_schema"
 
 #: Where a row goes when it leaves ``documents``. The SQLite backend's archive
 #: table, with the same columns and for the same reason; what fills it is a
-#: trigger rather than two statements, and that is step 6.
+#: trigger rather than a statement of the client's -- see :data:`_ARCHIVE_FUNCTION`.
 ARCHIVE_TABLE = "document_archive"
 
-#: The setting a session declares itself with, read by the archive triggers so
-#: that a build below ``write_floor`` is refused at the server rather than
+#: The setting a session declares itself with, read by the write-floor trigger
+#: so that a build below ``write_floor`` is refused at the server rather than
 #: trusted to have checked. A two-part name, which is how Postgres spells a
 #: setting that is not one of its own.
 CLIENT_VERSION_SETTING = "outrage.client_version"
+
+#: The setting that carries a mount's ``versioning`` to the archive trigger,
+#: :data:`VERSIONING_OFF` or anything else. A session that never set it --
+#: ``psql``, or any other client -- archives, because the trigger is there to
+#: make the archive complete and a writer that knows nothing of outrage is the
+#: one it most needs to cover.
+VERSIONING_SETTING = "outrage.versioning"
+
+#: The value of :data:`VERSIONING_SETTING` that stops a session archiving.
+VERSIONING_OFF = "off"
+
+#: The SQLSTATE the write-floor trigger raises. Its own code rather than
+#: PL/pgSQL's generic ``P0001``, so the client recognises the refusal by what
+#: it is rather than by the words of a message. Class ``OR`` is outside every
+#: class the standard and PostgreSQL reserve, which start with 0-4 or A-H.
+WRITE_FLOOR_SQLSTATE = "OR001"
+
+#: How many times a write is tried before contention is reported rather than
+#: retried. A serialization failure here means two devices touched the same
+#: rows at the same moment, which at this store's load is rare; five in a row
+#: means something is writing those rows continuously.
+WRITE_ATTEMPTS = 5
+
+#: The first pause between attempts, in seconds, doubling each time and drawn
+#: at random below that bound, so that two writers who collided once do not
+#: collide again in step.
+RETRY_PAUSE = 0.01
+
+#: The SQLSTATEs that mean "try the whole transaction again": a serialization
+#: failure, and a deadlock, which the server resolves by failing one side.
+_RETRYABLE = frozenset({"40001", "40P01"})
 
 #: The documents table, and the whole of why every text column names a
 #: collation.
@@ -228,6 +281,94 @@ CREATE TABLE IF NOT EXISTS {archive} (
 """
 
 _ARCHIVE_INDEX = "CREATE INDEX IF NOT EXISTS idx_archive_key ON {archive} (key, updated_at)"
+
+#: Copy the row a write replaces or a delete takes into the archive.
+#:
+#: **A row trigger, not a statement of the client's**, for the case the SQLite
+#: backend never meets: two devices writing one existing key at once. That is
+#: not an insert conflict, so ``ON CONFLICT`` cannot see it, and a client that
+#: copied the row before its upsert would copy whatever it read -- both
+#: writers the same version, and the one in between never archived. A
+#: ``BEFORE UPDATE`` trigger runs once the update holds the row's lock, so each
+#: copies the version it actually replaced.
+#:
+#: Which updates count as a change is the trigger's ``WHEN``
+#: (:data:`_TRIGGERS`), the SQLite backend's rule: ``content``, ``format`` or
+#: ``updated_at``, the three columns an upsert can move.
+#:
+#: The body is a string handed to the server, so the archive's name is written
+#: into it qualified when the store is created -- :meth:`PostgresStore._create`
+#: -- rather than looked up on every row.
+_ARCHIVE_FUNCTION = """
+BEGIN
+  IF current_setting({versioning}, true) IS DISTINCT FROM {off} THEN
+    INSERT INTO {archive}
+      (key, doc_key, meta_name, meta_path, parent, content, format, updated_at, sort_key)
+    VALUES
+      (OLD.key, OLD.doc_key, OLD.meta_name, OLD.meta_path, OLD.parent,
+       OLD.content, OLD.format, OLD.updated_at, OLD.sort_key);
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END
+"""
+
+#: Refuse a statement from a session that declared a build below ``write_floor``.
+#:
+#: What turns away a long-running server that connected before a migration
+#: raised the floor: its own :class:`Compatibility` was decided at open and is
+#: still saying yes. Per statement rather than per row, because the answer is
+#: about the session and not about any row. A session that declared nothing is
+#: let through -- that is ``psql``, or an operator's repair, and neither is a
+#: build the floor could be about.
+#:
+#: The three numbers go out as the error's detail, so the client can say what
+#: refused it without asking again.
+_WRITE_FLOOR_FUNCTION = """
+DECLARE
+  declared text := current_setting({client_version}, true);
+  stored record;
+BEGIN
+  IF coalesce(declared, '') = '' THEN
+    RETURN NULL;
+  END IF;
+  SELECT version, read_floor, write_floor INTO stored FROM {versions};
+  IF declared::integer < stored.write_floor THEN
+    RAISE EXCEPTION
+        'outrage build % may not write a store at schema version %, whose write floor is %',
+        declared, stored.version, stored.write_floor
+      USING ERRCODE = {sqlstate},
+            DETAIL = json_build_object(
+              'version', stored.version,
+              'read_floor', stored.read_floor,
+              'write_floor', stored.write_floor)::text;
+  END IF;
+  RETURN NULL;
+END
+"""
+
+#: The two functions above, by the name each is created under in the schema.
+_FUNCTIONS = {
+    "outrage_archive": _ARCHIVE_FUNCTION,
+    "outrage_write_floor": _WRITE_FLOOR_FUNCTION,
+}
+
+#: What calls them. ``TRUNCATE`` takes the floor check and not the archive,
+#: which a statement that empties the table in one step has no rows to give.
+_TRIGGERS = (
+    "CREATE TRIGGER outrage_write_floor "
+    "BEFORE INSERT OR UPDATE OR DELETE OR TRUNCATE ON {documents} "
+    "FOR EACH STATEMENT EXECUTE FUNCTION {write_floor_function}()",
+    "CREATE TRIGGER outrage_archive_update BEFORE UPDATE ON {documents} FOR EACH ROW "
+    "WHEN (OLD.content IS DISTINCT FROM NEW.content "
+    "OR OLD.format IS DISTINCT FROM NEW.format "
+    "OR OLD.updated_at IS DISTINCT FROM NEW.updated_at) "
+    "EXECUTE FUNCTION {archive_function}()",
+    "CREATE TRIGGER outrage_archive_delete BEFORE DELETE ON {documents} FOR EACH ROW "
+    "EXECUTE FUNCTION {archive_function}()",
+)
 
 #: The three numbers, and a unique index that makes the table hold exactly one
 #: row. Expressed as an index on a constant rather than as an extra column,
@@ -333,6 +474,11 @@ def _allocation_lock(schema: str, parent: str) -> int:
     cannot collide. Held for the transaction, so the number read under it is
     committed before the next allocator under that parent reads the level --
     and under ``READ COMMITTED`` that allocator's next statement sees it.
+
+    **Only under ``READ COMMITTED``.** A serializable transaction takes its
+    snapshot at its first statement, which is the one that waits here, so an
+    allocator that queued behind another would read the level as it was
+    before that one committed -- measured against PostgreSQL 18, not inferred.
 
     Two parents hashing to one number only serialise two allocations that
     did not need it, which is the whole cost of a collision.
@@ -448,8 +594,8 @@ class PostgresStore(FileStore):
     #: it: the base says True, so a backend that forgets reports itself
     #: writable, which is the wrong way for a mistake to fall.
     writable = True
-    #: Stated for the same reason from the other side. The archive table is in
-    #: the schema from version 1, and what fills it is step 6.
+    #: Stated for the same reason from the other side. The archive is filled at
+    #: the server, by :data:`_ARCHIVE_FUNCTION`.
     versioned = True
     #: The one backend so far whose schema is managed rather than migrated in
     #: place. It is what ``outrage schema`` dispatches on: the command is
@@ -526,7 +672,8 @@ class PostgresStore(FileStore):
         #: is the only thing about this store that is on this machine.
         self.path = self.service.path
 
-        #: Whether a write keeps what it replaces.
+        #: Whether a write keeps what it replaces. Read by the archive trigger
+        #: through :data:`VERSIONING_SETTING`, which every connection declares.
         self.versioning = versioning
 
         # One connection per thread, opened on first use, and every one of
@@ -720,12 +867,17 @@ class PostgresStore(FileStore):
         try:
             with conn.cursor() as cursor:
                 # Declared on every connection rather than once per store:
-                # the triggers that read it run in whatever session made the
+                # the triggers that read them run in whatever session made the
                 # write, and a connection opened later by another thread is a
                 # session that would otherwise declare nothing.
                 cursor.execute(
-                    "SELECT set_config(%s, %s, false)",
-                    (CLIENT_VERSION_SETTING, str(SCHEMA_VERSION)),
+                    "SELECT set_config(%s, %s, false), set_config(%s, %s, false)",
+                    (
+                        CLIENT_VERSION_SETTING,
+                        str(SCHEMA_VERSION),
+                        VERSIONING_SETTING,
+                        "on" if self.versioning else VERSIONING_OFF,
+                    ),
                 )
         except BaseException:
             conn.close()
@@ -750,15 +902,105 @@ class PostgresStore(FileStore):
         return conn
 
     @contextmanager
-    def _transaction(self) -> Iterator[Any]:
+    def _transaction(self, *, serializable: bool = False) -> Iterator[Any]:
         """A cursor inside a transaction, committed on success and rolled back on failure.
 
         The connection is in autocommit, so this is the only place a
-        transaction is ever opened.
+        transaction is ever opened. The isolation level is named every time,
+        so a transaction never inherits the last one's, and psycopg sends it
+        with the ``BEGIN`` rather than as a statement of its own.
+
+        ``READ COMMITTED`` unless asked: what opening a store does is under an
+        advisory lock, and a lock is only worth waiting for if the statements
+        after it see what its last holder committed -- see
+        :func:`_allocation_lock`. A write that wants the net goes through
+        :meth:`_writing`, which also retries it.
         """
+        isolation = _psycopg().IsolationLevel
         conn = self._conn
+        conn.isolation_level = isolation.SERIALIZABLE if serializable else isolation.READ_COMMITTED
         with conn.transaction(), conn.cursor() as cursor:
             yield cursor
+
+    def _writing(
+        self,
+        work: Callable[[Any], _T],
+        *,
+        key: str,
+        action: str,
+        serializable: bool = True,
+    ) -> _T:
+        """``work(cursor)`` in a write transaction, tried again if the server could not order it.
+
+        **``SERIALIZABLE`` is the net under every write**: any read that
+        decides a write inside ``work`` -- a delete's ``unchanged_since`` is one
+        -- either sees a state no concurrent writer has changed, or the
+        transaction fails with SQLSTATE 40001 and is run again from the start.
+        ``work`` is therefore called once per attempt and must compute
+        everything it writes from what it reads through the cursor it is
+        given, not from a previous attempt.
+
+        **A ``?`` allocation asks for ``READ COMMITTED`` instead**, because its
+        guard is :func:`_allocation_lock` and that lock does nothing for a
+        serializable transaction: the snapshot is taken by the statement that
+        waits for it. Every allocator that queued would then be failed by the
+        server and retried, and eight allocating under one parent at once
+        were measured running out of :data:`WRITE_ATTEMPTS` altogether. The
+        rest of that transaction is upserts, which the archive trigger keeps
+        correct at either level.
+
+        A refusal from the write-floor trigger becomes the refusal
+        :meth:`_writable` makes, from the numbers the server refused on --
+        which also moves this object's own idea of the store, so the next
+        write is refused here without asking.
+        """
+        psycopg = _psycopg()
+        for attempt in range(1, WRITE_ATTEMPTS + 1):
+            try:
+                with self._transaction(serializable=serializable) as cursor:
+                    return work(cursor)
+            except psycopg.Error as exc:
+                if exc.sqlstate == WRITE_FLOOR_SQLSTATE:
+                    raise self._refused_at_the_server(exc, key=key, action=action) from exc
+                if exc.sqlstate not in _RETRYABLE:
+                    raise
+                if attempt == WRITE_ATTEMPTS:
+                    raise BackendError(
+                        "postgres-write-contended",
+                        key=key,
+                        action=action,
+                        attempts=WRITE_ATTEMPTS,
+                        reason=str(exc).strip(),
+                    ) from exc
+                time.sleep(random.uniform(0, RETRY_PAUSE * 2 ** (attempt - 1)))  # noqa: S311
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    def _refused_at_the_server(self, exc: Any, *, key: str, action: str) -> ReadOnlyStoreError:
+        """The write-floor trigger's refusal, as the one :meth:`_writable` makes.
+
+        The store's numbers changed under this open store -- somebody migrated
+        it -- so they are taken from the refusal and remembered, exactly as
+        :meth:`create_schema` moves them. Where the new numbers would refuse
+        reading too, the store stops answering anything, in the words an open
+        would have used.
+        """
+        facts = json.loads(exc.diag.message_detail)
+        self.stored = SchemaVersion(
+            int(facts["version"]), int(facts["read_floor"]), int(facts["write_floor"])
+        )
+        try:
+            self.compatibility = compatibility(self.stored)
+        except BackendError as refused:
+            self.compatibility = None
+            self.problem = Refusal.of(refused)
+        return ReadOnlyStoreError(
+            "postgres-below-write-floor",
+            key=key,
+            action=action,
+            version=self.stored.version,
+            write_floor=self.stored.write_floor,
+            build=SCHEMA_VERSION,
+        )
 
     def _all(self, statement: str, params: Sequence[object] = ()) -> list[tuple[Any, ...]]:
         """Every row one statement returns, outside any transaction.
@@ -989,6 +1231,22 @@ class PostgresStore(FileStore):
         for statement in (_TABLE, *_INDEXES, _ARCHIVE, _ARCHIVE_INDEX, _SCHEMA_TABLE):
             cursor.execute(_sql(statement, schema=self.schema))
         cursor.execute(_sql(_SCHEMA_TABLE_ONE_ROW, schema=self.schema))
+        for name, body in _FUNCTIONS.items():
+            # The body is a string literal to the server, so the names inside
+            # it are quoted into it first and the whole is then quoted as a
+            # literal -- never dollar-quoted, which a schema name could close.
+            written = _sql(body, schema=self.schema).as_string(cursor.connection)
+            cursor.execute(
+                psycopg.sql.SQL(
+                    "CREATE OR REPLACE FUNCTION {function}() RETURNS trigger "
+                    "LANGUAGE plpgsql AS {body}"
+                ).format(
+                    function=psycopg.sql.Identifier(self.schema, name),
+                    body=psycopg.sql.Literal(written),
+                )
+            )
+        for statement in _TRIGGERS:
+            cursor.execute(_sql(statement, schema=self.schema))
         for step in range(MIN_SCHEMA_VERSION + 1, version + 1):
             for statement in MIGRATIONS.get(step, ()):
                 cursor.execute(_sql(statement, schema=self.schema))
@@ -1101,18 +1359,20 @@ class PostgresStore(FileStore):
             raise InvalidArgumentError("postgres-nul-character", key=key, fields=holding)
         self._writable(key, "write")
         stamp = updated_at or _now()
-        with self._transaction() as cursor:
-            if parsed.has_wildcard:
+
+        def write(cursor: Any) -> str:
+            target = parsed
+            if target.has_wildcard:
                 cursor.execute(
                     "SELECT pg_advisory_xact_lock(%s)",
-                    (_allocation_lock(self.schema, parsed.wildcard_parent),),
+                    (_allocation_lock(self.schema, target.wildcard_parent),),
                 )
-                allocated = self._next_number(cursor, parsed.wildcard_parent)
-                parsed = keys.parse(keys.substitute_wildcard(parsed.key, allocated))
-            rows = [_row_values(parsed, content, format, stamp)]
+                allocated = self._next_number(cursor, target.wildcard_parent)
+                target = keys.parse(keys.substitute_wildcard(target.key, allocated))
+            rows = [_row_values(target, content, format, stamp)]
             for name, value in (("title", title), ("contents", contents)):
                 if value is not None:
-                    meta = keys.parse(f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}{name}")
+                    meta = keys.parse(f"{target.key}{keys.DELIMITER}{keys.META_PREFIX}{name}")
                     rows.append(_row_values(meta, value, "markdown", stamp))
             cursor.executemany(
                 f"INSERT INTO {self._documents} (key, doc_key, meta_name, meta_path, parent, "
@@ -1122,7 +1382,9 @@ class PostgresStore(FileStore):
                 "format = excluded.format, updated_at = excluded.updated_at",
                 rows,
             )
-        return parsed.key
+            return target.key
+
+        return self._writing(write, key=key, action="write", serializable=not parsed.has_wildcard)
 
     def _next_number(self, cursor: Any, parent: str) -> str:
         """A numeric segment not already in use among the children of ``parent``.
@@ -1167,17 +1429,26 @@ class PostgresStore(FileStore):
         is that predicate read rather than acted on. The key's own row and its
         metadata unit are one unit whatever the key is, and ``recursive`` adds
         everything else below -- the SQLite backend's rule, from the same
-        functions.
+        functions. Every row it takes is archived by the trigger.
+
+        **``unchanged_since`` is checked inside the delete's transaction**, so
+        on this backend it is atomic: the check reads through the same
+        connection, and a write that lands between the check and the delete
+        makes the serializable transaction fail and start again, check and
+        all. A dry run checks it the ordinary way.
         """
         self._writable(key, "delete")
-        check_unchanged(
-            self,
-            key,
-            unchanged_since,
-            action="delete",
-            subtree=recursive,
-            key_range=key_range,
-        )
+
+        def check() -> None:
+            check_unchanged(
+                self,
+                key,
+                unchanged_since,
+                action="delete",
+                subtree=recursive,
+                key_range=key_range,
+            )
+
         parsed = keys.parse(key)
         lo, hi = keys.meta_range(parsed.key)
         taken = ["key = %s", "(key >= %s AND key < %s)"]
@@ -1191,14 +1462,19 @@ class PostgresStore(FileStore):
         where = f"({' OR '.join(taken)}){within}"
 
         if dry_run:
+            check()
             rows = self._all(f"SELECT key FROM {self._documents} WHERE {where}", [*params, *bounds])
         else:
-            with self._transaction() as cursor:
+
+            def take(cursor: Any) -> list[tuple[Any, ...]]:
+                check()
                 cursor.execute(
                     f"DELETE FROM {self._documents} WHERE {where} RETURNING key",
                     [*params, *bounds],
                 )
-                rows = cursor.fetchall()
+                return cursor.fetchall()
+
+            rows = self._writing(take, key=key, action="delete")
         return sorted((row[0] for row in rows), key=keys.sort_form)
 
     def _writable(self, key: str, action: str) -> None:
@@ -2073,6 +2349,12 @@ def _sql(statement: str, *, schema: str) -> Any:
         documents=psycopg.sql.Identifier(schema, "documents"),
         archive=psycopg.sql.Identifier(schema, ARCHIVE_TABLE),
         versions=psycopg.sql.Identifier(schema, SCHEMA_TABLE),
+        archive_function=psycopg.sql.Identifier(schema, "outrage_archive"),
+        write_floor_function=psycopg.sql.Identifier(schema, "outrage_write_floor"),
+        client_version=psycopg.sql.Literal(CLIENT_VERSION_SETTING),
+        versioning=psycopg.sql.Literal(VERSIONING_SETTING),
+        off=psycopg.sql.Literal(VERSIONING_OFF),
+        sqlstate=psycopg.sql.Literal(WRITE_FLOOR_SQLSTATE),
     )
 
 
@@ -2104,9 +2386,14 @@ __all__ = [
     "MIGRATIONS",
     "MIN_SCHEMA_VERSION",
     "READAHEAD",
+    "RETRY_PAUSE",
     "SCHEMA_TABLE",
     "SCHEMA_VERSION",
+    "VERSIONING_OFF",
+    "VERSIONING_SETTING",
     "VERSIONS",
+    "WRITE_ATTEMPTS",
+    "WRITE_FLOOR_SQLSTATE",
     "Compatibility",
     "PostgresStore",
     "ServiceUnusable",

@@ -24,6 +24,7 @@ import pathlib
 import re
 import threading
 import time
+import types
 
 import pytest
 from test_store_sqlite import SPLIT_META_NAMES, assert_the_split_agrees_with_keys_relative
@@ -971,6 +972,392 @@ def test_a_read_leaves_no_transaction_open(postgres_store):
     assert postgres_store._conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
 
 
+# -- the archive -----------------------------------------------------------
+
+
+def _archived(store) -> list[tuple]:
+    """What the archive holds, as (key, content, updated_at), in the order written.
+
+    The archive has no row number, so the order is the writing transaction's
+    id and then the key: every write here is a transaction of its own, and a
+    document's metadata is archived by the same one.
+    """
+    return [
+        tuple(row)
+        for row in query(
+            store,
+            "SELECT key, content, updated_at FROM document_archive "
+            "ORDER BY xmin::text::bigint, key",
+        )
+    ]
+
+
+def _outsider(postgres_service):
+    """A connection that is not outrage: no declared build, no versioning setting.
+
+    What ``psql`` is, for the purposes of the triggers.
+    """
+    psycopg = pytest.importorskip("psycopg")
+    _path, _service, schema = postgres_service
+    return psycopg.connect(postgres_dsn(), options=f"-csearch_path={schema}", autocommit=True)
+
+
+def test_a_first_write_archives_nothing(postgres_store):
+    postgres_store.store_document("a", "one", updated_at="2026-09-13T10:00:00+00:00")
+    assert _archived(postgres_store) == []
+
+
+def test_an_overwrite_keeps_the_row_it_replaced(postgres_store):
+    postgres_store.store_document("a", "one", updated_at="2026-09-13T10:00:00+00:00")
+    postgres_store.store_document("a", "two", updated_at="2026-09-13T11:00:00+00:00")
+
+    assert _archived(postgres_store) == [("a", "one", "2026-09-13T10:00:00+00:00")]
+    assert postgres_store.retrieve_document("a").content == "two"
+
+
+def test_a_write_that_changes_nothing_archives_nothing(postgres_store):
+    stamp = "2026-09-13T10:00:00+00:00"
+    postgres_store.store_document("a", "one", "markdown", updated_at=stamp)
+    postgres_store.store_document("a", "one", "markdown", updated_at=stamp)
+    assert _archived(postgres_store) == []
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"content": "one", "format": "markdown", "updated_at": "2026-09-13T11:00:00+00:00"},
+        {"content": "one", "format": "text", "updated_at": "2026-09-13T10:00:00+00:00"},
+        {"content": "two", "format": "markdown", "updated_at": "2026-09-13T10:00:00+00:00"},
+    ],
+    ids=["updated_at", "format", "content"],
+)
+def test_any_of_the_three_columns_that_can_differ_is_a_change(postgres_store, change):
+    postgres_store.store_document("a", "one", "markdown", updated_at="2026-09-13T10:00:00+00:00")
+    postgres_store.store_document(
+        "a", change["content"], change["format"], updated_at=change["updated_at"]
+    )
+    assert _archived(postgres_store) == [("a", "one", "2026-09-13T10:00:00+00:00")]
+
+
+def test_metadata_is_archived_by_the_same_write(postgres_store):
+    postgres_store.store_document("a", "body", title="Old", updated_at="2026-09-13T10:00:00+00:00")
+    postgres_store.store_document("a", "body", title="New", updated_at="2026-09-13T11:00:00+00:00")
+
+    assert _archived(postgres_store) == [
+        ("a", "body", "2026-09-13T10:00:00+00:00"),
+        ("a/!title", "Old", "2026-09-13T10:00:00+00:00"),
+    ]
+
+
+def test_two_versions_sharing_a_stamp_are_both_kept(postgres_store):
+    stamp = "2026-09-13T10:00:00+00:00"
+    for content in ("one", "two", "three"):
+        postgres_store.store_document("a", content, updated_at=stamp)
+
+    assert _archived(postgres_store) == [("a", "one", stamp), ("a", "two", stamp)]
+
+
+def test_a_delete_archives_every_row_it_takes(postgres_store):
+    postgres_store.store_document("a", "doc", title="A")
+    postgres_store.store_document("a/b", "child")
+
+    taken = postgres_store.delete("a", recursive=True)
+
+    assert sorted(key for key, _, _ in _archived(postgres_store)) == sorted(taken)
+    assert not postgres_store.exists("a/b")
+
+
+def test_a_dry_run_delete_archives_nothing(postgres_store):
+    postgres_store.store_document("a", "doc")
+    postgres_store.delete("a", dry_run=True)
+    assert _archived(postgres_store) == []
+
+
+def test_with_versioning_off_nothing_is_archived(tmp_path, postgres_service):
+    path, service, _schema = postgres_service
+    with PostgresStore(tmp_path / "dir", filename=path, service=service, versioning=False) as s:
+        s.store_document("a", "one", updated_at="2026-09-13T10:00:00+00:00")
+        s.store_document("a", "two", updated_at="2026-09-13T11:00:00+00:00")
+        s.delete("a")
+        assert _archived(s) == []
+
+
+def test_a_writer_that_is_not_outrage_is_archived_too(postgres_store, postgres_service):
+    """What putting the archive in a trigger buys over a statement of the client's."""
+    postgres_store.store_document("a", "one", updated_at="2026-09-13T10:00:00+00:00")
+    with _outsider(postgres_service) as conn:
+        conn.execute("UPDATE documents SET content = 'by hand' WHERE key = 'a'")
+        conn.execute("DELETE FROM documents WHERE key = 'a'")
+
+    assert [content for _, content, _ in _archived(postgres_store)] == ["one", "by hand"]
+
+
+def test_the_archive_has_the_stored_columns_of_documents_in_their_order(postgres_store):
+    """The generated lengths aside, which are the row's rather than its history."""
+
+    def columns(table):
+        return [
+            (name, generated)
+            for name, generated in query(
+                postgres_store,
+                "SELECT column_name, is_generated FROM information_schema.columns "
+                "WHERE table_schema = %s AND table_name = %s ORDER BY ordinal_position",
+                (postgres_store.schema, table),
+            )
+        ]
+
+    stored = [name for name, generated in columns("documents") if generated == "NEVER"]
+    assert [name for name, _ in columns("document_archive")] == stored
+
+
+def _read_everything(opened) -> list:
+    """Every read the archive must stay out of, over the whole store."""
+    return [
+        [(e.key, e.kind, e.size) for e in opened.list_keys("").items],
+        [(e.key, e.content) for e in opened.get_documents(store_module.EVERYTHING).items],
+        opened.retrieve_document("a").content,
+        opened.subtree_totals("a", chars=True),
+        opened.descendant_count("a"),
+        opened.latest_change("a"),
+        [e.key for e in opened.keys_missing_meta(store_module.EVERYTHING).items],
+        opened.missing_meta_stats(store_module.EVERYTHING),
+        sorted(opened.audit_rows(), key=repr),
+    ]
+
+
+def test_the_archive_is_invisible_to_every_read(postgres_store):
+    """Asked of one store with its archive full and then emptied, which is the difference."""
+    stamp = "2026-09-13T10:00:00+00:00"
+    for key in ("a", "a/b", "a/c", "a/c/d"):
+        postgres_store.store_document(key, f"first {key}", title=key, updated_at=stamp)
+    for key in ("a", "a/b", "a/c"):
+        postgres_store.store_document(key, f"second {key}", updated_at="2026-09-13T11:00:00+00:00")
+    postgres_store.delete("a/c", recursive=True)
+    assert _archived(postgres_store), "the comparison means nothing over an empty archive"
+
+    full = _read_everything(postgres_store)
+    query(postgres_store, "DELETE FROM document_archive")
+    assert _read_everything(postgres_store) == full
+
+
+# -- concurrent writers ----------------------------------------------------
+
+
+def test_two_devices_writing_one_key_lose_no_version(tmp_path, postgres_service):
+    """The case a client-side copy could not keep: both writers archive what they replaced.
+
+    Every write carries content nobody else writes, so each version that was
+    ever live is either the live one now or in the archive exactly once.
+    """
+    path, service, _schema = postgres_service
+    stores = [PostgresStore(tmp_path / f"dir{n}", filename=path, service=service) for n in range(4)]
+    stores[0].store_document("k", "first")
+    written = ["first"]
+    lock = threading.Lock()
+
+    def write(n):
+        mine = [f"{n}-{i}" for i in range(15)]
+        for content in mine:
+            stores[n % 4].store_document("k", content)
+        with lock:
+            written.extend(mine)
+
+    try:
+        in_threads(write, threads=8)
+        live = stores[0].retrieve_document("k").content
+        kept = [content for key, content, _ in _archived(stores[0]) if key == "k"]
+    finally:
+        for opened in stores:
+            opened.close()
+    assert sorted([*kept, live]) == sorted(written)
+
+
+def _blocked_on_a_lock(psycopg, seconds=5.0):
+    """Wait until one of this application's sessions is waiting on a lock."""
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        with psycopg.connect(postgres_dsn(), connect_timeout=5) as conn:
+            waiting = conn.execute(
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE application_name = 'outrage' AND wait_event_type = 'Lock'"
+            ).fetchone()[0]
+        if waiting:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def _collide(postgres_store, postgres_service):
+    """Make the store's next write to ``k`` fail to serialise, once.
+
+    An outside transaction updates ``k`` and holds it; the store's write
+    queues behind the row lock; the outsider commits. A serializable update of
+    a row changed after its snapshot is refused with 40001, which is the
+    failure the retry exists for, arranged rather than hoped for.
+    """
+    psycopg = pytest.importorskip("psycopg")
+    postgres_store.store_document("k", "before", updated_at="2026-09-13T10:00:00+00:00")
+    outcome = {}
+
+    def write():
+        try:
+            outcome["key"] = postgres_store.store_document(
+                "k", "mine", updated_at="2026-09-13T12:00:00+00:00"
+            )
+        except BaseException as exc:  # noqa: BLE001 - asserted by the caller
+            outcome["error"] = exc
+
+    with _outsider(postgres_service) as conn:
+        with conn.transaction():
+            conn.execute(
+                "UPDATE documents SET content = 'theirs', "
+                "updated_at = '2026-09-13T11:00:00+00:00' WHERE key = 'k'"
+            )
+            writer = threading.Thread(target=write)
+            writer.start()
+            assert _blocked_on_a_lock(psycopg), "the store's write never queued"
+    writer.join(10)
+    return outcome
+
+
+def test_a_write_that_cannot_be_serialised_is_tried_again_and_lands(
+    postgres_store, postgres_service, monkeypatch
+):
+    from outrage import store_postgres
+
+    pauses = []
+    monkeypatch.setattr(store_postgres, "time", types.SimpleNamespace(sleep=pauses.append))
+
+    outcome = _collide(postgres_store, postgres_service)
+
+    assert "error" not in outcome, outcome
+    assert len(pauses) == 1, "the write landed without the retry it was arranged to need"
+    assert postgres_store.retrieve_document("k").content == "mine"
+    # And the version the outsider wrote in between is kept, by the retry's trigger.
+    assert [content for _, content, _ in _archived(postgres_store)] == ["before", "theirs"]
+
+
+def test_contention_that_outlasts_the_retries_is_reported_and_writes_nothing(
+    postgres_store, postgres_service, monkeypatch
+):
+    from outrage import store_postgres
+
+    monkeypatch.setattr(store_postgres, "WRITE_ATTEMPTS", 1)
+
+    outcome = _collide(postgres_store, postgres_service)
+
+    assert isinstance(outcome.get("error"), BackendError), outcome
+    assert outcome["error"].code == "postgres-write-contended"
+    assert "nothing was written" in messages.render(outcome["error"])
+    assert postgres_store.retrieve_document("k").content == "theirs"
+
+
+def test_allocations_queue_on_their_lock_rather_than_retrying(
+    tmp_path, postgres_service, monkeypatch
+):
+    """Why a ``?`` write is ``READ COMMITTED``: under a serializable one the lock does nothing.
+
+    The snapshot is taken by the statement that waits for the lock, so an
+    allocator that queued would read the level as it stood before its
+    predecessor committed, and be failed and retried by the server -- often
+    enough, at eight allocators, to run out of attempts.
+    """
+    from outrage import store_postgres
+
+    pauses = []
+    monkeypatch.setattr(store_postgres, "time", types.SimpleNamespace(sleep=pauses.append))
+    path, service, _schema = postgres_service
+    stores = [PostgresStore(tmp_path / f"dir{n}", filename=path, service=service) for n in range(4)]
+    try:
+        in_threads(
+            lambda n: [stores[n % 4].store_document("c/?", "x") for _ in range(10)], threads=8
+        )
+    finally:
+        for opened in stores:
+            opened.close()
+    assert pauses == []
+
+
+def test_a_deletes_unchanged_since_is_atomic(tmp_path, postgres_service, monkeypatch):
+    """A write between the check and the delete sends the delete back to the check.
+
+    Arranged exactly: the check passes, a second device rewrites a document
+    the delete is about to take, and only then does the delete run. Its
+    snapshot predates that rewrite, so the server refuses it, and the retry's
+    check sees the change.
+    """
+    from outrage import store_postgres
+
+    path, service, _schema = postgres_service
+    first = PostgresStore(tmp_path / "one", filename=path, service=service)
+    second = PostgresStore(tmp_path / "two", filename=path, service=service)
+    try:
+        first.store_document("a", "doc", updated_at="2026-01-01T00:00:00+00:00")
+        first.store_document("a/b", "child", updated_at="2026-01-01T00:00:00+00:00")
+        real = store_postgres.check_unchanged
+        calls = []
+
+        def check_then_interfere(*args, **kwargs):
+            real(*args, **kwargs)
+            calls.append(1)
+            if len(calls) == 1:
+                second.store_document("a/b", "changed", updated_at="2026-12-01T00:00:00+00:00")
+
+        monkeypatch.setattr(store_postgres, "check_unchanged", check_then_interfere)
+        monkeypatch.setattr(store_postgres, "time", types.SimpleNamespace(sleep=lambda _: None))
+
+        with pytest.raises(store_module.ChangedSinceError):
+            first.delete("a", recursive=True, unchanged_since="2026-06-01T00:00:00+00:00")
+        assert first.retrieve_document("a/b").content == "changed"
+        assert len(calls) == 1, "the retried check should have refused, not passed"
+    finally:
+        first.close()
+        second.close()
+
+
+# -- the write floor, at the server ----------------------------------------
+
+
+def test_a_session_opened_before_the_floor_rose_is_refused_by_the_server(postgres_store):
+    """What catches a server started before a migration: its own decision still says yes."""
+    postgres_store.store_document("a", "one")
+    query(
+        postgres_store,
+        f"UPDATE {SCHEMA_TABLE} SET version = %s, write_floor = %s",
+        (SCHEMA_VERSION + 1, SCHEMA_VERSION + 1),
+    )
+    assert postgres_store.compatibility.writable, "the refusal must be the server's, not ours"
+
+    with raises_rendered(ReadOnlyStoreError, "only a build that knows version"):
+        postgres_store.store_document("a", "two")
+    # Learned from the refusal, so the next write is refused here without asking.
+    assert postgres_store.compatibility.writable is False
+    assert postgres_store.stored == SchemaVersion(SCHEMA_VERSION + 1, 1, SCHEMA_VERSION + 1)
+    assert postgres_store.retrieve_document("a").content == "one"
+
+
+def test_a_delete_is_refused_by_the_server_too(postgres_store):
+    postgres_store.store_document("a", "one")
+    query(postgres_store, f"UPDATE {SCHEMA_TABLE} SET write_floor = %s", (SCHEMA_VERSION + 1,))
+
+    with raises_rendered(ReadOnlyStoreError, "cannot delete"):
+        postgres_store.delete("a")
+    assert postgres_store.exists("a")
+
+
+def test_a_session_that_declares_no_build_is_not_the_floors_business(
+    postgres_store, postgres_service
+):
+    """``psql``, or an operator's repair: the floor is about outrage builds."""
+    query(postgres_store, f"UPDATE {SCHEMA_TABLE} SET write_floor = %s", (SCHEMA_VERSION + 1,))
+    with _outsider(postgres_service) as conn:
+        conn.execute(
+            "INSERT INTO documents (key, doc_key, parent, content, updated_at, sort_key) "
+            "VALUES ('x', 'x', '', 'by hand', 'now', 'x')"
+        )
+    assert postgres_store.retrieve_document("x").content == "by hand"
+
+
 # -- the module itself -----------------------------------------------------
 
 
@@ -978,7 +1365,7 @@ def test_the_backend_is_not_registered_until_its_operations_are_built():
     """Step 8's job, and the reason a half-built backend is safe to have here.
 
     Nothing can spell ``type=postgres`` in a mount while the backend is half
-    built -- no archive, no server clock, no check or repair -- so it cannot be
+    built -- no server clock, no check or repair -- so it cannot be
     reached by a configuration. This is the guard
     that says so, and it is the one test here that should be *deleted* at step
     8 rather than changed.

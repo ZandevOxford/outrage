@@ -54,12 +54,29 @@ themselves -- which rows a subtree, a range or a survey means -- are the SQLite
 backend's own functions, so that the two cannot come to disagree about what
 a selection is.
 
+## Concurrent writers
+
+Several devices write one store, so what a transaction on SQLite gets by
+holding the whole file has to be arranged here, and it is arranged in three
+parts rather than one.
+
+* **The archive is a trigger** (`_ARCHIVE_FUNCTION`). Two writers to one
+  existing key are not an insert conflict, so nothing on the client could
+  keep both of the versions they replaced; a row trigger runs after the
+  update has taken the row's lock, so each one copies the version it actually
+  replaced. The same function makes the archive complete for any writer,
+  `psql` included. A statement trigger beside it refuses a session that
+  declared a build below `write_floor`.
+* **A \`\`?\`\` is allocated under a per-parent lock**, `_allocation_lock()`,
+  in a `READ COMMITTED` transaction -- see `PostgresStore._writing()` for
+  why that one transaction is not serializable.
+* **Every other write is \`\`SERIALIZABLE\`\` and retried** when the server says
+  it could not be serialised. The net under any read-decide-write that the
+  two targeted fixes do not cover, a delete's `unchanged_since` among them.
+
 ## What is *not* here yet
 
-The rest of the concurrency the design settles on -- the archive trigger and
-serializable writes with a retry -- so nothing is archived yet. A `?` is
-already allocated under a lock, `_allocation_lock()`. Nor the server's
-clock, or the maintenance half of the interface: [`PostgresStore.check_file()`](#outrage.store_postgres.PostgresStore.check_file)
+The server's clock, or the maintenance half of the interface: [`PostgresStore.check_file()`](#outrage.store_postgres.PostgresStore.check_file)
 and [`PostgresStore.repair()`](#outrage.store_postgres.PostgresStore.repair) raise [`NotImplementedError`](https://docs.python.org/3/builtins/exceptions.html#NotImplementedError). The
 backend is deliberately left **out** of `outrage.store._BACKENDS` while that
 is true, so no mount spec can reach a half-built store and no configuration
@@ -69,7 +86,7 @@ can be written against one.
 
 Where a row goes when it leaves `documents`. The SQLite backend's archive
 table, with the same columns and for the same reason; what fills it is a
-trigger rather than two statements, and that is step 6.
+trigger rather than a statement of the client's -- see `_ARCHIVE_FUNCTION`.
 
 ### outrage.store_postgres.AUDIT_CHUNK *= 8192*
 
@@ -90,8 +107,8 @@ The largest read [`BATCH`](#outrage.store_postgres.BATCH) grows to.
 
 ### outrage.store_postgres.CLIENT_VERSION_SETTING *= 'outrage.client_version'*
 
-The setting a session declares itself with, read by the archive triggers so
-that a build below `write_floor` is refused at the server rather than
+The setting a session declares itself with, read by the write-floor trigger
+so that a build below `write_floor` is refused at the server rather than
 trusted to have checked. A two-part name, which is how Postgres spells a
 setting that is not one of its own.
 
@@ -129,6 +146,12 @@ it, and a read that runs past it fetches this much again. A megabyte covers
 every read of an ordinary document in the one statement that also finds the
 row, and a line far into a large one in a handful.
 
+### outrage.store_postgres.RETRY_PAUSE *= 0.01*
+
+The first pause between attempts, in seconds, doubling each time and drawn
+at random below that bound, so that two writers who collided once do not
+collide again in step.
+
 ### outrage.store_postgres.SCHEMA_TABLE *= 'outrage_schema'*
 
 Where the three numbers live at the Postgres end.
@@ -137,6 +160,18 @@ Where the three numbers live at the Postgres end.
 
 The newest schema this build knows -- `F`. What a store created by this
 build is created at, and what this build declares to the server.
+
+### outrage.store_postgres.VERSIONING_OFF *= 'off'*
+
+The value of [`VERSIONING_SETTING`](#outrage.store_postgres.VERSIONING_SETTING) that stops a session archiving.
+
+### outrage.store_postgres.VERSIONING_SETTING *= 'outrage.versioning'*
+
+The setting that carries a mount's `versioning` to the archive trigger,
+[`VERSIONING_OFF`](#outrage.store_postgres.VERSIONING_OFF) or anything else. A session that never set it --
+`psql`, or any other client -- archives, because the trigger is there to
+make the archive complete and a writer that knows nothing of outrage is the
+one it most needs to cover.
 
 ### outrage.store_postgres.VERSIONS *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[int](https://docs.python.org/3/builtins/functions.html#int), [SchemaVersion](store.md#outrage.store.SchemaVersion)]* *= {1: SchemaVersion(version=1, read_floor=1, write_floor=1)}*
 
@@ -147,6 +182,20 @@ there is nothing older than it.
 The table rather than two constants, so that adding a version moves
 [`MIN_SCHEMA_VERSION`](#outrage.store_postgres.MIN_SCHEMA_VERSION) and [`SCHEMA_VERSION`](#outrage.store_postgres.SCHEMA_VERSION) with it and cannot
 leave one of them behind.
+
+### outrage.store_postgres.WRITE_ATTEMPTS *= 5*
+
+How many times a write is tried before contention is reported rather than
+retried. A serialization failure here means two devices touched the same
+rows at the same moment, which at this store's load is rare; five in a row
+means something is writing those rows continuously.
+
+### outrage.store_postgres.WRITE_FLOOR_SQLSTATE *= 'OR001'*
+
+The SQLSTATE the write-floor trigger raises. Its own code rather than
+PL/pgSQL's generic `P0001`, so the client recognises the refusal by what
+it is rather than by the words of a message. Class `OR` is outside every
+class the standard and PostgreSQL reserve, which start with 0-4 or A-H.
 
 ### *class* outrage.store_postgres.Compatibility(stored: [SchemaVersion](store.md#outrage.store.SchemaVersion), operating: [int](https://docs.python.org/3/builtins/functions.html#int), writable: [bool](https://docs.python.org/3/builtins/functions.html#bool))
 
@@ -215,8 +264,8 @@ writable, which is the wrong way for a mistake to fall.
 
 #### versioned *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= True*
 
-Stated for the same reason from the other side. The archive table is in
-the schema from version 1, and what fills it is step 6.
+Stated for the same reason from the other side. The archive is filled at
+the server, by `_ARCHIVE_FUNCTION`.
 
 #### manages_schema *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= True*
 
@@ -250,7 +299,8 @@ is the only thing about this store that is on this machine.
 
 #### versioning
 
-Whether a write keeps what it replaces.
+Whether a write keeps what it replaces. Read by the archive trigger
+through [`VERSIONING_SETTING`](#outrage.store_postgres.VERSIONING_SETTING), which every connection declares.
 
 #### problem *: [Refusal](errors.md#outrage.errors.Refusal) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
@@ -394,7 +444,13 @@ and the delete are the same predicate in one statement, and a dry run
 is that predicate read rather than acted on. The key's own row and its
 metadata unit are one unit whatever the key is, and `recursive` adds
 everything else below -- the SQLite backend's rule, from the same
-functions.
+functions. Every row it takes is archived by the trigger.
+
+**\`\`unchanged_since\`\` is checked inside the delete's transaction**, so
+on this backend it is atomic: the check reads through the same
+connection, and a write that lands between the check and the delete
+makes the serializable transaction fail and start again, check and
+all. A dry run checks it the ordinary way.
 
 #### descendant_count(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [int](https://docs.python.org/3/builtins/functions.html#int)
 
