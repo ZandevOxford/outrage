@@ -2195,6 +2195,26 @@ def _postgres_below_write_floor(
     )
 
 
+@template("postgres-nul-character")
+def _postgres_nul_character(name: Namer, /, *, key: str, fields: Any, **_: Any) -> str:
+    held = " and ".join(str(field) for field in fields)
+    return (
+        f"cannot write {name(key)!r}: the {held} "
+        f"{'field holds' if len(fields) == 1 else 'fields hold'} the character U+0000, which a "
+        f"PostgreSQL store cannot keep. Remove it and write again."
+    )
+
+
+@template("postgres-document-unsettled")
+def _postgres_document_unsettled(name: Namer, /, *, key: str, attempts: Any, **_: Any) -> str:
+    return (
+        f"could not read {name(key)!r}: it was rewritten while it was being read, "
+        f"{attempts} times running. Something is writing it continuously; read it "
+        f"again once that has stopped, or read it by character offset, which "
+        f"fetches it whole in one statement."
+    )
+
+
 @template("backend-manages-no-schema")
 def _backend_manages_no_schema(name: Namer, /, *, backend: str, **_: Any) -> str:
     return (

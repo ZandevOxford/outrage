@@ -584,24 +584,27 @@ def _generated_keys(depth=4):
 SPLIT_META_NAMES = [None, "m", ["n", "m"], "m/a"]
 
 
-def assert_the_split_agrees_with_keys_relative(conn, meta_name):
+def assert_the_split_agrees_with_keys_relative(conn, meta_name, *, find="instr", mark="?"):
     """``_meta_clauses`` inside a metadata namespace, against its definition.
 
     Every generated key is asked from every metadata scope above it, on
     ``conn``: a bare connection holding one table ``t`` with a ``key`` column,
     which this fills. Shared, so each SQL backend holds the one expression to
-    :func:`outrage.keys.relative` in its own dialect.
+    :func:`outrage.keys.relative` in its own dialect -- ``find`` is the
+    dialect's substring search and ``mark`` its placeholder, which are the
+    two things PostgreSQL spells differently.
     """
     generated = _generated_keys()
     conn.execute("CREATE TABLE t (key TEXT)")
-    conn.executemany("INSERT INTO t VALUES (?)", [(key,) for key in generated])
+    conn.cursor().executemany(f"INSERT INTO t VALUES ({mark})", [(key,) for key in generated])
     wanted = [meta_name] if isinstance(meta_name, str) else meta_name
 
     scopes = [key for key in generated if keys.parse(key).is_metadata]
     for scope in scopes:
         below = {key for key in generated if keys.strip_prefix(scope, key) is not None}
-        clauses, params = sqlite_module._meta_clauses(keys.parse(scope), meta_name)
-        rows = conn.execute(f"SELECT key FROM t WHERE {' AND '.join(clauses)}", params)
+        clauses, params = sqlite_module._meta_clauses(keys.parse(scope), meta_name, find=find)
+        where = " AND ".join(clauses).replace("?", mark)
+        rows = conn.execute(f"SELECT key FROM t WHERE {where}", params)
         chosen = {key for (key,) in rows.fetchall()} & below
 
         expected = set()

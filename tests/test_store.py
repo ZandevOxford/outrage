@@ -41,7 +41,9 @@ from outrage.store_files import FilesystemStore
 from outrage.store_sqlite import SqliteStore
 
 
-@pytest.fixture(params=["sqlite", "mounted", "files"])
+@pytest.fixture(
+    params=["sqlite", "mounted", "files", pytest.param("postgres", marks=pytest.mark.postgres)]
+)
 def store(request, tmp_path):
     """The contract, asked of a store and of the table that presents as one.
 
@@ -71,6 +73,9 @@ def store(request, tmp_path):
     if request.param == "files":
         with FilesystemStore(tmp_path / "tree") as tree:
             yield tree
+        return
+    if request.param == "postgres":
+        yield request.getfixturevalue("postgres_store")
         return
     with MountedStore.single(SqliteStore(tmp_path / "store")) as table:
         yield table
@@ -3082,7 +3087,8 @@ def test_concurrent_writes_do_not_hand_out_a_number_twice(store):
 
     Across connections that is only safe because the write takes the lock up
     front -- `BEGIN IMMEDIATE` -- and because a writer waits its turn instead
-    of failing on the spot, which is what `BUSY_TIMEOUT_MS` buys.
+    of failing on the spot, which is what `BUSY_TIMEOUT_MS` buys. PostgreSQL
+    takes an advisory lock per parent instead.
     """
     allocated = []
     lock = threading.Lock()

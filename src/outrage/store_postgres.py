@@ -40,15 +40,28 @@ the lookup, and it is not simply ``current_schema()``: that is NULL when the
 search path names a schema that does not exist yet, which is exactly the first
 open this backend has to create.
 
+## Round trips
+
+Every statement is a round trip to a server that may be on another continent,
+so each operation here is **one or two statements** where the SQLite backend
+would issue a loop of cheap ones. The level walk is a recursive query that
+the server steps through, a listing's totals and its page come back from the
+statement that walks it, a bulk read cuts each document to its cap before it
+is sent, and a byte read fetches only the window it asked for. The predicates
+themselves -- which rows a subtree, a range or a survey means -- are the SQLite
+backend's own functions, so that the two cannot come to disagree about what
+a selection is.
+
 ## What is *not* here yet
 
-Connecting, the schema, the version table and the compatibility rules are
-here. The operations -- reading, writing, listing, the surveys -- are not, and
-every one of them raises :class:`NotImplementedError` below rather than being
-absent, so that the class can be opened and the parts that are built can be
-exercised. The backend is deliberately left **out** of
-``outrage.store._BACKENDS`` while that is true, so no mount spec can reach a
-half-built store and no configuration can be written against one.
+The rest of the concurrency the design settles on -- the archive trigger and
+serializable writes with a retry -- so nothing is archived yet. A ``?`` is
+already allocated under a lock, :func:`_allocation_lock`. Nor the server's
+clock, or the maintenance half of the interface: :meth:`PostgresStore.check_file`
+and :meth:`PostgresStore.repair` raise :class:`NotImplementedError`. The
+backend is deliberately left **out** of ``outrage.store._BACKENDS`` while that
+is true, so no mount spec can reach a half-built store and no configuration
+can be written against one.
 """
 
 from __future__ import annotations
@@ -58,11 +71,11 @@ import os
 import threading
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Self
 
-from . import pgservice
+from . import keys, pgservice
 from .errors import Refusal
 from .eventlog import EventLog
 from .maintenance import Repaired, Report
@@ -77,17 +90,36 @@ from .store import (
     Entry,
     Excerpt,
     FileStore,
+    InvalidArgumentError,
+    KeyNotFoundError,
     KeyRange,
     MissingMeta,
     Page,
+    PatternNotFoundError,
     ReadOnlyStoreError,
     SchemaState,
     SchemaVersion,
     Store,
     SubtreeTotals,
+    _byte_excerpt,
+    _cursor_bound,
+    _excerpt,
+    _find_byte_occurrence,
+    _find_occurrence,
+    _line_at_byte,
+    _line_byte_offset,
+    _line_excerpt,
+    _logged,
+    _now,
+    _scope,
+    _with_descendants,
+    check_read_position,
+    check_unchanged,
+    entry_kind,
     resolve_directory,
     store_file,
 )
+from .store_sqlite import _below, _meta_clauses, _range_clauses, _row_values, _subtree_clauses
 
 #: What a service file is called when a mount names one inside the store
 #: directory. Not what this backend opens when a mount names nothing -- that
@@ -231,6 +263,43 @@ _USER_SCHEMA = "$user"
 #: change: a lock two builds compute differently is not a lock.
 _LOCK_NAMESPACE = b"outrage.schema."
 
+#: Salt for the lock a ``?`` allocation takes, so that it can never be the
+#: same number as a schema's lock, whatever the two are named.
+_ALLOCATION_NAMESPACE = b"outrage.allocate."
+
+#: How many rows a paged read asks for when the caller named no limit, and
+#: what a run of reads grows from, doubling up to :data:`BATCH_CEILING`. The
+#: DuckDB backend's scheme and for its reason: a short page is one small
+#: statement, and a long walk is not one statement per handful of rows. Every
+#: statement here is a round trip, which is the cost a remote server is
+#: measured in.
+BATCH = 64
+
+#: The largest read :data:`BATCH` grows to.
+BATCH_CEILING = 4096
+
+#: Rows audited per statement.
+AUDIT_CHUNK = 8192
+
+#: How many bytes of a document a byte- or line-addressed read fetches at
+#: once. The shared slicing asks for small windows -- a few bytes of run-up and
+#: four bytes a character, or 64 KB at a time while counting lines -- and each
+#: one would otherwise be a statement of its own. So the first statement
+#: fetches this much from where the read starts, the windows are served out of
+#: it, and a read that runs past it fetches this much again. A megabyte covers
+#: every read of an ordinary document in the one statement that also finds the
+#: row, and a line far into a large one in a handful.
+READAHEAD = 1024 * 1024
+
+#: How many times a byte read starts again when the document is rewritten
+#: underneath it. Only a read that needed a second window can meet that, and
+#: meeting it twice in a row means a writer is rewriting this one document
+#: continuously, which is worth an error rather than a loop.
+_REREADS = 3
+
+#: The one character a PostgreSQL ``text`` value cannot hold.
+_NUL = "\0"
+
 
 def _psycopg() -> Any:
     """psycopg, or a sentence saying it is not installed.
@@ -253,7 +322,32 @@ def _lock_number(schema: str) -> int:
     are two stores and a lock they shared would serialise creations that have
     nothing to do with each other.
     """
-    digest = hashlib.blake2b(_LOCK_NAMESPACE + schema.encode("utf-8"), digest_size=8).digest()
+    return _hashed_lock(_LOCK_NAMESPACE, schema)
+
+
+def _allocation_lock(schema: str, parent: str) -> int:
+    """The advisory lock a ``?`` allocation under ``parent`` takes, as a signed bigint.
+
+    **Per parent**, because what an allocation must not share is a number
+    among the children of one key, and two allocations under different parents
+    cannot collide. Held for the transaction, so the number read under it is
+    committed before the next allocator under that parent reads the level --
+    and under ``READ COMMITTED`` that allocator's next statement sees it.
+
+    Two parents hashing to one number only serialise two allocations that
+    did not need it, which is the whole cost of a collision.
+    """
+    return _hashed_lock(_ALLOCATION_NAMESPACE, schema, parent)
+
+
+def _hashed_lock(namespace: bytes, *parts: str) -> int:
+    """A 64-bit advisory lock number for ``parts`` under ``namespace``.
+
+    The parts are joined with NUL, which neither a schema name nor a key can
+    hold, so no two different tuples of parts join to the same bytes.
+    """
+    joined = "\0".join(parts).encode("utf-8")
+    digest = hashlib.blake2b(namespace + joined, digest_size=8).digest()
     return int.from_bytes(digest, "big", signed=True)
 
 
@@ -464,6 +558,16 @@ class PostgresStore(FileStore):
             self.encoding = self._settle_encoding()
             #: The schema the tables are in, settled on the first connection.
             self.schema = self._settle_schema()
+            # The documents table as every statement below names it: qualified
+            # by the schema, quoted by psycopg, and with any `%` doubled,
+            # because the name is written into statement text that is also
+            # given parameters and a schema is free to be called anything.
+            self._documents = (
+                _psycopg()
+                .sql.Identifier(self.schema, "documents")
+                .as_string(self._conn)
+                .replace("%", "%%")
+            )
             #: The store's own three numbers, or None where the schema holds
             #: no store. Only a ``report`` open ever sees the second.
             self.stored: SchemaVersion | None = self._settle_stored(report=report)
@@ -594,10 +698,18 @@ class PostgresStore(FileStore):
         they should be fatal, and the error names the reason in full. Telling
         them apart means reading the SQLSTATE, which is where the rest of the
         tolerant-open classification is done.
+
+        **In autocommit**, so that a read is a statement and nothing more.
+        psycopg otherwise opens a transaction on a connection's first
+        statement and holds it until told, which would leave every
+        connection that has only read sitting idle in a transaction -- holding
+        back the server's vacuum and a lock on every table it touched -- for as
+        long as the store is open. A write asks for its transaction by name,
+        in :meth:`_transaction`.
         """
         psycopg = _psycopg()
         try:
-            conn = psycopg.connect(**dict(self.service.parameters))
+            conn = psycopg.connect(**dict(self.service.parameters), autocommit=True)
         except psycopg.OperationalError as exc:
             raise BackendError(
                 "postgres-unreachable",
@@ -615,7 +727,6 @@ class PostgresStore(FileStore):
                     "SELECT set_config(%s, %s, false)",
                     (CLIENT_VERSION_SETTING, str(SCHEMA_VERSION)),
                 )
-            conn.commit()
         except BaseException:
             conn.close()
             raise
@@ -642,18 +753,30 @@ class PostgresStore(FileStore):
     def _transaction(self) -> Iterator[Any]:
         """A cursor inside a transaction, committed on success and rolled back on failure.
 
-        psycopg opens a transaction on the first statement and holds it until
-        it is told, so this is the only place either happens.
+        The connection is in autocommit, so this is the only place a
+        transaction is ever opened.
         """
         conn = self._conn
-        try:
-            with conn.cursor() as cursor:
-                yield cursor
-        except BaseException:
-            conn.rollback()
-            raise
-        else:
-            conn.commit()
+        with conn.transaction(), conn.cursor() as cursor:
+            yield cursor
+
+    def _all(self, statement: str, params: Sequence[object] = ()) -> list[tuple[Any, ...]]:
+        """Every row one statement returns, outside any transaction.
+
+        Through :meth:`_opened` first, like every operation, so that a store
+        opened only to be asked about answers none of them.
+        """
+        self._opened()
+        with self._conn.cursor() as cursor:
+            cursor.execute(statement, list(params))
+            return cursor.fetchall()
+
+    def _one(self, statement: str, params: Sequence[object] = ()) -> tuple[Any, ...] | None:
+        """The first row one statement returns, or None, as :meth:`_all` asks it."""
+        self._opened()
+        with self._conn.cursor() as cursor:
+            cursor.execute(statement, list(params))
+            return cursor.fetchone()
 
     def close(self) -> None:
         """Close every connection this store opened, from whichever thread asks.
@@ -931,8 +1054,9 @@ class PostgresStore(FileStore):
         """
         return self._opened().stored.version
 
-    # -- everything below is steps 5 to 7 ---------------------------------
+    # -- writing -----------------------------------------------------------
 
+    @_logged("store_document")
     def store_document(
         self,
         key: str,
@@ -944,14 +1068,22 @@ class PostgresStore(FileStore):
         encoding: str | None = None,
         updated_at: str | None = None,
     ) -> str:
-        """Refused while the store is below this build's write floor; unbuilt otherwise.
+        """The document and its supplied metadata, upserted in one transaction.
 
-        Validation first, through the shared check, even though nothing here
-        writes yet: what a key and a format are is settled for every backend in
-        one place, and a backend that reached its own conclusion would be a
-        second namespace. See :meth:`outrage.store.Store._validated`.
+        The rows go in one ``executemany``, which psycopg sends as a pipeline:
+        a document with a title and an index is one round trip, not three.
+        Validated first, through the shared check, and then refused if this
+        build may not write the store -- the argument is wrong whoever is
+        asked, and the store is read only whatever the argument.
+
+        **U+0000 is refused here and nowhere else yet.** A PostgreSQL
+        ``text`` value cannot hold it, and escaping it would be a second
+        encoding of every document for one character nobody writes on
+        purpose. Every field holding one is named at once, so a caller fixes
+        them in one pass. The other backends store it; refusing it in the
+        shared check instead would close that difference for all of them.
         """
-        self._validated(
+        parsed, content, format, title, contents, updated_at = self._validated(
             key,
             content,
             format,
@@ -960,9 +1092,64 @@ class PostgresStore(FileStore):
             encoding=encoding,
             updated_at=updated_at,
         )
+        holding = [
+            name
+            for name, value in (("content", content), ("title", title), ("contents", contents))
+            if value is not None and _NUL in value
+        ]
+        if holding:
+            raise InvalidArgumentError("postgres-nul-character", key=key, fields=holding)
         self._writable(key, "write")
-        raise _unbuilt("store_document")
+        stamp = updated_at or _now()
+        with self._transaction() as cursor:
+            if parsed.has_wildcard:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(%s)",
+                    (_allocation_lock(self.schema, parsed.wildcard_parent),),
+                )
+                allocated = self._next_number(cursor, parsed.wildcard_parent)
+                parsed = keys.parse(keys.substitute_wildcard(parsed.key, allocated))
+            rows = [_row_values(parsed, content, format, stamp)]
+            for name, value in (("title", title), ("contents", contents)):
+                if value is not None:
+                    meta = keys.parse(f"{parsed.key}{keys.DELIMITER}{keys.META_PREFIX}{name}")
+                    rows.append(_row_values(meta, value, "markdown", stamp))
+            cursor.executemany(
+                f"INSERT INTO {self._documents} (key, doc_key, meta_name, meta_path, parent, "
+                "content, format, updated_at, sort_key) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (key) DO UPDATE SET content = excluded.content, "
+                "format = excluded.format, updated_at = excluded.updated_at",
+                rows,
+            )
+        return parsed.key
 
+    def _next_number(self, cursor: Any, parent: str) -> str:
+        """A numeric segment not already in use among the children of ``parent``.
+
+        The SQLite backend's rule -- one past the highest number in use, over
+        implicit children too -- over the same level walk :meth:`list_keys`
+        takes, so the two cannot disagree about which children there are.
+
+        **Safe because the caller holds :func:`_allocation_lock`** for the
+        transaction. Without it, two devices under ``READ COMMITTED`` both read
+        the same highest number -- and ``ON CONFLICT`` on the written key would
+        not catch it, because ``c/?/doc`` and ``c/?/task`` allocated at once
+        become two *different* keys sharing one number. What the lock does not
+        order is a write naming a number outright, which is the caller's own
+        choice of number rather than an allocation.
+        """
+        walk, params = self._walk(parent)
+        cursor.execute(f"{walk} SELECT child FROM level", params)
+        cut = 0 if parent == keys.ROOT else len(parent) + 1
+        used = [
+            int(name)
+            for (child,) in cursor.fetchall()
+            if keys.NUMERIC_RE.match(name := child[cut:])
+        ]
+        return str(max(used) + 1) if used else "1"
+
+    @_logged("delete")
     def delete(
         self,
         key: str,
@@ -972,9 +1159,47 @@ class PostgresStore(FileStore):
         unchanged_since: str | None = None,
         dry_run: bool = False,
     ) -> list[str]:
-        """Refused below the write floor; unbuilt otherwise."""
+        """One statement: ``DELETE ... RETURNING key``, or the ``SELECT`` it would run.
+
+        The SQLite backend selects first and deletes by key, because its
+        ``DELETE`` cannot say what it removed. Here it can, so the selection
+        and the delete are the same predicate in one statement, and a dry run
+        is that predicate read rather than acted on. The key's own row and its
+        metadata unit are one unit whatever the key is, and ``recursive`` adds
+        everything else below -- the SQLite backend's rule, from the same
+        functions.
+        """
         self._writable(key, "delete")
-        raise _unbuilt("delete")
+        check_unchanged(
+            self,
+            key,
+            unchanged_since,
+            action="delete",
+            subtree=recursive,
+            key_range=key_range,
+        )
+        parsed = keys.parse(key)
+        lo, hi = keys.meta_range(parsed.key)
+        taken = ["key = %s", "(key >= %s AND key < %s)"]
+        params: list[object] = [parsed.key, lo, hi]
+        if recursive:
+            below, bounds = _below("key", parsed.key)
+            taken.append(_native(below))
+            params += bounds
+        clauses, bounds = _range_clauses(key_range)
+        within = "".join(f" AND {_native(clause)}" for clause in clauses)
+        where = f"({' OR '.join(taken)}){within}"
+
+        if dry_run:
+            rows = self._all(f"SELECT key FROM {self._documents} WHERE {where}", [*params, *bounds])
+        else:
+            with self._transaction() as cursor:
+                cursor.execute(
+                    f"DELETE FROM {self._documents} WHERE {where} RETURNING key",
+                    [*params, *bounds],
+                )
+                rows = cursor.fetchall()
+        return sorted((row[0] for row in rows), key=keys.sort_form)
 
     def _writable(self, key: str, action: str) -> None:
         """Refuse a write to a store this build may read and not write.
@@ -996,61 +1221,827 @@ class PostgresStore(FileStore):
             build=SCHEMA_VERSION,
         )
 
-    def descendant_count(self, key: str, *, key_range: KeyRange = UNBOUNDED) -> int:
-        raise _unbuilt("descendant_count")
+    # -- aggregates ----------------------------------------------------------
 
+    @_logged("descendant_count")
+    def descendant_count(
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
+    ) -> int:
+        """A ``count(*)`` over the subtree, less the metadata unit a plain delete takes."""
+        where, params = _below_unit(key, key_range, whole_subtree)
+        row = self._one(f"SELECT count(*) FROM {self._documents} WHERE {where}", params)
+        assert row is not None  # noqa: S101 - an aggregate always returns a row
+        return int(row[0])
+
+    @_logged("subtree_totals")
     def subtree_totals(
-        self, subtree: BoundedSubtree = EVERYTHING, *, key_range: KeyRange = UNBOUNDED
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
     ) -> SubtreeTotals:
-        raise _unbuilt("subtree_totals")
+        """Rows, documents and optionally characters below ``key``, in one aggregate.
 
+        The characters are the stored ``chars`` column, so a sum reads no
+        document -- but it stays behind the flag all the same, because a
+        surface that is opt in on one backend and always on in another is two
+        contracts wearing one name.
+        """
+        below, bounds = _below("key", keys.parse(key).key)
+        clauses, params = _range_clauses(key_range)
+        within = "".join(f" AND {_native(clause)}" for clause in clauses)
+        row = self._one(
+            "SELECT count(*), count(*) FILTER (WHERE meta_name IS NULL), "
+            f"coalesce(sum(chars), 0) FROM {self._documents} WHERE {_native(below)}{within}",
+            [*bounds, *params],
+        )
+        assert row is not None  # noqa: S101 - an aggregate always returns a row
+        return SubtreeTotals(
+            keys=int(row[0]), documents=int(row[1]), chars=int(row[2]) if chars else None
+        )
+
+    @_logged("latest_change")
     def latest_change(
-        self, subtree: BoundedSubtree = EVERYTHING, *, key_range: KeyRange = UNBOUNDED
+        self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
     ) -> str | None:
-        raise _unbuilt("latest_change")
+        """The newest ``updated_at`` over exactly the rows :meth:`descendant_count` counts.
+
+        A text ``max`` under ``COLLATE "C"``, which is what makes it the newest:
+        every stamp is one spelling of UTC to the second, so bytewise order is
+        time order, and a locale collation is under no obligation to agree.
+        """
+        where, params = _below_unit(key, key_range, whole_subtree)
+        row = self._one(f"SELECT max(updated_at) FROM {self._documents} WHERE {where}", params)
+        return None if row is None else row[0]
 
     def exists(self, key: str) -> bool:
-        raise _unbuilt("exists")
+        """One primary key lookup, selecting no content."""
+        return (
+            self._one(f"SELECT 1 FROM {self._documents} WHERE key = %s", [keys.parse(key).key])
+            is not None
+        )
+
+    # -- reading by key ------------------------------------------------------
 
     def level_entry(self, key: str) -> Entry | None:
-        raise _unbuilt("level_entry")
+        """The key's own row if it has one, else whether anything lies below: one statement.
 
+        The SQLite backend asks the two questions in turn. Here each is a
+        round trip, and the second is an ``EXISTS`` on a range of the primary
+        key, so it rides along with the first rather than following it.
+        """
+        parsed = keys.parse(key)
+        if parsed.key == keys.ROOT:
+            raise ValueError("the root is not a child of anything, so it has no listing entry")
+        lo, hi = keys.subtree_range(parsed.key)
+        row = self._one(
+            "SELECT own.key, own.format, own.updated_at, own.chars, "
+            f"EXISTS (SELECT 1 FROM {self._documents} WHERE key >= %s AND key < %s) "
+            f"FROM (SELECT 1) AS one LEFT JOIN {self._documents} AS own ON own.key = %s",
+            [lo, hi, parsed.key],
+        )
+        assert row is not None  # noqa: S101 - one row joined to at most one
+        stored, format, updated_at, chars, beneath = row
+        if stored is not None:
+            return _entry(stored, format, updated_at, chars)
+        return _implicit(parsed.key) if beneath else None
+
+    @_logged("retrieve_document")
     def retrieve_document(
         self,
         key: str,
         *,
         offset: int = 0,
+        byte_offset: int | None = None,
+        line: int | None = None,
+        lines: int | None = None,
+        length: int | None = None,
+        pattern: str | None = None,
+        occurrence: int = 0,
         max_chars: int = DEFAULT_MAX_CHARS,
-        **rest: Any,
     ) -> Excerpt:
-        raise _unbuilt("retrieve_document")
+        """One lookup on the primary key, sliced by the shared slicing.
 
-    def list_keys(self, key: str | None = None, **rest: Any) -> Page:
-        raise _unbuilt("list_keys")
+        A character read fetches the document, as the SQLite backend does:
+        a character offset cannot be turned into a position in the stored
+        text without counting up to it, and the whole value is detoasted on
+        the server either way. A **byte** or **line** read does not -- see
+        :meth:`_byte_read`.
+        """
+        parsed = keys.parse(key)
+        if byte_offset is not None or line is not None:
+            for _ in range(_REREADS):
+                try:
+                    return self._byte_read(
+                        parsed.key,
+                        key,
+                        offset,
+                        byte_offset,
+                        line,
+                        lines,
+                        pattern,
+                        occurrence,
+                        length,
+                        max_chars,
+                    )
+                except _Rewritten:
+                    continue
+            raise BackendError("postgres-document-unsettled", key=key, attempts=_REREADS)
 
+        row = self._one(
+            f"SELECT key, content, format, updated_at FROM {self._documents} WHERE key = %s",
+            [parsed.key],
+        )
+        if row is None:
+            self._not_found(key)
+        check_read_position(
+            key,
+            offset=offset,
+            byte_offset=byte_offset,
+            line=line,
+            lines=lines,
+            pattern=pattern,
+            occurrence=occurrence,
+        )
+        stored, content, format, updated_at = row
+        start = offset
+        if pattern is not None:
+            start = _find_occurrence(content, pattern, occurrence, offset)
+            if start is None:
+                raise PatternNotFoundError(
+                    "pattern-not-found",
+                    key=key,
+                    pattern=pattern,
+                    occurrence=occurrence,
+                    offset=offset,
+                )
+        return _excerpt(stored, content, format, updated_at, start, length, max_chars)
+
+    def _not_found(self, key: str) -> None:
+        """Raise the refusal for a key with no row: a container, or nothing at all.
+
+        A key with descendants but no content of its own is a container rather
+        than a mistake, and saying so turns a dead end into the next call.
+        """
+        beneath = self.descendant_count(key)
+        if beneath:
+            raise KeyNotFoundError("key-is-a-container", key=key, beneath=beneath)
+        raise KeyNotFoundError("key-not-found", key=key)
+
+    def _byte_read(
+        self,
+        stored_key: str,
+        key: str,
+        offset: int,
+        byte_offset: int | None,
+        line: int | None,
+        lines: int | None,
+        pattern: str | None,
+        occurrence: int,
+        length: int | None,
+        max_chars: int,
+    ) -> Excerpt:
+        """The byte- and line-addressed half of :meth:`retrieve_document`, sliced on the server.
+
+        There is no blob seek over a connection, so the window is cut out of
+        ``convert_to(content, 'UTF8')`` by the server and only it crosses the
+        network. The first statement finds the row, its lengths and its first
+        :data:`READAHEAD` bytes from where the read starts; the shared slicing
+        then reads through :class:`_ServerBytes`, which serves each window out
+        of what it holds and fetches only what it does not. A pattern is a
+        scan, so it fetches the rest of the document -- the one read here
+        whose cost is the document's rather than the window's.
+
+        **Each further window is checked to be of the same row version**, by
+        its ``xmin``, and a document rewritten between two of them starts the
+        read again rather than splicing two versions into one excerpt. A read
+        served by its first statement never meets that: it is one snapshot.
+        """
+        start = 0 if byte_offset is None else max(0, byte_offset - 3)
+        row = self._one(
+            "SELECT key, format, updated_at, chars, bytes, xmin::text, "
+            "substring(convert_to(content, 'UTF8') FROM %s FOR %s) "
+            f"FROM {self._documents} WHERE key = %s",
+            [start + 1, READAHEAD, stored_key],
+        )
+        if row is None:
+            self._not_found(key)
+        check_read_position(
+            key,
+            offset=offset,
+            byte_offset=byte_offset,
+            line=line,
+            lines=lines,
+            pattern=pattern,
+            occurrence=occurrence,
+        )
+        stored, format, updated_at, chars, total_bytes, version, window = row
+        read = _ServerBytes(self, stored, version, total_bytes, start, bytes(window))
+
+        first = (
+            byte_offset if byte_offset is not None else _line_byte_offset(read, total_bytes, line)
+        )
+        actual_line = line
+        if pattern is not None:
+            found = _find_byte_occurrence(read, total_bytes, pattern, occurrence, first)
+            if found is None:
+                raise PatternNotFoundError(
+                    "pattern-not-found",
+                    key=key,
+                    pattern=pattern,
+                    occurrence=occurrence,
+                    offset=0,
+                    byte_offset=byte_offset,
+                    line=line,
+                )
+            if line is not None:
+                actual_line = _line_at_byte(read, first, line, found)
+            first = found
+
+        if line is not None:
+            return _line_excerpt(
+                stored,
+                format,
+                updated_at,
+                first,
+                actual_line,
+                lines,
+                length,
+                max_chars,
+                read=read,
+                total_bytes=total_bytes,
+                total=chars,
+            )
+        return _byte_excerpt(
+            stored,
+            format,
+            updated_at,
+            first,
+            length,
+            max_chars,
+            read=read,
+            total_bytes=total_bytes,
+            total=chars,
+        )
+
+    # -- reading a level -----------------------------------------------------
+
+    @_logged("list_keys")
+    def list_keys(
+        self,
+        key: str | None = None,
+        *,
+        limit: int | None = None,
+        cursor: str | None = None,
+        descendant_counts: bool = False,
+        descendant_chars: bool = False,
+    ) -> Page[Entry]:
+        """One level, its totals and one page of it, in a single statement.
+
+        The SQLite backend's walk is a loop of short queries, each seeking past
+        the child it has just named, and at a fraction of a millisecond a query
+        that is the right trade. Across a network each is a round trip, so the
+        walk is written as a recursive query instead -- :meth:`_walk` -- and
+        the server takes every seek. The level it names is then counted, its
+        characters summed from ``parent``, and the page cut past the cursor
+        and joined to each stored child's row, all in the same statement.
+
+        **The totals are over the whole level and unaffected by the cursor**,
+        as everywhere: 20 keys of 22 is a listing and 20 of 40000 is a sample.
+        The descendant flags stay opt in and cost one aggregate per child on
+        the page, through :meth:`subtree_totals`.
+        """
+        parent = keys.parse(_scope(key)).key
+        walk, params = self._walk(parent)
+        bound = _cursor_bound(cursor)
+        past = "" if bound is None else " WHERE position > %s"
+        cap = "" if limit is None else " LIMIT %s"
+        rows = self._all(
+            f"{walk} SELECT counted.total, counted.chars, page.child, page.stored, "
+            "own.format, own.updated_at, own.chars "
+            "FROM (SELECT count(*) AS total, "
+            f"(SELECT coalesce(sum(chars), 0) FROM {self._documents} "
+            "WHERE parent = %s AND key <> %s) AS chars FROM level) AS counted "
+            "LEFT JOIN LATERAL (SELECT child, position, stored FROM level"
+            f"{past} ORDER BY position{cap}) AS page ON true "
+            f"LEFT JOIN {self._documents} AS own ON page.stored AND own.key = page.child "
+            "ORDER BY page.position",
+            [
+                *params,
+                parent,
+                parent,
+                *([] if bound is None else [bound]),
+                *([] if limit is None else [limit + 1]),
+            ],
+        )
+        total, total_chars = int(rows[0][0]), int(rows[0][1])
+        children = [row[2:] for row in rows if row[2] is not None]
+        # One past the page is all it takes to know there is a next one.
+        more = limit is not None and len(children) > limit
+        page = children if limit is None else children[:limit]
+        items = [
+            _entry(child, format, updated_at, chars) if stored else _implicit(child)
+            for child, stored, format, updated_at, chars in page
+        ]
+        items = _with_descendants(self, items, counts=descendant_counts, chars=descendant_chars)
+        return Page(
+            items=items,
+            returned=len(items),
+            total=total,
+            total_chars=total_chars,
+            next_cursor=items[-1].key if more and items else None,
+        )
+
+    def _walk(self, parent: str) -> tuple[str, list[object]]:
+        """A ``WITH`` clause naming ``level``: each child of ``parent``, in order.
+
+        ``level`` has a row per child -- its key as ``child``, its sort form
+        as ``position``, and ``stored``, whether the child has a row of its
+        own -- in no particular order; a reader orders by ``position``.
+
+        **A loose index scan**, the standard way to make Postgres skip: the
+        recursive half finds the first row past everything the previous child
+        holds -- ``sort_subtree_end`` of it, computed in SQL from its sort
+        form -- with one probe of the ``sort_key`` index each. So the walk
+        costs one probe per child whatever lies beneath them, which is the
+        property the SQLite backend's seek walk has, taken over by the server.
+
+        The child is cut out of the first row of its subtree at the next
+        delimiter, in the key and in its sort form alike: a segment holds
+        neither delimiter, so both cuts land on the same segment. A child
+        whose first row *is* the child is stored -- a key's own row sorts
+        first in its subtree -- and one whose first row lies below it is
+        implicit, which is the SQLite walk's test read off the same order.
+        """
+        start = keys.sort_form(parent)
+        end = None if parent == keys.ROOT else keys.sort_subtree_end(parent)
+        sort_cut = 0 if parent == keys.ROOT else len(start) + 1
+        key_cut = 0 if parent == keys.ROOT else len(parent) + 1
+        upper = "" if end is None else " AND sort_key < %s"
+        uppers: list[object] = [] if end is None else [end]
+        after = _chr(keys.sort_subtree_end("x")[-1])
+        return (
+            "WITH RECURSIVE walk (key, sort_key) AS ("
+            f"(SELECT key, sort_key FROM {self._documents} WHERE sort_key > %s{upper} "
+            "ORDER BY sort_key LIMIT 1) "
+            "UNION ALL "
+            "(SELECT step.key, step.sort_key FROM walk, LATERAL ("
+            f"SELECT key, sort_key FROM {self._documents} "
+            f"WHERE sort_key >= {_cut('walk.sort_key', sort_cut, _chr(_SORT_DELIMITER))} "
+            f"|| {after}{upper} ORDER BY sort_key LIMIT 1) AS step)"
+            "), level AS ("
+            f"SELECT {_cut('key', key_cut, repr(keys.DELIMITER))} AS child, "
+            f"{_cut('sort_key', sort_cut, _chr(_SORT_DELIMITER))} AS position, "
+            f"key = {_cut('key', key_cut, repr(keys.DELIMITER))} AS stored FROM walk"
+            ")"
+        ), [start, *uppers, *uppers]
+
+    # -- reading a selection -------------------------------------------------
+
+    @_logged("get_documents")
     def get_documents(
         self,
         subtree: BoundedSubtree = EVERYTHING,
         *,
+        key_range: KeyRange = UNBOUNDED,
+        cursor: str | None = None,
+        meta_name: str | Sequence[str] | None = None,
         max_chars: int = DEFAULT_BULK_MAX_CHARS,
-        **rest: Any,
-    ) -> Page:
-        raise _unbuilt("get_documents")
+        limit: int | None = None,
+        max_total_chars: int | None = None,
+    ) -> Page[Excerpt]:
+        """The selection's totals from one aggregate, and a page read in batches.
 
-    def missing_meta_stats(self, subtree: BoundedSubtree = EVERYTHING, **rest: Any) -> MissingMeta:
-        raise _unbuilt("missing_meta_stats")
+        **Each document is cut to ``max_chars`` on the server**, so a page of
+        long documents sends what the page returns rather than every document
+        whole. What an excerpt reports beyond its text -- the totals and where
+        to resume -- comes from the stored lengths; see :func:`_bulk_excerpt`.
 
-    def keys_missing_meta(self, subtree: BoundedSubtree = EVERYTHING, **rest: Any) -> Page:
-        raise _unbuilt("keys_missing_meta")
+        The page is read a batch at a time past the cursor, as the DuckDB
+        backend reads one, so that ``limit`` and ``max_total_chars`` decide
+        how much is fetched: a caller naming a limit gets one statement of
+        ``limit + 1`` rows, which is exactly enough to know whether another
+        page follows.
+        """
+        where, params = self._selection(subtree, key_range, meta_name=meta_name)
+        total, total_chars = self._totals(where, params)
+
+        items: list[Excerpt] = []
+        spent = 0
+        more = False
+        rows = self._rows(
+            "key, left(content, %s), format, updated_at, chars, bytes",
+            [max_chars],
+            where,
+            params,
+            after=_cursor_bound(cursor),
+            batch=BATCH if limit is None else limit + 1,
+        )
+        for key, prefix, format, updated_at, chars, size in rows:
+            if limit is not None and len(items) >= limit:
+                more = True
+                break
+            expected = min(chars, max_chars)
+            if items and max_total_chars is not None and spent + expected > max_total_chars:
+                # Never on the first document, or a budget smaller than one
+                # document returns an empty page with a cursor that does not
+                # move, and the caller loops forever making no progress.
+                more = True
+                break
+            excerpt = _bulk_excerpt(key, prefix, format, updated_at, chars, size, max_chars)
+            items.append(excerpt)
+            spent += excerpt.returned
+        return Page(
+            items=items,
+            returned=len(items),
+            total=total,
+            total_chars=total_chars,
+            next_cursor=items[-1].key if more and items else None,
+        )
+
+    @_logged("missing_meta_stats")
+    def missing_meta_stats(
+        self,
+        subtree: BoundedSubtree = EVERYTHING,
+        *,
+        key_range: KeyRange = UNBOUNDED,
+        window: KeyRange = UNBOUNDED,
+        meta_name: str | Sequence[str] = "title",
+        sample: int = 0,
+        coverage: bool = False,
+    ) -> MissingMeta:
+        """Documents carrying none of ``meta_name``, over one survey window.
+
+        The window is measured at the position the document's metadata
+        *would* have taken, synthesised in SQL exactly as the SQLite backend
+        does it -- see :meth:`outrage.store_sqlite.SqliteStore.missing_meta_stats`
+        for why it is that position and not the document's own.
+        """
+        names = _names(meta_name)
+        where, params = self._missing(subtree, key_range, names)
+        suffix = min(keys.meta_sort_suffix(name) for name in names)
+        root = min(keys.sort_form(keys.META_PREFIX + name) for name in names)
+        position = "(CASE WHEN sort_key = '' THEN ? ELSE sort_key || ? END)"
+        clauses, bounds = _range_clauses(window, position, [root, suffix])
+        where += "".join(f" AND {_native(clause)}" for clause in clauses)
+        params += bounds
+
+        total, total_chars = self._totals(where, params)
+        documents, carried = (
+            self._selection_coverage(subtree, key_range, names) if coverage else (None, None)
+        )
+        found: list[str] = []
+        if sample > 0 and total:
+            found = [
+                row[0]
+                for row in self._all(
+                    f"SELECT key FROM {self._documents} AS documents WHERE {where} "
+                    "ORDER BY sort_key LIMIT %s",
+                    [*params, sample],
+                )
+            ]
+        return MissingMeta(
+            total=total,
+            total_chars=total_chars,
+            sample=found,
+            selection_documents=documents,
+            selection_carried=carried,
+        )
+
+    @_logged("keys_missing_meta")
+    def keys_missing_meta(
+        self,
+        subtree: BoundedSubtree = EVERYTHING,
+        *,
+        key_range: KeyRange = UNBOUNDED,
+        cursor: str | None = None,
+        meta_name: str | Sequence[str] = "title",
+        limit: int | None = None,
+    ) -> Page[str]:
+        """The selection :meth:`missing_meta_stats` counts, a page at a time.
+
+        Keys only, so a page is one statement of ``limit + 1`` rows beside the
+        totals, as the SQLite backend reads it.
+        """
+        where, params = self._missing(subtree, key_range, _names(meta_name))
+        total, total_chars = self._totals(where, params)
+        page_params = list(params)
+        statement = f"SELECT key FROM {self._documents} AS documents WHERE {where}"
+        if cursor is not None:
+            statement += " AND sort_key > %s"
+            page_params.append(_cursor_bound(cursor))
+        statement += " ORDER BY sort_key"
+        if limit is not None:
+            statement += " LIMIT %s"
+            page_params.append(limit + 1)
+        found = [row[0] for row in self._all(statement, page_params)]
+        items = found if limit is None else found[:limit]
+        more = limit is not None and len(found) > limit
+        return Page(
+            items=items,
+            returned=len(items),
+            total=total,
+            total_chars=total_chars,
+            next_cursor=items[-1] if more and items else None,
+        )
+
+    # -- selecting -----------------------------------------------------------
+
+    def _selection(
+        self,
+        subtree: BoundedSubtree,
+        key_range: KeyRange,
+        *,
+        meta_name: str | Sequence[str] | None,
+    ) -> tuple[str, list[object]]:
+        """The WHERE clause a subtree read is about, from the SQLite backend's own functions.
+
+        The same three independent conditions -- inside ``subtree``, carrying
+        the metadata asked for, inside ``key_range`` -- because what they
+        compile to is dialect-neutral SQL but for the substring search, which
+        :func:`~outrage.store_sqlite._meta_clauses` takes as ``strpos`` here.
+        Two spellings of one selection are two chances to disagree.
+        """
+        where, params = _subtree_clauses(subtree)
+        clauses, bounds = _meta_clauses(keys.parse(_scope(subtree.key)), meta_name, find="strpos")
+        where += clauses
+        params += bounds
+        clauses, bounds = _range_clauses(key_range)
+        where += clauses
+        params += bounds
+        return " AND ".join(_native(clause) for clause in where) if where else "true", params
+
+    def _missing(
+        self, subtree: BoundedSubtree, key_range: KeyRange, names: list[str]
+    ) -> tuple[str, list[object]]:
+        """The documents in the selection carrying none of ``names``.
+
+        The SQLite backend's predicate: a ``NOT EXISTS`` correlated on the
+        exact key a value would sit at, which is a primary key probe and the
+        one form that stays right at every scope. The root spells its metadata
+        without the leading delimiter, which is what the ``CASE`` is for.
+        Statements using this name the outer table ``documents``.
+        """
+        where, params = self._selection(subtree, key_range, meta_name=None)
+        at = ", ".join(
+            "CASE WHEN documents.key = '' THEN %s ELSE documents.key || %s END" for _ in names
+        )
+        where += (
+            f" AND NOT EXISTS (SELECT 1 FROM {self._documents} AS meta WHERE meta.key IN ({at}))"
+        )
+        suffixes = [
+            value
+            for name in names
+            for value in (keys.META_PREFIX + name, keys.DELIMITER + keys.META_PREFIX + name)
+        ]
+        return where, params + suffixes
+
+    def _selection_coverage(
+        self, subtree: BoundedSubtree, key_range: KeyRange, names: list[str]
+    ) -> tuple[int, dict[str, int]]:
+        """Documents in the selection, and how many carry each name.
+
+        Over the selection and never the window, and each name as the
+        documents less those missing it, through :meth:`_missing` -- the
+        SQLite backend's method and its reasons, which it gives in full.
+        """
+        where, params = self._selection(subtree, key_range, meta_name=None)
+        documents, _ = self._totals(where, params)
+        carried = {}
+        for name in names:
+            missing, bound = self._missing(subtree, key_range, [name])
+            lacking, _ = self._totals(missing, bound)
+            carried[name] = documents - lacking
+        return documents, carried
+
+    def _totals(self, where: str, params: Sequence[object]) -> tuple[int, int]:
+        """How many rows the selection holds and how many characters, from the stored lengths."""
+        row = self._one(
+            f"SELECT count(*), coalesce(sum(chars), 0) FROM {self._documents} AS documents "
+            f"WHERE {where}",
+            params,
+        )
+        assert row is not None  # noqa: S101 - an aggregate always returns a row
+        return int(row[0]), int(row[1])
+
+    def _rows(
+        self,
+        columns: str,
+        column_params: Sequence[object],
+        where: str,
+        params: Sequence[object],
+        *,
+        after: str | None,
+        batch: int,
+    ) -> Iterator[tuple[Any, ...]]:
+        """The selection's rows in the store's order, read a batch at a time.
+
+        Past ``after``, a cursor's sort position, and then past the last row
+        of the previous batch. Each batch is its own statement, fetched whole,
+        so nothing is held open between them and a caller that stops reading
+        leaves nothing behind on the connection. ``sort_key`` is unique, so
+        resuming past one is exact.
+        """
+        position = after
+        while True:
+            clause, bound = where, list(params)
+            if position is not None:
+                clause += " AND sort_key > %s"
+                bound.append(position)
+            fetched = self._all(
+                f"SELECT {columns}, sort_key FROM {self._documents} AS documents "
+                f"WHERE {clause} ORDER BY sort_key LIMIT %s",
+                [*column_params, *bound, batch],
+            )
+            yield from (row[:-1] for row in fetched)
+            if len(fetched) < batch:
+                return
+            position = fetched[-1][-1]
+            batch = min(batch * 2, BATCH_CEILING)
+
+    # -- maintenance ---------------------------------------------------------
 
     def audit_rows(self) -> Iterator[AuditRow]:
-        raise _unbuilt("audit_rows")
+        """Every row, as written, a chunk at a time in key order.
+
+        A chunk per statement rather than a server-side cursor, which would
+        hold a transaction open for as long as the caller took to walk it --
+        and a caller walking this may ask the store something else between two
+        rows.
+        """
+        last: str | None = None
+        while True:
+            after = "" if last is None else " WHERE key > %s"
+            rows = self._all(
+                f"SELECT key, doc_key, meta_name, parent, chars FROM {self._documents}"
+                f"{after} ORDER BY key LIMIT %s",
+                [*([] if last is None else [last]), AUDIT_CHUNK],
+            )
+            for key, doc_key, meta_name, parent, chars in rows:
+                yield AuditRow(
+                    key=key, doc_key=doc_key, meta_name=meta_name, parent=parent, chars=chars
+                )
+            if len(rows) < AUDIT_CHUNK:
+                return
+            last = rows[-1][0]
 
     def check_file(self, report: Report) -> None:
         raise _unbuilt("check_file")
 
     def repair(self) -> list[Repaired]:
         raise _unbuilt("repair")
+
+
+class _Rewritten(Exception):
+    """A byte read found the document rewritten between two of its windows."""
+
+
+class _ServerBytes:
+    """The ``read(offset, size)`` the shared byte slicing takes, over a document on the server.
+
+    Holds one window of the document's UTF-8 and serves every read inside it.
+    A read outside it fetches :data:`READAHEAD` bytes from there, or what was
+    asked if that is more -- and only from the row version the read began on,
+    which the ``xmin`` it was handed names. Postgres writes a new row version
+    for every update, so a different ``xmin`` is a different document, and the
+    read starts again rather than returning an excerpt made of two.
+    """
+
+    def __init__(
+        self,
+        store: PostgresStore,
+        key: str,
+        version: str,
+        total_bytes: int,
+        start: int,
+        window: bytes,
+    ) -> None:
+        self._store = store
+        self._key = key
+        self._version = version
+        self._total = total_bytes
+        self._start = start
+        self._window = window
+
+    def __call__(self, offset: int, size: int) -> bytes:
+        end = min(offset + size, self._total)
+        held = self._start + len(self._window)
+        if not (self._start <= offset and end <= held):
+            self._fetch(offset, max(size, READAHEAD))
+        return self._window[offset - self._start : end - self._start]
+
+    def _fetch(self, offset: int, size: int) -> None:
+        row = self._store._one(
+            "SELECT substring(convert_to(content, 'UTF8') FROM %s FOR %s) "
+            f"FROM {self._store._documents} WHERE key = %s AND xmin::text = %s",
+            [offset + 1, size, self._key, self._version],
+        )
+        if row is None:
+            raise _Rewritten
+        self._start, self._window = offset, bytes(row[0])
+
+
+def _native(clause: str) -> str:
+    """A clause written for SQLite's ``?`` placeholders, in psycopg's ``%s``.
+
+    The clauses shared with the SQLite backend are this package's own SQL and
+    carry no ``%`` and no literal ``?`` -- every key reaches them as a
+    parameter -- so the swap is total. Asserted rather than assumed, because a
+    literal of either would be silently rewritten into a placeholder.
+    """
+    assert "%" not in clause  # noqa: S101 - a guard on this module's own SQL
+    return clause.replace("?", "%s")
+
+
+def _below_unit(key: str, key_range: KeyRange, whole_subtree: bool) -> tuple[str, list[object]]:
+    """The rows strictly below ``key``, less its metadata unit unless ``whole_subtree``.
+
+    What :meth:`~PostgresStore.descendant_count` and
+    :meth:`~PostgresStore.latest_change` both select, in one place so the two
+    answer about the same rows.
+    """
+    parsed = keys.parse(key)
+    below, bounds = _below("key", parsed.key)
+    params: list[object] = list(bounds)
+    where = _native(below)
+    if not whole_subtree:
+        lo, hi = keys.meta_range(parsed.key)
+        where += " AND NOT (key >= %s AND key < %s)"
+        params += [lo, hi]
+    clauses, extra = _range_clauses(key_range)
+    where += "".join(f" AND {_native(clause)}" for clause in clauses)
+    return where, params + extra
+
+
+#: The delimiter the sort form joins segments with. Read off the sort form
+#: itself rather than named from :mod:`outrage.keys`' private constant, so
+#: the walk cuts where the encoding actually puts it.
+_SORT_DELIMITER = keys.sort_form("a/b")[2]
+assert keys.sort_form("a/b") == keys.sort_form("a") + _SORT_DELIMITER + keys.sort_form("b")
+
+
+def _chr(character: str) -> str:
+    """A one-character SQL expression for ``character``, which may be a control character."""
+    return f"chr({ord(character)})"
+
+
+def _cut(column: str, prefix: int, delimiter: str) -> str:
+    """SQL for ``column`` cut at the first ``delimiter`` after its first ``prefix`` characters.
+
+    The whole value where there is none. Character positions on both sides:
+    ``substr`` and ``strpos`` count characters in Postgres, as ``len`` does
+    here, and the prefix is a length measured in Python.
+    """
+    rest = f"substr({column}, {prefix + 1})"
+    return (
+        f"(CASE WHEN strpos({rest}, {delimiter}) > 0 "
+        f"THEN left({column}, {prefix} + strpos({rest}, {delimiter}) - 1) ELSE {column} END)"
+    )
+
+
+def _names(meta_name: str | Sequence[str]) -> list[str]:
+    """One metadata name or several, as a list, refusing none."""
+    names = [meta_name] if isinstance(meta_name, str) else list(meta_name)
+    if not names:
+        raise ValueError("meta_name must not be an empty sequence")
+    return names
+
+
+def _bulk_excerpt(
+    key: str,
+    prefix: str,
+    format: str | None,
+    updated_at: str,
+    chars: int,
+    size: int,
+    max_chars: int,
+) -> Excerpt:
+    """A bulk read's excerpt from the document's first ``max_chars`` and its stored lengths.
+
+    The shared :func:`~outrage.store._excerpt` over the prefix, which is the
+    whole document whenever the document fits -- and then the excerpt *is*
+    the one a full read gives. Where it does not fit, the prefix is exactly
+    what the cap returns, and the four numbers that describe the rest are
+    corrected from the stored lengths: the totals, and where to resume, which
+    is the end of the prefix in either unit.
+    """
+    excerpt = _excerpt(key, prefix, format, updated_at, 0, None, max_chars)
+    if chars <= max_chars:
+        return excerpt
+    return replace(
+        excerpt,
+        total=chars,
+        total_bytes=size,
+        next_offset=excerpt.returned,
+        next_byte_offset=excerpt.total_bytes,
+    )
+
+
+def _entry(key: str, format: str | None, updated_at: str, chars: int) -> Entry:
+    """A stored row as a listing entry."""
+    return Entry(key=key, kind=entry_kind(key), size=chars, format=format, updated_at=updated_at)
+
+
+def _implicit(key: str) -> Entry:
+    """A key that holds nothing and has something beneath it, as a listing entry."""
+    return Entry(key=key, kind="implicit", size=None, format=None, updated_at=None)
 
 
 def _unbuilt(operation: str) -> NotImplementedError:
@@ -1105,10 +2096,14 @@ def _first_schema(search_path: str, *, user: str) -> str | None:
 
 __all__ = [
     "ARCHIVE_TABLE",
+    "AUDIT_CHUNK",
+    "BATCH",
+    "BATCH_CEILING",
     "CLIENT_VERSION_SETTING",
     "DEFAULT_SERVICE_FILE",
     "MIGRATIONS",
     "MIN_SCHEMA_VERSION",
+    "READAHEAD",
     "SCHEMA_TABLE",
     "SCHEMA_VERSION",
     "VERSIONS",

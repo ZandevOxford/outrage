@@ -1,11 +1,12 @@
 """The PostgreSQL backend's own half: the connection, the schema, the version.
 
 What a store *does* is ``test_store.py``, asked of every backend that can be
-written, and this backend does not answer it yet -- the operations are steps 5
-to 7 of ``plans/postgres/build``. What is here is step 4, and all of it is
-about the storage rather than about the namespace: where the tables are put,
-how the order is declared, what the three numbers in ``outrage_schema`` mean,
-and which of them turn a store into one this build may read and not write.
+written, this one included. What is here is about the storage rather than
+about the namespace: where the tables are put, how the order is declared,
+what the three numbers in ``outrage_schema`` mean, and which of them turn a
+store into one this build may read and not write -- and, for the operations,
+what the contract cannot see: the order under a collation that disagrees
+with it, and the server-side slicing of a document longer than one window.
 
 **The whole module carries the ``postgres`` marker**, so ``-m "not
 postgres"`` is a full suite run on a machine with no server. Most tests here
@@ -20,18 +21,26 @@ from __future__ import annotations
 
 import io
 import pathlib
+import re
 import threading
 import time
 
 import pytest
+from test_store_sqlite import SPLIT_META_NAMES, assert_the_split_agrees_with_keys_relative
 
-from conftest import in_threads, postgres_dsn, raises_rendered
-from outrage import messages, pgservice
+from conftest import answers_alike, in_threads, postgres_dsn, raises_rendered
+from outrage import keys, messages, pgservice
 from outrage import store as store_module
 from outrage.cli import main
 from outrage.errors import OutrageError
 from outrage.mounts import open_mounts
-from outrage.store import BackendError, ReadOnlyStoreError, SchemaVersion, StoreFileError
+from outrage.store import (
+    BackendError,
+    InvalidArgumentError,
+    ReadOnlyStoreError,
+    SchemaVersion,
+    StoreFileError,
+)
 from outrage.store_postgres import (
     MIN_SCHEMA_VERSION,
     SCHEMA_TABLE,
@@ -42,6 +51,7 @@ from outrage.store_postgres import (
     _first_schema,
     compatibility,
 )
+from outrage.store_sqlite import SqliteStore
 
 pytestmark = pytest.mark.postgres
 
@@ -685,14 +695,291 @@ def test_schema_names_a_mount_this_line_does_not_have(tmp_path, postgres_service
     assert "no mount on this command line is at" in capsys.readouterr().err
 
 
+# -- the operations --------------------------------------------------------
+#
+# What a store does is `test_store.py`, which runs against this backend. What
+# is here is what that file cannot see: the order under a collation that
+# disagrees with it, the SQL metadata split in this dialect, and the reads
+# whose server-side slicing only shows once a document is longer than the
+# window one statement fetches.
+
+
+@pytest.mark.parametrize("meta_name", SPLIT_META_NAMES)
+def test_the_sql_metadata_split_agrees_with_keys_relative(postgres_store, meta_name):
+    """The expression SQLite uses, with ``strpos`` for ``instr``, held to the same oracle.
+
+    On the store's own connection, so the scratch table lands in the test's
+    schema and goes with it.
+    """
+    assert_the_split_agrees_with_keys_relative(
+        postgres_store._conn, meta_name, find="strpos", mark="%s"
+    )
+
+
+def _paged(read):
+    """Every item a paged read returns, two at a time, to the end."""
+    seen, cursor = [], None
+    for _ in range(100):
+        page = read(cursor)
+        seen += page.items
+        if page.next_cursor is None:
+            return seen
+        cursor = page.next_cursor
+    raise AssertionError("the cursor did not reach the end")
+
+
+def test_paging_follows_the_stores_order_where_the_collation_would_not(postgres_store):
+    """The paging half of the collation guard: every cursor, bounded as Python bounds it.
+
+    Keys chosen to disagree between the database's own collation and
+    bytewise order, written through the store and read back two at a time
+    through each paged read. A page that bounded on the wrong order would
+    skip or repeat a key here and say nothing. The listing walks the level
+    at the root, so its children include ``a`` and ``A``, implicit above
+    ``a/b`` and ``A/b``.
+    """
+    for key in DISAGREEING_KEYS:
+        postgres_store.store_document(key, "x")
+    order = sorted(DISAGREEING_KEYS, key=keys.sort_form)
+
+    documents = _paged(lambda c: postgres_store.get_documents(limit=2, cursor=c))
+    assert [item.key for item in documents] == order
+
+    missing = _paged(lambda c: postgres_store.keys_missing_meta(limit=2, cursor=c))
+    assert missing == order
+
+    level = sorted({key.split("/")[0] for key in DISAGREEING_KEYS}, key=keys.sort_form)
+    listed = _paged(lambda c: postgres_store.list_keys(limit=2, cursor=c))
+    assert [entry.key for entry in listed] == level
+
+    collated = [
+        key
+        for (key,) in query(
+            postgres_store, 'SELECT key FROM documents ORDER BY sort_key COLLATE "default"'
+        )
+    ]
+    assert collated != order, (
+        "this database's own collation agrees with the store's order, so this "
+        "test cannot tell a declared collation from a missing one"
+    )
+
+
+def test_a_level_is_named_by_one_probe_per_child_whatever_lies_beneath(postgres_store):
+    """The walk skips a child's subtree rather than reading it.
+
+    Asked of the plan rather than of a clock: ``EXPLAIN ANALYZE`` of the walk
+    says how many rows the recursion produced, and it is one per child --
+    here three, over a subtree of two hundred rows. A walk that stepped a row
+    at a time would produce every one of them.
+    """
+    for child in ("a", "b", "c"):
+        for n in range(1, 67):
+            postgres_store.store_document(f"p/{child}/{n}", "x")
+    walk, params = postgres_store._walk("p")
+    plan = [
+        line
+        for (line,) in query(
+            postgres_store,
+            f"EXPLAIN (ANALYZE, COSTS OFF, TIMING OFF, SUMMARY OFF) {walk} SELECT child FROM level",
+            params,
+        )
+    ]
+    recursive = next(line for line in plan if "Recursive Union" in line)
+    produced = re.search(r"actual rows=([0-9.]+)", recursive)
+    assert produced is not None and float(produced.group(1)) == 3, plan
+    assert [e.key for e in postgres_store.list_keys("p").items] == ["p/a", "p/b", "p/c"]
+
+
+def test_allocations_under_one_parent_never_share_a_number_whatever_follows_it(
+    tmp_path, postgres_service
+):
+    """The case ``ON CONFLICT`` could not see: two ``?`` writes making different keys.
+
+    ``c/?/doc`` and ``c/?/task`` at once become ``c/5/doc`` and ``c/5/task``
+    unless allocation is ordered, and no key collides to say so. Asked of
+    separate stores, each with its own connections, which is what two
+    devices are.
+    """
+    path, service, _schema = postgres_service
+    stores = [PostgresStore(tmp_path / f"dir{n}", filename=path, service=service) for n in range(4)]
+    allocated = []
+    lock = threading.Lock()
+
+    def allocate(n):
+        suffix = ("doc", "task")[n % 2]
+        mine = [stores[n % 4].store_document(f"c/?/{suffix}", "x") for _ in range(15)]
+        with lock:
+            allocated.extend(key.split("/")[1] for key in mine)
+
+    try:
+        in_threads(allocate, threads=8)
+    finally:
+        for opened in stores:
+            opened.close()
+    assert sorted(allocated, key=int) == [str(n) for n in range(1, 121)]
+
+
+def test_the_allocation_lock_is_per_parent_and_apart_from_the_schema_lock():
+    from outrage.store_postgres import _allocation_lock, _lock_number
+
+    assert _allocation_lock("s", "a") == _allocation_lock("s", "a")
+    assert _allocation_lock("s", "a") != _allocation_lock("s", "b")
+    assert _allocation_lock("s", "a") != _allocation_lock("t", "a")
+    assert _allocation_lock("s", "") != _lock_number("s")
+
+
+def test_a_nul_character_is_refused_naming_every_field_that_holds_one(postgres_store):
+    """A ``text`` value cannot hold U+0000, so the write says so rather than psycopg."""
+    with raises_rendered(
+        InvalidArgumentError, r"the content and title fields hold the character U\+0000"
+    ):
+        postgres_store.store_document("a", "x\0y", title="t\0", contents="fine")
+    with raises_rendered(InvalidArgumentError, r"the contents field holds the character U\+0000"):
+        postgres_store.store_document("a", "x", contents="\0")
+    assert not postgres_store.exists("a")
+
+
+# A document long enough, and far enough from ASCII, that a byte read runs
+# through several windows once the window is shrunk: each line mixes one-,
+# two-, three- and four-byte characters.
+_LONG = "".join(f"line {n}: é中𝄞 ascii {n * 'x'}\n" for n in range(1, 60))
+
+
+@pytest.fixture
+def both(tmp_path, postgres_store, monkeypatch):
+    """The same long document in this backend and in SQLite, with a tiny read window.
+
+    SQLite seeks inside a blob and is the oracle; this backend fetches
+    windows from the server. Eleven bytes a window, so every read of any
+    length crosses several and every boundary rule is exercised on a window
+    edge, including one landing inside a character.
+    """
+    from outrage import store_postgres
+
+    monkeypatch.setattr(store_postgres, "READAHEAD", 11)
+    with SqliteStore(tmp_path / "oracle") as oracle:
+        for store in (oracle, postgres_store):
+            store.store_document("doc", _LONG, "text")
+        yield oracle, postgres_store
+
+
+@pytest.mark.parametrize(
+    "read",
+    [
+        {"byte_offset": 0, "max_chars": 50},
+        {"byte_offset": 9, "max_chars": 7},
+        {"byte_offset": 10, "max_chars": 40},
+        {"byte_offset": 500, "length": 25},
+        {"byte_offset": 5000},
+        {"line": 1, "max_chars": 30},
+        {"line": 7, "lines": 3},
+        {"line": 40, "max_chars": 60},
+        {"line": 1000},
+        {"byte_offset": 3, "pattern": "中", "occurrence": 4},
+        {"line": 3, "pattern": "𝄞", "occurrence": 2},
+        {"line": 3, "pattern": "absent"},
+    ],
+)
+def test_a_byte_or_line_read_across_windows_answers_as_a_seek_does(both, read):
+    oracle, postgres = both
+    answers_alike(oracle, postgres, lambda s: s.retrieve_document("doc", **read))
+
+
+def test_a_bulk_read_cut_on_the_server_reports_what_a_whole_read_does(tmp_path, postgres_store):
+    """A document cut to ``max_chars`` before it crosses the network still reports its whole.
+
+    The excerpt's totals and continuations come from the stored lengths
+    rather than from text this end holds, so they are compared, field by
+    field, with SQLite's, which slices the whole document.
+    """
+    corpus = {
+        "a": "short",
+        "b": "é中𝄞" * 40,
+        "c": "x" * 100,
+        "d": "𝄞" * 9,
+        "e": "",
+    }
+    with SqliteStore(tmp_path / "oracle") as oracle:
+        for store in (oracle, postgres_store):
+            for key, content in corpus.items():
+                store.store_document(key, content, "text")
+        for cap in (1, 8, 9, 10, 100, 1000):
+            answers_alike(
+                oracle,
+                postgres_store,
+                lambda s, cap=cap: [
+                    (e.key, e.content, e.format)
+                    + (e.offset, e.returned, e.total, e.next_offset)
+                    + (e.byte_offset, e.total_bytes, e.next_byte_offset)
+                    for e in s.get_documents(max_chars=cap).items
+                ],
+            )
+
+
+def test_a_document_rewritten_between_windows_is_read_again_whole(both, monkeypatch):
+    """A byte read never splices two versions of a document into one excerpt.
+
+    The document is rewritten after the first window has been fetched, so
+    the second window belongs to another row version. The read starts again
+    on the new version and returns only its text.
+    """
+    from outrage import store_postgres
+
+    _oracle, postgres = both
+    fetch = store_postgres._ServerBytes._fetch
+    rewritten = []
+
+    def rewrite_once(self, offset, size):
+        if not rewritten:
+            rewritten.append(True)
+            postgres.store_document("doc", "B" * 200, "text")
+        return fetch(self, offset, size)
+
+    monkeypatch.setattr(store_postgres._ServerBytes, "_fetch", rewrite_once)
+    read = postgres.retrieve_document("doc", byte_offset=0, max_chars=40)
+    assert read.content == "B" * 40
+    assert read.total_bytes == 200
+
+
+def test_a_document_rewritten_on_every_read_is_refused_rather_than_looped(both, monkeypatch):
+    from outrage import store_postgres
+
+    _oracle, postgres = both
+    fetch = store_postgres._ServerBytes._fetch
+    count = iter(range(1000))
+
+    def rewrite_always(self, offset, size):
+        postgres.store_document("doc", f"{next(count)}" * 200, "text")
+        return fetch(self, offset, size)
+
+    monkeypatch.setattr(store_postgres._ServerBytes, "_fetch", rewrite_always)
+    with raises_rendered(BackendError, "rewritten while it was being read, 3 times"):
+        postgres.retrieve_document("doc", byte_offset=0, max_chars=40)
+
+
+def test_a_read_leaves_no_transaction_open(postgres_store):
+    """Reads are statements in autocommit, not the start of a transaction held open.
+
+    A connection psycopg left in its default mode would sit idle in a
+    transaction after its first read for as long as the store is open,
+    holding back the server's vacuum and a lock on every table it read.
+    """
+    postgres_store.store_document("a", "x")
+    postgres_store.retrieve_document("a")
+    postgres_store.list_keys()
+    psycopg = pytest.importorskip("psycopg")
+    assert postgres_store._conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+
+
 # -- the module itself -----------------------------------------------------
 
 
 def test_the_backend_is_not_registered_until_its_operations_are_built():
     """Step 8's job, and the reason a half-built backend is safe to have here.
 
-    Nothing can spell ``type=postgres`` in a mount while the operations raise,
-    so the skeleton cannot be reached by a configuration. This is the guard
+    Nothing can spell ``type=postgres`` in a mount while the backend is half
+    built -- no archive, no server clock, no check or repair -- so it cannot be
+    reached by a configuration. This is the guard
     that says so, and it is the one test here that should be *deleted* at step
     8 rather than changed.
     """

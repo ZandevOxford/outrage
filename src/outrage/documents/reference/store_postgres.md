@@ -42,21 +42,51 @@ the lookup, and it is not simply `current_schema()`: that is NULL when the
 search path names a schema that does not exist yet, which is exactly the first
 open this backend has to create.
 
+## Round trips
+
+Every statement is a round trip to a server that may be on another continent,
+so each operation here is **one or two statements** where the SQLite backend
+would issue a loop of cheap ones. The level walk is a recursive query that
+the server steps through, a listing's totals and its page come back from the
+statement that walks it, a bulk read cuts each document to its cap before it
+is sent, and a byte read fetches only the window it asked for. The predicates
+themselves -- which rows a subtree, a range or a survey means -- are the SQLite
+backend's own functions, so that the two cannot come to disagree about what
+a selection is.
+
 ## What is *not* here yet
 
-Connecting, the schema, the version table and the compatibility rules are
-here. The operations -- reading, writing, listing, the surveys -- are not, and
-every one of them raises [`NotImplementedError`](https://docs.python.org/3/builtins/exceptions.html#NotImplementedError) below rather than being
-absent, so that the class can be opened and the parts that are built can be
-exercised. The backend is deliberately left **out** of
-`outrage.store._BACKENDS` while that is true, so no mount spec can reach a
-half-built store and no configuration can be written against one.
+The rest of the concurrency the design settles on -- the archive trigger and
+serializable writes with a retry -- so nothing is archived yet. A `?` is
+already allocated under a lock, `_allocation_lock()`. Nor the server's
+clock, or the maintenance half of the interface: [`PostgresStore.check_file()`](#outrage.store_postgres.PostgresStore.check_file)
+and [`PostgresStore.repair()`](#outrage.store_postgres.PostgresStore.repair) raise [`NotImplementedError`](https://docs.python.org/3/builtins/exceptions.html#NotImplementedError). The
+backend is deliberately left **out** of `outrage.store._BACKENDS` while that
+is true, so no mount spec can reach a half-built store and no configuration
+can be written against one.
 
 ### outrage.store_postgres.ARCHIVE_TABLE *= 'document_archive'*
 
 Where a row goes when it leaves `documents`. The SQLite backend's archive
 table, with the same columns and for the same reason; what fills it is a
 trigger rather than two statements, and that is step 6.
+
+### outrage.store_postgres.AUDIT_CHUNK *= 8192*
+
+Rows audited per statement.
+
+### outrage.store_postgres.BATCH *= 64*
+
+How many rows a paged read asks for when the caller named no limit, and
+what a run of reads grows from, doubling up to [`BATCH_CEILING`](#outrage.store_postgres.BATCH_CEILING). The
+DuckDB backend's scheme and for its reason: a short page is one small
+statement, and a long walk is not one statement per handful of rows. Every
+statement here is a round trip, which is the cost a remote server is
+measured in.
+
+### outrage.store_postgres.BATCH_CEILING *= 4096*
+
+The largest read [`BATCH`](#outrage.store_postgres.BATCH) grows to.
 
 ### outrage.store_postgres.CLIENT_VERSION_SETTING *= 'outrage.client_version'*
 
@@ -87,6 +117,17 @@ exercises the migrations.
 The oldest schema this build can still operate at. Raising it is a release
 decision rather than a tidy-up, because it turns stores this build used to
 open into stores it refuses, on devices whose owner did not ask for that.
+
+### outrage.store_postgres.READAHEAD *= 1048576*
+
+How many bytes of a document a byte- or line-addressed read fetches at
+once. The shared slicing asks for small windows -- a few bytes of run-up and
+four bytes a character, or 64 KB at a time while counting lines -- and each
+one would otherwise be a statement of its own. So the first statement
+fetches this much from where the read starts, the windows are served out of
+it, and a read that runs past it fetches this much again. A megabyte covers
+every read of an ordinary document in the one statement that also finds the
+row, and a line far into a large one in a handful.
 
 ### outrage.store_postgres.SCHEMA_TABLE *= 'outrage_schema'*
 
@@ -328,299 +369,132 @@ migration command changes it and that takes the same advisory lock.
 
 #### store_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, contents: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, encoding: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
-Refused while the store is below this build's write floor; unbuilt otherwise.
+The document and its supplied metadata, upserted in one transaction.
 
-Validation first, through the shared check, even though nothing here
-writes yet: what a key and a format are is settled for every backend in
-one place, and a backend that reached its own conclusion would be a
-second namespace. See `outrage.store.Store._validated()`.
+The rows go in one `executemany`, which psycopg sends as a pipeline:
+a document with a title and an index is one round trip, not three.
+Validated first, through the shared check, and then refused if this
+build may not write the store -- the argument is wrong whoever is
+asked, and the store is read only whatever the argument.
+
+**U+0000 is refused here and nowhere else yet.** A PostgreSQL
+`text` value cannot hold it, and escaping it would be a second
+encoding of every document for one character nobody writes on
+purpose. Every field holding one is named at once, so a caller fixes
+them in one pass. The other backends store it; refusing it in the
+shared check instead would close that difference for all of them.
 
 #### delete(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), recursive: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, unchanged_since: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, dry_run: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
-Refused below the write floor; unbuilt otherwise.
+One statement: `DELETE ... RETURNING key`, or the `SELECT` it would run.
 
-#### descendant_count(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [int](https://docs.python.org/3/builtins/functions.html#int)
+The SQLite backend selects first and deletes by key, because its
+`DELETE` cannot say what it removed. Here it can, so the selection
+and the delete are the same predicate in one statement, and a dry run
+is that predicate read rather than acted on. The key's own row and its
+metadata unit are one unit whatever the key is, and `recursive` adds
+everything else below -- the SQLite backend's rule, from the same
+functions.
 
-How many stored keys lie strictly below `key`.
+#### descendant_count(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [int](https://docs.python.org/3/builtins/functions.html#int)
 
-Metadata counts: it is stored, and a caller deciding whether a subtree
-is empty is asking about everything that would have to go.
+A `count(*)` over the subtree, less the metadata unit a plain delete takes.
 
-**A metadata key has a real subtree of its own**, and this counts it.
-`a/!changelog` holding twenty notes reports twenty, exactly as a
-document holding twenty children does, which is what makes the delete
-below refuse it without `recursive`.
+#### subtree_totals(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, chars: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [SubtreeTotals](store.md#outrage.store.SubtreeTotals)
 
-Exists so a caller can report what a non-recursive delete left behind:
-without it, deleting a key that holds nothing itself is indistinguishable
-from deleting a key that does not exist.
+Rows, documents and optionally characters below `key`, in one aggregate.
 
-What it leaves out is `key`'s **own** metadata unit, because a plain
-delete takes that with the key -- so the default answers *what would a
-plain delete keep*. **\`\`whole_subtree\`\` asks the other question**:
-everything strictly below `key`, that unit included, which is what a
-*recursive* delete takes and what [`outrage.bulk.walk()`](bulk.md#outrage.bulk.walk) reports.
-A caller previewing a recursive delete needs the second, and answering
-it with the first prints a remainder short by the unit -- negative,
-once the preview reaches past the ordinary children.
-See [`outrage.keys.meta_range()`](keys.md#outrage.keys.meta_range).
+The characters are the stored `chars` column, so a sum reads no
+document -- but it stays behind the flag all the same, because a
+surface that is opt in on one backend and always on in another is two
+contracts wearing one name.
 
-`key_range` bounds it for the reason it bounds `delete`: a count
-that includes keys a mount has made unreachable tells a caller to pass
-`recursive` to remove keys that are not there to remove.
+#### latest_change(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
-#### subtree_totals(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [SubtreeTotals](store.md#outrage.store.SubtreeTotals)
+The newest `updated_at` over exactly the rows [`descendant_count()`](#outrage.store_postgres.PostgresStore.descendant_count) counts.
 
-What lies strictly below `key`, counted and optionally measured.
-
-**The question about the territory**, where [`descendant_count()`](#outrage.store_postgres.PostgresStore.descendant_count) is
-the question about a delete. That is the difference worth holding, and
-it is why these are two methods rather than one with a mode: every
-caller of `descendant_count` in this package asks it what a
-non-recursive delete left behind, or whether anything is there at all,
-and a count for that purpose has to include metadata because a delete
-takes it. A caller mapping a subtree wants a different answer and says
-so by calling something else.
-
-So there is no `whole_subtree` here. This *is* that selection --
-strictly below `key`, its own metadata unit included -- and offering
-the other one would put the delete's question back into the method that
-exists to be free of it. `keys` therefore equals
-`descendant_count(key, whole_subtree=True)` exactly, which is asserted
-rather than assumed: one meaning of "how many lie below" in the store,
-not two that nearly agree.
-
-The one call [`list_keys()`](#outrage.store_postgres.PostgresStore.list_keys)' descendant flags need, kept apart from
-them so a backend overrides the *aggregate* and not the listing.
-`SubtreeTotals` says what counts as a document, which is not what
-counts as one in a listing.
-
-`chars` is separate because it is separately expensive, and a backend
-that can count without measuring should: this default cannot -- a walk
-has the entry in hand -- but SQLite asks for a sum only when told to,
-and on a directory of files a length means decoding every document.
-
-`key_range` bounds it for the reason it bounds
-[`descendant_count()`](#outrage.store_postgres.PostgresStore.descendant_count), and because
-[`MountedStore`](mounts.md#outrage.mounts.MountedStore) cannot compose this without one:
-the stretches of a store that a mount does not shadow are named as
-ranges, and totals taken over the whole of it would count rows that
-reading by key refuses.
-
-**It reads the subtree**, so it costs what is under `key` rather than
-what is beside it -- which is why [`list_keys()`](#outrage.store_postgres.PostgresStore.list_keys) asks for it only
-when told to. Nothing here is maintained at write time.
-
-The default walks, which is every store's answer until it has a better
-one, and it is the answer [`MountedStore`](mounts.md#outrage.mounts.MountedStore) would
-otherwise have no way to give for a store spliced under a prefix.
-
-#### latest_change(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
-
-The newest `updated_at` below `key`, or None where nothing is.
-
-The aggregate a write precondition asks: one value whatever the size of
-the subtree, so "has anything here moved since I looked" costs a query
-rather than a walk. The selection is [`descendant_count()`](#outrage.store_postgres.PostgresStore.descendant_count)'s exactly
--- strictly below `key`, less the metadata unit a plain delete takes
-with it, and `whole_subtree` keeps that unit -- so the two answer
-about the same set of keys and a caller can hold one meaning for both.
-
-**Metadata counts**, as it does there and for the same reason: a
-`!title` written since the watermark is a change to the subtree, and
-an aggregate with a second unstated meaning costs more than it saves.
-
-**What it cannot see is a deletion.** The row that would carry the
-timestamp is the row that has gone, so the newest change in a range
-says nothing about what was *removed* from it. A guard built on this
-covers edits and no more; when an archive exists, asking it the same
-question over the same range is what answers the other half.
-
-Timestamps are normalised to seconds ([`store_document()`](#outrage.store_postgres.PostgresStore.store_document)), so a
-write inside the same second as a watermark is invisible to a
-comparison against one. That is the weakness `content_sha256` exists
-to avoid elsewhere, inherited here deliberately: a watermark over a
-whole subtree has no single content to hash.
-
-The default implementation walks the subtree and takes the maximum,
-which is every store's answer until it has a better one: a database
-has `max()`, a sorted file has a row range, and a directory of files
-has the walk this does.
+A text `max` under `COLLATE "C"`, which is what makes it the newest:
+every stamp is one spelling of UTC to the second, so bytewise order is
+time order, and a locale collation is under no obligation to agree.
 
 #### exists(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
 
-Whether `key` itself holds a document.
-
-Not the same question as whether anything is below it: a bulk import
-asks this per file to decide about one key, and a container that holds
-nothing itself is free for a document to be written to.
-
-Deliberately cheaper than a read, since the answer is wanted for every
-file in an import and the content is not.
+One primary key lookup, selecting no content.
 
 #### level_entry(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [Entry](store.md#outrage.store.Entry) | [None](https://docs.python.org/3/builtins/constants.html#None)
 
-How `key` appears in its parent's listing, or None if it does not.
+The key's own row if it has one, else whether anything lies below: one statement.
 
-The same three answers [`list_keys()`](#outrage.store_postgres.PostgresStore.list_keys) gives about one key without
-listing the level to find it: a stored document, an implicit key that
-exists only because something lies beneath it, or nothing at all.
+The SQLite backend asks the two questions in turn. Here each is a
+round trip, and the second is an `EXISTS` on a range of the primary
+key, so it rides along with the first rather than following it.
 
-Asked by a caller that has to reconcile this store's level with keys
-from somewhere else and must not count the same position twice. A
-cheaper pair of questions -- does the key exist, does it have
-descendants -- gets one corner wrong: metadata sits *at* a key rather
-than below it, so a key holding only metadata has no document and no
-descendants and still appears in the listing.
+#### retrieve_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, line: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, lines: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, length: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, occurrence: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHARS) → [Excerpt](store.md#outrage.store.Excerpt)
 
-#### retrieve_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHARS, \*\*rest: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Excerpt](store.md#outrage.store.Excerpt)
+One lookup on the primary key, sliced by the shared slicing.
 
-Read the content stored at `key`.
+A character read fetches the document, as the SQLite backend does:
+a character offset cannot be turned into a position in the stored
+text without counting up to it, and the whole value is detoasted on
+the server either way. A **byte** or **line** read does not -- see
+`_byte_read()`.
 
-`pattern` is a literal substring, not a regular expression; when
-given, the read starts at its `occurrence`-th appearance at or after
-the offset. The result is capped at `length` or `max_chars`,
-whichever is smaller, and carries a continuation in the unit used.
+#### list_keys(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, descendant_counts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, descendant_chars: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Page](store.md#outrage.store.Page)[[Entry](store.md#outrage.store.Entry)]
 
-`offset` counts characters, `byte_offset` counts UTF-8 bytes and
-`line` counts lines from one. They are three positions in the same
-document, so giving more than one is refused. `lines` limits a
-line-addressed read to that many lines and is capped by `max_chars`.
-A byte offset landing inside a character reads from that character's
-first byte, and the excerpt says where it actually began.
+One level, its totals and one page of it, in a single statement.
 
-**Every backend accepts a byte offset and returns identical content
-for it.** Only the cost differs -- one that can seek does, one that
-cannot converts and slices -- and that contract is what makes a byte
-offset something a caller can carry between stores, and out of the
-store altogether to a file [`bulk()`](bulk.md#module-outrage.bulk) exported.
+The SQLite backend's walk is a loop of short queries, each seeking past
+the child it has just named, and at a fraction of a millisecond a query
+that is the right trade. Across a network each is a round trip, so the
+walk is written as a recursive query instead -- `_walk()` -- and
+the server takes every seek. The level it names is then counted, its
+characters summed from `parent`, and the page cut past the cursor
+and joined to each stored child's row, all in the same statement.
 
-#### list_keys(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*\*rest: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Page](store.md#outrage.store.Page)
+**The totals are over the whole level and unaffected by the cursor**,
+as everywhere: 20 keys of 22 is a listing and 20 of 40000 is a sample.
+The descendant flags stay opt in and cost one aggregate per child on
+the page, through [`subtree_totals()`](#outrage.store_postgres.PostgresStore.subtree_totals).
 
-List the keys immediately below `key`, or below the root.
+#### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_BULK_MAX_CHARS, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_total_chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[Excerpt](store.md#outrage.store.Excerpt)]
 
-Includes subkeys and metadata, and keys that exist only implicitly
-because something beneath them has content.
+The selection's totals from one aggregate, and a page read in batches.
 
-`limit` and `cursor` page the level. Neither has a default: this
-layer offers pagination and holds no opinion about how much a caller
-can take, which is the tools' and the command line's question and they
-answer it differently.
+**Each document is cut to \`\`max_chars\`\` on the server**, so a page of
+long documents sends what the page returns rather than every document
+whole. What an excerpt reports beyond its text -- the totals and where
+to resume -- comes from the stored lengths; see `_bulk_excerpt()`.
 
-No `KeyRange` here, deliberately. This reads one *level*, not a
-stretch of the order, and the cursor is the only bound a level has ever
-needed; a range would have to be honoured by every part of a level's
-answer, for no caller that exists.
+The page is read a batch at a time past the cursor, as the DuckDB
+backend reads one, so that `limit` and `max_total_chars` decide
+how much is fetched: a caller naming a limit gets one statement of
+`limit + 1` rows, which is exactly enough to know whether another
+page follows.
 
-**The two descendant flags turn a listing into a map of the subtree.**
-`descendant_counts` fills `Entry.descendants` and
-`Entry.descendant_documents`, `descendant_chars` fills
-`Entry.descendant_chars`, and each is None where it was not
-asked for. The selection is [`descendant_count()`](#outrage.store_postgres.PostgresStore.descendant_count)'s under
-`whole_subtree` -- strictly below the listed key, its own metadata
-unit included -- so an entry's own row and its descendant columns do
-not overlap, and the two added together are the whole subtree.
-`Entry` says what counts as a document there, which is not what
-counts as one in a listing.
+#### missing_meta_stats(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, window: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', sample: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, coverage: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [MissingMeta](store.md#outrage.store.MissingMeta)
 
-**Opt in because they cost**, which is the whole reason they are flags
-and not columns. Naming a level is bounded by its fan-out -- one index
-seek per child, whatever hangs below -- and a count over a child's
-subtree reads that subtree, so asking for one puts the size of the
-store back into a call that had stopped depending on it. Characters
-cost more again and the length cache does not help them: measured over
-a level of twenty children holding fifty thousand keys, naming the
-level cost 0.19 ms, the counts took it to 8.6 ms, and the characters to
-75 ms.
+Documents carrying none of `meta_name`, over one survey window.
 
-**They are filled over the page, not the level**, so `limit` bounds
-what they cost as well as what comes back -- unlike `total` and
-`total_chars`, which describe the level whatever the cursor is doing.
-A caller paging a wide level pays per page and can stop.
+The window is measured at the position the document's metadata
+*would* have taken, synthesised in SQL exactly as the SQLite backend
+does it -- see [`outrage.store_sqlite.SqliteStore.missing_meta_stats()`](store_sqlite.md#outrage.store_sqlite.SqliteStore.missing_meta_stats)
+for why it is that position and not the document's own.
 
-Concrete where a backend has nothing faster: [`subtree_totals()`](#outrage.store_postgres.PostgresStore.subtree_totals) is
-the one call each of these needs, and `_with_descendants()` fills a
-page from it.
+#### keys_missing_meta(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, meta_name: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = 'title', limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Page](store.md#outrage.store.Page)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
-#### get_documents(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*, max_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_BULK_MAX_CHARS, \*\*rest: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Page](store.md#outrage.store.Page)
+The selection [`missing_meta_stats()`](#outrage.store_postgres.PostgresStore.missing_meta_stats) counts, a page at a time.
 
-Read everything `subtree` names, in key order.
-
-With `meta_name` the result holds those metadata entries instead of
-documents, which is how the titles of every document under a key are
-listed in one call.
-
-`key_range` narrows the subtree to a stretch of the order inside it,
-and the two hold together: a key is returned when it is in the subtree
-*and* in the range. It bounds the selection, so `total` and
-`total_chars` describe that stretch, and a caller reading one subtree
-as several ranges can add the answers up.
-
-`cursor` is not one of the bounds. It is where the last page stopped,
-it moves within the range as a caller pages, and it deliberately does
-not reach the totals: what a caller cannot work out from a page is how
-much of the whole they are holding.
-
-Two axes bound the answer and both are needed. `max_chars` caps each
-document, `limit` and `cursor` page the collection, and
-`max_total_chars` caps the page as a whole -- without that last one
-the two axes multiply, and a hundred documents at two thousand
-characters each honours both stated bounds while returning two hundred
-thousand characters.
-
-#### missing_meta_stats(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*\*rest: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [MissingMeta](store.md#outrage.store.MissingMeta)
-
-What a metadata survey could not see, over exactly one page's window.
-
-`coverage` adds counts for the whole selection. It is off by default
-because each metadata name adds a selection-wide scan, while the three
-window fields above are the bounded warning every survey needs.
-
-**Two ranges, measured against two different things**, and a document
-has to satisfy both. `key_range` is measured against a document's own
-position, as everywhere else in the store. `window` is measured
-against the position its metadata *would* have taken, which is the
-order the survey walks, so this is where a survey's own cursors go --
-`KeyRange(after=page_start, before_inclusive=page_end)` is a page,
-exclusive below and inclusive above, each end left unset when the page
-ran to that end of the collection.
-
-The split is not a technicality. A document is inside a subtree that
-was stepped over because of where the *document* is, and is inside a
-page because of where its *title* would have sorted, and a survey
-reading one subtree in several ranges needs to say both at once.
-
-A document carrying none of the names appears nowhere in the ordering
-the survey walks, so it has no position in it either. One is synthesised:
-where it *would* have sorted had it carried the name, which is exactly
-the position of `doc/!name`. That is part of the contract rather than
-an implementation detail -- it is what decides which window a document
-is counted in, and so what makes a caller's windows tile.
-
-#### keys_missing_meta(subtree: [BoundedSubtree](store.md#outrage.store.BoundedSubtree) = EVERYTHING, \*\*rest: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Page](store.md#outrage.store.Page)
-
-Document keys in `subtree` carrying none of `meta_name`.
-
-A survey by `!title` only sees documents that have one, so on its own
-it silently under-reports the store. This names what the survey missed.
-
-`key_range` narrows the subtree exactly as it narrows a survey, and
-for the same reason: the two have to be askable over one stretch of the
-store, and to agree about what was in range, or they stop describing
-the same one.
+Keys only, so a page is one statement of `limit + 1` rows beside the
+totals, as the SQLite backend reads it.
 
 #### audit_rows() → [Iterator](https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterator)[[AuditRow](store.md#outrage.store.AuditRow)]
 
-Every row this store holds, bookkeeping included, in one pass.
+Every row, as written, a chunk at a time in key order.
 
-For [`outrage.maintenance.check()`](maintenance.md#outrage.maintenance.check) and nothing else -- see
-`AuditRow` for why the reading surface does not offer this. One
-pass rather than a query per check, because the checks that use it want
-the same rows for different questions and a store large enough to be
-worth checking is large enough for a second pass to be felt.
-
-Order is not promised. Nothing auditing rows one at a time depends on
-it, and a backend held in key order should not have to pay to prove it.
+A chunk per statement rather than a server-side cursor, which would
+hold a transaction open for as long as the caller took to walk it --
+and a caller walking this may ask the store something else between two
+rows.
 
 #### check_file(report: [Report](maintenance.md#outrage.maintenance.Report)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
