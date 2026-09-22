@@ -10,8 +10,8 @@ every mount follows, and what makes a mount configuration relocatable. `info`
 reports that directory. `type` names the backend where the file name cannot say
 it: a directory of files has no extension to read.
 
-`type='postgres'` is the exception to where `file` is. The store is on a
-server, so `file` is a libpq service file — the connection's configuration
+`type='postgres'`, an experimental backend, is the exception to where `file`
+is. The store is on a server, so `file` is a libpq service file — the connection's configuration
 rather than the store — and may be absolute or start with `~`. Omit it for
 libpq's own lookup, `~/.pg_service.conf` or `PGSERVICEFILE`. `service` names the
 entry in that file, `outrage` when omitted. The store is the connection's

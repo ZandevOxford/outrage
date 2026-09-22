@@ -11,7 +11,7 @@ coding harnesses such as Claude Code, Codex, Cursor, and Copilot CLI.
 * LLM search - LLM subagents add summary and keyword metadata to documents, and
   LLM subagents can search documents and metadata.
 * Multiple data stores including parquet based stores for large-scale reference
-  material, and a PostgreSQL store shared by several devices.
+  material, and an experimental PostgreSQL store shared by several devices.
 * Explicit support for command-line coding agents: Claude Code, OpenAI Codex
   CLI, Cursor Agent, and GitHub Copilot CLI.
 * Command line tools for manipulating the data stores.
@@ -88,9 +88,10 @@ well, so the links below work here too.
   writes, which is the storage rather than a setting. **Files** is a directory
   with one file per key,
   which is what `outrage export` already wrote: the tree a person edits by hand,
-  readable as a store rather than only as a transfer. **PostgreSQL** is the one
-  store that is not on this machine: read-write, shared by every device that
-  can reach the server, and asked for with `type=postgres`.
+  readable as a store rather than only as a transfer. **PostgreSQL**,
+  experimental for now, is the one store that is not on this machine:
+  read-write, shared by every device that can reach the server, and asked for
+  with `type=postgres`.
 * **Client integrations** - packaged project skills and agents for Claude Code,
   OpenAI Codex CLI and GitHub Copilot CLI, plus a session-start hook for each.
   They cover when to store and retrieve, the key conventions, and the moment a
@@ -131,6 +132,10 @@ pyarrow instead, which is also what still opens a file written by `outrage`
 before 0.4.0.
 
 ## A shared PostgreSQL store
+
+**Experimental.** It works, and has been run against a local server and a
+managed one on Amazon RDS, but it is new: its configuration and behaviour may
+still change in a minor release, which the stable interfaces of 1.0 do not.
 
 One store, on a server, shared by every device that can reach it - a laptop and
 a desktop working from the same memory rather than from two that drift. It
@@ -175,17 +180,49 @@ a team whose oldest client is behind. A client never migrates a shared store by
 opening it: it operates at the version it finds, and changing that is a command
 somebody runs.
 
-**No password ever appears in output.** Passwords belong in the service file,
-or better in `~/.pgpass` or `PGPASSWORD`, and outrage never writes one down:
-`outrage info`, `outrage check`, `outrage schema status` and every error
-report name the service, host, database, user and schema, and show any secret
-as `(not shown)`.
+**Keep the password out of the service file.** libpq reads `~/.pgpass` on
+every connection, so a line there is all a password needs, and an entry can
+name another file with `passfile=`; `PGPASSWORD` works too. The file must be
+readable by you alone (`chmod 600`), and a `:` or `\` in the password is
+escaped with a `\`:
+
+```text
+# ~/.pgpass - host:port:database:user:password
+db.example.com:5432:memory:me:the-password
+```
+
+**No password ever appears in output**, wherever it is kept: `outrage info`,
+`outrage check`, `outrage schema status` and every error report name the
+service, host, database, user and schema, and show any secret as
+`(not shown)`.
+
+**Verify the server, not only the encryption.** `sslmode=require` encrypts but
+accepts any certificate; `verify-full` checks that the certificate names the
+host and was issued by an authority you trust. Those authorities are read
+from `~/.postgresql/root.crt` unless the entry names a file with
+`sslrootcert` - give it an absolute path, which every libpq client reads the
+same way - and `sslrootcert=system` trusts the operating system's store, which
+covers a server with a public certificate. A managed server often has its own
+authority instead: for **Amazon RDS** it is AWS's bundle,
+`https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`, saved
+locally. Two things about RDS in particular:
+
+* **The cluster's security group has to admit you.** A new cluster in the
+  VPC's `default` group admits nothing from outside it, and a connection
+  simply times out, which outrage reports as a server it cannot reach.
+* **Use a password, not IAM authentication.** An IAM token lasts fifteen
+  minutes and libpq cannot fetch a new one, so it would stop working at the
+  first reconnect. And a password in an RDS-managed secret is rotated,
+  weekly by default, which leaves every device's `.pgpass` stale: give
+  outrage a login role with a password of its own.
 
 `outrage check shared` reports the schema version, its floors and the state of
 the store; `outrage backup shared` writes a consistent snapshot into a local
 `.sqlite` file, which opens, mounts and checks with no server at all.
 
-A server that cannot be reached leaves that mount unavailable and every other
-mount working, so a laptop off the network still starts. A service file that
-cannot be read, a login the server rejects, or a database that is not there is
-a mistake in the configuration and stops the start instead.
+When `outrage-server` starts, a server that cannot be reached leaves that
+mount unavailable and every other mount working, so a laptop off the network
+still starts. A service file that cannot be read, a login the server rejects,
+or a database that is not there is a mistake in the configuration and stops the
+start instead. An `outrage` command is stricter: it opens every mount it is
+given, and stops when one cannot be reached, even for a key in another store.

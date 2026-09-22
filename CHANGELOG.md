@@ -5,7 +5,8 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 ## Unreleased
 
 A PostgreSQL backend, `type=postgres` (or `type=postgresql`), for one store
-shared by several devices. It needs the `postgres` extra. A mount names a libpq
+shared by several devices. **It is experimental**: its configuration and
+behaviour may still change in a minor release. It needs the `postgres` extra. A mount names a libpq
 service file and an entry in it, as in
 `--mount shared=~/.pg_service.conf,type=postgres,service=outrage`, and the
 store is the connection's schema, created with its tables on first open. The
@@ -39,6 +40,15 @@ configuration error and stops the start. A rejected login and a missing
 database are recognised in the server's English messages, so a server replying
 in another language is treated as unreachable, and the reason is still shown in
 full.
+
+An `outrage` command, unlike the server's startup, opens every mount it is
+given and stops when one's server cannot be reached, and the message for that
+no longer says the mount is left unavailable. The README now covers keeping
+the password in `~/.pgpass` or a `passfile=` rather than the service file,
+and verifying the server with `sslmode=verify-full` rather than `require`,
+with notes for Amazon RDS: its own certificate authority, its security group,
+and why a password rather than IAM authentication. The backend has been run
+against a managed Aurora PostgreSQL 17 server on RDS as well as a local one.
 
 `outrage check` on a PostgreSQL store reports the schema version, its floors,
 the range this build operates at, what this build does on open, the size of
