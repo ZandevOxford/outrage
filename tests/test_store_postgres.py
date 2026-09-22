@@ -601,6 +601,32 @@ def test_a_server_that_is_down_leaves_the_other_mounts_working(tmp_path):
     assert failures == [("shared", "postgres-unreachable")]
 
 
+def test_the_command_line_refusing_an_unreachable_server_does_not_claim_to_tolerate_it(
+    tmp_path, capsys
+):
+    """Only the MCP server's startup leaves such a mount out and goes on, and it
+    says so in its own warning. The command line refuses the whole command, so
+    the reason must not promise otherwise. Found against RDS, 2026-09-22."""
+    path = tmp_path / "pg_service.conf"
+    path.write_text("[outrage]\nhost=127.0.0.1\nport=1\ndbname=outrage\nconnect_timeout=2\n")
+
+    status, _ = run(
+        "set",
+        "local/x",
+        "--content",
+        "here",
+        "--dir",
+        str(tmp_path / "dir"),
+        "--mount",
+        f"shared={path},type=postgres",
+    )
+
+    said = capsys.readouterr().err
+    assert status == 1
+    assert "cannot reach the PostgreSQL server" in said
+    assert "unavailable rather than refused" not in said
+
+
 def service_file_like(tmp_path, postgres_service, **changed):
     """A second service file, the fixture's with some parameters changed."""
     psycopg = pytest.importorskip("psycopg")

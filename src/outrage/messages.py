@@ -2107,12 +2107,15 @@ def _postgres_unreachable(name: Namer, /, *, service: str, path: str, reason: st
     # missing, because the two ask for opposite things: a store that is not
     # there is created, and a server that is not answering is waited for. The
     # driver's own sentence is kept because it is the half that says which --
-    # a refused connection, a name that does not resolve, a timeout.
+    # a refused connection, a name that does not resolve, a timeout. Nothing
+    # here says what becomes of the mount: the MCP server's startup leaves it
+    # out and warns in its own words, while the command line and the `mount`
+    # tool refuse, so any such claim is false at two of the three readers.
     said = " ".join(str(reason).split())
     return (
         f"cannot reach the PostgreSQL server for service {service!r} in {path}: "
-        f"{said}. The store is elsewhere, so this says nothing about whether it "
-        f"is there; a mount of it is left unavailable rather than refused."
+        f"{said}. The store is on that server, so this says nothing about "
+        f"whether it is there."
     )
 
 
