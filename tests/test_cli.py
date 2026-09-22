@@ -430,6 +430,18 @@ def test_backup_takes_a_destination(tmp_path):
     assert (tmp_path / "s.sqlite").exists()
 
 
+def test_backup_over_an_existing_file_names_the_flag_that_allows_it(tmp_path, capsys):
+    """The shell's spelling, since the reader of this refusal is at one."""
+    a_store(tmp_path / ".outrage")
+    target = ("backup", "--dir", str(tmp_path / ".outrage"), "--to", str(tmp_path / "s.sqlite"))
+    run(*target)
+
+    status, _ = run(*target)
+
+    assert status == 1
+    assert "pass --overwrite to replace it" in capsys.readouterr().err
+
+
 def test_backup_dry_run_names_the_destination_without_writing(tmp_path):
     a_store(tmp_path / ".outrage")
 

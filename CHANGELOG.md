@@ -30,7 +30,8 @@ libpq's own lookup rather than a built-in store; its `service` parameter names
 the entry, as `service=` does on a `--mount`. A service nobody could find says
 which files were not there rather than that the entry is missing from them,
 and `outrage set` into a PostgreSQL store says which schema on which server the
-document went to rather than naming the service file. At startup a server that cannot
+document went to rather than naming the service file, as `outrage check` now
+heads its report. At startup a server that cannot
 be reached leaves the mount unavailable and the other mounts working; a service
 file that cannot be used, a login the server rejects, a database it does not
 have, one that is not UTF8, or a search path naming no schema is a
@@ -103,6 +104,10 @@ second when it copies them. A `document_edit` import refused as stale gives
 both times as the store stamped them, the version the file matched and the
 write since, rather than setting this machine's export time, to the second,
 beside the store's.
+
+`outrage backup` refused over an existing file now names the `--overwrite`
+flag rather than the library's `overwrite` argument, which is not something a
+shell accepts.
 
 `outrage init` now writes every option a mount carries into the table it
 starts. It wrote `path` and `type` alone, so

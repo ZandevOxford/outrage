@@ -148,7 +148,7 @@ def test_the_report_prints_the_prose_and_not_the_code():
     )
 
     out = io.StringIO()
-    cli._print_report(report, out)
+    cli._print_report(report, str(report.path), out)
 
     assert "most of the store is in the write-ahead log" in out.getvalue()
     assert maintenance.WAL_UNCHECKPOINTED not in out.getvalue()

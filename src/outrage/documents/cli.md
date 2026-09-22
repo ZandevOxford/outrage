@@ -162,10 +162,11 @@ outrage config [-h] [--scope {project,user}] [--project-dir PATH]
 
 ## `backup`
 
-Copy the database through SQLite itself and check what came out: an integrity check, the schema
-version, and a row count against the source. Copying the files instead is what this exists to avoid,
-since a store in WAL mode keeps recent writes in a sidecar and the copy left behind still opens
-cleanly.
+Copy the store and check what came out against the source. A SQLite store is copied through SQLite
+itself, then checked for integrity, schema version and row count: copying the files instead is what
+this exists to avoid, since a store in WAL mode keeps recent writes in a sidecar and the copy left
+behind still opens cleanly. A PostgreSQL store is written as one consistent snapshot, archive
+included, into a local SQLite file that opens with no server.
 
 ### Usage
 
@@ -659,7 +660,8 @@ its own integrity check and how much of the store is sitting in the write-ahead 
 the database -- invisible in normal use, and what makes a copy of the database file alone lose
 recent writes. For parquet, read through duckdb, it is how many parts and rows there are and how
 many rows repeat a key; opened with type=pyarrow, whether the file is still in the sort order every
-read of it bisects.
+read of it bisects. For PostgreSQL it is the schema version and its floors, the size of the archive,
+and whether the triggers that keep it are all there.
 
 ### Usage
 

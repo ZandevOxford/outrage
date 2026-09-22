@@ -823,8 +823,8 @@ def _backup_is_the_store(name: Namer, /, *, target: str, **_: Any) -> str:
 
 
 @template("backup-exists")
-def _backup_exists(name: Namer, /, *, target: str, **_: Any) -> str:
-    return f"{target} already exists; pass overwrite to replace it"
+def _backup_exists(name: Namer, /, *, target: str, spell: Speller, **_: Any) -> str:
+    return f"{target} already exists; pass {spell('overwrite')} to replace it"
 
 
 @template("backup-corrupt")

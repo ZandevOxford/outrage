@@ -2171,6 +2171,20 @@ def test_a_postgres_mount_is_checked_and_backed_up_by_mount_point(tmp_path, post
         assert copy.retrieve_document("note").content == "on the server"
 
 
+def test_check_heads_its_report_with_where_the_store_is(tmp_path, postgres_store):
+    """Not the service file, which is the connection's configuration, and
+    which the report's heading would otherwise present as the store."""
+    postgres_store.store_document("a", "one")
+
+    status, output = run("check", *_root_of(tmp_path, postgres_store.path))
+
+    assert status == 0
+    heading = output.splitlines()[0]
+    assert heading.startswith("service=outrage ")
+    assert f"schema={postgres_store.schema} (postgres)" in heading
+    assert str(postgres_store.path) not in heading
+
+
 def test_a_postgres_mount_written_in_the_table_is_named_the_same_way(tmp_path, postgres_service):
     """The spliced line, so a mount nobody typed is as nameable as one typed."""
     path, _service, schema = postgres_service

@@ -331,11 +331,14 @@ def argument_parser() -> argparse.ArgumentParser:
         "backup",
         help="copy the store to a verified snapshot",
         description=(
-            "Copy the database through SQLite itself and check what came out: "
-            "an integrity check, the schema version, and a row count against "
-            "the source. Copying the files instead is what this exists to "
-            "avoid, since a store in WAL mode keeps recent writes in a sidecar "
-            "and the copy left behind still opens cleanly."
+            "Copy the store and check what came out against the source. A "
+            "SQLite store is copied through SQLite itself, then checked for "
+            "integrity, schema version and row count: copying the files "
+            "instead is what this exists to avoid, since a store in WAL mode "
+            "keeps recent writes in a sidecar and the copy left behind still "
+            "opens cleanly. A PostgreSQL store is written as one consistent "
+            "snapshot, archive included, into a local SQLite file that opens "
+            "with no server."
         ),
     )
     # The shared spelling, so that backing up the store a command just wrote to
@@ -928,7 +931,9 @@ def argument_parser() -> argparse.ArgumentParser:
             "lose recent writes. For parquet, read through duckdb, it is how "
             "many parts and rows there are and how many rows repeat a key; "
             "opened with type=pyarrow, whether the file is still in the sort "
-            "order every read of it bisects."
+            "order every read of it bisects. For PostgreSQL it is the schema "
+            "version and its floors, the size of the archive, and whether the "
+            "triggers that keep it are all there."
         ),
     )
     _store_option(check)
@@ -3068,7 +3073,7 @@ def _check_command(args: argparse.Namespace, out: TextIO) -> int:
     """
     with _open_existing(args) as opened:
         report = maintenance.check(opened)
-        _print_report(report, out)
+        _print_report(report, _store_named(opened), out)
 
         if not args.repair:
             if report.repairable:
@@ -3095,12 +3100,13 @@ def _check_command(args: argparse.Namespace, out: TextIO) -> int:
     # rather than the result.
     with _open_existing(args) as reopened:
         after = maintenance.check(reopened)
+        named = _store_named(reopened)
     print("", file=out)
-    _print_report(after, out)
+    _print_report(after, named, out)
     return 0 if after.sound else 1
 
 
-def _print_report(report: maintenance.Report, out: TextIO) -> None:
+def _print_report(report: maintenance.Report, named: str, out: TextIO) -> None:
     """Two lines and then the problems: what any store says, then what this one does.
 
     The second line is the backend's own, printed from ``details`` rather than
@@ -3108,7 +3114,7 @@ def _print_report(report: maintenance.Report, out: TextIO) -> None:
     its sort order where SQLite reports its integrity and its log - instead of
     both being made to answer the other's questions with a zero.
     """
-    print(f"{report.path} ({report.backend})", file=out)
+    print(f"{named} ({report.backend})", file=out)
     print(
         f"  format {report.format_version}, "
         f"{report.documents} documents, {report.metadata} metadata, "
