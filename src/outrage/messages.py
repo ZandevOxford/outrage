@@ -520,6 +520,14 @@ def _mount_replaced_another(name: Namer, /, *, mount: str, **_: Any) -> str:
     )
 
 
+@MCP.template("mount-reopened")
+def _mount_reopened(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"the store at {name(mount)!r}, which could not be opened before, is "
+        f"open now, and everything below it answers again."
+    )
+
+
 @MCP.template("mount-created-store")
 def _mount_created_store(name: Namer, /, *, mount: str, path: str, **_: Any) -> str:
     return (

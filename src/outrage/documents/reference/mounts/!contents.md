@@ -262,74 +262,77 @@
 #### requested_read_only
 65190 65254 1049
 
-#### refuse(key: str | None = keys.ROOT) → NoReturn
+#### *property* reason *: dict[str, Any]*
 65344 65408 1054
 
+#### refuse(key: str | None = keys.ROOT) → NoReturn
+65658 65722 1058
+
 #### store_document(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-65836 65902 1062
+66150 66216 1066
 
 #### delete(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-68454 68522 1108
+68768 68836 1112
 
 #### descendant_count(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-71007 71077 1151
+71321 71391 1155
 
 #### subtree_totals(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-72770 72842 1181
+73084 73156 1185
 
 #### latest_change(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-75528 75602 1227
+75842 75916 1231
 
 #### exists(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-77620 77696 1261
+77934 78010 1265
 
 #### level_entry(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-78286 78364 1272
+78600 78678 1276
 
 #### retrieve_document(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-79305 79385 1287
+79619 79699 1291
 
 #### list_keys(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-80671 80753 1309
+80985 81067 1313
 
 #### last_child(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-83291 83375 1356
+83605 83689 1360
 
 #### get_documents(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-85128 85214 1386
+85442 85528 1390
 
 #### find_documents(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-86566 86654 1412
+86880 86968 1416
 
 #### missing_meta_stats(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-87389 87479 1425
+87703 87793 1429
 
 #### keys_missing_meta(key: Any = keys.ROOT, \*\_args: Any, \*\*\_kwargs: Any) → Any
-89192 89284 1454
+89506 89598 1458
 
 #### copy_from(\*\_args: Any, \*\*\_kwargs: Any) → Any
-89943 90037 1466
+90257 90351 1470
 
 #### close() → None
-93922 94018 1533
+94236 94332 1537
 
 ### outrage.mounts.mount_point(prefix: str, \*, spec: str | None = None) → str
-94042 94140 1537
+94356 94454 1541
 
 ### outrage.mounts.open_mounts(directory: str | PathLike[str] | None, specs: Sequence[str] = (), read_only_specs: Sequence[str] = (), \*, root_mount: str | PathLike[str] | Spec | None = None, log: EventLog | None = None, attached: Mapping[str, Store] = MappingProxyType({}), owned: Mapping[str, Store] = MappingProxyType({}), builtin: Collection[str] = (), versioning: bool = True, on_open_error: Callable[[str, Spec, bool, OutrageError], None] | None = None) → MountedStore
-94824 94924 1548
+95138 95238 1552
 
 ### outrage.mounts.parse_options(value: str, \*, spec: str | None = None) → Spec
-101394 101496 1624
+101708 101810 1628
 
 ### outrage.mounts.parse_spec(spec: str) → tuple[str, Spec]
-103200 103304 1654
+103514 103618 1658
 
 ### outrage.mounts.refuse_missing_read_only(directory: Path, prefix: str, file: str | PathLike[str] | None, backend: str | None) → None
-104494 104600 1675
+104808 104914 1679
 
 ### outrage.mounts.refuse_unavailable(opened: Store, key: str | None, action: str) → None
-105790 105898 1689
+106104 106212 1693
 
 ### outrage.mounts.unparse(spec: Spec) → str
-106678 106788 1702
+106992 107102 1706

@@ -159,6 +159,11 @@ CLI.silent(
     "every run, and a mount lives exactly as long as the command",
 )
 CLI.silent(
+    "mount-reopened",
+    "the same: every command opens its mounts afresh, so one that could not be "
+    "opened last time is simply tried again, and the warning stops when it opens",
+)
+CLI.silent(
     "mount-created-store",
     "dynamic mounting is offered only by the MCP server; startup and command-line "
     "mounts keep their existing report",

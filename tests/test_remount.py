@@ -24,7 +24,7 @@ import pytest
 from mcp.server.mcpserver.exceptions import ToolError
 
 from outrage import home, keys, remount, shipped
-from outrage.mounts import MountedStore, MountError
+from outrage.mounts import MountedStore, MountError, open_mounts
 from outrage.remount import Live
 from outrage.server import build_server
 from outrage.store_sqlite import SqliteStore
@@ -126,6 +126,29 @@ def test_a_mount_at_a_point_something_holds_replaces_it_and_says_so(server):
     assert call(server, "read_document", key="ref/python/typing")["content"] == (
         "Something else entirely."
     )
+
+
+def test_a_mount_at_a_point_that_could_not_be_opened_reopens_it(tmp_path):
+    """The recovery the placeholder is built for: the store is back, and the
+    `mount` tool at the same point replaces what stood there with it. Not
+    reported as a replacement, which would say an open store was displaced."""
+    base = tmp_path / "base"
+    with open_mounts(
+        base, read_only_specs=["gone=gone.sqlite"], on_open_error=lambda *_: None
+    ) as table:
+        with Live(table, directory=base) as live:
+            server = build_server(live, directory=base)
+            assert "could not be opened" in call_expecting_error(
+                server, "read_document", key="gone/note"
+            )
+            with SqliteStore(base, filename="gone.sqlite") as made:
+                made.store_document("note", "back again")
+
+            said = call(server, "mount", key="gone", file="gone.sqlite", read_only=True)
+
+            assert "could not be opened before, is open now" in said["note"]
+            assert "already mounted" not in said["note"]
+            assert call(server, "read_document", key="gone/note")["content"] == "back again"
 
 
 def test_a_mount_over_keys_the_store_beneath_holds_says_they_are_hidden(server):

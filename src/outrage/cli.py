@@ -24,7 +24,7 @@ import shlex
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TextIO
+from typing import Any, TextIO
 
 from . import (
     __version__,
@@ -3031,7 +3031,8 @@ def _info_rows(described: info.Info) -> list[tuple[str, str, str, str]]:
     Versioning is a fourth column written only where it is off, as the tool
     reports it: on is the default, and a backend with none has nothing to say.
     A store reached over a connection says where it is there too, since its
-    file is only the configuration that named it.
+    file is only the configuration that named it, and one that could not be
+    opened says why.
     """
     return [
         (
@@ -3042,11 +3043,22 @@ def _info_rows(described: info.Info) -> list[tuple[str, str, str, str]]:
                 [
                     *(["versioning off"] if mount.versioned is False else []),
                     *_target_words(mount.target),
+                    *(
+                        []
+                        if mount.unavailable is None
+                        else [f"not opened: {_unavailable_reason(mount.unavailable)}"]
+                    ),
                 ]
             ),
         )
         for mount in described.mounts
     ]
+
+
+def _unavailable_reason(reason: dict[str, Any]) -> str:
+    """Why a mount did not open, as this front end words a failure."""
+    error = OutrageError(reason["code"], **reason["details"])
+    return messages.render(error, spell=messages.flag).removesuffix(".")
 
 
 #: What of a connection the ``info`` table shows, in this order. The tool

@@ -1051,6 +1051,10 @@ The failure that kept the store closed.
 Whether the mount was asked for read-only, which a report of the
 table still has to say although nothing here is ever written.
 
+#### *property* reason *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]*
+
+[`error`](#outrage.mounts.UnavailableStore.error) as facts an outer error or a report can carry.
+
 #### refuse(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = keys.ROOT) → [NoReturn](https://docs.python.org/3/library/typing.html#typing.NoReturn)
 
 Raise the refusal for a call about `key`, in this store's own namespace.

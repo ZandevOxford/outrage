@@ -2082,6 +2082,17 @@ def test_the_tools_refuse_to_read_write_or_delete_across_a_closed_mount(tmp_path
         assert table.exists("note")
 
 
+def test_info_reports_a_closed_mount_and_why(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        mounts = {one["mount"]: one for one in call(build_server(table), "info")["mounts"]}
+        assert mounts["gone"]["kind"] == UNAVAILABLE_MOUNT_KIND
+        assert mounts["gone"]["read_only"] is True
+        assert mounts["gone"]["unavailable"].startswith(
+            "the read-only mount at 'gone' has no store"
+        )
+        assert "unavailable" not in mounts["kept"]
+
+
 def test_mounting_over_a_closed_mount_replaces_it(tmp_path):
     with a_table_with_a_closed_mount(tmp_path) as table:
         SqliteStore(tmp_path, filename="gone.sqlite").close()

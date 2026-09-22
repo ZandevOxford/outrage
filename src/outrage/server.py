@@ -677,7 +677,9 @@ class _MountInfoResult(_ToolResult):
             )
         ),
     ]
-    kind: Annotated[str, Field(description="'root', 'mount' or 'read-only mount'")]
+    kind: Annotated[
+        str, Field(description="'root', 'mount', 'read-only mount' or 'unavailable mount'")
+    ]
     read_only: Annotated[bool, Field(description="Whether this server refuses writes routed here")]
     versioned: Annotated[
         bool,
@@ -694,6 +696,15 @@ class _MountInfoResult(_ToolResult):
             description=(
                 "Present only for a store reached over a connection: its service, "
                 "schema and connection parameters, with every secret redacted"
+            )
+        ),
+    ] = None
+    unavailable: Annotated[
+        str | None,
+        Field(
+            description=(
+                "Present only for a store that could not be opened: why. Everything "
+                "below it is refused until it is mounted again"
             )
         ),
     ] = None
@@ -2138,6 +2149,11 @@ def _mount_info(mount: dict[str, Any]) -> dict[str, Any]:
         mount.pop("versioned", None)
     if mount.get("target") is None:
         mount.pop("target", None)
+    reason = mount.pop("unavailable", None)
+    if reason is not None:
+        mount["unavailable"] = messages.render(
+            OutrageError(reason["code"], **reason["details"])
+        ).removesuffix(".")
     return mount
 
 

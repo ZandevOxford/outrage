@@ -40,8 +40,8 @@
 #### close() → None
 9197 9201 139
 
-### outrage.remount.notes_for_mount(after: MountedStore, prefix: str, \*, replaced: bool, builtin: bool = False, created: str | None = None) → list[Note]
+### outrage.remount.notes_for_mount(after: MountedStore, prefix: str, \*, replaced: bool, reopened: bool = False, builtin: bool = False, created: str | None = None) → list[Note]
 9317 9323 143
 
 ### outrage.remount.notes_for_unmount(after: MountedStore, prefix: str, \*, started: bool = True) → list[Note]
-11170 11178 169
+11460 11468 173

@@ -140,7 +140,7 @@ unreachable for as long as it was mounted.
 
 Close every store the live table holds.
 
-### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/builtins/functions.html#bool), builtin: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, created: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+### outrage.remount.notes_for_mount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, replaced: [bool](https://docs.python.org/3/builtins/functions.html#bool), reopened: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, builtin: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, created: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What a mount is worth remarking on, as codes and facts.
 
@@ -152,6 +152,10 @@ stderr at startup since mounts existed, where a tool caller could not read
 it. And a mount at a point something already held has *replaced* it, which
 is the rule a tool call makes unambiguous in a way two configuration
 sources do not.
+
+`reopened` is a mount at a point held by a store that could not be
+opened, which is not a replacement: nothing was open there to be displaced,
+and saying so would send the caller looking for what they lost.
 
 `created` is the path of a writable store that did not exist before this
 call opened it. Dynamic mounts are an MCP-only operation, so this is the

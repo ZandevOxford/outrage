@@ -68,7 +68,7 @@ How much document text that log keeps, or None when there is no log.
 
 The stores behind the namespace, as they were opened.
 
-### *class* outrage.info.MountInfo(mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str), path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), kind: [str](https://docs.python.org/3/builtins/stdtypes.html#str), read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool), versioned: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, target: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
+### *class* outrage.info.MountInfo(mount: [str](https://docs.python.org/3/builtins/stdtypes.html#str), path: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), kind: [str](https://docs.python.org/3/builtins/stdtypes.html#str), read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool), versioned: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, target: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, unavailable: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -86,12 +86,15 @@ somebody elsewhere can act on it.
 
 #### kind *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-[`ROOT_KIND`](mounts.md#outrage.mounts.ROOT_KIND), [`MOUNT_KIND`](mounts.md#outrage.mounts.MOUNT_KIND) or
-[`READ_ONLY_MOUNT_KIND`](mounts.md#outrage.mounts.READ_ONLY_MOUNT_KIND).
+[`ROOT_KIND`](mounts.md#outrage.mounts.ROOT_KIND), [`MOUNT_KIND`](mounts.md#outrage.mounts.MOUNT_KIND),
+[`READ_ONLY_MOUNT_KIND`](mounts.md#outrage.mounts.READ_ONLY_MOUNT_KIND) or
+[`UNAVAILABLE_MOUNT_KIND`](mounts.md#outrage.mounts.UNAVAILABLE_MOUNT_KIND).
 
 #### read_only *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-Whether this process refuses writes routed here.
+Whether this process refuses writes routed here. For an unavailable
+mount, whether it was asked for read-only: it refuses everything either
+way, and the report still has to say what it will be once it opens.
 
 #### versioned *: [bool](https://docs.python.org/3/builtins/functions.html#bool) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
@@ -107,6 +110,12 @@ which reads as *switched* off -- as though it could be on.
 Where a store reached over a connection is -- its service, schema and
 connection parameters, secrets redacted -- or None for one kept in the
 file [`path`](#outrage.info.MountInfo.path) names. See [`outrage.store.FileStore.target`](store.md#outrage.store.FileStore.target).
+
+#### unavailable *: [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)] | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+Why the store could not be opened, as the failure's code and details,
+or None for one that did. Facts rather than a sentence, so each front end
+renders it for its own reader.
 
 ### outrage.info.describe(opened: [Store](store.md#outrage.store.Store), \*, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [Info](#outrage.info.Info)
 

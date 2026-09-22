@@ -757,6 +757,7 @@ def _remounted(store, tmp_path) -> list[list[Note]]:
         return [
             remount.notes_for_mount(before, "ref", replaced=True),
             remount.notes_for_mount(before, "ref", replaced=False, builtin=True),
+            remount.notes_for_mount(before, "ref", replaced=False, reopened=True),
             remount.notes_for_mount(
                 before,
                 "new",

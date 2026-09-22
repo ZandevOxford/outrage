@@ -26,6 +26,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from . import __version__, config, eventlog, keys
 from . import mounts as mounts_module
@@ -47,11 +48,14 @@ class MountInfo:
     somebody elsewhere can act on it."""
 
     kind: str
-    """:data:`~outrage.mounts.ROOT_KIND`, :data:`~outrage.mounts.MOUNT_KIND` or
-    :data:`~outrage.mounts.READ_ONLY_MOUNT_KIND`."""
+    """:data:`~outrage.mounts.ROOT_KIND`, :data:`~outrage.mounts.MOUNT_KIND`,
+    :data:`~outrage.mounts.READ_ONLY_MOUNT_KIND` or
+    :data:`~outrage.mounts.UNAVAILABLE_MOUNT_KIND`."""
 
     read_only: bool
-    """Whether this process refuses writes routed here."""
+    """Whether this process refuses writes routed here. For an unavailable
+    mount, whether it was asked for read-only: it refuses everything either
+    way, and the report still has to say what it will be once it opens."""
 
     versioned: bool | None = None
     """Whether this store keeps what a write replaces and a delete takes, or
@@ -65,6 +69,11 @@ class MountInfo:
     """Where a store reached over a connection is -- its service, schema and
     connection parameters, secrets redacted -- or None for one kept in the
     file :attr:`path` names. See :attr:`outrage.store.FileStore.target`."""
+
+    unavailable: dict[str, Any] | None = None
+    """Why the store could not be opened, as the failure's code and details,
+    or None for one that did. Facts rather than a sentence, so each front end
+    renders it for its own reader."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -158,6 +167,15 @@ def mount_infos(opened: Store) -> tuple[MountInfo, ...]:
 
 def _mount(mount: mounts_module.Mount) -> MountInfo:
     """One mount as a report names it."""
+    if isinstance(mount.store, mounts_module.UnavailableStore):
+        closed = mount.store
+        return MountInfo(
+            mount=mount.name,
+            path=None,
+            kind=mount.kind,
+            read_only=closed.requested_read_only,
+            unavailable=closed.reason,
+        )
     return MountInfo(
         mount=mount.name,
         path=(

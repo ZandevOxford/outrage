@@ -285,6 +285,11 @@ class UnavailableStore(Store):
         """Whether the mount was asked for read-only, which a report of the
         table still has to say although nothing here is ever written."""
 
+    @property
+    def reason(self) -> dict[str, Any]:
+        """:attr:`error` as facts an outer error or a report can carry."""
+        return _reason(self.error)
+
     def refuse(self, key: str | None = keys.ROOT) -> NoReturn:
         """Raise the refusal for a call about ``key``, in this store's own namespace.
 
@@ -296,7 +301,7 @@ class UnavailableStore(Store):
             "mount-unavailable",
             at=self._log_key(key),
             mount=self.mount_point,
-            reason=_reason(self.error),
+            reason=self.reason,
         )
 
     def _refuse(self, key: Any = keys.ROOT, *_args: Any, **_kwargs: Any) -> Any:
@@ -2144,7 +2149,7 @@ def refuse_unavailable(opened: Store, key: str | None, action: str) -> None:
         key=found.outer,
         mount=first.prefix,
         mounts=[mount.prefix for mount in crossed],
-        reason=_reason(first.store.error),
+        reason=first.store.reason,
         action=action,
     )
 

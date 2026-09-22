@@ -621,10 +621,11 @@ a built-in needs nothing written down because startup restores it.
 
 - `mount` (string; required) — The mount point, '/' for the root
 - `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
-- `kind` (string; required) — 'root', 'mount' or 'read-only mount'
+- `kind` (string; required) — 'root', 'mount', 'read-only mount' or 'unavailable mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
 - `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to
 - `target` (object[string, string] or null; optional) — Present only for a store reached over a connection: its service, schema and connection parameters, with every secret redacted
+- `unavailable` (string or null; optional) — Present only for a store that could not be opened: why. Everything below it is refused until it is mounted again
 
 ## `unmount`
 
@@ -664,10 +665,11 @@ this server; a mount configuration file is what survives a restart.
 
 - `mount` (string; required) — The mount point, '/' for the root
 - `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
-- `kind` (string; required) — 'root', 'mount' or 'read-only mount'
+- `kind` (string; required) — 'root', 'mount', 'read-only mount' or 'unavailable mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
 - `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to
 - `target` (object[string, string] or null; optional) — Present only for a store reached over a connection: its service, schema and connection parameters, with every secret redacted
+- `unavailable` (string or null; optional) — Present only for a store that could not be opened: why. Everything below it is refused until it is mounted again
 
 ## `info`
 
@@ -713,7 +715,8 @@ None.
 
 - `mount` (string; required) — The mount point, '/' for the root
 - `path` (string or null; required) — Absolute path of the file this store is kept in, or null for a store that keeps none
-- `kind` (string; required) — 'root', 'mount' or 'read-only mount'
+- `kind` (string; required) — 'root', 'mount', 'read-only mount' or 'unavailable mount'
 - `read_only` (boolean; required) — Whether this server refuses writes routed here
 - `versioned` (boolean; optional) — Present, and false, only where this store could keep the earlier versions of what is overwritten or deleted and has been told not to
 - `target` (object[string, string] or null; optional) — Present only for a store reached over a connection: its service, schema and connection parameters, with every secret redacted
+- `unavailable` (string or null; optional) — Present only for a store that could not be opened: why. Everything below it is refused until it is mounted again

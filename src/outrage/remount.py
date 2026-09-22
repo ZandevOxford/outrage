@@ -195,11 +195,12 @@ class Live:
                     lent=[prefix] if builtin and builtin.lent else [],
                     builtin=[prefix] if builtin else [],
                 )
-                replaced = prefix in {mount.prefix for mount in self._table}
+                held = {mount.prefix: mount for mount in self._table}
                 notes = notes_for_mount(
                     after,
                     prefix,
-                    replaced=replaced,
+                    replaced=prefix in held and not held[prefix].unavailable,
+                    reopened=prefix in held and held[prefix].unavailable,
                     builtin=builtin is not None,
                     created=str(mount_path) if created else None,
                 )
@@ -291,6 +292,7 @@ def notes_for_mount(
     prefix: str,
     *,
     replaced: bool,
+    reopened: bool = False,
     builtin: bool = False,
     created: str | None = None,
 ) -> list[Note]:
@@ -304,6 +306,10 @@ def notes_for_mount(
     it. And a mount at a point something already held has *replaced* it, which
     is the rule a tool call makes unambiguous in a way two configuration
     sources do not.
+
+    ``reopened`` is a mount at a point held by a store that could not be
+    opened, which is not a replacement: nothing was open there to be displaced,
+    and saying so would send the caller looking for what they lost.
 
     ``created`` is the path of a writable store that did not exist before this
     call opened it. Dynamic mounts are an MCP-only operation, so this is the
@@ -323,6 +329,8 @@ def notes_for_mount(
         notes.append(Note("mount-created-store", mount=prefix, path=created))
     if replaced:
         notes.append(Note("mount-replaced-another", mount=prefix))
+    if reopened:
+        notes.append(Note("mount-reopened", mount=prefix))
     if any(mount.prefix == prefix for mount in after.shadowing()):
         notes.append(Note("mount-shadows-keys", mount=prefix))
     # Two appends rather than one with the code chosen inline: `test_notes.py`
