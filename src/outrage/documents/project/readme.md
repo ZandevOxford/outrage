@@ -11,7 +11,7 @@ coding harnesses such as Claude Code, Codex, Cursor, and Copilot CLI.
 * LLM search - LLM subagents add summary and keyword metadata to documents, and
   LLM subagents can search documents and metadata.
 * Multiple data stores including parquet based stores for large-scale reference
-  material.
+  material, and a PostgreSQL store shared by several devices.
 * Explicit support for command-line coding agents: Claude Code, OpenAI Codex
   CLI, Cursor Agent, and GitHub Copilot CLI.
 * Command line tools for manipulating the data stores.
@@ -76,7 +76,7 @@ well, so the links below work here too.
 
 * **MCP server** - Python, stdio, for local use. Exposes the store as tools.
 * **Data store** - a Python library, independent of MCP so that it can be tested
-  and reused on its own. One interface with four backends behind it, each
+  and reused on its own. One interface with five backends behind it, each
   named for how it reads, and which one a store *file* uses follows from its
   extension. **SQLite** is the read-write default: a store accumulated a
   document at a time, which is what session context and notes on a codebase
@@ -88,7 +88,9 @@ well, so the links below work here too.
   writes, which is the storage rather than a setting. **Files** is a directory
   with one file per key,
   which is what `outrage export` already wrote: the tree a person edits by hand,
-  readable as a store rather than only as a transfer.
+  readable as a store rather than only as a transfer. **PostgreSQL** is the one
+  store that is not on this machine: read-write, shared by every device that
+  can reach the server, and asked for with `type=postgres`.
 * **Client integrations** - packaged project skills and agents for Claude Code,
   OpenAI Codex CLI and GitHub Copilot CLI, plus a session-start hook for each.
   They cover when to store and retrieve, the key conventions, and the moment a
@@ -100,7 +102,8 @@ well, so the links below work here too.
 * **Backup** - `outrage backup` copies the database through SQLite and checks
   what it wrote. In the library rather than the tool, because a store in WAL
   mode keeps recent writes in a sidecar file and copying the `.sqlite` alone
-  yields a near-empty database that still opens cleanly.
+  yields a near-empty database that still opens cleanly. A PostgreSQL store is
+  copied into a local SQLite file instead, so the backup opens with no server.
 
 ## Parquet stores
 
@@ -126,3 +129,63 @@ The last reads every `.parquet` file directly inside a directory, which has no
 extension to say which backend it needs. `type=pyarrow` reads a single file with
 pyarrow instead, which is also what still opens a file written by `outrage`
 before 0.4.0.
+
+## A shared PostgreSQL store
+
+One store, on a server, shared by every device that can reach it - a laptop and
+a desktop working from the same memory rather than from two that drift. It
+needs the extra:
+
+`pip install "outrage[postgres]"`
+
+**The connection details are not outrage's to hold.** A mount names a libpq
+[connection service
+file](https://www.postgresql.org/docs/current/libpq-pgservice.html) - the
+standard file `psql` and everything else that speaks libpq already read - and
+an entry in it:
+
+```ini
+# ~/.pg_service.conf
+[outrage]
+host=db.example.com
+dbname=memory
+user=me
+sslmode=verify-full
+```
+
+`outrage-server --mount shared=~/.pg_service.conf,type=postgres`
+
+The file may be absolute or start with `~`, unlike every other backend's store
+file, which is a name inside `--dir`: this one is a connection's configuration
+rather than the store, and the standard place for it is the home directory.
+Leave it out entirely - `--mount shared=,type=postgres` - for libpq's own
+lookup. `service=NAME` names a different entry; the default is `outrage`.
+
+**The store is the connection's schema**, so one database holds as many stores
+as you like, each asked for with libpq's own spelling:
+
+```ini
+options=-csearch_path=memory
+```
+
+The schema and its tables are created on first open. `outrage schema status`
+reports the version a store is at and what this build would do with it, and
+`outrage schema create --version N` makes a blank one at a chosen version - for
+a team whose oldest client is behind. A client never migrates a shared store by
+opening it: it operates at the version it finds, and changing that is a command
+somebody runs.
+
+**No password ever appears in output.** Passwords belong in the service file,
+or better in `~/.pgpass` or `PGPASSWORD`, and outrage never writes one down:
+`outrage info`, `outrage check`, `outrage schema status` and every error
+report name the service, host, database, user and schema, and show any secret
+as `(not shown)`.
+
+`outrage check shared` reports the schema version, its floors and the state of
+the store; `outrage backup shared` writes a consistent snapshot into a local
+`.sqlite` file, which opens, mounts and checks with no server at all.
+
+A server that cannot be reached leaves that mount unavailable and every other
+mount working, so a laptop off the network still starts. A service file that
+cannot be read, a login the server rejects, or a database that is not there is
+a mistake in the configuration and stops the start instead.

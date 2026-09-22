@@ -3,10 +3,12 @@
 ## Currently implemented
 
 Environment: Python 3.12 or later, which is what `requires-python` asks for.
-Developed against SQLite 3.53 and, for the optional pyarrow backend, pyarrow 25.
-Package installed in editable mode with `pip install -e ".[dev]"`; the parquet
-backend needs `.[parquet]` as well. 2049 tests and 20 doctests passing,
-`ruff check .` clean, as of 2026-09-05. Doctests are not in
+Developed against SQLite 3.53 and, for the optional backends, pyarrow 25 and
+psycopg 3.3 against PostgreSQL 18. Package installed in editable mode with
+`pip install -e ".[dev]"`; the parquet backend needs `.[parquet]` as well and
+the PostgreSQL one `.[postgres]`. 3224 tests and 24 doctests passing,
+`ruff check .` clean, as of 2026-09-22. The PostgreSQL tests need a server:
+without `OUTRAGE_TEST_POSTGRES` they skip, and 2821 tests run. Doctests are not in
 `testpaths` and need a second run: `pytest --doctest-modules src/outrage`.
 `ruff format --check` is clean across the tree as well, since the whole
 repository was brought up to the formatter.
@@ -168,7 +170,7 @@ so what a store costs does not grow with the corpus. Named rather than inferred,
 since a directory has no extension: `--mount-ro ref=parts,type=duckdb`.
 
 Reads are the SQLite backend's SQL over a view of the parts, sharing its range,
-subtree and metadata clauses, so the three backends are one namespace by
+subtree and metadata clauses, so the SQL backends are one namespace by
 construction as well as by test. A listing groups the rows below a key by their
 next segment, which costs the subtree rather than the level - the one read here
 not bounded by what it returns. Measured against the pyarrow backend at
@@ -201,6 +203,56 @@ wildcard.
 It is checked the way the pyarrow backend is, with the same corpus and battery
 dealt at random across shuffled parts, and with a key repeated across parts
 paged through at every limit.
+
+### 2c. PostgreSQL backend - `src/outrage/store_postgres.py` - done
+
+The fifth implementation of `Store`, read-write, and the first whose store is
+not a file on this machine: a schema on a server, shared by several devices.
+The design is `design.md`, **A store on a server**; what is worth recording
+here is what building it cost.
+
+The predicates are the SQLite backend's own functions - the range, subtree and
+metadata clauses - so a selection cannot come to mean two things. What is not
+shared is the shape of a read: each operation is one or two statements, since
+every statement is a round trip. A level walk is a recursive-CTE loose index
+scan, a listing's totals and its page come back from the statement that walks
+it, a bulk read is cut to its cap on the server, and a byte or line read
+fetches a 1 MiB window checked by `xmin`, so a document rewritten between two
+windows is read again whole rather than stitched.
+
+Four things were measured rather than assumed, and each changed the code. The
+test database's collation orders ordinary keys differently from Python and the
+two orders share no prefix, so every text column declares `COLLATE "C"`.
+`current_schema()` is NULL when the search path names a schema that does not
+exist, which is the first open, so the schema is read from `current_schema()`
+first and the search path's first entry only when there is none. psycopg
+carries no SQLSTATE on a failed connect, so a rejected login and a missing
+database are told apart by the server's English text and a server answering in
+another language falls back to "unreachable" - which is tolerated, and so the
+safe way to be wrong. And psycopg's automatic prepared statements survive a
+transaction the server aborted, so a serialization retry named a prepared
+statement that no longer existed; they are off.
+
+The archive is a `BEFORE UPDATE`/`BEFORE DELETE` row trigger rather than a
+client-side copy, because two writers to one key are not an insert conflict and
+nothing on the client could keep both of the versions they replaced. A statement
+trigger beside it refuses a session below the store's write floor. Writes are
+`SERIALIZABLE` with a bounded retry, except a `?` allocation, which locks the
+number it is claiming at `READ COMMITTED` and moves on to the next rather than
+waiting. `BEGIN` and `COMMIT` are queued in the pipeline with the statements
+between them, so an ordinary write is one round trip rather than three.
+
+`outrage check` reports the schema version, its floors, what this build would
+do on open, the archive's size and whether the triggers are all there - a
+missing one being the single fault here that nothing fails on. Repair does
+nothing, deliberately: the storage has no log to fold back and no cache to go
+stale, and recreating a trigger is a change to a schema other clients share.
+A backup is a snapshot into a local SQLite file, which is the only copy that
+opens without the server.
+
+The suite runs against a DSN in `OUTRAGE_TEST_POSTGRES`, a schema per test, and
+carries a `postgres` mark so `-m "not postgres"` is a full run without a
+server. `test_store.py`'s contract runs against this backend like any other.
 
 ### 3. MCP server - `src/outrage/server.py` - done
 

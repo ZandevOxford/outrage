@@ -8,7 +8,20 @@ A PostgreSQL backend, `type=postgres` (or `type=postgresql`), for one store
 shared by several devices. It needs the `postgres` extra. A mount names a libpq
 service file and an entry in it, as in
 `--mount shared=~/.pg_service.conf,type=postgres,service=outrage`, and the
-store is the connection's schema, created with its tables on first open. `info`
+store is the connection's schema, created with its tables on first open. The
+entry is libpq's own, and names the schema with libpq's own spelling:
+
+```ini
+[outrage]
+host=db.example.com
+dbname=memory
+user=me
+sslmode=verify-full
+options=-csearch_path=memory
+```
+
+A schema is created when it is not there, so the first open of a store makes
+both. With no `options`, the store is whatever schema the connection lands in. `info`
 reports each such mount's service, schema and connection parameters, with every
 secret replaced by `(not shown)`. A read-only mount of a schema holding no store
 is refused rather than created, as for every other backend. The MCP `mount` tool

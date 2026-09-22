@@ -39,9 +39,11 @@ ref = "reference.sqlite"      # writes here are refused
 ```
 
 An entry is a store file, or a table saying more about one. `type` is which
-backend keeps it - `sqlite`, `duckdb`, `pyarrow` or `files`, with `parquet` as
-another name for `duckdb` - and it is needed only where the name cannot say: a
-directory has no extension to read. The same
+backend keeps it - `sqlite`, `duckdb`, `pyarrow`, `files` or `postgres`, with
+`parquet` as another name for `duckdb` and `postgresql` for `postgres` - and it
+is needed only where the name cannot say: a directory has no extension to read,
+and a PostgreSQL store is named by a connection's service file rather than by a
+file of its own. The same
 option is written after a comma when it is typed, as `--mount
 docs=docs,type=files` or `--store docs,type=files`, so one mount is still one
 argument and overriding an entry still replaces it whole.
@@ -61,7 +63,24 @@ namespace the MCP server serves.
 prefix in that namespace, including between mounted stores; `--reroot` lands it
 *at* TARGET instead of beneath its own source key, which is what moving a
 subtree to another key needs.
-`outrage check` and `backup` are about one file and say which with `--store`.
+`outrage check` and `backup` are about one store, and name which by mount
+point - `outrage check ref` - or act on the root when none is named. `--store`
+names the root's file as it does everywhere else.
+
+A PostgreSQL mount names a libpq service file and an entry in it, which may sit
+outside the store directory:
+
+```toml
+[mount]
+shared = { path = "~/.pg_service.conf", type = "postgres", service = "outrage" }
+```
+
+The tests for it need a server. Set `OUTRAGE_TEST_POSTGRES` to a DSN -
+`postgresql://user@localhost/outrage_test` - and they run against a schema of
+their own per test, dropped afterwards; without it they skip. They all carry a
+`postgres` mark, so `pytest -m "not postgres"` is a full run on a machine with
+no server at all, and `pip install -e ".[dev]"` brings in `pytest-postgresql`
+for a machine that has the PostgreSQL binaries but no server running.
 
 Outrage ships its own documentation as a store inside the package - a readme,
 and documents on keys, the tools, the command line and the conventions - mounted

@@ -5,13 +5,16 @@
 235 235 7
 
 ## Getting started
-790 790 19
+840 840 19
 
 ## Documentation
-1639 1639 47
+1689 1689 47
 
 ## Components
-3321 3321 75
+3371 3371 75
 
 ## Parquet stores
-5325 5326 105
+5639 5640 108
+
+## A shared PostgreSQL store
+6517 6518 133

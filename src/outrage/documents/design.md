@@ -41,7 +41,7 @@ can be tested and reused on its own.
 **The interface and the backend are separate modules.** `outrage.store` says
 what a store is - the operations, the value types every answer comes back as,
 and the two ways a call bounds what it is asking about - as an abstract `Store`.
-There are four **backends**. `outrage.store_sqlite` is the read-write one -
+There are five **backends**. `outrage.store_sqlite` is the read-write one -
 the schema, its migrations, the connection handling, and the SQL - and is what
 a store is opened as when its file says nothing else. `outrage.store_pyarrow`
 is one columnar file, written whole and read many times, for a reference base
@@ -55,7 +55,10 @@ for it with `type=pyarrow`. `outrage.store_files` is a directory of files, one p
 key, which is what an export target and a working copy already were - the same
 mapping `outrage.bulk` writes a tree with, expressed as a store, so that moving
 documents between a database and a directory is a copy rather than a fourth
-hand-written walker.
+hand-written walker. `outrage.store_postgres` is the one whose store is not on
+this machine - a schema on a server, read-write, shared by every device that
+can reach it - and is asked for with `type=postgres`; see **A store on a
+server** below.
 
 **Moving documents in bulk is one operation, and it is a method on the store
 being written to.** `Store.copy_from` takes a source store, the same subtree
@@ -75,8 +78,8 @@ half-built file written whole looks like as a copy target is not settled.
 what any store answers: keys, ranges, subtrees, pages, excerpts. `FileStore` is
 the half that needs somewhere on disk to answer from - where it lives, which
 version of its format wrote it, how it is backed up, and what a check can say
-about the storage rather than about the keys. The three backends are
-`FileStore`s. A mount table is not, and that is the point of the split: it kept
+about the storage rather than about the keys. Every backend is a
+`FileStore`. A mount table is not, and that is the point of the split: it kept
 eleven members whose only job was to raise "a mount table has no file of its
 own", which is a class spelling out in eight declarations what one line of its
 inheritance says. A caller wanting a file asks with `isinstance`.
@@ -166,6 +169,76 @@ store in it is named relative to it.
 
 The event log, when it is on, is `log.jsonl` in the same directory. It is the
 first use of the room the directory was created to leave.
+
+**One backend relaxes the relative-only rule, and it is the one whose file is
+not the store**: a PostgreSQL mount names a libpq service file, which may be
+absolute or start with `~`. See below.
+
+#### A store on a server
+
+The one store that is not on this machine: a schema in a PostgreSQL database,
+read-write, shared by every device that can reach it, for a memory that does
+not drift between a laptop and a desktop. What is settled here is settled by
+that one difference - several clients, none of which is the owner of the store.
+
+**The connection details live in libpq's own file.** A mount names a
+`pg_service.conf` and an entry in it, not a format of outrage's own, because
+that file already exists on the machines this runs on and is already read by
+`psql` and everything else that speaks libpq. It follows that the file may be
+outside `--dir`: the standard one is in the home directory, and a copy of it
+inside the store directory would be a second place for a password to live.
+The service name is given separately and defaults to `outrage`. **No output
+ever shows a secret** - the reports name the service, the file, the host, the
+database, the user and the schema, and nothing else.
+
+**The store is the connection's current schema**, asked for with libpq's own
+`options=-csearch_path=NAME`, so one database holds as many stores as somebody
+wants and outrage adds no setting to say which. A first open creates the schema
+and its tables.
+
+**A shared store is never migrated by opening it.** A build opens the store at
+the version it finds and writes that version's shape, between the oldest it
+supports and the newest it knows; changing the version is a command somebody
+runs. The store records three numbers - its version, and the oldest client
+version that may read it and write it - so a build too old to write it opens
+read-only with a reason rather than corrupting it, and one too old to read it
+is refused. The floors are enforced at the server as well, by a trigger, so a
+session that connected before a migration is stopped at its next write rather
+than at its next restart.
+
+**The server's clock stamps writes.** Two devices with skewed clocks would
+otherwise let a precondition pass over a newer write, so a write that names no
+time is stamped inside the statement that writes it, and a watermark is read
+from the same clock.
+
+**Ordering is declared rather than inherited.** Every cursor, range and page in
+outrage assumes keys sort bytewise, which an ordinary Postgres database does
+not do, so every text column here carries `COLLATE "C"`. Without it a store
+pages wrongly on the first listing, and nothing else would say so.
+
+**What one SQLite transaction gets by holding the file has to be arranged in
+three parts**: the archive is a row trigger, so two writers to one key each
+keep the version they replaced and any client - `psql` included - archives the
+same way; a `?` allocation locks the number it is claiming rather than its
+parent; and every other write is serializable and retried, which is the net
+under anything that reads, decides and writes.
+
+**Round trips are the cost model.** The server may be on another continent, so
+each operation is one or two statements where the SQLite backend would issue a
+loop of cheap ones: a level walk is a recursive query, a listing's totals and
+its page come back together, and a byte read fetches only the window it asked
+for.
+
+**A backup is a local SQLite file**, not a copy of the schema, because the
+point of backing up a shared store is a copy that opens on a machine that
+cannot reach the server. It is read in one snapshot, archive included, and
+verified against that snapshot rather than against the live store, which
+somebody else's writes have moved on by then.
+
+**A server that cannot be reached is not a configuration error.** The mount is
+unavailable and the rest of the table works, so an offline laptop still starts.
+A service file that cannot be used, a login the server rejects and a database
+that is not there are mistakes in the configuration, and stop the start.
 
 ### Mounted stores
 
