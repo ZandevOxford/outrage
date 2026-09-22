@@ -2117,17 +2117,17 @@ def _ls_command(args: argparse.Namespace, out: TextIO) -> int:
 
 
 #: The ordinary listing line, unchanged: the leading columns are narrower than
-#: their widest value, so `read-only mount` and a timestamp both push the key
+#: their widest value, so a mount's kind and a timestamp both push the key
 #: right. That is harmless where the key is the last column and reads as a
 #: ragged left edge on one field.
 _LS_PLAIN = "{0:<9} {1:>8}  {2:<20}  {3}"
 
 #: The same line where descendant columns follow, widened to the values that
-#: actually occur -- `read-only mount` is fifteen characters and an ISO
-#: timestamp is twenty-five. A column of integers that does not line up cannot
+#: actually occur -- `unavailable mount` is seventeen characters and an ISO
+#: timestamp twenty-nine with its milliseconds. A column of integers that does not line up cannot
 #: be read down, which is the one thing these columns are for, so the overflow
 #: the plain listing tolerates is not tolerable here.
-_LS_WIDE = "{0:<15} {1:>8}  {2:<25}  {3}"
+_LS_WIDE = "{0:<17} {1:>8}  {2:<29}  {3}"
 
 #: The two count columns and the character column, used for the header and the
 #: row alike so a heading cannot drift from what it names.

@@ -3510,6 +3510,13 @@ def test_a_listing_and_info_show_a_mount_that_could_not_be_opened(tmp_path, caps
     assert status == 0
     assert "gone" in output
 
+    # The kind is the widest there is, a stamp with milliseconds the widest
+    # time, and the counts still line up under both.
+    status, output = run("ls", "--counts", *line)
+    rows = output.splitlines()
+    assert status == 0
+    assert len({len(row) - len(row.split()[-1]) for row in rows}) == 1, rows
+
     status, output = run("info", *line)
     assert status == 0
     row = next(line for line in output.splitlines() if line.startswith("gone"))

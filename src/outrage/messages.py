@@ -1429,8 +1429,9 @@ def _mount_unavailable(
 ) -> str:
     # `at` is the key asked about, which may be the mount point itself or
     # anywhere below it; naming it only when it differs keeps the common case
-    # to one name.
-    asked = "" if at == mount else f"cannot reach {keys.displayed(at)!r}: "
+    # to one name. The nested reason often opens "cannot reach", so this does
+    # not.
+    asked = "" if at == mount else f"{keys.displayed(at)!r} is unavailable: "
     return (
         f"{asked}the store mounted at {keys.displayed(mount)!r} could not be "
         f"opened, so nothing at or below it can be read or written "

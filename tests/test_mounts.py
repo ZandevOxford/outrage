@@ -1924,7 +1924,7 @@ def test_a_write_under_a_closed_mount_is_refused_rather_than_landing_beneath(tmp
     with a_table_with_a_closed_mount(tmp_path) as table:
         with raises_rendered(
             MountUnavailableError,
-            r"cannot reach 'gone/note': the store mounted at 'gone' could not be opened"
+            r"'gone/note' is unavailable: the store mounted at 'gone' could not be opened"
             r".*has no store at",
         ) as raised:
             table.store_document("gone/note", "written while it was away")
