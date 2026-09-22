@@ -71,11 +71,17 @@ Cached document lengths describing documents that have since changed.
 
 Metadata whose document does not exist. Legal, and worth naming.
 
-### outrage.maintenance.PROBLEM_CODES *= ('format-too-new', 'format-older', 'keys-too-deep', 'rows-under-wrong-key', 'metadata-without-document', 'database-damaged', 'length-cache-stale', 'wal-uncheckpointed', 'files-not-keys', 'keys-doubled', 'files-not-text', 'rows-out-of-order')*
+### outrage.maintenance.PROBLEM_CODES *= ('format-too-new', 'format-older', 'keys-too-deep', 'rows-under-wrong-key', 'metadata-without-document', 'database-damaged', 'length-cache-stale', 'wal-uncheckpointed', 'files-not-keys', 'keys-doubled', 'files-not-text', 'rows-out-of-order', 'read-only-to-this-build', 'triggers-missing')*
 
 Every code above. For a caller deciding what it can act on, and for the
 guard in `tests/test_maintenance.py` that keeps the list complete: a code
 constant this does not name is one nothing has agreed to.
+
+### outrage.maintenance.READ_ONLY_TO_THIS_BUILD *= 'read-only-to-this-build'*
+
+A shared store whose write floor is above this build, so this build may
+read it and not write it. Not a fault in the store: another client
+migrated it, and a newer build writes it.
 
 ### outrage.maintenance.ROWS_OUT_OF_ORDER *= 'rows-out-of-order'*
 
@@ -84,6 +90,12 @@ Rows not in sort order, which every read bisects and so answers wrongly.
 ### outrage.maintenance.ROWS_UNDER_WRONG_KEY *= 'rows-under-wrong-key'*
 
 Rows whose stored `parent` disagrees with the key they are stored under.
+
+### outrage.maintenance.TRIGGERS_MISSING *= 'triggers-missing'*
+
+The triggers a server-side store keeps its archive and its write floor
+with are missing or disabled, so a write through any client can replace a
+version without keeping it, or come from a build the floor should refuse.
 
 ### outrage.maintenance.WAL_UNCHECKPOINTED *= 'wal-uncheckpointed'*
 

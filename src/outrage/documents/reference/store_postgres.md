@@ -77,12 +77,12 @@ parts rather than one.
   it could not be serialised. The net under any read-decide-write that the
   two targeted fixes do not cover, a delete's `unchanged_since` among them.
 
-## What is *not* here yet
+## A backup is a SQLite file
 
-The maintenance half of the interface: [`PostgresStore.check_file()`](#outrage.store_postgres.PostgresStore.check_file)
-and [`PostgresStore.repair()`](#outrage.store_postgres.PostgresStore.repair) raise [`NotImplementedError`](https://docs.python.org/3/builtins/exceptions.html#NotImplementedError), so
-`outrage check` over a PostgreSQL mount fails with a traceback rather than a
-report.
+The one thing a store on a server cannot give its operator is a copy they can
+open without it. So [`PostgresStore.backup()`](#outrage.store_postgres.PostgresStore.backup) reads the store in one
+snapshot and writes it into a local SQLite store, archive included, which can
+be opened, mounted and checked on a machine that cannot reach the server.
 
 ### outrage.store_postgres.ARCHIVE_TABLE *= 'document_archive'*
 
@@ -162,6 +162,10 @@ Where the three numbers live at the Postgres end.
 
 The newest schema this build knows -- `F`. What a store created by this
 build is created at, and what this build declares to the server.
+
+### outrage.store_postgres.TRIGGER_NAMES *= ('outrage_write_floor', 'outrage_archive_update', 'outrage_archive_delete')*
+
+The triggers a store is kept by, by name, for a check to look for.
 
 ### outrage.store_postgres.VERSIONING_OFF *= 'off'*
 
@@ -571,33 +575,66 @@ hold a transaction open for as long as the caller took to walk it --
 and a caller walking this may ask the store something else between two
 rows.
 
+#### *property* backup_suffix *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
+
+`.sqlite`, because that is what a backup of this store is.
+
+The base takes the store file's extension, which here would name the
+copy after the service file -- `store-<stamp>.conf`, a database
+dressed as somebody's configuration.
+
+#### backup(destination: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, overwrite: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Backup](store.md#outrage.store.Backup)
+
+A consistent snapshot of the store, written into a local SQLite store.
+
+**A SQLite file rather than a copy of the schema**, John's call: the
+point of a backup of a shared store is that it can be opened, mounted
+and checked on a machine that cannot reach the server, and nothing
+but a file on this machine does that. The two backends keep the same
+nine stored columns in the same order, so a row goes across as it is,
+`updated_at` and `sort_key` included, and so does the archive.
+
+**Consistent** because every row is read in one `REPEATABLE READ`
+transaction: several devices write this store, and a copy read over
+several transactions could hold a document without the metadata
+written beside it. The rows stream through a server-side cursor
+rather than being fetched whole, since a store worth backing up is one
+it would be foolish to hold in memory.
+
+Verified against **the snapshot rather than the live store**, which
+is the other half of being shared: the base's check compares the copy
+with the store as it is by the time the copy is finished, and here
+that is somebody else's writes away from the copy. So the snapshot's
+own keys and counts are what the copy is held to, and SQLite's
+integrity check says the file is sound.
+
 #### check_file(report: [Report](maintenance.md#outrage.maintenance.Report)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
-Add what only this backend can say about its own file.
+The schema's numbers, what this build makes of them, and the triggers.
 
-Called by [`outrage.maintenance.check()`](maintenance.md#outrage.maintenance.check) once the checks that any
-backend can answer have run. Those are about rows and keys; this is
-about *storage* -- whether SQLite still considers the database sound,
-how much of it is sitting in the write-ahead log, whether a parquet
-file is still in the sort order every read of it bisects.
+**The version and the floors come from** [`schema_state()`](#outrage.store_postgres.PostgresStore.schema_state), which
+is also what `outrage schema status` prints: two reports reaching
+the same decision separately is how they come to disagree. A store
+this build may only read is a note rather than a fault -- the store is
+sound, and it is this client that is behind it.
 
-Fills in [`details`](maintenance.md#outrage.maintenance.Report.details) with the numbers
-worth printing whether or not anything is wrong, and appends to
-`problems` for anything that is.
+**The triggers are the one thing about the storage that can be wrong
+without anything failing**, which is what the SQLite backend's check
+of its length cache is for too. Nothing in this package drops one, but
+the schema is on a server anybody with the role can alter, and a
+missing archive trigger loses every replaced version in silence.
+Reported and not repaired: recreating one is a change to a shared
+schema, which is the migration command's to make rather than a check's.
 
 #### repair() → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Repaired](maintenance.md#outrage.maintenance.Repaired)]
 
-Fix what [`check_file()`](#outrage.store_postgres.PostgresStore.check_file) found and this backend can act on.
+Nothing, and deliberately.
 
-Returns what was actually done, which may be nothing: a backend whose
-storage cannot get into a repairable state returns an empty list, and
-that is an honest answer rather than a silence. It is not the same
-answer as [`check_file()`](#outrage.store_postgres.PostgresStore.check_file) finding nothing -- one says there is
-nothing that *could* need repairing, the other that nothing does.
-
-Nothing here may lose a document. A repair moves bytes about; one that
-could discard content would need a backup taken first, and no backend
-offers such a repair.
+The storage has no state a repair could move about: there is no log
+to fold back and no cache to go stale, and the server keeps its own
+files. What a check can find wrong -- a missing trigger -- is a change
+to a schema other clients share, which is not a thing to do as a side
+effect of looking at it.
 
 ### *exception* outrage.store_postgres.ServiceUnusable(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 

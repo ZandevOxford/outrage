@@ -2257,18 +2257,14 @@ class FileStore(Store):
         Public so that a caller can report the destination, and hit the same
         refusals, without writing anything - which is what ``--dry-run`` needs.
 
-        The default name takes the store file's own extension rather than a
-        fixed one, so a backup of a store is recognisably the same kind of
-        thing as the store. Here rather than on a backend because the two
+        The default name takes its extension from :attr:`backup_suffix`
+        rather than a fixed one, so a backup of a store is recognisably the
+        kind of thing it is. Here rather than on a backend because the two
         refusals are the point of it, and neither is about storage: a
         destination that is the store itself destroys what it was copying, and
         one that already exists destroys whatever was there.
         """
-        # No extension for a store file that is not itself on disk -- a
-        # pattern -- whose copy is a directory: `store-<stamp>.parquet` as a
-        # directory would be matched by the very wildcard it was copied from.
-        suffix = self.path.suffix if self.path.exists() else ""
-        default_name = f"store-{time.strftime(BACKUP_STAMP)}{suffix}"
+        default_name = f"store-{time.strftime(BACKUP_STAMP)}{self.backup_suffix}"
         if destination is None:
             target = self.directory / BACKUP_DIR_NAME / default_name
         else:
@@ -2282,6 +2278,20 @@ class FileStore(Store):
         if target.exists() and not overwrite:
             raise BackupError("backup-exists", target=str(target))
         return target
+
+    @property
+    def backup_suffix(self) -> str:
+        """The extension a backup's default name takes.
+
+        The store file's own, so that a copy is recognisably the same kind of
+        thing as what it was copied from. A backend whose backup is a
+        different kind of thing -- a snapshot of a server kept in a local
+        file -- names that kind instead.
+        """
+        # No extension for a store file that is not itself on disk -- a
+        # pattern -- whose copy is a directory: `store-<stamp>.parquet` as a
+        # directory would be matched by the very wildcard it was copied from.
+        return self.path.suffix if self.path.exists() else ""
 
     @property
     @abstractmethod

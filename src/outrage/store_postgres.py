@@ -75,12 +75,12 @@ parts rather than one.
   it could not be serialised. The net under any read-decide-write that the
   two targeted fixes do not cover, a delete's ``unchanged_since`` among them.
 
-## What is *not* here yet
+## A backup is a SQLite file
 
-The maintenance half of the interface: :meth:`PostgresStore.check_file`
-and :meth:`PostgresStore.repair` raise :class:`NotImplementedError`, so
-``outrage check`` over a PostgreSQL mount fails with a traceback rather than a
-report.
+The one thing a store on a server cannot give its operator is a copy they can
+open without it. So :meth:`PostgresStore.backup` reads the store in one
+snapshot and writes it into a local SQLite store, archive included, which can
+be opened, mounted and checked on a machine that cannot reach the server.
 """
 
 from __future__ import annotations
@@ -90,6 +90,7 @@ import json
 import os
 import random
 import re
+import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -101,7 +102,7 @@ from typing import Any, Self, TypeVar
 from . import keys, pgservice
 from .errors import Refusal
 from .eventlog import EventLog
-from .maintenance import Repaired, Report
+from .maintenance import READ_ONLY_TO_THIS_BUILD, TRIGGERS_MISSING, Problem, Repaired, Report
 from .store import (
     DEFAULT_BULK_MAX_CHARS,
     DEFAULT_MAX_CHARS,
@@ -109,6 +110,8 @@ from .store import (
     UNBOUNDED,
     AuditRow,
     BackendError,
+    Backup,
+    BackupError,
     BoundedSubtree,
     Entry,
     Excerpt,
@@ -125,6 +128,7 @@ from .store import (
     Store,
     SubtreeTotals,
     _byte_excerpt,
+    _clear,
     _cursor_bound,
     _excerpt,
     _find_byte_occurrence,
@@ -141,7 +145,17 @@ from .store import (
     resolve_directory,
     store_file,
 )
-from .store_sqlite import _below, _meta_clauses, _range_clauses, _row_values, _subtree_clauses
+from .store_sqlite import ARCHIVE_TABLE as SQLITE_ARCHIVE
+from .store_sqlite import (
+    DEFAULT_STORE_FILE,
+    SqliteStore,
+    _below,
+    _meta_clauses,
+    _range_clauses,
+    _row_values,
+    _subtree_clauses,
+)
+from .store_sqlite import SCHEMA_VERSION as SQLITE_SCHEMA_VERSION
 
 _T = TypeVar("_T")
 
@@ -315,6 +329,9 @@ _ARCHIVE_INDEX = "CREATE INDEX IF NOT EXISTS idx_archive_key ON {archive} (key, 
 #: The stored columns of a row, in :func:`outrage.store_sqlite._row_values`'s order.
 _COLUMNS = "(key, doc_key, meta_name, meta_path, parent, content, format, updated_at, sort_key)"
 
+#: A SQLite placeholder for each of them, for a backup writing rows across.
+_PLACES = f"({', '.join('?' * len(_COLUMNS.split(',')))})"
+
 
 def _stamp_sql(moment: str) -> str:
     """SQL spelling the time ``moment`` as :func:`outrage.store._stamp` does.
@@ -436,6 +453,9 @@ _TRIGGERS = (
     "CREATE TRIGGER outrage_archive_delete BEFORE DELETE ON {documents} FOR EACH ROW "
     "EXECUTE FUNCTION {archive_function}()",
 )
+
+#: The triggers a store is kept by, by name, for a check to look for.
+TRIGGER_NAMES = tuple(re.match(r"CREATE TRIGGER (\w+)", one).group(1) for one in _TRIGGERS)
 
 #: The three numbers, and a unique index that makes the table hold exactly one
 #: row. Expressed as an index on a constant rather than as an extra column,
@@ -752,8 +772,9 @@ class PostgresStore(FileStore):
         ``create`` of False is the half of ``report`` a **read-only mount**
         needs: an empty schema is left empty, and the open is refused as
         ``postgres-read-only-missing`` rather than mounting a store no write
-        could ever fill. A version this build cannot operate at is refused as
-        on any other open.
+        could ever fill -- or, opened as no mount's, as ``postgres-no-store``,
+        which is what a maintenance command asking about a store is told. A
+        version this build cannot operate at is refused as on any other open.
 
         The base constructor is deliberately not called. It settles two things
         this backend answers differently -- that the store file is a name
@@ -827,19 +848,25 @@ class PostgresStore(FileStore):
             # by the schema, quoted by psycopg, and with any `%` doubled,
             # because the name is written into statement text that is also
             # given parameters and a schema is free to be called anything.
-            self._documents = (
-                _psycopg()
-                .sql.Identifier(self.schema, "documents")
-                .as_string(self._conn)
-                .replace("%", "%%")
-            )
+            self._documents = self._table("documents")
+            self._archive = self._table(ARCHIVE_TABLE)
             #: The store's own three numbers, or None where the schema holds
             #: no store. Only a ``report`` open ever sees the second.
             self.stored: SchemaVersion | None = self._settle_stored(report=report or not create)
             if self.stored is None and not report:
+                # A mount is refused as a read-only mount, and an open that is
+                # no mount's -- `outrage check`, `outrage backup` -- as asking
+                # about a store that is not there.
+                if mount_point is None:
+                    raise BackendError(
+                        "postgres-no-store",
+                        service=self.service_name,
+                        schema=self.schema,
+                        path=str(self.path),
+                    )
                 raise BackendError(
                     "postgres-read-only-missing",
-                    mount="" if mount_point is None else mount_point,
+                    mount=mount_point,
                     service=self.service_name,
                     schema=self.schema,
                     path=str(self.path),
@@ -854,6 +881,15 @@ class PostgresStore(FileStore):
         except BaseException:
             self.close()
             raise
+
+    def _table(self, name: str) -> str:
+        """The table ``name`` in this store's schema, as statement text names it.
+
+        Quoted by psycopg, and with any ``%`` doubled, because the name is
+        written into statement text that is also given parameters and a schema
+        is free to be called anything.
+        """
+        return _psycopg().sql.Identifier(self.schema, name).as_string(self._conn).replace("%", "%%")
 
     # -- where the store is ----------------------------------------------
 
@@ -2420,11 +2456,243 @@ class PostgresStore(FileStore):
                 return
             last = rows[-1][0]
 
+    @property
+    def backup_suffix(self) -> str:
+        """``.sqlite``, because that is what a backup of this store is.
+
+        The base takes the store file's extension, which here would name the
+        copy after the service file -- ``store-<stamp>.conf``, a database
+        dressed as somebody's configuration.
+        """
+        return Path(DEFAULT_STORE_FILE).suffix
+
+    @_logged("backup")
+    def backup(
+        self,
+        destination: str | os.PathLike[str] | None = None,
+        *,
+        overwrite: bool = False,
+    ) -> Backup:
+        """A consistent snapshot of the store, written into a local SQLite store.
+
+        **A SQLite file rather than a copy of the schema**, John's call: the
+        point of a backup of a shared store is that it can be opened, mounted
+        and checked on a machine that cannot reach the server, and nothing
+        but a file on this machine does that. The two backends keep the same
+        nine stored columns in the same order, so a row goes across as it is,
+        ``updated_at`` and ``sort_key`` included, and so does the archive.
+
+        **Consistent** because every row is read in one ``REPEATABLE READ``
+        transaction: several devices write this store, and a copy read over
+        several transactions could hold a document without the metadata
+        written beside it. The rows stream through a server-side cursor
+        rather than being fetched whole, since a store worth backing up is one
+        it would be foolish to hold in memory.
+
+        Verified against **the snapshot rather than the live store**, which
+        is the other half of being shared: the base's check compares the copy
+        with the store as it is by the time the copy is finished, and here
+        that is somebody else's writes away from the copy. So the snapshot's
+        own keys and counts are what the copy is held to, and SQLite's
+        integrity check says the file is sound.
+        """
+        self._opened()
+        target = self.backup_path(destination, overwrite=overwrite)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Removed rather than written over, for the base's reason: what is
+        # there need not be a database at all.
+        _clear(target)
+        try:
+            # Made by the SQLite backend itself, so the copy has exactly the
+            # schema, version and pragmas that backend opens -- then closed,
+            # because the rows go in through a connection of this method's own.
+            SqliteStore(target.parent, filename=target.name).close()
+            expected = self._snapshot_into(target)
+        except (OSError, sqlite3.Error) as exc:
+            _clear(target)
+            raise BackupError("backup-unwritable", target=str(target), reason=str(exc)) from exc
+        except BaseException:
+            _clear(target)
+            raise
+        return _verify_snapshot(target, expected)
+
+    def _snapshot_into(self, target: Path) -> _Snapshot:
+        """Copy every row the snapshot holds into the SQLite file at ``target``.
+
+        One transaction at each end. At this end it is read only and never
+        committed; at the other, a copy that fails part way leaves nothing,
+        and the caller removes the file.
+        """
+        conn = self._conn
+        copy = sqlite3.connect(target)
+        documents: list[str] = []
+        archived = 0
+        try:
+            conn.execute("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            try:
+                for rows in self._streamed(self._documents, "documents"):
+                    copy.executemany(f"INSERT INTO documents {_COLUMNS} VALUES {_PLACES}", rows)
+                    documents.extend(row[0] for row in rows)
+                for rows in self._streamed(self._archive, "archive"):
+                    copy.executemany(
+                        f"INSERT INTO {SQLITE_ARCHIVE} {_COLUMNS} VALUES {_PLACES}", rows
+                    )
+                    archived += len(rows)
+            finally:
+                if not conn.closed:
+                    conn.execute("ROLLBACK")
+            copy.commit()
+            # Out of WAL, which the SQLite backend opens its stores in, so the
+            # backup is the one file it looks like: a copy meant to be carried
+            # to another machine should not need two sidecars beside it. The
+            # SQLite backend puts WAL back when it opens the file.
+            copy.execute("PRAGMA journal_mode=DELETE")
+        finally:
+            copy.close()
+        return _Snapshot(keys=sorted(documents), archived=archived)
+
+    def _streamed(self, table: str, name: str) -> Iterator[list[tuple[Any, ...]]]:
+        """Every stored row of ``table``, a chunk at a time, inside the caller's transaction.
+
+        A named cursor is a server-side one, which only lives inside a
+        transaction -- the snapshot's, here. ``name`` is the cursor's.
+        """
+        with self._conn.cursor(name=f"outrage_backup_{name}") as cursor:
+            cursor.execute(f"SELECT {_COLUMNS[1:-1]} FROM {table}")
+            while rows := cursor.fetchmany(AUDIT_CHUNK):
+                yield rows
+
     def check_file(self, report: Report) -> None:
-        raise _unbuilt("check_file")
+        """The schema's numbers, what this build makes of them, and the triggers.
+
+        **The version and the floors come from** :meth:`schema_state`, which
+        is also what ``outrage schema status`` prints: two reports reaching
+        the same decision separately is how they come to disagree. A store
+        this build may only read is a note rather than a fault -- the store is
+        sound, and it is this client that is behind it.
+
+        **The triggers are the one thing about the storage that can be wrong
+        without anything failing**, which is what the SQLite backend's check
+        of its length cache is for too. Nothing in this package drops one, but
+        the schema is on a server anybody with the role can alter, and a
+        missing archive trigger loses every replaced version in silence.
+        Reported and not repaired: recreating one is a change to a shared
+        schema, which is the migration command's to make rather than a check's.
+        """
+        state = self.schema_state()
+        report.details["service"] = state.service
+        report.details["schema"] = state.schema
+        if state.stored is not None:
+            report.details["floors"] = (
+                f"read {state.stored.read_floor} write {state.stored.write_floor}"
+            )
+        report.details["this build"] = f"{state.oldest} to {state.newest}"
+        report.details["on open"] = (
+            f"{'read and write' if state.writable else 'read only'} at {state.operating}"
+        )
+        (archived,) = self._one(f"SELECT count(*) FROM {self._archive}") or (0,)
+        report.details["archive"] = f"{archived} rows"
+
+        if not state.writable and state.problem is not None:
+            # Imported where it is used, as the DuckDB backend does: `messages`
+            # is written in terms of the store.
+            from . import messages
+
+            report.problems.append(
+                Problem(
+                    READ_ONLY_TO_THIS_BUILD,
+                    "note",
+                    "this build may read the store but not write it",
+                    messages.render(state.problem.as_error()),
+                )
+            )
+
+        present = {
+            name
+            for (name,) in self._all(
+                "SELECT t.tgname FROM pg_trigger t "
+                "JOIN pg_class c ON c.oid = t.tgrelid "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = %s AND c.relname = 'documents' "
+                "AND NOT t.tgisinternal AND t.tgenabled <> 'D'",
+                [self.schema],
+            )
+        }
+        missing = [name for name in TRIGGER_NAMES if name not in present]
+        report.details["triggers"] = f"{len(TRIGGER_NAMES) - len(missing)} of {len(TRIGGER_NAMES)}"
+        if missing:
+            report.problems.append(
+                Problem(
+                    TRIGGERS_MISSING,
+                    "warning",
+                    "triggers the store is kept by are missing or disabled",
+                    f"{', '.join(missing)} on the documents table in schema {self.schema!r}. "
+                    f"Without the archive triggers a write keeps no copy of what it "
+                    f"replaces, and without the floor trigger a build below the write "
+                    f"floor can write.",
+                )
+            )
 
     def repair(self) -> list[Repaired]:
-        raise _unbuilt("repair")
+        """Nothing, and deliberately.
+
+        The storage has no state a repair could move about: there is no log
+        to fold back and no cache to go stale, and the server keeps its own
+        files. What a check can find wrong -- a missing trigger -- is a change
+        to a schema other clients share, which is not a thing to do as a side
+        effect of looking at it.
+        """
+        return []
+
+
+@dataclass(frozen=True)
+class _Snapshot:
+    """What a backup read out of the server, which is what the copy is held to."""
+
+    keys: list[str]
+    archived: int
+
+
+def _verify_snapshot(target: Path, expected: _Snapshot) -> Backup:
+    """Prove the SQLite file at ``target`` holds exactly what the snapshot did.
+
+    Every key compared, as :meth:`~outrage.store.FileStore.verified_backup`
+    does and for its reason, and the archive counted. Read through a
+    read-only connection of its own, since what the writing one believes it
+    wrote is the thing in question.
+    """
+    copy = sqlite3.connect(f"file:{target}?mode=ro", uri=True)
+    try:
+        integrity = str(copy.execute("PRAGMA integrity_check").fetchone()[0])
+        version = int(copy.execute("PRAGMA user_version").fetchone()[0])
+        held = [row[0] for row in copy.execute("SELECT key FROM documents")]
+        (archived,) = copy.execute(f"SELECT count(*) FROM {SQLITE_ARCHIVE}").fetchone()
+    finally:
+        copy.close()
+    if integrity != "ok":
+        raise BackupError("backup-corrupt", target=str(target), integrity=integrity)
+    if version != SQLITE_SCHEMA_VERSION:
+        raise BackupError(
+            "backup-schema-mismatch",
+            target=str(target),
+            found=version,
+            expected=SQLITE_SCHEMA_VERSION,
+        )
+    held.sort()
+    if held != expected.keys or archived != expected.archived:
+        lost = set(expected.keys) - set(held)
+        gained = set(held) - set(expected.keys)
+        raise BackupError(
+            "backup-incomplete",
+            target=str(target),
+            differs=(
+                f"{len(lost)} keys missing, {len(gained)} unexpected, "
+                f"{archived} of {expected.archived} archived versions"
+            ),
+        )
+    return Backup(
+        path=target, bytes=target.stat().st_size, documents=len(held), integrity=integrity
+    )
 
 
 class _Rewritten(Exception):
@@ -2582,17 +2850,6 @@ def _implicit(key: str) -> Entry:
     return Entry(key=key, kind="implicit", size=None, format=None, updated_at=None)
 
 
-def _unbuilt(operation: str) -> NotImplementedError:
-    """The placeholder every unported operation raises.
-
-    ``NotImplementedError`` rather than an :class:`~outrage.errors.OutrageError`
-    deliberately: this is not a failure a caller asked for and can act on, it
-    is a part of the backend that is missing, and a traceback is the right
-    output for that.
-    """
-    return NotImplementedError(f"PostgresStore.{operation} is not built yet")
-
-
 def _sql(statement: str, *, schema: str) -> Any:
     """``statement`` with its table names qualified by ``schema``.
 
@@ -2647,6 +2904,7 @@ __all__ = [
     "RETRY_PAUSE",
     "SCHEMA_TABLE",
     "SCHEMA_VERSION",
+    "TRIGGER_NAMES",
     "VERSIONING_OFF",
     "VERSIONING_SETTING",
     "VERSIONS",

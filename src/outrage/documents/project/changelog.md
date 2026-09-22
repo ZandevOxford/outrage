@@ -20,7 +20,18 @@ have, one that is not UTF8, or a search path naming no schema is a
 configuration error and stops the start. A rejected login and a missing
 database are recognised in the server's English messages, so a server replying
 in another language is treated as unreachable, and the reason is still shown in
-full. `outrage check` and backups do not yet support it.
+full.
+
+`outrage check` on a PostgreSQL store reports the schema version, its floors,
+the range this build operates at, what this build does on open, the size of
+the archive, and whether the triggers that keep the archive and enforce the
+write floor are all present. A missing or disabled trigger is a warning, and is
+not repaired: `--repair` changes nothing on such a store. A store this build
+may only read is a note rather than a fault, and a store from a newer build
+that this build may still write is not reported as too new. `outrage backup`
+writes one consistent snapshot of the store, archive included, into a local
+SQLite file named `store-<stamp>.sqlite`, which opens with no server at all.
+Both commands refuse a schema that holds no store rather than creating one.
 
 Mount specs gained two spellings for a store that is not a file inside the
 store directory, both of them groundwork for the PostgreSQL backend.
@@ -50,8 +61,8 @@ whose backend finds its own store. Every other backend's store file stays
 relative to the store directory, and `..` is refused for all of them. Because
 the file such a mount names is a connection's configuration rather than the
 store, `outrage mounts` reports it as `unknown` whether or not a file was
-named, and `outrage backup` opens the store rather than looking for it in the
-store directory.
+named, and `outrage backup` and `outrage check` open the store rather than
+looking for it in the store directory.
 
 Timestamps are now stamped to the millisecond, so an `unchanged_since` guard
 sees a change made later in the same second as the look, which a whole-second

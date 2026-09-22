@@ -105,6 +105,16 @@ FILES_NOT_TEXT = "files-not-text"
 #: Rows not in sort order, which every read bisects and so answers wrongly.
 ROWS_OUT_OF_ORDER = "rows-out-of-order"
 
+#: A shared store whose write floor is above this build, so this build may
+#: read it and not write it. Not a fault in the store: another client
+#: migrated it, and a newer build writes it.
+READ_ONLY_TO_THIS_BUILD = "read-only-to-this-build"
+
+#: The triggers a server-side store keeps its archive and its write floor
+#: with are missing or disabled, so a write through any client can replace a
+#: version without keeping it, or come from a build the floor should refuse.
+TRIGGERS_MISSING = "triggers-missing"
+
 #: Every code above. For a caller deciding what it can act on, and for the
 #: guard in ``tests/test_maintenance.py`` that keeps the list complete: a code
 #: constant this does not name is one nothing has agreed to.
@@ -121,6 +131,8 @@ PROBLEM_CODES = (
     KEYS_DOUBLED,
     FILES_NOT_TEXT,
     ROWS_OUT_OF_ORDER,
+    READ_ONLY_TO_THIS_BUILD,
+    TRIGGERS_MISSING,
 )
 
 
@@ -260,7 +272,16 @@ def _check_format_version(store: FileStore, report: Report) -> None:
     branch, because the open that preceded it would have failed. That is not a
     contradiction: this is the answer for a backend that can open a file it
     only partly understands.
+
+    **Not asked of a backend whose schema is managed.** There a newer store
+    is not a fault at all: a build operates at the version it finds, and
+    whether it may is a question of floors rather than of one number against
+    another. That backend answers it in
+    :meth:`~outrage.store.FileStore.check_file`, from the same decision
+    ``outrage schema status`` reports, so the two cannot disagree.
     """
+    if store.manages_schema:
+        return
     writes = type(store).format_version
     if report.format_version > writes:
         report.problems.append(
@@ -445,8 +466,10 @@ __all__ = [
     "LENGTH_CACHE_STALE",
     "METADATA_WITHOUT_DOCUMENT",
     "PROBLEM_CODES",
+    "READ_ONLY_TO_THIS_BUILD",
     "ROWS_OUT_OF_ORDER",
     "ROWS_UNDER_WRONG_KEY",
+    "TRIGGERS_MISSING",
     "WAL_UNCHECKPOINTED",
     "CheckError",
     "Problem",

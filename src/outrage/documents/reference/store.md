@@ -718,12 +718,21 @@ Settle where the copy goes, and refuse the destinations that destroy.
 Public so that a caller can report the destination, and hit the same
 refusals, without writing anything - which is what `--dry-run` needs.
 
-The default name takes the store file's own extension rather than a
-fixed one, so a backup of a store is recognisably the same kind of
-thing as the store. Here rather than on a backend because the two
+The default name takes its extension from [`backup_suffix`](#outrage.store.FileStore.backup_suffix)
+rather than a fixed one, so a backup of a store is recognisably the
+kind of thing it is. Here rather than on a backend because the two
 refusals are the point of it, and neither is about storage: a
 destination that is the store itself destroys what it was copying, and
 one that already exists destroys whatever was there.
+
+#### *property* backup_suffix *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
+
+The extension a backup's default name takes.
+
+The store file's own, so that a copy is recognisably the same kind of
+thing as what it was copied from. A backend whose backup is a
+different kind of thing -- a snapshot of a server kept in a local
+file -- names that kind instead.
 
 #### *abstract property* stored_format_version *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 

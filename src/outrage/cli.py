@@ -1710,26 +1710,44 @@ def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
     # a store to back up. That question is the backend's, and it is answered
     # when the store opens a line below.
     if not store.locates_own_store(root.type, unknown=False):
-        database = store.store_file(directory, root.path)
         if not store.store_present(directory, root.path):
             # Opening one would create it, and backing up a store the caller
             # never had is a success that answers the wrong question.
-            raise store.BackupError("check-no-store", path=str(database))
+            raise store.BackupError(
+                "check-no-store", path=str(store.store_file(directory, root.path))
+            )
 
-    with contextlib.closing(root.opened(directory)) as opened:
+    # `create` of False for the backend that finds its own store, which
+    # decides only once it is connected whether there is one; the check above
+    # has already answered it for every other.
+    with contextlib.closing(root.opened(directory, create=False)) as opened:
+        source = _store_named(opened)
         if args.dry_run:
             target = opened.backup_path(args.destination, overwrite=args.overwrite)
-            print(f"would back up {opened.path} to {target}", file=out)
+            print(f"would back up {source} to {target}", file=out)
             return 0
 
         result = opened.backup(args.destination, overwrite=args.overwrite)
 
-    print(f"backed up {database} to {result.path}", file=out)
+    print(f"backed up {source} to {result.path}", file=out)
     print(
         f"  {result.documents} rows, {result.bytes} bytes, integrity {result.integrity}",
         file=out,
     )
     return 0
+
+
+def _store_named(opened: store.FileStore) -> str:
+    """The store as a report names it: its file, or where on a server it is.
+
+    A store whose ``path`` is its configuration rather than itself would
+    otherwise be reported as that file -- "backed up ~/.pg_service.conf" is
+    a sentence about the wrong thing. Never a secret, for the reason
+    :attr:`~outrage.store.FileStore.target` gives.
+    """
+    if opened.target is None:
+        return str(opened.path)
+    return " ".join(_target_words(opened.target))
 
 
 def _log_command(args: argparse.Namespace, out: TextIO) -> int:
@@ -3098,12 +3116,14 @@ def _open_existing(args: argparse.Namespace):
     """
     root = _root(args)
     directory = store.resolve_directory(args.directory)
-    # A root that names no file has no store in this directory to look for:
-    # its backend finds its own, and only opening it can say whether it is
-    # there. The check is about a mistyped --dir, which is not that question.
-    if root.path is not None:
+    # A root that names no file is refused by the open, in the words of the
+    # grammar. A backend that finds its own store has no store in this
+    # directory to look for even when it does name one: the file is its
+    # configuration, and may be anywhere. Only opening it can say whether the
+    # store is there, and `create` of False has it refuse rather than make one.
+    if root.path is not None and not store.locates_own_store(root.type, unknown=False):
         maintenance.require_store(directory, root.path)
-    return contextlib.closing(root.opened(directory, versioning=_versioning(args)))
+    return contextlib.closing(root.opened(directory, versioning=_versioning(args), create=False))
 
 
 @contextlib.contextmanager

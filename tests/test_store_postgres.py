@@ -1895,3 +1895,251 @@ def test_the_backend_imports_no_driver_at_module_scope():
     source = pathlib.Path(store_postgres.__file__).read_text(encoding="utf-8")
     lines = [line for line in source.splitlines() if line.startswith("import psycopg")]
     assert not lines, f"psycopg is imported at module scope: {lines}"
+
+
+# -- maintenance -------------------------------------------------------------
+
+
+def _root_of(tmp_path, path):
+    """``--dir`` and ``--store`` naming a PostgreSQL store as the root."""
+    return ("--dir", str(tmp_path / "dir"), "--store", f"{path},type=postgres")
+
+
+def test_check_reports_the_version_and_floors_schema_status_does(tmp_path, postgres_store):
+    """One decision behind both reports, so a check says what ``status`` says."""
+    path = postgres_store.path
+    postgres_store.store_document("a", "one", title="A")
+    postgres_store.store_document("a", "two")
+
+    status, output = run("check", *_root_of(tmp_path, path))
+
+    assert status == 0
+    state = postgres_store.schema_state()
+    assert f"format {SCHEMA_VERSION}, 1 documents, 1 metadata" in output
+    assert f"schema {state.schema}" in output
+    assert f"floors read {state.stored.read_floor} write {state.stored.write_floor}" in output
+    assert f"this build {MIN_SCHEMA_VERSION} to {SCHEMA_VERSION}" in output
+    assert f"on open read and write at {SCHEMA_VERSION}" in output
+    assert "archive 1 rows" in output
+    trigger_count = len(store_postgres.TRIGGER_NAMES)
+    assert f"triggers {trigger_count} of {trigger_count}" in output
+    assert "nothing wrong" in output
+
+
+def test_check_never_shows_the_password(tmp_path, postgres_service):
+    secret = "planted-secret-51c2"
+    path = service_file_like(tmp_path, postgres_service, password=secret)
+    run("schema", "create", *_root_of(tmp_path, path))
+
+    for command in (("check",), ("check", "--repair"), ("backup", "--dry-run"), ("backup",)):
+        status, output = run(*command, *_root_of(tmp_path, path))
+        assert status == 0, command
+        assert secret not in output, command
+
+
+@pytest.mark.parametrize("command", [("check",), ("backup",)])
+def test_a_maintenance_command_on_an_empty_schema_is_refused_and_leaves_it_empty(
+    tmp_path, postgres_service, capsys, command
+):
+    """Asked about a store, never for one: a check that created it would pass."""
+    path, _service, schema = postgres_service
+
+    status, _output = run(*command, *_root_of(tmp_path, path))
+
+    assert status == 1
+    assert "there is no outrage store in schema" in capsys.readouterr().err
+    assert tables_in(schema) == []
+
+
+def test_a_store_that_is_its_own_backends_to_find_is_not_looked_for_in_the_directory(
+    tmp_path, postgres_store
+):
+    """The fifth pre-open site: ``check`` resolved the service file against ``--dir``.
+
+    An absolute service file was refused as a store file that is an absolute
+    path, before the backend was ever asked.
+    """
+    assert postgres_store.path.is_absolute()
+    status, _output = run("check", *_root_of(tmp_path, postgres_store.path))
+    assert status == 0
+
+
+def _set_numbers(store, version, read_floor, write_floor):
+    query(
+        store,
+        f"UPDATE {SCHEMA_TABLE} SET version = %s, read_floor = %s, write_floor = %s",
+        (version, read_floor, write_floor),
+    )
+
+
+def test_a_newer_store_this_build_may_write_is_not_reported_as_too_new(tmp_path, postgres_store):
+    """A managed schema's version is judged by its floors, not against this build's.
+
+    The generic check reads a store from a newer build as one it cannot read,
+    which is the right answer for a file and the wrong one here.
+    """
+    _set_numbers(postgres_store, SCHEMA_VERSION + 1, MIN_SCHEMA_VERSION, SCHEMA_VERSION)
+
+    status, output = run("check", *_root_of(tmp_path, postgres_store.path))
+
+    assert status == 0
+    assert "newer version of outrage" not in output
+    assert "nothing wrong" in output
+
+
+def test_a_store_this_build_may_only_read_is_a_note_rather_than_a_fault(tmp_path, postgres_store):
+    _set_numbers(postgres_store, SCHEMA_VERSION + 1, SCHEMA_VERSION, SCHEMA_VERSION + 1)
+
+    status, output = run("check", *_root_of(tmp_path, postgres_store.path))
+
+    assert status == 0
+    assert f"on open read only at {SCHEMA_VERSION}" in output
+    assert "note: this build may read the store but not write it" in output
+
+
+@pytest.mark.parametrize(
+    "how", ["DROP TRIGGER {name} ON documents", "ALTER TABLE documents DISABLE TRIGGER {name}"]
+)
+def test_a_missing_or_disabled_trigger_is_reported_and_left_alone(
+    tmp_path, postgres_store, postgres_service, how
+):
+    """The one storage fault nothing fails on: a write simply stops being archived."""
+    name = "outrage_archive_update"
+    with _outsider(postgres_service) as outsider:
+        outsider.execute(how.format(name=name))
+
+    status, output = run("check", "--repair", *_root_of(tmp_path, postgres_store.path))
+
+    assert status == 1
+    assert "warning: triggers the store is kept by are missing or disabled" in output
+    assert name in output
+    assert "nothing to repair" in output
+    trigger_count = len(store_postgres.TRIGGER_NAMES)
+    assert f"triggers {trigger_count - 1} of {trigger_count}" in output
+
+
+def test_every_trigger_the_store_creates_is_one_the_check_looks_for(postgres_store):
+    """The names are read out of the statements that create them, so they cannot drift."""
+    created = query(
+        postgres_store,
+        "SELECT t.tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
+        "JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = %s AND NOT t.tgisinternal",
+        (postgres_store.schema,),
+    )
+    assert sorted(row[0] for row in created) == sorted(store_postgres.TRIGGER_NAMES)
+
+
+def test_repair_does_nothing_and_says_so(postgres_store):
+    assert postgres_store.repair() == []
+
+
+def _written(opened):
+    """Every row a store holds, as ``(key, content, format, updated_at)``."""
+    return sorted(
+        (row.key, opened.retrieve_document(row.key).content) for row in opened.audit_rows()
+    )
+
+
+def test_a_backup_is_a_sqlite_store_holding_every_row_and_every_version(tmp_path, postgres_store):
+    postgres_store.store_document(
+        "a/b", "one", title="Title", updated_at="2026-09-01T10:00:00+00:00"
+    )
+    postgres_store.store_document("a/b", "two", updated_at="2026-09-02T10:00:00+00:00")
+    postgres_store.store_document("c", "three")
+
+    result = postgres_store.backup(tmp_path / "copy.sqlite")
+
+    assert result.path == (tmp_path / "copy.sqlite").resolve()
+    assert result.documents == 3
+    assert result.integrity == "ok"
+    # One file, so it can be carried to a machine that cannot reach the server.
+    assert sorted(p.name for p in tmp_path.iterdir() if p.name.startswith("copy")) == [
+        "copy.sqlite"
+    ]
+    with SqliteStore(tmp_path, filename="copy.sqlite") as copy:
+        assert _written(copy) == _written(postgres_store)
+        for key in ("a/b", "a/b/!title", "c"):
+            assert (
+                copy.retrieve_document(key).updated_at
+                == postgres_store.retrieve_document(key).updated_at
+            )
+        archived = copy._conn.execute(
+            "SELECT key, content, updated_at FROM document_archive"
+        ).fetchall()
+    assert [tuple(row) for row in archived] == [("a/b", "one", "2026-09-01T10:00:00+00:00")]
+
+
+def test_a_backups_default_name_is_a_sqlite_file_in_the_store_directory(tmp_path, postgres_store):
+    """Not ``.conf``: the store's ``path`` is the service file, and the copy is not one."""
+    target = postgres_store.backup_path(None, overwrite=False)
+    assert target.parent == (tmp_path / "dir" / "backups").resolve()
+    assert target.suffix == ".sqlite"
+
+
+def test_a_backup_onto_the_service_file_is_refused(postgres_store):
+    with pytest.raises(store_module.BackupError) as raised:
+        postgres_store.backup(postgres_store.path, overwrite=True)
+    assert raised.value.code == "backup-is-the-store"
+    assert "[" in postgres_store.path.read_text(encoding="utf-8")
+
+
+def test_a_backup_is_one_snapshot_whatever_is_written_while_it_reads(
+    tmp_path, postgres_store, postgres_service, monkeypatch
+):
+    """Several devices write this store, so a copy has to be of one moment.
+
+    A write committed between the two tables' reads lands in neither: the
+    snapshot was taken before it. And the copy is verified against that
+    snapshot rather than the live store, or the write would fail it.
+    """
+    path, service, _schema = postgres_service
+    postgres_store.store_document("a", "one")
+    streamed = PostgresStore._streamed
+
+    def interrupted(self, table, name):
+        if name == "archive":
+            with PostgresStore(tmp_path / "other", filename=path, service=service) as other:
+                other.store_document("a", "two")
+                other.store_document("b", "new")
+        yield from streamed(self, table, name)
+
+    monkeypatch.setattr(PostgresStore, "_streamed", interrupted)
+    result = postgres_store.backup(tmp_path / "copy.sqlite")
+
+    assert result.documents == 1
+    with SqliteStore(tmp_path, filename="copy.sqlite") as copy:
+        assert copy.retrieve_document("a").content == "one"
+        assert not copy.exists("b")
+        assert copy._conn.execute("SELECT count(*) FROM document_archive").fetchone()[0] == 0
+
+
+def test_a_backup_that_fails_leaves_no_file_and_no_transaction(
+    tmp_path, postgres_store, monkeypatch
+):
+    postgres_store.store_document("a", "one")
+
+    def broken(self, table, name):
+        raise OSError("disk full")
+        yield  # pragma: no cover - makes this a generator
+
+    monkeypatch.setattr(PostgresStore, "_streamed", broken)
+    with pytest.raises(store_module.BackupError) as raised:
+        postgres_store.backup(tmp_path / "copy.sqlite")
+
+    assert raised.value.code == "backup-unwritable"
+    assert not (tmp_path / "copy.sqlite").exists()
+    idle = pytest.importorskip("psycopg").pq.TransactionStatus.IDLE
+    assert postgres_store._conn.info.transaction_status == idle
+
+
+def test_backup_on_the_command_line_names_the_store_by_where_it_is(tmp_path, postgres_store):
+    postgres_store.store_document("a", "one")
+
+    status, output = run("backup", *_root_of(tmp_path, postgres_store.path))
+
+    assert status == 0
+    assert "backed up service=outrage" in output
+    assert f"schema={postgres_store.schema}" in output
+    assert str(postgres_store.path) not in output.splitlines()[0].split(" to ")[0]
+    assert "1 rows" in output
