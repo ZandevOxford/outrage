@@ -3398,3 +3398,48 @@ def test_init_refuses_an_edited_packaged_file_and_says_so(tmp_path, capsys):
 
     assert status == 0
     assert skill.read_text(encoding="utf-8") != "mine now"
+
+
+def test_check_and_backup_name_a_mount_the_way_every_other_command_does(tmp_path):
+    """One store each, named by mount point rather than by file.
+
+    ``--store`` says which file, which is a perfectly good handle for a store
+    that is one; a store reached over a connection has no such file, so both
+    commands take the mount point the rest of the configuration uses.
+    """
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run("check", "team", "--dir", str(directory))
+    assert status == 0
+    assert "team.sqlite" in output
+    assert "1 documents" in output
+
+    status, output = run(
+        "backup", "team", "--dir", str(directory), "--to", str(tmp_path / "t.sqlite")
+    )
+    assert status == 0
+    assert "team.sqlite" in output
+    with SqliteStore(tmp_path, filename="t.sqlite") as copy:
+        assert copy.retrieve_document("plans/q3").content == "the plan"
+
+
+def test_check_and_backup_still_act_on_the_root_when_no_mount_is_named(tmp_path):
+    """The default nobody has to type, and what both commands did before."""
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    status, output = run("check", "--dir", str(directory))
+
+    assert status == 0
+    assert "store.sqlite" in output
+    assert "team.sqlite" not in output
+
+
+@pytest.mark.parametrize("command", ["check", "backup"])
+def test_a_mount_point_no_mount_on_the_line_claims_is_refused(tmp_path, capsys, command):
+    """Never a fall back to the root: acting on the wrong store reads as success."""
+    directory = a_mounted_project(tmp_path / ".outrage")
+
+    status, _output = run(command, "nope", "--dir", str(directory))
+
+    assert status == 1
+    assert "no mount on this command line is at 'nope'" in capsys.readouterr().err

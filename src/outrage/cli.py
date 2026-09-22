@@ -54,10 +54,16 @@ from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND, ROOT_KIND
 from .notes import Note
 
 #: The subcommands that act across a whole mount table rather than on one
-#: store file. Everything that reads or writes documents is here; ``check`` and
-#: ``backup`` are not, and by nature: both are about a *file* -- its integrity,
-#: its bytes -- and both already say which one they mean with ``--store``.
-#: ``pack`` is not either, for the same reason its target is one file.
+#: store file. Everything that reads or writes documents is here. ``pack`` is
+#: not, because its target is one file.
+#:
+#: ``check`` and ``backup`` are here for the options and the splice rather
+#: than to act across the table: each still acts on **one** store, and takes
+#: the mount point naming which. They were left out while every store was a
+#: file, since ``--store`` names a file perfectly well -- but a PostgreSQL
+#: store is a connection, and the file a mount names for it is somebody's
+#: configuration rather than the store, so ``--store`` was the wrong handle
+#: for it. John's call, 2026-09-22.
 #:
 #: ``mounts`` is here for the options and the splice rather than for opening
 #: anything: it reports the table a command line would open, which is a
@@ -79,6 +85,8 @@ MOUNTED = (
     "mounts",
     "info",
     "schema",
+    "check",
+    "backup",
 )
 
 #: The rules a command with no watermark can offer. ``overwrite-unchanged``
@@ -335,6 +343,8 @@ def argument_parser() -> argparse.ArgumentParser:
     # stores, and a backup of the wrong one is the kind of success nobody reads
     # twice.
     _store_option(backup)
+    _mount_point_argument(backup, "back up")
+    _table_options(backup)
     backup.add_argument(
         "--to",
         dest="destination",
@@ -922,6 +932,8 @@ def argument_parser() -> argparse.ArgumentParser:
         ),
     )
     _store_option(check)
+    _mount_point_argument(check, "check")
+    _table_options(check)
     check.add_argument(
         "--repair",
         action="store_true",
@@ -957,17 +969,7 @@ def argument_parser() -> argparse.ArgumentParser:
             "at --version, refusing a schema that already holds one."
         ),
     )
-    schema.add_argument(
-        "mount",
-        nargs="?",
-        default=None,
-        metavar="KEY",
-        help=(
-            "Which mount, by mount point, so that this command names a store "
-            "the same way every other configuration does. Defaults to the "
-            "root store."
-        ),
-    )
+    _mount_point_argument(schema, "report on")
     schema.add_argument(
         "--version",
         type=int,
@@ -1370,6 +1372,28 @@ def _versioning_option(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _mount_point_argument(parser: argparse.ArgumentParser, what: str) -> None:
+    """``KEY``, naming which mount a one-store command acts on.
+
+    For the commands that act on a single store and are not the table: a
+    store is named here the way every configuration names one, by mount
+    point, rather than by a file that for some backends is not the store.
+    Optional, and the root without it, which is the store every one of these
+    commands acted on before there was anything else to name.
+    """
+    parser.add_argument(
+        "mount",
+        nargs="?",
+        default=None,
+        metavar="KEY",
+        help=(
+            f"Which mount to {what}, by mount point, so that this command "
+            "names a store the way every other configuration does. Defaults "
+            "to the root store."
+        ),
+    )
+
+
 def _table_options(parser: argparse.ArgumentParser) -> None:
     """The mounts a command acts *across*, spelled once for every command that can.
 
@@ -1701,7 +1725,7 @@ def _root(args: argparse.Namespace) -> mounts.Spec:
 def _backup_command(args: argparse.Namespace, out: TextIO) -> int:
     """Snapshot the store, or say where the snapshot would go."""
     directory = store.resolve_directory(args.directory)
-    root = _root(args)
+    _point, root = _named_mount(args)
     # A backend that finds its own store is skipped here rather than checked.
     # The check resolves a name against `--dir` and asks whether it is there,
     # and for such a backend neither half holds: the file may be an absolute
@@ -2696,7 +2720,7 @@ def _schema_command(args: argparse.Namespace, out: TextIO) -> int:
     no change here.
     """
     directory = store.resolve_directory(args.directory)
-    point, spec = _schema_mount(args)
+    point, spec = _named_mount(args)
     opener = store.backend_for(spec.path, spec.type)
     if not opener.manages_schema:
         raise store.BackendError(
@@ -2726,25 +2750,31 @@ def _schema_command(args: argparse.Namespace, out: TextIO) -> int:
         return 1 if state.stored is not None and state.operating is None else 0
 
 
-def _schema_mount(args: argparse.Namespace) -> tuple[str, mounts.Spec]:
-    """Which mount ``outrage schema`` was pointed at, as the spec that names it.
+def _named_mount(args: argparse.Namespace) -> tuple[str, mounts.Spec]:
+    """Which mount a one-store command was pointed at, as the spec naming it.
 
-    The root when nothing was named, which is the store every other command
-    acts on by default. A key that no mount on this line claims is refused
-    rather than falling back to the root: the whole point of naming one is
-    that there is more than one, and acting on the wrong store is the kind of
-    success nobody reads twice.
+    The root when nothing was named, which is the store each of these
+    commands acted on before any of them could name another. A key that no
+    mount on this line claims is refused rather than falling back to the root:
+    the whole point of naming one is that there is more than one, and acting
+    on the wrong store is the kind of success nobody reads twice.
+
+    The line here is the **spliced** one, so a mount written in ``mounts.toml``
+    is named as readily as one typed -- which is what makes a mount point a
+    better handle than a file for a store whose file is a connection's
+    configuration.
     """
-    if args.mount is None:
+    named_mount = getattr(args, "mount", None)
+    if named_mount is None:
         return keys.ROOT, _root(args)
-    point = mounts.mount_point(args.mount)
+    point = mounts.mount_point(named_mount)
     if point == keys.ROOT:
         return keys.ROOT, _root(args)
     for spec in (*args.mounts, *args.read_only_mounts):
         named, parsed = mounts.parse_spec(spec)
         if named == point:
             return named, parsed
-    raise mounts.MountError("schema-mount-unknown", mount=point)
+    raise mounts.MountError("mount-point-unknown", mount=point)
 
 
 def _print_schema(state: store.SchemaState, point: str, out: TextIO) -> None:
@@ -3114,7 +3144,7 @@ def _open_existing(args: argparse.Namespace):
     perfectly healthy empty store, which is a wrong answer delivered as a clean
     bill of health.
     """
-    root = _root(args)
+    _point, root = _named_mount(args)
     directory = store.resolve_directory(args.directory)
     # A root that names no file is refused by the open, in the words of the
     # grammar. A backend that finds its own store has no store in this
@@ -3148,10 +3178,16 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
     """
     directory = store.resolve_directory(args.directory)
     root = _root(args)
-    if not create and root.path is not None:
-        # A root that names no file has no store in this directory for the
-        # check to look for: its backend finds its own, and whether it is there
-        # is the backend's to say when it opens it.
+    if (
+        not create
+        and root.path is not None
+        and not store.locates_own_store(root.type, unknown=False)
+    ):
+        # A root whose backend finds its own store has none in this directory
+        # for the check to look for, whether or not it names a file: the file
+        # is that backend's configuration, may be absolute, and says nothing
+        # about whether there is a store. Only opening it can, which is what
+        # `create` of False has it do.
         maintenance.require_store(directory, root.path)
     if not (args.mounts or args.read_only_mounts or args.mount_docs or args.mount_home):
         with contextlib.closing(root.opened(directory, versioning=_versioning(args))) as opened:

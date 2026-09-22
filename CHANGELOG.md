@@ -33,6 +33,14 @@ writes one consistent snapshot of the store, archive included, into a local
 SQLite file named `store-<stamp>.sqlite`, which opens with no server at all.
 Both commands refuse a schema that holds no store rather than creating one.
 
+`outrage check` and `outrage backup` now take a mount point, as
+`outrage check shared` or `outrage backup shared --to copy.sqlite`, and read
+the same mount table every other command does, `mounts.toml` included. Each
+still acts on one store; without a mount point that store is the root, as
+before. `--store` names a file, which is the wrong handle for a store reached
+over a connection: the file such a mount names is the connection's
+configuration, and says neither which entry of it nor which schema.
+
 Mount specs gained two spellings for a store that is not a file inside the
 store directory, both of them groundwork for the PostgreSQL backend.
 

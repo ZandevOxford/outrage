@@ -2143,3 +2143,59 @@ def test_backup_on_the_command_line_names_the_store_by_where_it_is(tmp_path, pos
     assert f"schema={postgres_store.schema}" in output
     assert str(postgres_store.path) not in output.splitlines()[0].split(" to ")[0]
     assert "1 rows" in output
+
+
+def test_a_postgres_mount_is_checked_and_backed_up_by_mount_point(tmp_path, postgres_service):
+    """What the mount point is for here: the store has no file to name.
+
+    ``--store`` would have to name the service file, which is a connection's
+    configuration rather than the store, and says nothing about which entry
+    of it or which schema. John's call, 2026-09-22.
+    """
+    path, service, schema = postgres_service
+    directory = str(tmp_path / "dir")
+    mount = ("--dir", directory, "--mount", f"shared={path},type=postgres,service={service}")
+    run("schema", "create", "shared", *mount)
+    run("set", "shared/note", "--content", "on the server", *mount)
+
+    status, output = run("check", "shared", *mount)
+    assert status == 0
+    assert f"schema {schema}" in output
+    assert "1 documents" in output
+
+    status, output = run("backup", "shared", "--to", str(tmp_path / "copy.sqlite"), *mount)
+    assert status == 0
+    with SqliteStore(tmp_path, filename="copy.sqlite") as copy:
+        # The store's own keys, without the mount point: a mount is where the
+        # store hangs in somebody's namespace, not part of what it holds.
+        assert copy.retrieve_document("note").content == "on the server"
+
+
+def test_a_postgres_mount_written_in_the_table_is_named_the_same_way(tmp_path, postgres_service):
+    """The spliced line, so a mount nobody typed is as nameable as one typed."""
+    path, _service, schema = postgres_service
+    directory = tmp_path / "dir"
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "mounts.toml").write_text(
+        f'[mount]\nshared = "{path},type=postgres"\n', encoding="utf-8"
+    )
+    run("schema", "create", "shared", "--dir", str(directory))
+
+    status, output = run("check", "shared", "--dir", str(directory))
+
+    assert status == 0
+    assert f"schema {schema}" in output
+
+
+def test_the_root_of_a_line_with_a_postgres_mount_is_still_the_root(tmp_path, postgres_service):
+    """A named mount is one store; nothing here acts across the table."""
+    path, _service, schema = postgres_service
+    mount = ("--dir", str(tmp_path / "dir"), "--mount", f"shared={path},type=postgres")
+    run("schema", "create", "shared", *mount)
+    run("set", "local/note", "--content", "in the file", *mount)
+
+    status, output = run("check", *mount)
+
+    assert status == 0
+    assert "(sqlite)" in output
+    assert schema not in output

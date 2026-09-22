@@ -2295,8 +2295,8 @@ def _backend_manages_no_schema_here(
     )
 
 
-@template("schema-mount-unknown")
-def _schema_mount_unknown(name: Namer, /, *, mount: str, **_: Any) -> str:
+@template("mount-point-unknown")
+def _mount_point_unknown(name: Namer, /, *, mount: str, **_: Any) -> str:
     return (
         f"no mount on this command line is at {keys.displayed(mount)!r}. A "
         f"store is named here by mount point, through the same table every "

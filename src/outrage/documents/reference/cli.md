@@ -15,13 +15,19 @@ page from being a list of twelve near-identical `(args, out) -> int` entries
 in place of an orientation. The interface people actually use here is the
 command line, and `outrage --help` is what states it.
 
-### outrage.cli.MOUNTED *= ('get', 'set', 'ingest', 'make_contents', 'ls', 'dump', 'copy', 'rm', 'export', 'import', 'mounts', 'info', 'schema')*
+### outrage.cli.MOUNTED *= ('get', 'set', 'ingest', 'make_contents', 'ls', 'dump', 'copy', 'rm', 'export', 'import', 'mounts', 'info', 'schema', 'check', 'backup')*
 
 The subcommands that act across a whole mount table rather than on one
-store file. Everything that reads or writes documents is here; `check` and
-`backup` are not, and by nature: both are about a *file* -- its integrity,
-its bytes -- and both already say which one they mean with `--store`.
-`pack` is not either, for the same reason its target is one file.
+store file. Everything that reads or writes documents is here. `pack` is
+not, because its target is one file.
+
+`check` and `backup` are here for the options and the splice rather
+than to act across the table: each still acts on **one** store, and takes
+the mount point naming which. They were left out while every store was a
+file, since `--store` names a file perfectly well -- but a PostgreSQL
+store is a connection, and the file a mount names for it is somebody's
+configuration rather than the store, so `--store` was the wrong handle
+for it. John's call, 2026-09-22.
 
 `mounts` is here for the options and the splice rather than for opening
 anything: it reports the table a command line would open, which is a

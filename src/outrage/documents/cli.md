@@ -170,8 +170,12 @@ cleanly.
 ### Usage
 
 ```text
-outrage backup [-h] [--dir PATH] [--store FILE] [--to PATH]
-               [--overwrite] [--dry-run]
+outrage backup [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+               [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+               [--unmount KEY] [--mount-config FILE]
+               [--no-mount-config] [--to PATH] [--overwrite]
+               [--dry-run]
+               [KEY]
 ```
 
 ### Arguments
@@ -179,6 +183,14 @@ outrage backup [-h] [--dir PATH] [--store FILE] [--to PATH]
 - `-h, --help` - show this help message and exit
 - `--dir PATH` - Store directory. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
 - `--store FILE, --root-mount FILE` - Which store in that directory, as a file relative to it (default: store.sqlite). On a command that takes mounts this is the root mount -- the store answering for every key no mount claims -- and --root-mount is the same option. Takes the same options a --mount does, so --store documents,type=files reads a directory of files as the whole store.
+- `KEY` - Which mount to back up, by mount point, so that this command names a store the way every other configuration does. Defaults to the root store.
+- `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, postgres, postgresql, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite or PostgreSQL store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. A PostgreSQL store's FILE is its libpq service file, which may be absolute or start with ~, or empty after type=postgres for libpq's own lookup; it takes service=, the entry in that file (default outrage). Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
+- `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
+- `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
+- `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
+- `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `--to PATH` - Where to write, as a file or a directory. Defaults to a timestamped name under backups/ in the store directory.
 - `--overwrite` - Replace the destination if it already exists.
 - `--dry-run` - Report where the backup would go without writing it.
@@ -652,7 +664,11 @@ read of it bisects.
 ### Usage
 
 ```text
-outrage check [-h] [--dir PATH] [--store FILE] [--repair]
+outrage check [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
+              [--mount-ro KEY=FILE] [--mount-docs] [--mount-home]
+              [--unmount KEY] [--mount-config FILE] [--no-mount-config]
+              [--repair]
+              [KEY]
 ```
 
 ### Arguments
@@ -660,6 +676,14 @@ outrage check [-h] [--dir PATH] [--store FILE] [--repair]
 - `-h, --help` - show this help message and exit
 - `--dir PATH` - Store directory. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
 - `--store FILE, --root-mount FILE` - Which store in that directory, as a file relative to it (default: store.sqlite). On a command that takes mounts this is the root mount -- the store answering for every key no mount claims -- and --root-mount is the same option. Takes the same options a --mount does, so --store documents,type=files reads a directory of files as the whole store.
+- `KEY` - Which mount to check, by mount point, so that this command names a store the way every other configuration does. Defaults to the root store.
+- `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, postgres, postgresql, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite or PostgreSQL store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. A PostgreSQL store's FILE is its libpq service file, which may be absolute or start with ~, or empty after type=postgres for libpq's own lookup; it takes service=, the entry in that file (default outrage). Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
+- `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
+- `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
+- `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
+- `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
 - `--repair` - Fix what the check found and the backend can act on: for SQLite, fold the write-ahead log back into the database and compact it. No repair changes a document, and a backend with nothing a repair could move says so rather than claiming to have acted.
 
 ## `schema`
@@ -685,7 +709,7 @@ outrage schema [-h] [--version N] [--dir PATH] [--store FILE]
 
 - `-h, --help` - show this help message and exit
 - `{status,create}` - status: the store's version and floors, what this build operates at, and what it would do on open. create: a blank store at --version, refusing a schema that already holds one.
-- `KEY` - Which mount, by mount point, so that this command names a store the same way every other configuration does. Defaults to the root store.
+- `KEY` - Which mount to report on, by mount point, so that this command names a store the way every other configuration does. Defaults to the root store.
 - `--version N` - For create: which schema version to create, defaulting to the newest this build knows. A team whose oldest client knows an older version gets a store that client can use by naming it here.
 - `--dir PATH` - Store directory. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
 - `--store FILE, --root-mount FILE` - Which store in that directory, as a file relative to it (default: store.sqlite). On a command that takes mounts this is the root mount -- the store answering for every key no mount claims -- and --root-mount is the same option. Takes the same options a --mount does, so --store documents,type=files reads a directory of files as the whole store.
