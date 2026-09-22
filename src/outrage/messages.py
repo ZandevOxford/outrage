@@ -2011,14 +2011,14 @@ def _service_not_found(
         return (
             f"no PostgreSQL service file was found to look for {service!r} in: "
             f"there is none at {' or '.join(absent)}. Write one there with a "
-            f"[{service}] section listing the connection parameters, or name "
-            f"the file that holds it on the mount."
+            f"section headed [{service}] listing the connection parameters, or "
+            f"name the file that holds it on the mount."
         )
     said = (
         f"no PostgreSQL service named {service!r} is defined in "
-        f"{', '.join(present)}. A service is a [{service}] section of a service "
-        f"file listing the connection parameters; add one, or name another "
-        f"with `service` on the mount."
+        f"{', '.join(present)}. A service is a section of a service file headed "
+        f"[{service}], listing the connection parameters; add one, or name "
+        f"another with `service` on the mount."
     )
     if absent:
         said += f" Nothing is at {' or '.join(absent)}, which was looked in too."
