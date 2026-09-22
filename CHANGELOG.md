@@ -41,14 +41,37 @@ database are recognised in the server's English messages, so a server replying
 in another language is treated as unreachable, and the reason is still shown in
 full.
 
-An `outrage` command, unlike the server's startup, opens every mount it is
-given and stops when one's server cannot be reached, and the message for that
-no longer says the mount is left unavailable. The README now covers keeping
+The README now covers keeping
 the password in `~/.pgpass` or a `passfile=` rather than the service file,
 and verifying the server with `sslmode=verify-full` rather than `require`,
 with notes for Amazon RDS: its own certificate authority, its security group,
 and why a password rather than IAM authentication. The backend has been run
 against a managed Aurora PostgreSQL 17 server on RDS as well as a local one.
+
+A mount that cannot be opened now keeps its mount point, on every backend.
+The server's startup already went on without a mount whose server could not be
+reached, whose store was at a version this build cannot open, whose read-only
+store was not there or whose backend's extra was missing; but it left the point
+unclaimed, so a write below it landed in the root store, read back, and
+vanished from view once the mount returned. Such a point is now held by a
+placeholder that refuses every read and write below it, naming the mount and
+why it did not open. `list_keys` and `outrage ls` show it with kind
+`unavailable mount` and no descendant totals, and give no totals for a key
+above it either; `get_documents`, `find_documents` and `keys_missing_meta`
+leave it out and name it in a new `mounts_unavailable` field with a note; a
+recursive delete, a copy, an export or a pack that would cross it is refused
+before anything changes. `info` lists it with the reason, and the `mount` tool
+at the same point opens it again. The shipped documentation tree, if a build
+drops it, is still left unmounted as before.
+
+Every `outrage` command now tolerates the same mounts the server's startup
+does, rather than stopping at the first one it could not open, so a device off
+the network keeps its `mounts.toml`. Each command warns on stderr about every
+mount it left out, in the server's words, whether or not it goes near it.
+`outrage schema status` on such a mount reports the store as not reached, with
+the reason, and exits 1; `schema create`, `check` and `backup` refuse as
+before. `outrage mounts`, which opens nothing, still exits 1 for a read-only
+store that is not there.
 
 `outrage check` on a PostgreSQL store reports the schema version, its floors,
 the range this build operates at, what this build does on open, the size of

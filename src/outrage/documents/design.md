@@ -236,9 +236,10 @@ verified against that snapshot rather than against the live store, which
 somebody else's writes have moved on by then.
 
 **A server that cannot be reached is not a configuration error.** The mount is
-unavailable and the rest of the table works, so an offline laptop still starts.
-A service file that cannot be used, a login the server rejects and a database
-that is not there are mistakes in the configuration, and stop the start.
+unavailable and the rest of the table works, so an offline laptop still starts
+and still runs commands. A service file that cannot be used, a login the server
+rejects and a database that is not there are mistakes in the configuration, and
+stop the start.
 
 ### Mounted stores
 
@@ -247,6 +248,19 @@ key prefix to a store, the longest prefix matching a key owns it, and the store
 `--root-mount` names is mounted at the root, so it owns everything no other
 mount claims. A server with no `--mount` argument is a table of one, which is
 the same code path rather than a second one.
+
+**A mount that cannot be opened keeps its mount point.** A server that is not
+answering, a store at a version this build cannot open, a read-only store that
+is not there, or a backend whose extra is missing is tolerated, by the server
+and by every command, and a placeholder stands at the point instead of the
+store. It refuses every read and write below it with the reason the store did
+not open. The alternative, leaving the point unclaimed, routes those keys to the
+store beneath: a write there succeeds, reads back, and disappears from view the
+moment the real store returns and shadows it. A traversal from above steps over
+the placeholder and names it in its answer, because a count that silently
+omits a store reads as the whole subtree; a recursive delete or a copy that
+would cross it is refused, because acting on part of a subtree and reporting
+success is the same fault.
 
 Configured at startup with `--mount KEY=FILE`, repeatable, and changed after it
 by the `mount` and `unmount` tools -- MCP only, and withheld by `--no-remount`.

@@ -596,7 +596,10 @@ simply empty.
 
 A mount at a point something already holds **replaces** it. The root cannot be
 mounted over: it owns every key no mount claims, and the instructions this
-connection was given were built from its readme.
+connection was given were built from its readme. That includes an `unavailable
+mount`, one whose store could not be opened when this server started: mount it
+again at the same point, with the same arguments, once its store can be
+reached.
 
 Returns the whole table, not the one mount, because what shadows what is not
 visible in an answer about a single mount. The change lasts as long as this

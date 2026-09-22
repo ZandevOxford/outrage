@@ -220,9 +220,14 @@ locally. Two things about RDS in particular:
 the store; `outrage backup shared` writes a consistent snapshot into a local
 `.sqlite` file, which opens, mounts and checks with no server at all.
 
-When `outrage-server` starts, a server that cannot be reached leaves that
-mount unavailable and every other mount working, so a laptop off the network
-still starts. A service file that cannot be read, a login the server rejects,
-or a database that is not there is a mistake in the configuration and stops the
-start instead. An `outrage` command is stricter: it opens every mount it is
-given, and stops when one cannot be reached, even for a key in another store.
+A server that cannot be reached leaves that mount unavailable and every other
+mount working, so a laptop off the network still starts `outrage-server` and
+still runs `outrage` commands, with the same mount configuration. Each command
+warns on stderr about every mount it could not open. Nothing below an
+unavailable mount can be read or written until it opens again: a write there is
+refused rather than landing in another store, a listing shows the mount as
+`unavailable mount`, a survey or search leaves it out and says so, and a
+recursive delete, copy or export that would cross it is refused. A service file
+that cannot be read, a login the server rejects, or a database that is not
+there is a mistake in the configuration and stops the command or the start
+instead.
