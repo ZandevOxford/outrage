@@ -1703,6 +1703,14 @@ something out of an answer that names what it left out loses nothing.
 `key` is itself inside one, the refusal is that store's own, which is
 the one a read of the key would have met.
 
+### outrage.mounts.tolerated(error: [OutrageError](errors.md#outrage.errors.OutrageError)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
+
+Whether `error` opening a non-root mount waits on something other
+than its configuration: a server, an upgrade, an install.
+
+What a tolerant open holds a placeholder for, and what a report about one
+store can answer with rather than refuse.
+
 ### outrage.mounts.unparse(spec: [Spec](#outrage.mounts.Spec)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `spec` as the argument it was read from: the inverse of

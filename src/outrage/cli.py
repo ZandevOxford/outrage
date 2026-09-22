@@ -2735,9 +2735,20 @@ def _schema_command(args: argparse.Namespace, out: TextIO) -> int:
             mount=point,
         )
 
-    with contextlib.closing(
-        opener.reporting(directory, filename=spec.path, service=spec.service)
-    ) as opened:
+    try:
+        reporting = opener.reporting(directory, filename=spec.path, service=spec.service)
+    except OutrageError as exc:
+        # A status is a report, so a server that is not answering is one more
+        # thing it reports, as every other command's warning does. A create is
+        # an action, and is refused with the same reason.
+        if args.action != "status" or not mounts.tolerated(exc):
+            raise
+        print(f"mount       {keys.displayed(point)}", file=out)
+        print(f"backend     {opener.backend_name}", file=out)
+        said = messages.render(exc, spell=messages.flag).removesuffix(".")
+        print(f"store       not reached: {said}", file=out)
+        return 1
+    with contextlib.closing(reporting) as opened:
         if args.action == "create":
             created = opened.create_schema(args.version)
             state = opened.schema_state()
@@ -2834,8 +2845,9 @@ def _mounts_command(args: argparse.Namespace, out: TextIO) -> int:
     table is now a merge of the default file, each ``--mount-config`` and what
     was typed.
 
-    Non-zero when the table would not open: a read-only mount that is missing,
-    or two mounts at one point. A read-write mount that is not there is
+    Non-zero when a mount would not open: a read-only mount that is missing,
+    which every other command warns about and goes on without, or two mounts
+    at one point, which stops them. A read-write mount that is not there is
     reported and is not a failure - it is what a store looks like before its
     first write, and telling the two apart is the whole job.
     """
@@ -3194,6 +3206,15 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
     to make the store it writes to. Every other mount is opened the way
     ``open_mounts`` opens it either way, which is to say a read-only one must
     already exist and a read-write one is created.
+
+    **A mount that cannot be opened is tolerated as the server tolerates it**:
+    an unreachable server, a store at a version this build cannot open, a
+    read-only store that is not there, a backend whose extra is missing. So an
+    offline device keeps its mount configuration and its other stores still
+    answer. Each is warned about on stderr on every command, whether or not
+    the command goes near it, and its point is held by a placeholder that
+    refuses everything below it. A mistake in the configuration itself is
+    still fatal, as it is at the server's startup.
     """
     directory = store.resolve_directory(args.directory)
     root = _root(args)
@@ -3212,6 +3233,15 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
         with contextlib.closing(root.opened(directory, versioning=_versioning(args))) as opened:
             yield opened
         return
+    owned: dict[str, store.Store] = {}
+    if args.mount_home:
+        try:
+            owned[home.MOUNT_POINT] = home.open_store(
+                mount_point=home.MOUNT_POINT, versioning=_versioning(args)
+            )
+        except OutrageError as exc:
+            _warn_not_opened(home.MOUNT_POINT, None, False, exc)
+            owned[home.MOUNT_POINT] = mounts.UnavailableStore(exc, mount_point=home.MOUNT_POINT)
     with mounts.open_mounts(
         directory,
         args.mounts,
@@ -3221,18 +3251,10 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
         # the server: here somebody typed the flag, and a mount that silently
         # was not made is the failure `--mount-ro` refuses for.
         attached=shipped.attached() if args.mount_docs else {},
-        owned=(
-            {
-                home.MOUNT_POINT: home.open_store(
-                    mount_point=home.MOUNT_POINT,
-                    versioning=_versioning(args),
-                )
-            }
-            if args.mount_home
-            else {}
-        ),
+        owned=owned,
         builtin=[home.MOUNT_POINT] if args.mount_home else [],
         versioning=_versioning(args),
+        on_open_error=_warn_not_opened,
     ) as table:
         for mount in table.shadowing():
             # The server's warning, in the same words and for the same reason:
@@ -3244,6 +3266,13 @@ def _open_table(args: argparse.Namespace, *, create: bool = False) -> Iterator[s
                 file=sys.stderr,
             )
         yield table
+
+
+def _warn_not_opened(
+    point: str, _spec: mounts.Spec | None, _read_only: bool, error: OutrageError
+) -> None:
+    """Say on stderr that a mount was not opened, and carry on without it."""
+    print(messages.not_opened(point, error), file=sys.stderr)
 
 
 def _file_holding(opened: store.Store, key: str) -> str:

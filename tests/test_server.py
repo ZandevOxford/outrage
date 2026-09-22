@@ -2584,7 +2584,7 @@ def test_server_startup_continues_when_the_builtin_home_cannot_open(tmp_path, mo
     status = server_module.main(["--dir", str(tmp_path), "--unmount", "outrage"])
 
     assert status == 0
-    assert observed == {"mounts": [""], "incomplete": True, "transport": "stdio"}
+    assert observed == {"mounts": ["", "home"], "incomplete": True, "transport": "stdio"}
     assert "mount 'home' was not opened" in capsys.readouterr().err
 
 

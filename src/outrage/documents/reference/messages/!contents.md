@@ -40,8 +40,11 @@
 ### outrage.messages.keyword(argument: str, value: Any = None) → str
 12701 12715 204
 
-### outrage.messages.render(error: OutrageError, name: Callable[[str], str] | None = None, \*, spell: Callable[[...], str] | None = None) → str
+### outrage.messages.not_opened(mount_point: str, error: OutrageError) → str
 13260 13276 213
 
+### outrage.messages.render(error: OutrageError, name: Callable[[str], str] | None = None, \*, spell: Callable[[...], str] | None = None) → str
+13759 13777 221
+
 ### outrage.messages.template(code: str) → Callable[[Callable[[...], str]], Callable[[...], str]]
-14492 14510 226
+14991 15011 234

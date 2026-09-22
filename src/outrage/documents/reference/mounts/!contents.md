@@ -334,5 +334,8 @@
 ### outrage.mounts.refuse_unavailable(opened: Store, key: str | None, action: str) → None
 106104 106212 1693
 
-### outrage.mounts.unparse(spec: Spec) → str
+### outrage.mounts.tolerated(error: OutrageError) → bool
 106992 107102 1706
+
+### outrage.mounts.unparse(spec: Spec) → str
+107391 107503 1714

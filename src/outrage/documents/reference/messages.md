@@ -210,6 +210,14 @@ has -- a sentence naming `unchanged_since` is right for anything calling
 Python or the tools, and only a front end whose arguments are spelled some
 other way has to say so.
 
+### outrage.messages.not_opened(mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str), error: [OutrageError](errors.md#outrage.errors.OutrageError)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
+
+The warning for a mount a tolerant open held a placeholder at.
+
+One sentence for both front ends, since both say it on stderr to an
+operator: the server once at startup, the command line on every command.
+Spelled with flags for that reason, as the rest of stderr is.
+
 ### outrage.messages.render(error: [OutrageError](errors.md#outrage.errors.OutrageError), name: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, spell: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[...], [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 `error` as one line, named the way `name` and `spell` say.

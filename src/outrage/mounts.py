@@ -2471,6 +2471,16 @@ _CONFIGURATION_ERROR_CODES = frozenset(
 )
 
 
+def tolerated(error: OutrageError) -> bool:
+    """Whether ``error`` opening a non-root mount waits on something other
+    than its configuration: a server, an upgrade, an install.
+
+    What a tolerant open holds a placeholder for, and what a report about one
+    store can answer with rather than refuse.
+    """
+    return error.code not in _CONFIGURATION_ERROR_CODES
+
+
 def open_mounts(
     directory: str | os.PathLike[str] | None,
     specs: Sequence[str] = (),
@@ -2619,7 +2629,7 @@ def open_mounts(
                     if read_only:
                         opened_read_only.append(prefix)
                 except OutrageError as exc:
-                    if on_open_error is None or exc.code in _CONFIGURATION_ERROR_CODES:
+                    if on_open_error is None or not tolerated(exc):
                         raise
                     on_open_error(prefix, spec, read_only, exc)
                     # Held rather than left unclaimed: a point nothing claims
@@ -2672,5 +2682,6 @@ __all__ = [
     "parse_spec",
     "refuse_missing_read_only",
     "refuse_unavailable",
+    "tolerated",
     "unparse",
 ]

@@ -3455,3 +3455,64 @@ def test_a_mount_point_no_mount_on_the_line_claims_is_refused(tmp_path, capsys, 
 
     assert status == 1
     assert "no mount on this command line is at 'nope'" in capsys.readouterr().err
+
+
+# -- a mount that could not be opened ----------------------------------------
+
+
+def test_a_command_goes_on_without_a_mount_it_could_not_open_and_warns(tmp_path, capsys):
+    """John's call of 2026-09-22, the same set the server tolerates: here a
+    read-only store that is not there. The warning is on every command,
+    whether or not the command goes near the mount."""
+    line = ["--dir", str(tmp_path), "--mount-ro", "gone=gone.sqlite"]
+
+    status, _ = run("set", "note", "--content", "in the root", *line)
+    said = capsys.readouterr().err
+    assert status == 0
+    assert (
+        "outrage: warning: mount 'gone' was not opened: the read-only mount at 'gone' "
+        "has no store at" in said
+    )
+    assert said.rstrip().endswith("continuing without it.")
+
+    status, output = run("get", "note", *line)
+    assert (status, output) == (0, "in the root")
+    assert "mount 'gone' was not opened" in capsys.readouterr().err
+
+
+def test_a_command_below_a_mount_it_could_not_open_is_refused(tmp_path, capsys):
+    """`issues/13` on the command line: the write must not land in the root."""
+    line = ["--dir", str(tmp_path), "--mount-ro", "gone=gone.sqlite"]
+    run("set", "note", "--content", "in the root", *line)
+    capsys.readouterr()
+
+    status, _ = run("set", "gone/x", "--content", "lost", *line)
+    assert status == 1
+    assert "the store mounted at 'gone' could not be opened" in capsys.readouterr().err
+
+    status, _ = run("rm", "-r", "", *line)
+    assert status == 1
+    assert "cannot delete '/'" in capsys.readouterr().err
+    with SqliteStore(tmp_path) as root:
+        assert not root.exists("gone/x")
+        assert root.exists("note")
+
+
+def test_a_listing_and_info_show_a_mount_that_could_not_be_opened(tmp_path, capsys):
+    line = ["--dir", str(tmp_path), "--mount-ro", "gone=gone.sqlite"]
+    run("set", "note", "--content", "in the root", *line)
+
+    status, output = run("ls", *line)
+    assert status == 0
+    assert "gone" in output and "unavailable mount" in output
+
+    status, output = run("ls", "-r", *line)
+    assert status == 0
+    assert "gone" in output
+
+    status, output = run("info", *line)
+    assert status == 0
+    row = next(line for line in output.splitlines() if line.startswith("gone"))
+    assert "unavailable mount" in row
+    assert "not opened: the read-only mount at 'gone' has no store at" in row
+    capsys.readouterr()

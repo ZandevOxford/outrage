@@ -188,6 +188,20 @@ def render(error: OutrageError, name: Namer | None = None, *, spell: Speller | N
     return write(name or keys.displayed, spell=spell or keyword, **error.details)
 
 
+def not_opened(mount_point: str, error: OutrageError) -> str:
+    """The warning for a mount a tolerant open held a placeholder at.
+
+    One sentence for both front ends, since both say it on stderr to an
+    operator: the server once at startup, the command line on every command.
+    Spelled with flags for that reason, as the rest of stderr is.
+    """
+    reason = render(error, spell=flag).removesuffix(".")
+    return (
+        f"outrage: warning: mount {keys.displayed(mount_point)!r} was not opened: "
+        f"{reason}; continuing without it."
+    )
+
+
 def codes() -> Mapping[str, Callable[..., str]]:
     """The whole table, for the test that checks it against the raise sites."""
     return dict(_TEMPLATES)
@@ -2617,6 +2631,7 @@ __all__ = [
     "codes",
     "flag",
     "keyword",
+    "not_opened",
     "render",
     "template",
 ]

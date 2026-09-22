@@ -2603,12 +2603,7 @@ class _StartupWarnings:
         error: OutrageError,
     ) -> None:
         self.mark()
-        reason = messages.render(error, spell=messages.flag).removesuffix(".")
-        print(
-            f"outrage: warning: mount {mount_point!r} was not opened: "
-            f"{reason}; continuing without it.",
-            file=sys.stderr,
-        )
+        print(messages.not_opened(mount_point, error), file=sys.stderr)
 
 
 def _record_startup_failure(
@@ -2684,6 +2679,12 @@ def main(argv: list[str] | None = None) -> int:
                 )
             except OutrageError as exc:
                 startup_warnings.mount(home.MOUNT_POINT, None, False, exc)
+                # Held, as `open_mounts` holds any other mount it could not
+                # open, so a write below it is refused rather than landing in
+                # the root.
+                owned[home.MOUNT_POINT] = mounts_module.UnavailableStore(
+                    exc, mount_point=home.MOUNT_POINT
+                )
         # `Live` is the context manager and `open_mounts` is not, which matters
         # rather than being a preference: a mount tool replaces the table, so
         # `with open_mounts(...)` would close a table that is no longer the one
