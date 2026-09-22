@@ -170,6 +170,11 @@ the reason it can be mounted by name -- and needs no entry, because it is
 mounted by default. Telling that caller to write it down named a file they
 could not name.
 
+`reopened` changes the last note as well. Only startup leaves a
+placeholder, so the mount a reopen replaces was named by the configuration
+file or a startup flag already, and a restart names it again. Telling that
+caller to write it down sent them to add an entry that was already there.
+
 ### outrage.remount.notes_for_unmount(after: [MountedStore](mounts.md#outrage.mounts.MountedStore), prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, started: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What an unmount is worth remarking on.

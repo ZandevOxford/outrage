@@ -744,10 +744,11 @@ def _remounted(store, tmp_path) -> list[list[Note]]:
 
     A mount is asked for twice, and the second is the shipped tree; so is an
     unmount, and the second is of a mount the server was not started with.
-    What a change says about making it permanent is not one sentence but four:
+    What a change says about making it permanent is not one sentence but five:
     a file mount is written into the configuration file, the shipped tree
-    cannot be and needs no entry, an unmount has no spelling in that file at
-    all, and an unmount of a mount no restart would bring back needs nothing.
+    cannot be and needs no entry, a reopened mount already has one, an unmount
+    has no spelling in that file at all, and an unmount of a mount no restart
+    would bring back needs nothing.
     Driving only the first left the others reachable in principle and
     unreachable here, which is exactly what this helper exists to deny.
     """

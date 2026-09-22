@@ -570,16 +570,18 @@ def _unmount_revealed_keys(name: Namer, /, *, mount: str, **_: Any) -> str:
     )
 
 
-# Three templates rather than one, and the split is not decorative. All three
-# say the same first thing -- this table lasts as long as the server -- which
-# is the one fact about a change a caller cannot work out from the answer,
-# since the table handed back looks exactly like the table a restart would
-# give. What differs is what to do about it, and one sentence covering all
-# three was wrong in two of them: it told a caller who had just *unmounted*
-# something to write that very mount into the configuration file, and it told
-# a caller who had mounted the shipped manual to write down a store that has
-# no `KEY=FILE` spelling at all. Which change this was is known where the note
-# is made, so the wording is chosen there rather than hedged here.
+# One template per kind of change rather than one for all, and the split is
+# not decorative. Each says the same first thing -- this table lasts as long
+# as the server -- which is the one fact about a change a caller cannot work
+# out from the answer, since the table handed back looks exactly like the
+# table a restart would give. What differs is what to do about it, and one
+# sentence covering every case was wrong in most of them: it told a caller who
+# had just *unmounted* something to write that very mount into the
+# configuration file, a caller who had mounted the shipped manual to write
+# down a store that has no `KEY=FILE` spelling at all, and a caller who had
+# reopened an unavailable mount to add an entry startup had just read. Which
+# change this was is known where the note is made, so the wording is chosen
+# there rather than hedged here.
 
 
 @MCP.template("remount-not-permanent")
@@ -589,6 +591,22 @@ def _remount_not_permanent(name: Namer, /, *, mount: str, **_: Any) -> str:
         f"{name(mount)!r} across a restart, write it into the mount "
         f"configuration file: nothing here edits one, since a machine rewrite "
         f"is what loses the comments such a file exists for."
+    )
+
+
+@MCP.template("remount-reopened-from-startup")
+def _remount_reopened_from_startup(name: Namer, /, *, mount: str, **_: Any) -> str:
+    # A placeholder is only ever left by startup, so whatever named this mount
+    # is still there and a restart reads it again. What this caller might still
+    # have to do is correct that entry, if it was the entry that failed rather
+    # than whatever it pointed at, and where it lives decides whose that is.
+    return (
+        f"this table lasts as long as this server and no longer, but "
+        f"{name(mount)!r} needs nothing written down: a restart opens it from "
+        f"what named it at startup, as it tried to this time. If what that "
+        f"named was the fault, it is corrected in the mount configuration "
+        f"file, or in the flags the server starts with, which is an operator's "
+        f"to do."
     )
 
 

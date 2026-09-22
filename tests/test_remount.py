@@ -148,6 +148,9 @@ def test_a_mount_at_a_point_that_could_not_be_opened_reopens_it(tmp_path):
 
             assert "could not be opened before, is open now" in said["note"]
             assert "already mounted" not in said["note"]
+            # Startup named it, so it is already written down wherever that was.
+            assert "needs nothing written down" in said["note"]
+            assert "write it into the mount configuration file" not in said["note"]
             assert call(server, "read_document", key="gone/note")["content"] == "back again"
 
 

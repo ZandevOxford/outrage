@@ -323,6 +323,11 @@ def notes_for_mount(
     the reason it can be mounted by name -- and needs no entry, because it is
     mounted by default. Telling that caller to write it down named a file they
     could not name.
+
+    ``reopened`` changes the last note as well. Only startup leaves a
+    placeholder, so the mount a reopen replaces was named by the configuration
+    file or a startup flag already, and a restart names it again. Telling that
+    caller to write it down sent them to add an entry that was already there.
     """
     notes: list[Note] = []
     if created is not None:
@@ -338,6 +343,8 @@ def notes_for_mount(
     # table has to word can be read off the source rather than guessed at.
     if builtin:
         notes.append(Note("remount-builtin-is-default", mount=prefix))
+    elif reopened:
+        notes.append(Note("remount-reopened-from-startup", mount=prefix))
     else:
         notes.append(Note("remount-not-permanent", mount=prefix))
     return notes

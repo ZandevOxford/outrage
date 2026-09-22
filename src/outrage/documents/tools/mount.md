@@ -59,4 +59,5 @@ reached.
 Returns the whole table, not the one mount, because what shadows what is not
 visible in an answer about a single mount. The change lasts as long as this
 server. A file mount belongs in the mount configuration to survive a restart;
-a built-in needs nothing written down because startup restores it.
+a built-in needs nothing written down because startup restores it, and nor
+does an `unavailable mount` reopened, because startup is what named it.
