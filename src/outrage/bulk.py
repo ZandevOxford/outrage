@@ -42,7 +42,7 @@ from pathlib import Path, PurePosixPath
 from stat import S_ISDIR, S_ISLNK
 
 from . import contents as contents_module
-from . import keys, store
+from . import keys, mounts, store
 from .errors import OutrageError
 from .notes import UNCHECKED_NO_RECORD, UNCHECKED_OTHER_KEY, Note
 from .store import (
@@ -264,6 +264,10 @@ def walk(
         opened, key, descendant_counts=descendant_counts, descendant_chars=descendant_chars
     ):
         yield entry
+        if entry.kind == mounts.UNAVAILABLE_MOUNT_KIND:
+            # Listed, and not entered: listing it would be refused, and the
+            # page it came on already says it was left out.
+            continue
         yield from walk(
             opened,
             entry.key,
@@ -645,6 +649,11 @@ def copied(
     # strips nothing, which is why grafting needs no second branch here.
     inner = keys.parse(subtree.key).key if reroot and subtree.key is not None else keys.ROOT
 
+    # Before anything crosses, at either end: a copy that stepped over a store
+    # nobody could open would report a complete transfer of part of a subtree.
+    mounts.refuse_unavailable(source, subtree.key, "copy")
+    mounts.refuse_unavailable(target, _landing(subtree, prefix, inner=inner), "copy")
+
     # The pre-pass, over the whole landing zone rather than over the keys this
     # call would actually write. That over-reaches in one direction only -- a
     # bounded or resumed copy can be refused by a change to a key it was never
@@ -867,6 +876,8 @@ def export_tree(
     """
     from .store_files import FilesystemStore
 
+    # Here as well as in the copy, so the refusal names what was asked for.
+    mounts.refuse_unavailable(opened, key, "export")
     # A dry run must leave no directory behind: it reports what an export
     # *would* do, and creating the target is doing some of it.
     with FilesystemStore(
@@ -1127,6 +1138,7 @@ def documents_from_store(opened: store.Store, key: str | None = None) -> Iterato
     Timestamps come across too, which is what makes this a compaction rather
     than a copy that quietly restamps the corpus.
     """
+    mounts.refuse_unavailable(opened, key, "pack")
     for stored, _ in _exported(opened, key):
         whole = store.read_all(opened, stored)
         yield (
@@ -2094,6 +2106,18 @@ def notes_for_delete(
     return notes
 
 
+def notes_for_survey(unavailable: Sequence[str]) -> list[Note]:
+    """What a listing, survey or search has to say about what it stepped over.
+
+    ``unavailable`` is the page's own list of mount points whose store could
+    not be opened. Their totals are not in the page's, and nothing in a count
+    says so, which is the answer that looks complete and is not.
+    """
+    if not unavailable:
+        return []
+    return [Note("mounts-unavailable-skipped", mounts=list(unavailable))]
+
+
 def notes_for_copy(
     landing: str,
     *,
@@ -2275,6 +2299,7 @@ __all__ = [
     "notes_for_copy",
     "notes_for_delete",
     "notes_for_export",
+    "notes_for_survey",
     "notes_for_write",
     "overlapping",
     "pack",

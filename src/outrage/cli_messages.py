@@ -118,6 +118,12 @@ CLI.silent(
     "`N keys below K remain; --recursive to take them too`",
 )
 CLI.silent(
+    "mounts-unavailable-skipped",
+    "every command already warns on stderr about each mount it could not "
+    "open, whether or not the command goes near it, so the same line again "
+    "after a listing would say nothing new",
+)
+CLI.silent(
     "copy-was-a-dry-run",
     "`copy --dry-run` prints `would write` per key and the watermark to repeat "
     "with, which is this note with a command line's flags in it",

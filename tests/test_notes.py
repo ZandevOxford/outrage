@@ -805,6 +805,7 @@ def test_every_note_the_tools_can_reach_is_worded_and_nothing_they_word_is_stran
                 mounts_kept=["ref"],
             ),
             *_remounted(store, tmp_path),
+            bulk.notes_for_survey(["gone"]),
         ]
         for note in notes
     }

@@ -34,7 +34,7 @@ from outrage import keys, messages, pgservice, store_postgres
 from outrage import store as store_module
 from outrage.cli import main
 from outrage.errors import OutrageError
-from outrage.mounts import MountedStore, ReadOnlyMountError, open_mounts
+from outrage.mounts import MountedStore, MountUnavailableError, ReadOnlyMountError, open_mounts
 from outrage.store import (
     BackendError,
     InvalidArgumentError,
@@ -596,7 +596,9 @@ def test_a_server_that_is_down_leaves_the_other_mounts_working(tmp_path):
     ) as table:
         table.store_document("local/note", "the rest of the table still works")
         assert table.retrieve_document("local/note").content.startswith("the rest")
-        assert [mount.name for mount in table] == ["/", "local"]
+        assert [mount.name for mount in table] == ["/", "local", "shared"]
+        with pytest.raises(MountUnavailableError):
+            table.store_document("shared/note", "while it is away")
 
     assert failures == [("shared", "postgres-unreachable")]
 
@@ -777,7 +779,10 @@ def test_a_read_only_mount_of_a_missing_store_is_tolerated_at_startup(tmp_path, 
         read_only_specs=[f"shared={path},type=postgres"],
         on_open_error=lambda point, spec, ro, exc: failures.append((point, ro, exc.code)),
     ) as table:
-        assert [mount.name for mount in table] == ["/"]
+        assert [(mount.name, mount.unavailable) for mount in table] == [
+            ("/", False),
+            ("shared", True),
+        ]
     assert failures == [("shared", True, "postgres-read-only-missing")]
 
 

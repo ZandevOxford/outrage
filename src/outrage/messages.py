@@ -424,6 +424,16 @@ def _mounts_refused_delete(
     )
 
 
+@MCP.template("mounts-unavailable-skipped")
+def _mounts_unavailable_skipped(name: Namer, /, *, mounts: Sequence[str], **_: Any) -> str:
+    return (
+        f"{len(mounts)} mounted store(s) could not be opened and are left out "
+        f"of this answer: {', '.join(repr(name(mount)) for mount in mounts)}. "
+        f"Its totals count only what could be read; `info` says why each one "
+        f"did not open, and the `mount` tool at the same point opens it again."
+    )
+
+
 @MCP.template("copy-was-a-dry-run")
 def _copy_was_a_dry_run(name: Namer, /, *, overwriting: bool, **_: Any) -> str:
     # The advice has to name a conflict rule that will accept a watermark:
@@ -1364,6 +1374,68 @@ def _mount_read_only_missing(name: Namer, /, *, mount: str, path: str, **_: Any)
         f"{path!r}. A read-only mount is not created, since a "
         f"mistyped name would mount as an empty store that no write could "
         f"ever contradict."
+    )
+
+
+def _nested(reason: Any, name: Namer, spell: Speller) -> str:
+    """The failure a placeholder carries, in the sentence its own code has.
+
+    Printed as it stands when it is not a code and its details, for the reason
+    ``postgres-service-unusable`` gives: rendering must not be what fails.
+    """
+    if isinstance(reason, Mapping) and isinstance(reason.get("code"), str):
+        said = render(
+            OutrageError(reason["code"], **dict(reason.get("details", {}))), name, spell=spell
+        )
+    else:
+        said = str(reason)
+    return said.rstrip().removesuffix(".")
+
+
+# Both of these name two remedies, one per reader, by the rule in the module
+# docstring: a running server's caller mounts the point again with the `mount`
+# tool, and the command line opens every mount afresh on its next command.
+_REOPENED = (
+    "It is opened again by the next command, or on a running server by the "
+    "`mount` tool at the same point."
+)
+
+
+@template("mount-unavailable")
+def _mount_unavailable(
+    name: Namer, /, *, at: str, mount: str, reason: Any, spell: Speller, **_: Any
+) -> str:
+    # `at` is the key asked about, which may be the mount point itself or
+    # anywhere below it; naming it only when it differs keeps the common case
+    # to one name.
+    asked = "" if at == mount else f"cannot reach {keys.displayed(at)!r}: "
+    return (
+        f"{asked}the store mounted at {keys.displayed(mount)!r} could not be "
+        f"opened, so nothing at or below it can be read or written "
+        f"({_nested(reason, name, spell)}). {_REOPENED}"
+    )
+
+
+@template("mount-unavailable-crossed")
+def _mount_unavailable_crossed(
+    name: Namer,
+    /,
+    *,
+    key: str,
+    mount: str,
+    mounts: Any,
+    reason: Any,
+    action: str,
+    spell: Speller,
+    **_: Any,
+) -> str:
+    others = [one for one in mounts if one != mount]
+    also = f", as could {', '.join(repr(keys.displayed(one)) for one in others)}" if others else ""
+    return (
+        f"cannot {action} {keys.displayed(key)!r}: the store mounted at "
+        f"{keys.displayed(mount)!r} below it could not be opened "
+        f"({_nested(reason, name, spell)}){also}, and a {action} that stepped "
+        f"over it would act on only part of the subtree. {_REOPENED}"
     )
 
 

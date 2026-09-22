@@ -23,10 +23,13 @@ from outrage.eventlog import EventLog
 from outrage.mounts import (
     MOUNT_KIND,
     READ_ONLY_MOUNT_KIND,
+    UNAVAILABLE_MOUNT_KIND,
     MountedStore,
     MountError,
+    MountUnavailableError,
     ReadOnlyMountError,
     Spec,
+    UnavailableStore,
     open_mounts,
     parse_options,
     parse_spec,
@@ -1765,7 +1768,7 @@ def test_the_server_reports_a_bad_mount_table_as_one_line(tmp_path, capsys):
     assert "KEY=FILE" in err
 
 
-def test_the_server_skips_a_missing_read_only_store(tmp_path, monkeypatch, capsys):
+def test_the_server_holds_the_point_of_a_missing_read_only_store(tmp_path, monkeypatch, capsys):
     from outrage import server as server_module
 
     base = tmp_path / "base"
@@ -1805,7 +1808,7 @@ def test_the_server_skips_a_missing_read_only_store(tmp_path, monkeypatch, capsy
     )
 
     assert observed["transport"] == "stdio"
-    assert observed["mounts"] == ["", "healthy"]
+    assert observed["mounts"] == ["", "gone", "healthy"]
     assert observed["incomplete"] is True
     assert server_module.INCOMPLETE_MOUNTS in observed["instructions"]
     assert "mount 'gone' was not opened" in capsys.readouterr().err
@@ -1817,7 +1820,7 @@ def test_open_mounts_is_strict_unless_a_caller_supplies_a_handler(tmp_path):
         open_mounts(tmp_path, read_only_specs=["gone=gone.sqlite"])
 
 
-def test_open_mounts_reports_and_skips_only_a_non_root_open_error(tmp_path):
+def test_open_mounts_reports_and_holds_only_a_non_root_open_error(tmp_path):
     SqliteStore(tmp_path, filename="kept.sqlite").close()
     failures = []
 
@@ -1826,7 +1829,11 @@ def test_open_mounts_reports_and_skips_only_a_non_root_open_error(tmp_path):
         read_only_specs=["kept=kept.sqlite", "gone=gone.sqlite"],
         on_open_error=lambda *failure: failures.append(failure),
     ) as table:
-        assert [mount.prefix for mount in table] == ["", "kept"]
+        assert [(mount.prefix, mount.unavailable) for mount in table] == [
+            ("", False),
+            ("gone", True),
+            ("kept", False),
+        ]
 
     assert [(point, read_only, error.code) for point, _spec, read_only, error in failures] == [
         ("gone", True, "mount-read-only-missing")
@@ -1890,6 +1897,198 @@ def test_an_unexpected_non_root_exception_is_not_swallowed(tmp_path, monkeypatch
             ["broken=crash.sqlite"],
             on_open_error=lambda *_failure: pytest.fail("unexpected callback"),
         )
+
+
+# -- a mount that could not be opened ----------------------------------------
+
+
+def a_table_with_a_closed_mount(directory: Path):
+    """A root holding one document, a readable ``kept`` and a ``gone`` that
+    could not be opened: a read-only mount of a store that is not there, the
+    one failure a tolerant open accepts with no server to take down."""
+    SqliteStore(directory, filename="kept.sqlite").close()
+    table = open_mounts(
+        directory,
+        ["kept=kept.sqlite"],
+        ["gone=gone.sqlite"],
+        on_open_error=lambda *_failure: None,
+    )
+    table.store_document("note", "in the root")
+    table.store_document("kept/note", "in kept")
+    return table
+
+
+def test_a_write_under_a_closed_mount_is_refused_rather_than_landing_beneath(tmp_path):
+    """`issues/13`: the point used to be left unclaimed, so this write went to
+    the root, read back, and vanished once the real store returned."""
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        with raises_rendered(
+            MountUnavailableError,
+            r"cannot reach 'gone/note': the store mounted at 'gone' could not be opened"
+            r".*has no store at",
+        ) as raised:
+            table.store_document("gone/note", "written while it was away")
+        assert raised.value.code == "mount-unavailable"
+
+    with SqliteStore(tmp_path) as root:
+        assert not root.exists("gone/note")
+        assert root.descendant_count("gone") == 0
+
+
+def test_a_read_under_a_closed_mount_is_refused_rather_than_not_found(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        for read in (
+            lambda: table.retrieve_document("gone/note"),
+            lambda: table.retrieve_document("gone"),
+            lambda: table.exists("gone/note"),
+            lambda: table.list_keys("gone"),
+            lambda: table.get_documents(BoundedSubtree("gone")),
+            lambda: table.descendant_count("gone/x"),
+        ):
+            with pytest.raises(MountUnavailableError):
+                read()
+
+
+def test_a_closed_mount_keeps_its_point_in_the_table(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        assert [(mount.prefix, mount.kind) for mount in table] == [
+            ("", MOUNT_KIND),
+            ("gone", UNAVAILABLE_MOUNT_KIND),
+            ("kept", MOUNT_KIND),
+        ]
+        closed = table.resolve("gone/x").mount.store
+        assert isinstance(closed, UnavailableStore)
+        assert closed.requested_read_only is True
+        assert closed.error.code == "mount-read-only-missing"
+
+
+def test_a_listing_shows_a_closed_mount_and_does_not_count_below_it(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        page = table.list_keys(None, descendant_counts=True, descendant_chars=True)
+        by_key = {entry.key: entry for entry in page.items}
+
+        assert by_key["gone"].kind == UNAVAILABLE_MOUNT_KIND
+        assert by_key["gone"].size is None
+        assert by_key["gone"].descendants is None
+        assert by_key["kept"].descendants == 1
+        assert page.unavailable == ("gone",)
+        assert table.list_keys(None).unavailable == ("gone",)
+
+
+def test_an_ancestor_of_a_closed_mount_reports_its_totals_as_unknown(tmp_path):
+    SqliteStore(tmp_path, filename="kept.sqlite").close()
+    with open_mounts(
+        tmp_path, read_only_specs=["lib/gone=gone.sqlite"], on_open_error=lambda *_: None
+    ) as table:
+        table.store_document("lib/note", "beside it")
+        entry = table.list_keys(None, descendant_counts=True).items[0]
+        assert (entry.key, entry.descendants) == ("lib", None)
+        assert table.list_keys(None).unavailable == ()
+
+
+def test_a_walk_lists_a_closed_mount_without_entering_it(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        walked = [(entry.key, entry.kind) for entry in bulk.walk(table, None)]
+        assert ("gone", UNAVAILABLE_MOUNT_KIND) in walked
+        assert ("kept/note", "document") in walked
+
+
+def test_a_survey_steps_over_a_closed_mount_and_says_so(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        page = table.get_documents()
+        assert [excerpt.key for excerpt in page.items] == ["kept/note", "note"]
+        assert page.unavailable == ("gone",)
+
+        missing = table.keys_missing_meta()
+        assert missing.items == ["kept/note", "note"]
+        assert missing.unavailable == ("gone",)
+
+        found = table.find_documents(criteria=[SearchCriterion("in", "contains", "document")])
+        assert found.matched == 2
+        assert found.unavailable == ("gone",)
+
+        assert table.get_documents(BoundedSubtree("kept")).unavailable == ()
+
+
+def test_a_recursive_delete_across_a_closed_mount_is_refused_having_deleted_nothing(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        with raises_rendered(
+            MountUnavailableError,
+            r"cannot delete '/': the store mounted at 'gone' below it could not be opened",
+        ) as raised:
+            table.delete(keys.ROOT, recursive=True)
+        assert raised.value.code == "mount-unavailable-crossed"
+        assert table.exists("note")
+        assert table.exists("kept/note")
+
+        with pytest.raises(MountUnavailableError):
+            table.delete("gone", recursive=True)
+        assert table.delete("kept", recursive=True) == ["kept/note"]
+
+
+def test_a_copy_that_would_cross_a_closed_mount_is_refused_at_either_end(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        with SqliteStore(tmp_path, filename="other.sqlite") as other:
+            with pytest.raises(MountUnavailableError) as out_of:
+                list(other.copy_from(table))
+            assert out_of.value.code == "mount-unavailable-crossed"
+            assert other.descendant_count(keys.ROOT) == 0
+
+            other.store_document("x", "to copy")
+            with pytest.raises(MountUnavailableError) as into:
+                list(table.copy_from(other, prefix="gone"))
+            assert into.value.code == "mount-unavailable"
+
+
+def test_an_export_that_would_cross_a_closed_mount_is_refused(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        with raises_rendered(MountUnavailableError, r"cannot export '/'"):
+            list(bulk.export_tree(table, None, tmp_path / "out"))
+
+
+def test_the_tools_say_which_mounts_a_survey_stepped_over(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        server = build_server(table)
+        for name, arguments in (
+            ("list_keys", {}),
+            ("get_documents", {}),
+            ("keys_missing_meta", {}),
+            (
+                "find_documents",
+                {"criteria": [{"pattern": "in", "match": "contains", "target": "document"}]},
+            ),
+        ):
+            result = call(server, name, **arguments)
+            assert result["mounts_unavailable"] == ["gone"], name
+            assert (
+                "could not be opened and are left out of this answer: 'gone'" in (result["note"])
+            ), name
+
+        assert "mounts_unavailable" not in call(server, "list_keys", key="kept")
+        entry = next(e for e in call(server, "list_keys")["entries"] if e["key"] == "gone")
+        assert entry["kind"] == UNAVAILABLE_MOUNT_KIND
+
+
+def test_the_tools_refuse_to_read_write_or_delete_across_a_closed_mount(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        server = build_server(table)
+        said = call_expecting_error(server, "store_document", key="gone/x", content="y")
+        assert "the store mounted at 'gone' could not be opened" in said
+        assert "has no store at" in said
+        assert "`mount` tool at the same point" in said
+
+        said = call_expecting_error(server, "delete_keys", key="", recursive=True)
+        assert "cannot delete '/'" in said
+        assert table.exists("note")
+
+
+def test_mounting_over_a_closed_mount_replaces_it(tmp_path):
+    with a_table_with_a_closed_mount(tmp_path) as table:
+        SqliteStore(tmp_path, filename="gone.sqlite").close()
+        replaced = table.remounted(mount={"gone": SqliteStore(tmp_path, filename="gone.sqlite")})
+        replaced.store_document("gone/note", "now it is back")
+        assert replaced.retrieve_document("gone/note").content == "now it is back"
+        replaced.resolve("gone").mount.store.close()
 
 
 # -- a mount whose backend cannot be written -------------------------------

@@ -987,6 +987,14 @@ it may write for itself. The exported document is taken and not read for
 the same reason: this is a note about a result, and a caller should not
 have to know which of these need the result to decide.
 
+### outrage.bulk.notes_for_survey(unavailable: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
+
+What a listing, survey or search has to say about what it stepped over.
+
+`unavailable` is the page's own list of mount points whose store could
+not be opened. Their totals are not in the page's, and nothing in a count
+says so, which is the answer that looks complete and is not.
+
 ### outrage.bulk.notes_for_write(previous: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), stored: [int](https://docs.python.org/3/builtins/functions.html#int)) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Note](notes.md#outrage.notes.Note)]
 
 What a write with nothing to check it against has to remark on.

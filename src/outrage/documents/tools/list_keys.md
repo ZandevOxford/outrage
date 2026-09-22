@@ -3,7 +3,9 @@ List the keys immediately below a key, including subkeys and metadata.
 Omit the key to list the top level. Keys of kind `implicit` hold no
 content themselves but have something beneath them. A key of kind `mount`
 is where another store is mounted, and `read-only mount` is one that refuses
-writes.
+writes. An `unavailable mount` is one whose store could not be opened: it
+refuses everything below it, is not counted, and a result that stepped over
+one names it in `mounts_unavailable`.
 
 `descendant_counts` reports how many keys and how many documents lie below
 each listed key, which is how a level says which of its children is worth

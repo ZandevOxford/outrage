@@ -957,7 +957,7 @@ Per name because `total` cannot answer it: that counts documents carrying
 **none** of the names, and a document carrying a title but no summary is in
 neither number. The two do not compose in either direction.
 
-### *class* outrage.store.Page(items: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[T], returned: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None))
+### *class* outrage.store.Page(items: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[T], returned: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int), total_chars: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), unavailable: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...] = ())
 
 Bases: [`Generic`](https://docs.python.org/3/library/typing.html#typing.Generic)
 
@@ -989,6 +989,13 @@ number as the other.
 #### next_cursor *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 Key to resume after, or None when the page reached the end.
+
+#### unavailable *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...]*
+
+Mount points this answer had to leave out, because the store mounted
+there could not be opened. Empty for any single store. When it is not,
+`total` and `total_chars` count only what could be read, and the
+collection is not all there.
 
 #### *property* truncated *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
@@ -1038,7 +1045,7 @@ One targeted condition in a document search.
 
 #### meta_name *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...] | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
-### *class* outrage.store.SearchPage(matches: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[DocumentMatch](#outrage.store.DocumentMatch), ...], matched: [int](https://docs.python.org/3/builtins/functions.html#int), matched_chars: [int](https://docs.python.org/3/builtins/functions.html#int), scanned: [int](https://docs.python.org/3/builtins/functions.html#int), total_candidates: [int](https://docs.python.org/3/builtins/functions.html#int), total_candidate_chars: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None))
+### *class* outrage.store.SearchPage(matches: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[DocumentMatch](#outrage.store.DocumentMatch), ...], matched: [int](https://docs.python.org/3/builtins/functions.html#int), matched_chars: [int](https://docs.python.org/3/builtins/functions.html#int), scanned: [int](https://docs.python.org/3/builtins/functions.html#int), total_candidates: [int](https://docs.python.org/3/builtins/functions.html#int), total_candidate_chars: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), unavailable: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...] = ())
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -1061,6 +1068,10 @@ searching the whole selection and defeat the scan bound.
 #### total_candidate_chars *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
 #### next_cursor *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
+
+#### unavailable *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...]*
+
+Mount points left out of the candidates, as [`Page.unavailable`](#outrage.store.Page.unavailable).
 
 ### outrage.store.SearchTarget
 

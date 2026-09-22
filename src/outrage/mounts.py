@@ -46,7 +46,7 @@ from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, NoReturn
 
 from . import keys
 from . import store as store_module
@@ -209,6 +209,12 @@ READ_ONLY_MOUNT_KIND = "read-only mount"
 #: root in a table beside the mounts.
 ROOT_KIND = "root"
 
+#: What a listing calls a mount point whose store could not be opened. A kind
+#: of its own rather than an ordinary mount with no size, because what it says
+#: is the opposite: nothing below it is known, where an empty mount is known to
+#: hold nothing.
+UNAVAILABLE_MOUNT_KIND = "unavailable mount"
+
 
 class MountError(OutrageError, ValueError):
     """Raised when a mount table cannot be built as described."""
@@ -225,6 +231,99 @@ class ReadOnlyMountError(OutrageError, PermissionError):
     ``errors.py`` that each subclass keeps the builtin it already inherited --
     a caller that catches ``OSError`` around a write goes on working.
     """
+
+
+class MountUnavailableError(OutrageError, RuntimeError):
+    """Raised when a call reaches a mount whose store could not be opened.
+
+    Carries the mount point and the failure that kept the store closed, as
+    ``reason``: a code and its details rather than a sentence, so the front end
+    renders it for its own reader, the same way ``postgres-service-unusable``
+    carries its reasons.
+    """
+
+
+def _reason(error: OutrageError) -> dict[str, Any]:
+    """``error`` as facts an outer error can carry and a template can render."""
+    return {"code": error.code, "details": dict(error.details)}
+
+
+class UnavailableStore(Store):
+    """What stands at a mount point whose store could not be opened.
+
+    A tolerant open used to leave such a point unclaimed, so every key below
+    it routed to the store beneath -- normally the root -- and a write there
+    succeeded, read back, and vanished from view the moment the real store
+    came back and shadowed it. Holding the point with a store that refuses
+    everything is what stops that: routing is unchanged, and the one store it
+    reaches says why it cannot answer.
+
+    **Reads are refused too.** "Not found" from a store nobody could open is
+    a claim about its contents that nothing checked.
+
+    A traversal crossing the point from above never asks this store at all:
+    :class:`MountedStore` steps over it and reports it, or refuses the whole
+    operation where acting on part of a subtree would pass for acting on all
+    of it.
+    """
+
+    #: Not a claim that the store beneath is writable. True so that
+    #: :class:`MountedStore` does not class the mount as read-only, whose
+    #: refusal would name a remedy for the wrong problem; every write reaches
+    #: this store and is refused here with the real reason.
+    writable = True
+
+    backend_name = "unavailable"
+
+    def __init__(
+        self, error: OutrageError, *, mount_point: str, requested_read_only: bool = False
+    ) -> None:
+        super().__init__(mount_point=mount_point)
+        self.error = error
+        """The failure that kept the store closed."""
+        self.requested_read_only = requested_read_only
+        """Whether the mount was asked for read-only, which a report of the
+        table still has to say although nothing here is ever written."""
+
+    def refuse(self, key: str | None = keys.ROOT) -> NoReturn:
+        """Raise the refusal for a call about ``key``, in this store's own namespace.
+
+        The key is carried as ``at``, already named from outside, rather than
+        as ``key``: the calls reaching here are not all renamed on the way out,
+        and one that is would put the prefix on twice.
+        """
+        raise MountUnavailableError(
+            "mount-unavailable",
+            at=self._log_key(key),
+            mount=self.mount_point,
+            reason=_reason(self.error),
+        )
+
+    def _refuse(self, key: Any = keys.ROOT, *_args: Any, **_kwargs: Any) -> Any:
+        if isinstance(key, BoundedSubtree):
+            key = key.key
+        self.refuse(key if isinstance(key, str) else keys.ROOT)
+
+    store_document = _refuse
+    delete = _refuse
+    descendant_count = _refuse
+    subtree_totals = _refuse
+    latest_change = _refuse
+    exists = _refuse
+    level_entry = _refuse
+    retrieve_document = _refuse
+    list_keys = _refuse
+    last_child = _refuse
+    get_documents = _refuse
+    find_documents = _refuse
+    missing_meta_stats = _refuse
+    keys_missing_meta = _refuse
+
+    def copy_from(self, *_args: Any, **_kwargs: Any) -> Any:
+        self.refuse()
+
+    def close(self) -> None:
+        """Nothing was opened, so nothing is held."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,7 +365,14 @@ class Mount:
     @property
     def kind(self) -> str:
         """What a listing calls this mount point."""
+        if self.unavailable:
+            return UNAVAILABLE_MOUNT_KIND
         return READ_ONLY_MOUNT_KIND if self.read_only else MOUNT_KIND
+
+    @property
+    def unavailable(self) -> bool:
+        """Whether this point holds a placeholder for a store that did not open."""
+        return isinstance(self.store, UnavailableStore)
 
     @property
     def name(self) -> str:
@@ -736,6 +842,19 @@ def _named_keys(segment: Segment, names: list[str]) -> list[str]:
     return [segment.mount.outer(name) for name in names]
 
 
+def _readable(segments: list[Segment]) -> tuple[list[Segment], tuple[str, ...]]:
+    """``segments`` without the unavailable mounts, and which those were.
+
+    A placeholder is stepped over rather than asked, because asking refuses
+    and a survey that one closed store could stop would make every other
+    mount hostage to it. What it had to leave out is returned beside, so the
+    answer can say it is not the whole subtree.
+    """
+    kept = [segment for segment in segments if not segment.mount.unavailable]
+    skipped = [segment.mount.prefix for segment in segments if segment.mount.unavailable]
+    return kept, tuple(dict.fromkeys(skipped))
+
+
 def _across_segments[T](
     segments: list[Segment],
     read: Callable[..., Page[T]],
@@ -781,6 +900,7 @@ def _across_segments[T](
     that opened it and ``before_inclusive`` the one it closed with, and letting
     that range cross the boundaries the same way every other one does.
     """
+    segments, unavailable = _readable(segments)
     items: list[T] = []
     total = 0
     total_chars = 0
@@ -840,6 +960,7 @@ def _across_segments[T](
         total=total,
         total_chars=total_chars,
         next_cursor=cursor,
+        unavailable=unavailable,
     )
 
 
@@ -1165,6 +1286,12 @@ class MountedStore(Store):
         unreachable whether or not anything asked for them.
         """
         at = self.resolve(key)
+        if at.mount.unavailable:
+            # Inside the placeholder rather than crossing it, so there is
+            # nothing readable to step over to: the subtree is the one store
+            # nobody could open.
+            assert isinstance(at.mount.store, UnavailableStore)
+            at.mount.store.refuse(at.key)
         parts = self._segments(at.mount, at.key, at.outer, depth)
         if key_range == UNBOUNDED:
             return parts
@@ -1295,6 +1422,17 @@ class MountedStore(Store):
                 best = other
         return best
 
+    def unavailable_at_or_below(self, key: str | None = None) -> list[Mount]:
+        """The placeholders a call about ``key``'s subtree would meet, in key order.
+
+        The mount answering for ``key`` when it is one, and every one below.
+        What a front end asks before an operation that must not act on part
+        of a subtree, and what :func:`refuse_unavailable` refuses with.
+        """
+        owner = self.resolve(key).mount
+        found = [mount for mount in self.below(key) if mount.unavailable]
+        return [owner, *found] if owner.unavailable else found
+
     def read_only_below(self, key: str | None = None) -> list[str]:
         """The mounts below ``key`` that refuse a write, in key order.
 
@@ -1365,6 +1503,10 @@ class MountedStore(Store):
         rather than appearing as a bare name. Read at one character: the size
         and the format are wanted, the content is not.
         """
+        if mount.unavailable:
+            # Not asked: it would refuse, and an entry has nothing to report
+            # but the kind.
+            return Entry(key=mount.prefix, kind=mount.kind, size=None, format=None, updated_at=None)
         try:
             root = mount.store.retrieve_document(keys.ROOT, max_chars=1)
         except KeyNotFoundError:
@@ -1495,10 +1637,8 @@ class MountedStore(Store):
         self, key: str, *, key_range: KeyRange = UNBOUNDED, whole_subtree: bool = False
     ) -> int:
         found = self.resolve(key)
-        return sum(
-            _kept_below(segment, found, whole_subtree=whole_subtree)
-            for segment in self.segments(found.outer, key_range=key_range)
-        )
+        readable, _ = _readable(self.segments(found.outer, key_range=key_range))
+        return sum(_kept_below(segment, found, whole_subtree=whole_subtree) for segment in readable)
 
     def subtree_totals(
         self, key: str, *, key_range: KeyRange = UNBOUNDED, chars: bool = False
@@ -1529,7 +1669,8 @@ class MountedStore(Store):
         counted = 0
         documents = 0
         measured = 0
-        for segment in self.segments(found.outer, key_range=key_range):
+        readable, _ = _readable(self.segments(found.outer, key_range=key_range))
+        for segment in readable:
             # The whole segment inside the rename, not just the aggregate:
             # measuring the root row reads it, and a row deleted between the
             # test and the read raises. Outside this, that error would name the
@@ -1567,7 +1708,8 @@ class MountedStore(Store):
         stores costs nothing here.
         """
         readings = []
-        for segment in self.segments(self.resolve(key).outer, key_range=key_range):
+        readable, _ = _readable(self.segments(self.resolve(key).outer, key_range=key_range))
+        for segment in readable:
             with _renamed(segment.mount):
                 readings.append(segment.store.now(segment.subtree.key, key_range=segment.key_range))
         return min(readings, default=None) or super().now(key)
@@ -1589,7 +1731,8 @@ class MountedStore(Store):
         """
         found = self.resolve(key)
         newest: str | None = None
-        for segment in self.segments(found.outer, key_range=key_range):
+        readable, _ = _readable(self.segments(found.outer, key_range=key_range))
+        for segment in readable:
             with _renamed(segment.mount):
                 newest = _later(
                     newest,
@@ -1640,6 +1783,8 @@ class MountedStore(Store):
         exactly as it is skipped in the delete, which is what makes the two
         lists the same list.
         """
+        if recursive:
+            refuse_unavailable(self, key, "delete")
         check_unchanged(
             self,
             key,
@@ -1731,7 +1876,7 @@ class MountedStore(Store):
         # reading returns, with no size, no format and no timestamp.
         merged = {e.key: e for e in entries}
         for child in ahead:
-            if child.kind == MOUNT_KIND or child.kind == READ_ONLY_MOUNT_KIND:
+            if child.kind in (MOUNT_KIND, READ_ONLY_MOUNT_KIND, UNAVAILABLE_MOUNT_KIND):
                 merged[child.key] = child
             elif replaced[child.key] is None:
                 merged[child.key] = child
@@ -1742,11 +1887,18 @@ class MountedStore(Store):
         # half is denser near the cursor push the other's keys over the edge,
         # and a cursor never looks back.
         cut = limit is not None and len(ordered) > limit
-        items = _with_descendants(
-            self,
-            ordered[:limit] if cut else ordered,
-            counts=descendant_counts,
-            chars=descendant_chars,
+        # A placeholder is left out of the totals rather than asked for them,
+        # which would refuse the whole listing over one entry in it.
+        items = [
+            entry
+            if entry.kind == UNAVAILABLE_MOUNT_KIND
+            else _with_descendants(self, [entry], counts=descendant_counts, chars=descendant_chars)[
+                0
+            ]
+            for entry in (ordered[:limit] if cut else ordered)
+        ]
+        items, unavailable = self._unknown_below(
+            items, descendants=descendant_counts or descendant_chars
         )
 
         # Where to resume. When the page was cut, the last key emitted -- never
@@ -1783,7 +1935,32 @@ class MountedStore(Store):
             total=total,
             total_chars=total_chars,
             next_cursor=max(marks, key=keys.sort_form) if more and marks else None,
+            unavailable=unavailable,
         )
+
+    def _unknown_below(
+        self, items: list[Entry], *, descendants: bool
+    ) -> tuple[list[Entry], tuple[str, ...]]:
+        """A listing's entries with what no store could count made unknown.
+
+        An unavailable mount is listed, as its own kind, and not descended
+        into. Where the descendant totals were asked for, an entry with such a
+        mount at or below it has them set to None rather than to the part that
+        could be counted: a number there reads as the whole subtree, and zero
+        below a store nobody opened is a claim nothing checked.
+        """
+        missing: list[str] = []
+        filled = []
+        for entry in items:
+            crossed = [mount.prefix for mount in self.unavailable_at_or_below(entry.key)]
+            if entry.kind == UNAVAILABLE_MOUNT_KIND or (descendants and crossed):
+                missing += crossed
+            if descendants and crossed:
+                entry = dataclasses.replace(
+                    entry, descendants=None, descendant_documents=None, descendant_chars=None
+                )
+            filled.append(entry)
+        return filled, tuple(dict.fromkeys(missing))
 
     def get_documents(
         self,
@@ -1881,7 +2058,8 @@ class MountedStore(Store):
         # exists to catch -- it caught this.
         asked = [meta_name] if isinstance(meta_name, str) else list(meta_name)
         carried: dict[str, int] | None = dict.fromkeys(asked, 0) if coverage else None
-        for segment in self.segments(found.outer, subtree.depth, key_range=key_range):
+        readable, _ = _readable(self.segments(found.outer, subtree.depth, key_range=key_range))
+        for segment in readable:
             inward = _inward_range(segment.mount, window)
             if inward is None and not coverage:
                 continue
@@ -1937,6 +2115,38 @@ class MountedStore(Store):
 
     def __exit__(self, *exc: object) -> None:
         self.close()
+
+
+def refuse_unavailable(opened: Store, key: str | None, action: str) -> None:
+    """Refuse ``action`` over ``key``'s subtree if it would cross a placeholder.
+
+    For the operations that must not act on part of a subtree and report
+    success: a recursive delete, and a copy or export out of or into one. A
+    survey steps over the placeholder and says so instead, since leaving
+    something out of an answer that names what it left out loses nothing.
+
+    ``opened`` is any store; only a mount table can hold a placeholder. Where
+    ``key`` is itself inside one, the refusal is that store's own, which is
+    the one a read of the key would have met.
+    """
+    if not isinstance(opened, MountedStore):
+        return
+    crossed = opened.unavailable_at_or_below(key)
+    if not crossed:
+        return
+    first = crossed[0]
+    assert isinstance(first.store, UnavailableStore)
+    found = opened.resolve(key)
+    if found.mount is first:
+        first.store.refuse(found.key)
+    raise MountUnavailableError(
+        "mount-unavailable-crossed",
+        key=found.outer,
+        mount=first.prefix,
+        mounts=[mount.prefix for mount in crossed],
+        reason=_reason(first.store.error),
+        action=action,
+    )
 
 
 def _implicit(key: str) -> Entry:
@@ -2407,6 +2617,12 @@ def open_mounts(
                     if on_open_error is None or exc.code in _CONFIGURATION_ERROR_CODES:
                         raise
                     on_open_error(prefix, spec, read_only, exc)
+                    # Held rather than left unclaimed: a point nothing claims
+                    # routes to the store beneath, and a write there would land
+                    # in it and vanish once the real store is back.
+                    opened[prefix] = UnavailableStore(
+                        exc, mount_point=prefix, requested_read_only=read_only
+                    )
         return MountedStore(
             opened,
             read_only=opened_read_only,
@@ -2434,18 +2650,22 @@ __all__ = [
     "SERVICE_OPTION",
     "SPEC_DELIMITER",
     "TYPE_OPTION",
+    "UNAVAILABLE_MOUNT_KIND",
     "VERSIONING_OPTION",
     "Mount",
     "MountError",
+    "MountUnavailableError",
     "MountedStore",
     "ReadOnlyMountError",
     "Resolved",
     "Segment",
     "Spec",
+    "UnavailableStore",
     "mount_point",
     "open_mounts",
     "parse_options",
     "parse_spec",
     "refuse_missing_read_only",
+    "refuse_unavailable",
     "unparse",
 ]

@@ -167,6 +167,13 @@ the store file's extension, and a directory of files has no extension to
 read: without a way to say so, a tree is not mountable and a mount table
 cannot describe one. See `outrage.store._BY_EXTENSION`.
 
+### outrage.mounts.UNAVAILABLE_MOUNT_KIND *= 'unavailable mount'*
+
+What a listing calls a mount point whose store could not be opened. A kind
+of its own rather than an ordinary mount with no size, because what it says
+is the opposite: nothing below it is known, where an empty mount is known to
+hold nothing.
+
 ### outrage.mounts.VERSIONING_OPTION *= 'versioning'*
 
 The option that says whether this store keeps what a write replaces and a
@@ -222,6 +229,10 @@ made about the built-in store.
 
 What a listing calls this mount point.
 
+#### *property* unavailable *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
+
+Whether this point holds a placeholder for a store that did not open.
+
 #### *property* name *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
 The mount point as written for a person to read; the root is `/`.
@@ -255,6 +266,17 @@ before anything mounts the store.
 Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`ValueError`](https://docs.python.org/3/builtins/exceptions.html#ValueError)
 
 Raised when a mount table cannot be built as described.
+
+### *exception* outrage.mounts.MountUnavailableError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
+
+Bases: [`OutrageError`](errors.md#outrage.errors.OutrageError), [`RuntimeError`](https://docs.python.org/3/builtins/exceptions.html#RuntimeError)
+
+Raised when a call reaches a mount whose store could not be opened.
+
+Carries the mount point and the failure that kept the store closed, as
+`reason`: a code and its details rather than a sentence, so the front end
+renders it for its own reader, the same way `postgres-service-unusable`
+carries its reasons.
 
 ### *class* outrage.mounts.MountedStore(stores: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Store](store.md#outrage.store.Store)], \*, read_only: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), lent: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), builtin: [Collection](https://docs.python.org/3/library/collections.abc.html#collections.abc.Collection)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = ())
 
@@ -450,6 +472,14 @@ point the outer store holds *only* metadata for. Metadata sits at the
 key rather than below it, so neither question finds it. Worth naming
 rather than chasing -- both are misconfigurations, and this catches the
 ones anybody actually creates.
+
+#### unavailable_at_or_below(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Mount](#outrage.mounts.Mount)]
+
+The placeholders a call about `key`'s subtree would meet, in key order.
+
+The mount answering for `key` when it is one, and every one below.
+What a front end asks before an operation that must not act on part
+of a subtree, and what [`refuse_unavailable()`](#outrage.mounts.refuse_unavailable) refuses with.
 
 #### read_only_below(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]
 
@@ -978,6 +1008,532 @@ nothing -- a spec with no file, opened under a backend whose store is a
 file in the store directory, would otherwise silently mount that
 directory's default store under somebody else's mount point.
 
+### *class* outrage.mounts.UnavailableStore(error: [OutrageError](errors.md#outrage.errors.OutrageError), \*, mount_point: [str](https://docs.python.org/3/builtins/stdtypes.html#str), requested_read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
+
+Bases: [`Store`](store.md#outrage.store.Store)
+
+What stands at a mount point whose store could not be opened.
+
+A tolerant open used to leave such a point unclaimed, so every key below
+it routed to the store beneath -- normally the root -- and a write there
+succeeded, read back, and vanished from view the moment the real store
+came back and shadowed it. Holding the point with a store that refuses
+everything is what stops that: routing is unchanged, and the one store it
+reaches says why it cannot answer.
+
+**Reads are refused too.** "Not found" from a store nobody could open is
+a claim about its contents that nothing checked.
+
+A traversal crossing the point from above never asks this store at all:
+[`MountedStore`](#outrage.mounts.MountedStore) steps over it and reports it, or refuses the whole
+operation where acting on part of a subtree would pass for acting on all
+of it.
+
+#### writable *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[bool](https://docs.python.org/3/builtins/functions.html#bool)]* *= True*
+
+Not a claim that the store beneath is writable. True so that
+[`MountedStore`](#outrage.mounts.MountedStore) does not class the mount as read-only, whose
+refusal would name a remedy for the wrong problem; every write reaches
+this store and is refused here with the real reason.
+
+#### backend_name *: [ClassVar](https://docs.python.org/3/library/typing.html#typing.ClassVar)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]* *= 'unavailable'*
+
+What this backend is called where a report or a refusal has to name it.
+A short lowercase word, matching the store file's extension, so that a
+sentence about a store and the name of its file agree.
+
+#### error
+
+The failure that kept the store closed.
+
+#### requested_read_only
+
+Whether the mount was asked for read-only, which a report of the
+table still has to say although nothing here is ever written.
+
+#### refuse(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = keys.ROOT) → [NoReturn](https://docs.python.org/3/library/typing.html#typing.NoReturn)
+
+Raise the refusal for a call about `key`, in this store's own namespace.
+
+The key is carried as `at`, already named from outside, rather than
+as `key`: the calls reaching here are not all renamed on the way out,
+and one that is would put the prefix on twice.
+
+#### store_document(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+Store `content` at `key`, overwriting anything already there.
+
+A `?` segment in `key` is replaced by a number unused among the
+children of the key enclosing it, so `tmp/?` writes to `tmp/1` in
+an empty store. Returns the key actually written, which is the only way
+the caller learns an allocated number.
+
+`format` is one of `FORMATS`. Left out, it defaults to 'json'
+when the content parses as a JSON object or array, 'html' when it opens
+with a doctype or an `<html>` element, and 'markdown' otherwise --
+'text' is never detected and has to be asked for.
+
+`title` and `contents` write the `!title` and `!contents`
+metadata alongside the document, in the same transaction where
+possible. They save a second call, but exist mainly because metadata
+written separately can simply be forgotten. Either may be given for a
+metadata key too, and becomes that key's own metadata: metadata is a
+namespace and a namespace can be described, so `a/!changelog` may
+say what its changelog is for at `a/!changelog/!title`.
+
+`encoding` describes how `content`, `title` and `contents`
+arrived, not what is stored: 'json-string' means each is a JSON string
+literal, quotes and all, which is decoded before it is written. The
+stored documents are plain text either way, so readers are unaffected.
+Its purpose is to make damage in transit loud - see `_decode`.
+
+`updated_at` is when the document was last written, and left out it
+is now - which is what an ordinary write means by it. It is here for
+the write that is a *copy* of a document that already exists: a
+transfer between two stores carries the timestamp across, or the copy
+says every document was written the moment it was copied and the store
+loses the one fact about a document that nothing can reconstruct. An
+ISO 8601 timestamp, normalised to UTC at second precision, which is
+what `_now()` writes and so what every stored value already looks
+like; a naive one is read as UTC.
+
+Deliberately **not** offered by the MCP tool or by `outrage set`. A
+client writing a document is writing it now, and a stamp it could
+choose is one it could get wrong about its own work; the callers that
+legitimately restamp are copying something that was already stamped.
+
+Every refusal above is `_validated()`'s, which an implementation
+calls before it writes anything.
+
+#### delete(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+Delete `key`, returning the keys actually removed.
+
+`dry_run` reports that same list without removing any of it. It
+belongs here rather than in a front end because every backend already
+selects the keys before it takes them: a preview computed anywhere else
+is a second spelling of the selection, and the way that fails is a
+preview which quietly disagrees with the delete it previews. The
+watermark is checked either way, so a preview of a delete that would be
+refused is refused rather than listing keys it would never take.
+
+A document key takes its metadata with it -- the whole metadata
+subtree, since a document and its metadata are one unit and contiguous
+in the order. Descendants are removed only when `recursive` is set,
+so a mistyped key cannot silently discard a whole subtree. Note that
+storing an empty document is not a deletion.
+
+**A metadata key is a container like any other.** Deleting one takes
+what is inside it, so `a/!changelog` with notes below refuses without
+`recursive` rather than quietly discarding them. It is only a
+document's *own* delete that carries metadata away unasked, and that is
+because the metadata has no meaning once the document is gone.
+
+`key_range` bounds which keys are in scope, exactly as it does for a
+read: a delete that steps over a mounted store's stretch of the order
+needs to say so in the same vocabulary a traversal does, or it removes
+keys the mount has made unreachable and reports them as deleted. Those
+keys read back fine from the mount on the very next call, which is the
+defect this argument exists for.
+
+It bounds *both* halves. The key itself and its metadata are as capable
+of lying inside a shadowed stretch as any descendant is.
+
+`unchanged_since` is a precondition rather than a bound: the keys
+this delete would take are asked whether any of them moved since the
+caller looked, and the whole delete is refused if one did. **Refused
+rather than narrowed**, because a delete is one call and a partial
+subtree is the outcome nobody asked for -- a caller told which key
+moved can look at it and run the delete again, and a caller handed half
+a subtree cannot put it back. See `check_unchanged()`, and note
+that what it cannot see is a key somebody else *deleted* since.
+
+#### descendant_count(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+How many stored keys lie strictly below `key`.
+
+Metadata counts: it is stored, and a caller deciding whether a subtree
+is empty is asking about everything that would have to go.
+
+**A metadata key has a real subtree of its own**, and this counts it.
+`a/!changelog` holding twenty notes reports twenty, exactly as a
+document holding twenty children does, which is what makes the delete
+below refuse it without `recursive`.
+
+Exists so a caller can report what a non-recursive delete left behind:
+without it, deleting a key that holds nothing itself is indistinguishable
+from deleting a key that does not exist.
+
+What it leaves out is `key`'s **own** metadata unit, because a plain
+delete takes that with the key -- so the default answers *what would a
+plain delete keep*. **\`\`whole_subtree\`\` asks the other question**:
+everything strictly below `key`, that unit included, which is what a
+*recursive* delete takes and what [`outrage.bulk.walk()`](bulk.md#outrage.bulk.walk) reports.
+A caller previewing a recursive delete needs the second, and answering
+it with the first prints a remainder short by the unit -- negative,
+once the preview reaches past the ordinary children.
+See [`outrage.keys.meta_range()`](keys.md#outrage.keys.meta_range).
+
+`key_range` bounds it for the reason it bounds `delete`: a count
+that includes keys a mount has made unreachable tells a caller to pass
+`recursive` to remove keys that are not there to remove.
+
+#### subtree_totals(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+What lies strictly below `key`, counted and optionally measured.
+
+**The question about the territory**, where [`descendant_count()`](#outrage.mounts.UnavailableStore.descendant_count) is
+the question about a delete. That is the difference worth holding, and
+it is why these are two methods rather than one with a mode: every
+caller of `descendant_count` in this package asks it what a
+non-recursive delete left behind, or whether anything is there at all,
+and a count for that purpose has to include metadata because a delete
+takes it. A caller mapping a subtree wants a different answer and says
+so by calling something else.
+
+So there is no `whole_subtree` here. This *is* that selection --
+strictly below `key`, its own metadata unit included -- and offering
+the other one would put the delete's question back into the method that
+exists to be free of it. `keys` therefore equals
+`descendant_count(key, whole_subtree=True)` exactly, which is asserted
+rather than assumed: one meaning of "how many lie below" in the store,
+not two that nearly agree.
+
+The one call [`list_keys()`](#outrage.mounts.UnavailableStore.list_keys)' descendant flags need, kept apart from
+them so a backend overrides the *aggregate* and not the listing.
+`SubtreeTotals` says what counts as a document, which is not what
+counts as one in a listing.
+
+`chars` is separate because it is separately expensive, and a backend
+that can count without measuring should: this default cannot -- a walk
+has the entry in hand -- but SQLite asks for a sum only when told to,
+and on a directory of files a length means decoding every document.
+
+`key_range` bounds it for the reason it bounds
+[`descendant_count()`](#outrage.mounts.UnavailableStore.descendant_count), and because
+[`MountedStore`](#outrage.mounts.MountedStore) cannot compose this without one:
+the stretches of a store that a mount does not shadow are named as
+ranges, and totals taken over the whole of it would count rows that
+reading by key refuses.
+
+**It reads the subtree**, so it costs what is under `key` rather than
+what is beside it -- which is why [`list_keys()`](#outrage.mounts.UnavailableStore.list_keys) asks for it only
+when told to. Nothing here is maintained at write time.
+
+The default walks, which is every store's answer until it has a better
+one, and it is the answer [`MountedStore`](#outrage.mounts.MountedStore) would
+otherwise have no way to give for a store spliced under a prefix.
+
+#### latest_change(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+The newest `updated_at` below `key`, or None where nothing is.
+
+The aggregate a write precondition asks: one value whatever the size of
+the subtree, so "has anything here moved since I looked" costs a query
+rather than a walk. The selection is [`descendant_count()`](#outrage.mounts.UnavailableStore.descendant_count)'s exactly
+-- strictly below `key`, less the metadata unit a plain delete takes
+with it, and `whole_subtree` keeps that unit -- so the two answer
+about the same set of keys and a caller can hold one meaning for both.
+
+**Metadata counts**, as it does there and for the same reason: a
+`!title` written since the watermark is a change to the subtree, and
+an aggregate with a second unstated meaning costs more than it saves.
+
+**What it cannot see is a deletion.** The row that would carry the
+timestamp is the row that has gone, so the newest change in a range
+says nothing about what was *removed* from it. A guard built on this
+covers edits and no more; when an archive exists, asking it the same
+question over the same range is what answers the other half.
+
+Timestamps are stamped to the millisecond (`_stamp()`), so a
+write inside the same millisecond as a watermark is invisible to a
+comparison against one. That is the weakness `content_sha256` exists
+to avoid elsewhere, inherited here deliberately: a watermark over a
+whole subtree has no single content to hash. A row stamped before
+stamps carried milliseconds reads as the start of its second, so the
+window over those rows is still the second it was truncated to.
+
+The default implementation walks the subtree and takes the maximum,
+which is every store's answer until it has a better one: a database
+has `max()`, a sorted file has a row range, and a directory of files
+has the walk this does.
+
+#### exists(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+Whether `key` itself holds a document.
+
+Not the same question as whether anything is below it: a bulk import
+asks this per file to decide about one key, and a container that holds
+nothing itself is free for a document to be written to.
+
+Deliberately cheaper than a read, since the answer is wanted for every
+file in an import and the content is not.
+
+#### level_entry(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+How `key` appears in its parent's listing, or None if it does not.
+
+The same three answers [`list_keys()`](#outrage.mounts.UnavailableStore.list_keys) gives about one key without
+listing the level to find it: a stored document, an implicit key that
+exists only because something lies beneath it, or nothing at all.
+
+Asked by a caller that has to reconcile this store's level with keys
+from somewhere else and must not count the same position twice. A
+cheaper pair of questions -- does the key exist, does it have
+descendants -- gets one corner wrong: metadata sits *at* a key rather
+than below it, so a key holding only metadata has no document and no
+descendants and still appears in the listing.
+
+#### retrieve_document(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+Read the content stored at `key`.
+
+`pattern` is a literal substring, not a regular expression; when
+given, the read starts at its `occurrence`-th appearance at or after
+the offset. The result is capped at `length` or `max_chars`,
+whichever is smaller, and carries a continuation in the unit used.
+
+`offset` counts characters, `byte_offset` counts UTF-8 bytes and
+`line` counts lines from one. They are three positions in the same
+document, so giving more than one is refused. `lines` limits a
+line-addressed read to that many lines and is capped by `max_chars`.
+A byte offset landing inside a character reads from that character's
+first byte, and the excerpt says where it actually began.
+
+**Every backend accepts a byte offset and returns identical content
+for it.** Only the cost differs -- one that can seek does, one that
+cannot converts and slices -- and that contract is what makes a byte
+offset something a caller can carry between stores, and out of the
+store altogether to a file [`bulk()`](bulk.md#module-outrage.bulk) exported.
+
+#### list_keys(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+List the keys immediately below `key`, or below the root.
+
+Includes subkeys and metadata, and keys that exist only implicitly
+because something beneath them has content.
+
+`limit` and `cursor` page the level. Neither has a default: this
+layer offers pagination and holds no opinion about how much a caller
+can take, which is the tools' and the command line's question and they
+answer it differently.
+
+No `KeyRange` here, deliberately. This reads one *level*, not a
+stretch of the order, and the cursor is the only bound a level has ever
+needed; a range would have to be honoured by every part of a level's
+answer, for no caller that exists.
+
+**The two descendant flags turn a listing into a map of the subtree.**
+`descendant_counts` fills `Entry.descendants` and
+`Entry.descendant_documents`, `descendant_chars` fills
+`Entry.descendant_chars`, and each is None where it was not
+asked for. The selection is [`descendant_count()`](#outrage.mounts.UnavailableStore.descendant_count)'s under
+`whole_subtree` -- strictly below the listed key, its own metadata
+unit included -- so an entry's own row and its descendant columns do
+not overlap, and the two added together are the whole subtree.
+`Entry` says what counts as a document there, which is not what
+counts as one in a listing.
+
+**Opt in because they cost**, which is the whole reason they are flags
+and not columns. Naming a level is bounded by its fan-out -- one index
+seek per child, whatever hangs below -- and a count over a child's
+subtree reads that subtree, so asking for one puts the size of the
+store back into a call that had stopped depending on it. Characters
+cost more again and the length cache does not help them: measured over
+a level of twenty children holding fifty thousand keys, naming the
+level cost 0.19 ms, the counts took it to 8.6 ms, and the characters to
+75 ms.
+
+**They are filled over the page, not the level**, so `limit` bounds
+what they cost as well as what comes back -- unlike `total` and
+`total_chars`, which describe the level whatever the cursor is doing.
+A caller paging a wide level pays per page and can stop.
+
+Concrete where a backend has nothing faster: [`subtree_totals()`](#outrage.mounts.UnavailableStore.subtree_totals) is
+the one call each of these needs, and `_with_descendants()` fills a
+page from it.
+
+#### last_child(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+The final segment of the last key immediately below `key`.
+
+What `?last` resolves to, and the store half of
+[`outrage.keys.resolve_last()`](keys.md#outrage.keys.resolve_last) -- so `notes/?last` names whatever
+this returns for `notes`. None when nothing is below `key`, which
+is what the caller turns into a refusal.
+
+**Last in the order a listing walks**, which is `sort_form()`'s,
+so a level of numbers gives the highest number and not the highest
+spelling. Implicit keys count: a container holding only descendants is
+as much the last key at that level as a document is, and `?last`
+exists to name the newest thread of work whether or not somebody
+wrote a document at the top of it.
+
+Metadata does not count, **at whatever level this stands**. `?last`
+stands where an ordinary segment goes -- it can no more resolve to
+`!title` than `?` can allocate one -- so a level holding a document
+and its title has one child here. Inside a metadata namespace the same
+rule applies to that level: `a/!changelog/?last` is the newest note
+kept in the changelog and never the changelog's own `!title`.
+
+Concrete rather than abstract, on [`list_keys()`](#outrage.mounts.UnavailableStore.list_keys), because it asks
+nothing a backend answers differently. **It reads the whole level to
+take its last row**, which is one round trip at the sizes a level
+actually reaches and the wrong shape if one ever holds thousands: the
+fix then is an override selecting one row in descending order, not a
+second definition of what "last" means.
+
+#### get_documents(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+Read everything `subtree` names, in key order.
+
+With `meta_name` the result holds those metadata entries instead of
+documents, which is how the titles of every document under a key are
+listed in one call.
+
+`key_range` narrows the subtree to a stretch of the order inside it,
+and the two hold together: a key is returned when it is in the subtree
+*and* in the range. It bounds the selection, so `total` and
+`total_chars` describe that stretch, and a caller reading one subtree
+as several ranges can add the answers up.
+
+`cursor` is not one of the bounds. It is where the last page stopped,
+it moves within the range as a caller pages, and it deliberately does
+not reach the totals: what a caller cannot work out from a page is how
+much of the whole they are holding.
+
+Two axes bound the answer and both are needed. `max_chars` caps each
+document, `limit` and `cursor` page the collection, and
+`max_total_chars` caps the page as a whole -- without that last one
+the two axes multiply, and a hundred documents at two thousand
+characters each honours both stated bounds while returning two hundred
+thousand characters.
+
+#### find_documents(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+Search one bounded window of documents and their direct metadata.
+
+The returned cursor is the last candidate examined, not the last
+match. A page can therefore contain no matches and still carry a
+cursor; callers continue until it is `None`.
+
+Concrete here, in terms of the ordinary read contract, so every
+backend and [`MountedStore`](#outrage.mounts.MountedStore) shares one baseline
+implementation. A backend override is only an optimization and can be
+checked against this method as its oracle.
+
+#### missing_meta_stats(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+What a metadata survey could not see, over exactly one page's window.
+
+`coverage` adds counts for the whole selection. It is off by default
+because each metadata name adds a selection-wide scan, while the three
+window fields above are the bounded warning every survey needs.
+
+**Two ranges, measured against two different things**, and a document
+has to satisfy both. `key_range` is measured against a document's own
+position, as everywhere else in the store. `window` is measured
+against the position its metadata *would* have taken, which is the
+order the survey walks, so this is where a survey's own cursors go --
+`KeyRange(after=page_start, before_inclusive=page_end)` is a page,
+exclusive below and inclusive above, each end left unset when the page
+ran to that end of the collection.
+
+The split is not a technicality. A document is inside a subtree that
+was stepped over because of where the *document* is, and is inside a
+page because of where its *title* would have sorted, and a survey
+reading one subtree in several ranges needs to say both at once.
+
+A document carrying none of the names appears nowhere in the ordering
+the survey walks, so it has no position in it either. One is synthesised:
+where it *would* have sorted had it carried the name, which is exactly
+the position of `doc/!name`. That is part of the contract rather than
+an implementation detail -- it is what decides which window a document
+is counted in, and so what makes a caller's windows tile.
+
+#### keys_missing_meta(key: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = keys.ROOT, \*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+Document keys in `subtree` carrying none of `meta_name`.
+
+A survey by `!title` only sees documents that have one, so on its own
+it silently under-reports the store. This names what the survey missed.
+
+`key_range` narrows the subtree exactly as it narrows a survey, and
+for the same reason: the two have to be askable over one stretch of the
+store, and to agree about what was in range, or they stop describing
+the same one.
+
+#### copy_from(\*\_args: [Any](https://docs.python.org/3/library/typing.html#typing.Any), \*\*\_kwargs: [Any](https://docs.python.org/3/library/typing.html#typing.Any)) → [Any](https://docs.python.org/3/library/typing.html#typing.Any)
+
+Write every document `source` holds in `subtree` into this store.
+
+The one bulk operation, and it is a method on the **target** rather
+than a function over a pair, because the target is what knows how it
+is written: a database takes a document at a time, and a file written
+whole takes all of them and writes once. A caller asks for the same
+transfer either way and each store answers it appropriately, which is
+what an export, an import, a repack and a backup all turn out to be.
+
+`source` is any `Store` -- a database, a directory of files,
+or a mount table presenting several of them as one namespace, which is
+what makes a copy *out of* a table possible at all. `subtree` and
+`key_range` bound what crosses exactly as they bound a read, so a
+copy of part of a store is the same selection as a listing of it.
+`prefix` grafts what crosses under a key here, and left out, each
+document keeps the key it had. `reroot` changes what the graft keeps:
+the subtree's own key is stripped first, so `a/b` copied to `tmp`
+lands at `tmp` rather than at `tmp/a/b` and everything below it
+keeps its position below that. Grafting the whole key is right for an
+archive and is the default; re-rooting is the only spelling that says
+"these documents now live at another key", which is what a caller
+moving a subtree needs. Which pairs of keys are safe to stream between
+differs between the two -- [`outrage.bulk.overlapping()`](bulk.md#outrage.bulk.overlapping) is the rule,
+and the front ends apply it.
+
+Metadata crosses as the keys it is: a copy that left every `!title`
+behind would produce a store nothing can be surveyed by. So does each
+document's `updated_at`, which is what makes this a copy rather than
+a restamping -- see [`store_document()`](#outrage.mounts.UnavailableStore.store_document).
+
+`limit` bounds how many documents cross, and the generator returns
+the source key of the last one so that `cursor` can pick the copy up
+there. That pair is what a front end returning one value needs -- a
+tool result cannot stream, and a copy of a large subtree cannot be one
+answer -- and the cursor is a *source* key, which is why it is returned
+rather than read off the last transfer. See [`outrage.bulk.copied()`](bulk.md#outrage.bulk.copied).
+
+Yields a `Transfer` per document as it goes, so that a front end
+can report the transfer while it happens and an interrupted one has
+reported exactly what it did. `on_conflict` decides what happens to a
+key already here, one key at a time: `SKIP` leaves it,
+`OVERWRITE` replaces it, `OVERWRITE_UNCHANGED` replaces
+what has not moved since `unchanged_since` and reports the rest as
+`CHANGED`, and `STOP` ends the run at the first collision
+having kept what it already wrote.
+
+`unchanged_since` is a watermark -- when the caller looked -- and it
+buys two things. Before anything crosses, the keys this copy is about
+to land on are asked whether any of them moved since; if one did the
+run is refused having written nothing (`check_unchanged()`). Then
+under `OVERWRITE_UNCHANGED` each collision is measured against it
+again, which is what catches a write made between the check and the
+copy reaching that key. A copy left unwatermarked behaves exactly as it
+always has.
+
+The default implementation reads each document and writes it here,
+which is every store's answer until it has a better one. A backend
+with a bulk way in overrides this; what it may not do is change what
+the transfer *means*, which is why the report is the same either way.
+
+The walk itself is [`outrage.bulk`](bulk.md#module-outrage.bulk)'s, imported where it is used
+rather than at the top of this module: a store's own reads are pages,
+deliberately, and the caller that legitimately wants all of it lives
+there. A copy is that caller.
+
+#### close() → [None](https://docs.python.org/3/builtins/constants.html#None)
+
+Nothing was opened, so nothing is held.
+
 ### outrage.mounts.mount_point(prefix: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, spec: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 Validate a mount point, however it was written down.
@@ -1129,6 +1685,19 @@ is opened with `create` False. What such a mount names is a connection's
 configuration rather than the store, so whether that file is present
 answers the wrong question -- and it may be an absolute path, which
 resolving it inside `directory` would refuse as though it were a mistake.
+
+### outrage.mounts.refuse_unavailable(opened: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), action: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [None](https://docs.python.org/3/builtins/constants.html#None)
+
+Refuse `action` over `key`'s subtree if it would cross a placeholder.
+
+For the operations that must not act on part of a subtree and report
+success: a recursive delete, and a copy or export out of or into one. A
+survey steps over the placeholder and says so instead, since leaving
+something out of an answer that names what it left out loses nothing.
+
+`opened` is any store; only a mount table can hold a placeholder. Where
+`key` is itself inside one, the refusal is that store's own, which is
+the one a read of the key would have met.
 
 ### outrage.mounts.unparse(spec: [Spec](#outrage.mounts.Spec)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 

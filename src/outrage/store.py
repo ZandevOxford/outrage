@@ -338,6 +338,11 @@ class Page[T]:
     number as the other."""
     next_cursor: str | None
     """Key to resume after, or None when the page reached the end."""
+    unavailable: tuple[str, ...] = ()
+    """Mount points this answer had to leave out, because the store mounted
+    there could not be opened. Empty for any single store. When it is not,
+    ``total`` and ``total_chars`` count only what could be read, and the
+    collection is not all there."""
 
     @property
     def truncated(self) -> bool:
@@ -509,6 +514,8 @@ class SearchPage:
     total_candidates: int
     total_candidate_chars: int
     next_cursor: str | None
+    unavailable: tuple[str, ...] = ()
+    """Mount points left out of the candidates, as :attr:`Page.unavailable`."""
 
 
 #: Leave what is already there and carry on. The default, because a transfer
@@ -1745,6 +1752,7 @@ class Store(ABC):
             total_candidates=candidates.total,
             total_candidate_chars=candidates.total_chars,
             next_cursor=candidates.next_cursor,
+            unavailable=candidates.unavailable,
         )
 
     @abstractmethod

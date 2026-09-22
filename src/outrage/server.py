@@ -192,6 +192,17 @@ def _say(result: dict[str, Any], notes: list[Note]) -> None:
             result["note"] = said
 
 
+def _left_out(result: dict[str, Any], unavailable: Sequence[str]) -> None:
+    """Say on a survey's result which mounts it had to step over, when any.
+
+    A field and a sentence both, as a delete reports the mounts it could not
+    reach: the field for a caller acting on it, the note for one reading.
+    """
+    if unavailable:
+        result["mounts_unavailable"] = list(unavailable)
+        _say(result, bulk.notes_for_survey(unavailable))
+
+
 def _forbid_unknown_arguments() -> None:
     """Make an unrecognised tool argument an error rather than a silent no-op.
 
@@ -407,7 +418,10 @@ class _MakeMetadataResult(_ToolResult):
 class _EntryResult(_ToolResult):
     key: Annotated[str, Field(description="The listed key")]
     kind: Annotated[
-        str, Field(description="Document, metadata, implicit, mount or read-only mount")
+        str,
+        Field(
+            description="Document, metadata, implicit, mount, read-only mount or unavailable mount"
+        ),
     ]
     size: Annotated[int | None, Field(description="Stored characters, when this key has content")]
     format: Annotated[str | None, Field(description="Stored content format, when applicable")]
@@ -482,6 +496,11 @@ class _FindDocumentsResult(_ToolResult):
     next_cursor: Annotated[
         str | None, Field(description="Last candidate examined, or null when search is complete")
     ]
+    mounts_unavailable: Annotated[
+        list[str] | None,
+        Field(description="Mounted stores that could not be opened, left out of this answer"),
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
 class _ListKeysResult(_ToolResult):
@@ -491,6 +510,11 @@ class _ListKeysResult(_ToolResult):
     total: Annotated[int, Field(description="Entries in the whole level")]
     total_chars: Annotated[int, Field(description="Characters stored across the whole level")]
     next_cursor: Annotated[str | None, Field(description="Where to resume, or null at the end")]
+    mounts_unavailable: Annotated[
+        list[str] | None,
+        Field(description="Mounted stores that could not be opened, left out of this answer"),
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
 class _MissingMetaResult(_ToolResult):
@@ -521,6 +545,11 @@ class _GetDocumentsResult(_ToolResult):
         _MissingMetaResult | None,
         Field(description="Documents omitted by a metadata survey, when one was requested"),
     ] = None
+    mounts_unavailable: Annotated[
+        list[str] | None,
+        Field(description="Mounted stores that could not be opened, left out of this answer"),
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
 class _KeysMissingMetaResult(_ToolResult):
@@ -530,6 +559,11 @@ class _KeysMissingMetaResult(_ToolResult):
     total: Annotated[int, Field(description="Keys in the whole selection")]
     total_chars: Annotated[int, Field(description="Characters stored across the whole selection")]
     next_cursor: Annotated[str | None, Field(description="Where to resume, or null at the end")]
+    mounts_unavailable: Annotated[
+        list[str] | None,
+        Field(description="Mounted stores that could not be opened, left out of this answer"),
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
 
 
 class _DeleteKeysResult(_ToolResult):
@@ -1398,16 +1432,16 @@ def build_server(
             descendant_counts=descendant_counts,
             descendant_chars=descendant_chars,
         )
-        return _ListKeysResult(
-            key=at,
-            entries=[
-                _EntryResult.model_validate(dataclasses.asdict(entry)) for entry in page.items
-            ],
-            returned=page.returned,
-            total=page.total,
-            total_chars=page.total_chars,
-            next_cursor=page.next_cursor,
-        )
+        result: dict[str, Any] = {
+            "key": at,
+            "entries": [dataclasses.asdict(entry) for entry in page.items],
+            "returned": page.returned,
+            "total": page.total,
+            "total_chars": page.total_chars,
+            "next_cursor": page.next_cursor,
+        }
+        _left_out(result, page.unavailable)
+        return _ListKeysResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -1502,6 +1536,7 @@ def build_server(
                 "selection_documents": gap.selection_documents,
                 "selection_carried": gap.selection_carried,
             }
+        _left_out(result, page.unavailable)
         return _GetDocumentsResult.model_validate(result)
 
     @server.tool(
@@ -1552,18 +1587,18 @@ def build_server(
             cursor=after,
             scan_limit=scan_limit,
         )
-        return _FindDocumentsResult.model_validate(
-            {
-                "key": at,
-                "matches": [dataclasses.asdict(match) for match in page.matches],
-                "matched": page.matched,
-                "matched_chars": page.matched_chars,
-                "scanned": page.scanned,
-                "total_candidates": page.total_candidates,
-                "total_candidate_chars": page.total_candidate_chars,
-                "next_cursor": page.next_cursor,
-            }
-        )
+        result = {
+            "key": at,
+            "matches": [dataclasses.asdict(match) for match in page.matches],
+            "matched": page.matched,
+            "matched_chars": page.matched_chars,
+            "scanned": page.scanned,
+            "total_candidates": page.total_candidates,
+            "total_candidate_chars": page.total_candidate_chars,
+            "next_cursor": page.next_cursor,
+        }
+        _left_out(result, page.unavailable)
+        return _FindDocumentsResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -1602,14 +1637,16 @@ def build_server(
             limit=limit,
             cursor=after,
         )
-        return _KeysMissingMetaResult(
-            key=at,
-            keys=page.items,
-            returned=page.returned,
-            total=page.total,
-            total_chars=page.total_chars,
-            next_cursor=page.next_cursor,
-        )
+        result = {
+            "key": at,
+            "keys": page.items,
+            "returned": page.returned,
+            "total": page.total,
+            "total_chars": page.total_chars,
+            "next_cursor": page.next_cursor,
+        }
+        _left_out(result, page.unavailable)
+        return _KeysMissingMetaResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=True),

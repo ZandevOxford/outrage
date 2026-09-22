@@ -179,7 +179,9 @@ List the keys immediately below a key, including subkeys and metadata.
 Omit the key to list the top level. Keys of kind `implicit` hold no
 content themselves but have something beneath them. A key of kind `mount`
 is where another store is mounted, and `read-only mount` is one that refuses
-writes.
+writes. An `unavailable mount` is one whose store could not be opened: it
+refuses everything below it, is not counted, and a result that stepped over
+one names it in `mounts_unavailable`.
 
 `descendant_counts` reports how many keys and how many documents lie below
 each listed key, which is how a level says which of its children is worth
@@ -210,11 +212,13 @@ slice.
 - `total` (integer; required) — Entries in the whole level
 - `total_chars` (integer; required) — Characters stored across the whole level
 - `next_cursor` (string or null; required) — Where to resume, or null at the end
+- `mounts_unavailable` (array[string] or null; optional) — Mounted stores that could not be opened, left out of this answer
+- `note` (string or null; optional) — Important qualification of the result
 
 #### `Entry` fields
 
 - `key` (string; required) — The listed key
-- `kind` (string; required) — Document, metadata, implicit, mount or read-only mount
+- `kind` (string; required) — Document, metadata, implicit, mount, read-only mount or unavailable mount
 - `size` (integer or null; required) — Stored characters, when this key has content
 - `format` (string or null; required) — Stored content format, when applicable
 - `updated_at` (string or null; required) — Last write time, when applicable
@@ -257,6 +261,8 @@ whole document, use `read_document` on that document.
 - `next_cursor` (string or null; required) — Where to resume, or null at the end
 - `documents` (array[Excerpt]; required) — This page of documents
 - `without_meta` (MissingMeta or null; optional) — Documents omitted by a metadata survey, when one was requested
+- `mounts_unavailable` (array[string] or null; optional) — Mounted stores that could not be opened, left out of this answer
+- `note` (string or null; optional) — Important qualification of the result
 
 #### `Excerpt` fields
 
@@ -320,6 +326,8 @@ continuing. Pass it as `after` until `next_cursor` is null.
 - `total_candidates` (integer; required) — Candidate documents in the whole bounded selection
 - `total_candidate_chars` (integer; required) — Body characters across the whole candidate selection
 - `next_cursor` (string or null; required) — Last candidate examined, or null when search is complete
+- `mounts_unavailable` (array[string] or null; optional) — Mounted stores that could not be opened, left out of this answer
+- `note` (string or null; optional) — Important qualification of the result
 
 #### `DocumentMatch` fields
 
@@ -329,7 +337,7 @@ continuing. Pass it as `after` until `next_cursor` is null.
 #### `Entry` fields
 
 - `key` (string; required) — The listed key
-- `kind` (string; required) — Document, metadata, implicit, mount or read-only mount
+- `kind` (string; required) — Document, metadata, implicit, mount, read-only mount or unavailable mount
 - `size` (integer or null; required) — Stored characters, when this key has content
 - `format` (string or null; required) — Stored content format, when applicable
 - `updated_at` (string or null; required) — Last write time, when applicable
@@ -367,6 +375,8 @@ metadata.
 - `total` (integer; required) — Keys in the whole selection
 - `total_chars` (integer; required) — Characters stored across the whole selection
 - `next_cursor` (string or null; required) — Where to resume, or null at the end
+- `mounts_unavailable` (array[string] or null; optional) — Mounted stores that could not be opened, left out of this answer
+- `note` (string or null; optional) — Important qualification of the result
 
 ## `delete_keys`
 
