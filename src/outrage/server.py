@@ -1997,9 +1997,11 @@ def build_server(
                     description=(
                         "Store file, relative to the store directory. For parquet "
                         "it may be a pattern over parts, such as 'parts/*.parquet'. "
-                        "Omit it to restore a registered built-in: the read-only "
-                        "manual at 'outrage' or the writable user-wide store at "
-                        "'home'"
+                        "For 'postgres' it is a libpq service file instead, which "
+                        "may be absolute or start with '~', and may be omitted "
+                        "for libpq's own lookup. Omit it with no `type` to restore "
+                        "a registered built-in: the read-only manual at 'outrage' "
+                        "or the writable user-wide store at 'home'"
                     )
                 ),
             ] = None,
@@ -2010,7 +2012,17 @@ def build_server(
                         "Backend to open `file` with, when the file name does not "
                         "say: 'files' for a directory of files, 'duckdb' for a "
                         "directory of parquet parts, 'pyarrow' to read one parquet "
-                        "file with pyarrow rather than duckdb"
+                        "file with pyarrow rather than duckdb, 'postgres' for a "
+                        "store on a PostgreSQL server"
+                    )
+                ),
+            ] = None,
+            service: Annotated[
+                str | None,
+                Field(
+                    description=(
+                        "For 'postgres', which entry of the service file to "
+                        "connect with; 'outrage' when omitted"
                     )
                 ),
             ] = None,
@@ -2031,7 +2043,12 @@ def build_server(
             ] = False,
         ) -> _MountsResult:
             changed = live.mount(
-                key, file=file, type=type, extensions=extensions, read_only=read_only
+                key,
+                file=file,
+                type=type,
+                extensions=extensions,
+                service=service,
+                read_only=read_only,
             )
             return _mounts_result(changed)
 

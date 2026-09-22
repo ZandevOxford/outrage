@@ -10,6 +10,14 @@ every mount follows, and what makes a mount configuration relocatable. `info`
 reports that directory. `type` names the backend where the file name cannot say
 it: a directory of files has no extension to read.
 
+`type='postgres'` is the exception to where `file` is. The store is on a
+server, so `file` is a libpq service file — the connection's configuration
+rather than the store — and may be absolute or start with `~`. Omit it for
+libpq's own lookup, `~/.pg_service.conf` or `PGSERVICEFILE`. `service` names the
+entry in that file, `outrage` when omitted. The store is the connection's
+schema, chosen with `options=-csearch_path=NAME` in the entry, and the first
+open creates it.
+
 `extensions` is how that directory's file names line up with keys, and only a
 directory of files has an answer to it. `strip`, the default, takes a known
 extension off a file name to make the key and puts it back to write one — the
@@ -29,7 +37,7 @@ distinguishes the prefixed file from the prefixed container. What the mode does
 cost is a format the key does not spell: `notes` stored as text reads back as
 markdown whether its file is `notes` or `.!notes`.
 
-Omit `file` to restore a registered built-in store. `outrage` restores the
+Omit `file` and `type` to restore a registered built-in store. `outrage` restores the
 manual inside the installed package, lent and always read-only. `home` opens
 the writable user-wide store at `~/.outrage/home.sqlite`; `read_only=true` may
 mount it read-only for this server. Both are mounted by default at startup and

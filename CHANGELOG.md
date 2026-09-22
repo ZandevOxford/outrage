@@ -26,7 +26,11 @@ reports each such mount's service, schema and connection parameters, with every
 secret replaced by `(not shown)`. A read-only mount of a schema holding no store
 is refused rather than created, as for every other backend. The MCP `mount` tool
 takes an absolute service file, and with no file reads `type=postgres` as
-libpq's own lookup rather than a built-in store. At startup a server that cannot
+libpq's own lookup rather than a built-in store; its `service` parameter names
+the entry, as `service=` does on a `--mount`. A service nobody could find says
+which files were not there rather than that the entry is missing from them,
+and `outrage set` into a PostgreSQL store says which schema on which server the
+document went to rather than naming the service file. At startup a server that cannot
 be reached leaves the mount unavailable and the other mounts working; a service
 file that cannot be used, a login the server rejects, a database it does not
 have, one that is not UTF8, or a search path naming no schema is a
@@ -95,7 +99,10 @@ text in the order of the moments they name. A caller's `updated_at` and
 second. A filesystem store sets and reads its modification times in whole
 nanoseconds, so a millisecond stamp copied into a tree reads back unchanged.
 An older outrage reads the new stamps correctly, but truncates them to the
-second when it copies them.
+second when it copies them. A `document_edit` import refused as stale gives
+both times as the store stamped them, the version the file matched and the
+write since, rather than setting this machine's export time, to the second,
+beside the store's.
 
 `outrage init` now writes every option a mount carries into the table it
 starts. It wrote `path` and `type` alone, so

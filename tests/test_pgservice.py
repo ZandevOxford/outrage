@@ -20,6 +20,7 @@ import pathlib
 import pytest
 
 from outrage import messages, pgservice
+from outrage.errors import OutrageError
 
 PLANTED = "hunter2-%(not-interpolated)s"
 
@@ -157,6 +158,39 @@ def test_a_named_file_is_the_only_one_read(tmp_path):
 
     assert codes(refused) == ["service-not-found"]
     assert refused.searched == (named,)
+
+
+def test_a_lookup_that_found_no_file_says_so_rather_than_naming_a_section(tmp_path):
+    """A service "not defined in" a file that is not there sends its reader to
+    edit a file they cannot find."""
+    home = tmp_path / "home"
+    home.mkdir()
+
+    refused = pgservice.resolve(environ={"PGSERVICEFILE": str(home / ".pg_service.conf")})
+    said = _as_error(refused)
+
+    assert "no PostgreSQL service file was found" in said
+    assert str(home / ".pg_service.conf") in said
+    assert "is defined in" not in said
+
+
+def test_a_file_without_the_section_is_named_apart_from_one_that_is_not_there(tmp_path):
+    personal = a_file(tmp_path, "[other]\ndbname=x\n", name=".pg_service.conf")
+    system = tmp_path / "etc"
+
+    refused = pgservice.resolve(
+        environ={"PGSERVICEFILE": str(personal), pgservice.SYSCONF_VARIABLE: str(system)}
+    )
+    said = _as_error(refused)
+
+    assert f"is defined in {personal}." in said
+    assert f"Nothing is at {system / 'pg_service.conf'}" in said
+    assert "`service=`" not in said
+
+
+def _as_error(resolution: pgservice.Resolution) -> str:
+    (refusal,) = resolution.refusals
+    return messages.render(OutrageError(refusal.code, **dict(refusal.details)))
 
 
 def test_the_default_lookup_is_the_one_libpq_does(tmp_path, monkeypatch):

@@ -1097,7 +1097,7 @@ def test_a_refused_import_names_both_times_and_the_way_out(populated, tmp_path):
         bulk.import_document(populated, "project", exported.path, tmp_path / "export")
 
     rendered = messages.render(raised.value)
-    assert exported.record.exported_at in rendered
+    assert exported.record.updated_at in rendered
     assert populated.retrieve_document("project").updated_at in rendered
     assert "overwrite" in rendered
 

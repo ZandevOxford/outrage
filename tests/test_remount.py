@@ -416,6 +416,19 @@ def test_the_shipped_store_is_read_the_way_this_package_wrote_it(server):
     assert "drop `extensions`" in said
 
 
+def test_the_shipped_store_is_not_reached_over_a_connection(server):
+    said = call_expecting_error(server, "mount", key=shipped.MOUNT_POINT, service="shared")
+
+    assert "not over a connection" in said
+    assert "drop `service`" in said
+
+
+def test_a_database_in_a_file_has_no_service_to_name(server):
+    said = call_expecting_error(server, "mount", key="lib", file="other.sqlite", service="shared")
+
+    assert "only a store reached over a connection has one" in said
+
+
 def test_a_database_mounted_with_a_mapping_says_which_stores_have_one(server):
     """The refusal a caller reads, rather than a mount that quietly did nothing."""
     said = call_expecting_error(server, "mount", key="lib", file="other.sqlite", extensions="keep")

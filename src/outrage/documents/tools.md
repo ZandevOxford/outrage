@@ -545,6 +545,14 @@ every mount follows, and what makes a mount configuration relocatable. `info`
 reports that directory. `type` names the backend where the file name cannot say
 it: a directory of files has no extension to read.
 
+`type='postgres'` is the exception to where `file` is. The store is on a
+server, so `file` is a libpq service file — the connection's configuration
+rather than the store — and may be absolute or start with `~`. Omit it for
+libpq's own lookup, `~/.pg_service.conf` or `PGSERVICEFILE`. `service` names the
+entry in that file, `outrage` when omitted. The store is the connection's
+schema, chosen with `options=-csearch_path=NAME` in the entry, and the first
+open creates it.
+
 `extensions` is how that directory's file names line up with keys, and only a
 directory of files has an answer to it. `strip`, the default, takes a known
 extension off a file name to make the key and puts it back to write one — the
@@ -564,7 +572,7 @@ distinguishes the prefixed file from the prefixed container. What the mode does
 cost is a format the key does not spell: `notes` stored as text reads back as
 markdown whether its file is `notes` or `.!notes`.
 
-Omit `file` to restore a registered built-in store. `outrage` restores the
+Omit `file` and `type` to restore a registered built-in store. `outrage` restores the
 manual inside the installed package, lent and always read-only. `home` opens
 the writable user-wide store at `~/.outrage/home.sqlite`; `read_only=true` may
 mount it read-only for this server. Both are mounted by default at startup and
@@ -588,8 +596,9 @@ a built-in needs nothing written down because startup restores it.
 ### Parameters
 
 - `key` (string; required) — Key to mount the store at; the root cannot be mounted over
-- `file` (string or null; default null) — Store file, relative to the store directory. For parquet it may be a pattern over parts, such as 'parts/*.parquet'. Omit it to restore a registered built-in: the read-only manual at 'outrage' or the writable user-wide store at 'home'
-- `type` (string or null; default null) — Backend to open `file` with, when the file name does not say: 'files' for a directory of files, 'duckdb' for a directory of parquet parts, 'pyarrow' to read one parquet file with pyarrow rather than duckdb
+- `file` (string or null; default null) — Store file, relative to the store directory. For parquet it may be a pattern over parts, such as 'parts/*.parquet'. For 'postgres' it is a libpq service file instead, which may be absolute or start with '~', and may be omitted for libpq's own lookup. Omit it with no `type` to restore a registered built-in: the read-only manual at 'outrage' or the writable user-wide store at 'home'
+- `type` (string or null; default null) — Backend to open `file` with, when the file name does not say: 'files' for a directory of files, 'duckdb' for a directory of parquet parts, 'pyarrow' to read one parquet file with pyarrow rather than duckdb, 'postgres' for a store on a PostgreSQL server
+- `service` (string or null; default null) — For 'postgres', which entry of the service file to connect with; 'outrage' when omitted
 - `extensions` (string or null; default null) — For a directory of files, whether a known extension is part of the key: 'strip' takes it off, 'keep' makes the file name and the key one string, for a bundle whose documents link to each other by name
 - `read_only` (boolean; default false) — Refuse every write routed here; the file itself is untouched
 

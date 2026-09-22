@@ -100,7 +100,7 @@ The table as it is now. Read it once, at the start of a call.
 
 The store directory a mounted file is named relative to.
 
-#### mount(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, file: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, type: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Changed](#outrage.remount.Changed)
+#### mount(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, file: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, type: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, extensions: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, service: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, read_only: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [Changed](#outrage.remount.Changed)
 
 Open a store and mount it at `key`, replacing whatever is there.
 
@@ -115,6 +115,11 @@ what mounts a documentation bundle whose documents link to each other
 by file name, since `keep` makes the key and the file name one
 string. A backend that keeps its store in a file refuses it, as does a
 built-in, whose opener is fixed rather than selected by mount options.
+
+`service` is the mount option of the same name, the entry of a
+connection file -- [`SERVICE_OPTION`](mounts.md#outrage.mounts.SERVICE_OPTION) -- and only a
+backend reached over a connection has an answer to it. The same
+backends and built-ins refuse it.
 
 A read-only mount must already exist, the same refusal
 [`open_mounts()`](mounts.md#outrage.mounts.open_mounts) makes and for the same reason: a

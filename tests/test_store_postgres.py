@@ -34,7 +34,7 @@ from outrage import keys, messages, pgservice, store_postgres
 from outrage import store as store_module
 from outrage.cli import main
 from outrage.errors import OutrageError
-from outrage.mounts import ReadOnlyMountError, open_mounts
+from outrage.mounts import MountedStore, ReadOnlyMountError, open_mounts
 from outrage.store import (
     BackendError,
     InvalidArgumentError,
@@ -2199,3 +2199,52 @@ def test_the_root_of_a_line_with_a_postgres_mount_is_still_the_root(tmp_path, po
     assert status == 0
     assert "(sqlite)" in output
     assert schema not in output
+
+
+# -- the mount tool and the command line, reached over a connection ---------
+
+
+def test_the_mount_tool_names_the_entry_to_connect_with(tmp_path, postgres_service):
+    """``service`` on the tool, which until it existed left an MCP caller
+    only the ``[outrage]`` entry of any file."""
+    import anyio
+
+    from outrage.remount import Live
+    from outrage.server import build_server
+
+    path, _service, _schema = postgres_service
+    text = path.read_text(encoding="utf-8").replace("[outrage]", "[shared]")
+    path.write_text(text, encoding="utf-8")
+    directory = tmp_path / "base"
+    root = SqliteStore(directory, filename="outrage.sqlite")
+    with Live(MountedStore({"": root}), directory=directory) as live:
+        server = build_server(live)
+        arguments = {"key": "pg", "file": str(path), "type": "postgres", "service": "shared"}
+        result = anyio.run(server.call_tool, "mount", arguments)
+        assert not result.is_error, result.content
+        mounted = {one["mount"]: one for one in result.structured_content["mounts"]}
+        assert mounted["pg"]["target"]["service"] == "shared"
+
+        anyio.run(server.call_tool, "store_document", {"key": "pg/a", "content": "hello"})
+        read = anyio.run(server.call_tool, "read_document", {"key": "pg/a"})
+        assert read.structured_content["content"] == "hello"
+
+
+def test_a_write_from_the_command_line_says_where_on_the_server_it_went(tmp_path, postgres_service):
+    """Not "in" the service file, which holds the connection and not the text."""
+    path, _service, schema = postgres_service
+
+    status, output = run(
+        "set",
+        "--dir",
+        str(tmp_path / "dir"),
+        "--store",
+        f"{path},type=postgres",
+        "a",
+        "--content",
+        "hello",
+    )
+
+    assert status == 0
+    assert f"schema={schema}" in output
+    assert str(path) not in output

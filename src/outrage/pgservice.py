@@ -306,12 +306,19 @@ def resolve(
     """
     searched = candidates(file, environ=environ)
     named = file is not None
+    # Kept apart from `searched` for the refusal's sake: a service "not
+    # defined in" a file that is not there reads as a file missing a section,
+    # and sends its reader to edit something they cannot find.
+    missing: list[Path] = []
 
     for path in searched:
         parsed, refusals = _parse(path, named=named)
         if refusals:
             return Resolution(refusals=tuple(refusals), searched=searched)
-        if parsed is None or not parsed.has_section(service):
+        if parsed is None:
+            missing.append(path)
+            continue
+        if not parsed.has_section(service):
             continue
         return _entry(path, service, parsed[service], searched)
 
@@ -322,6 +329,7 @@ def resolve(
                 overridable=False,
                 service=service,
                 searched=[str(one) for one in searched],
+                missing=[str(one) for one in missing],
             ),
         ),
         searched=searched,

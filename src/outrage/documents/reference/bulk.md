@@ -230,9 +230,11 @@ The document's stored format.
 #### updated_at *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 What the document's `updated_at` was. **Recorded for the sentence, not
-for the decision**: it is normalised to second precision, so two writes
-inside one second are indistinguishable. The hash decides; this is what
-makes a refusal readable by a person.
+for the decision**: the hash decides, and this is what makes a refusal
+readable by a person. The sentence prefers it to [`exported_at`](#outrage.bulk.ExportRecord.exported_at)
+because it is the store's own stamp, on the same clock and at the same
+precision as the later write it is set beside -- which for a store on a
+server is not this machine's clock.
 
 #### store *: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)*
 

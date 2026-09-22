@@ -3231,12 +3231,14 @@ def _file_holding(opened: store.Store, key: str) -> str:
     """The store file a key lands in, for a command that reports where it went.
 
     A table is several files, so "the store" is not a thing a report can name
-    without asking which key it means. Falls back to the store's own repr for
-    anything that is not a file, which nothing on this command line currently
-    is.
+    without asking which key it means. A store on a server is named by where it
+    is there, through :func:`_store_named`, since its ``path`` is the
+    configuration naming it. Falls back to the store's own repr for anything
+    that is not a :class:`~outrage.store.FileStore`, which nothing on this
+    command line currently is.
     """
     owner = opened.resolve(key).store if isinstance(opened, mounts.MountedStore) else opened
-    return str(owner.path) if isinstance(owner, store.FileStore) else repr(owner)
+    return _store_named(owner) if isinstance(owner, store.FileStore) else repr(owner)
 
 
 #: What each action reads as, before it has happened and after. One vocabulary

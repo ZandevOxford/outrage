@@ -144,6 +144,7 @@ class Live:
         file: str | os.PathLike[str] | None = None,
         type: str | None = None,
         extensions: str | None = None,
+        service: str | None = None,
         read_only: bool = False,
     ) -> Changed:
         """Open a store and mount it at ``key``, replacing whatever is there.
@@ -160,6 +161,11 @@ class Live:
         string. A backend that keeps its store in a file refuses it, as does a
         built-in, whose opener is fixed rather than selected by mount options.
 
+        ``service`` is the mount option of the same name, the entry of a
+        connection file -- :data:`~outrage.mounts.SERVICE_OPTION` -- and only a
+        backend reached over a connection has an answer to it. The same
+        backends and built-ins refuse it.
+
         A read-only mount must already exist, the same refusal
         :func:`~outrage.mounts.open_mounts` makes and for the same reason: a
         mistyped name would be *created*, mount as an empty store, and read as
@@ -175,7 +181,7 @@ class Live:
             located = file is not None and not store_module.locates_own_store(type, unknown=False)
             mount_path = store_file(self._directory, file) if located else None
             created = located and not store_present(self._directory, file)
-            store, builtin = self._opened(prefix, file, type, extensions, read_only)
+            store, builtin = self._opened(prefix, file, type, extensions, service, read_only)
             # Everything up to the swap is inside this, `open_mounts`'s own
             # shape: a failure anywhere closes what was opened and leaves the
             # live table exactly as it was. Deriving the notes is in here for
@@ -232,6 +238,7 @@ class Live:
         file: str | os.PathLike[str] | None,
         type: str | None,
         extensions: str | None,
+        service: str | None,
         read_only: bool,
     ) -> tuple[Store, Builtin | None]:
         """The store to mount and its built-in descriptor, when file-less."""
@@ -243,6 +250,8 @@ class Live:
                 raise MountError("mount-builtin-takes-no-type", mount=prefix)
             if extensions is not None:
                 raise MountError("mount-builtin-takes-no-extensions", mount=prefix)
+            if service is not None:
+                raise MountError("mount-builtin-takes-no-service", mount=prefix)
             arguments = {"log": self._log, "mount_point": prefix}
             if not builtin.lent:
                 arguments["versioning"] = self._versioning
@@ -254,6 +263,7 @@ class Live:
             filename=file,
             backend=type,
             extensions=extensions,
+            service=service,
             versioning_default=self._versioning,
             log=self._log,
             mount_point=prefix,

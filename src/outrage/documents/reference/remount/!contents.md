@@ -31,17 +31,17 @@
 #### *property* directory *: PathLike[str]*
 6272 6272 99
 
-#### mount(key: str, \*, file: str | PathLike[str] | None = None, type: str | None = None, extensions: str | None = None, read_only: bool = False) → Changed
+#### mount(key: str, \*, file: str | PathLike[str] | None = None, type: str | None = None, extensions: str | None = None, service: str | None = None, read_only: bool = False) → Changed
 6488 6488 103
 
 #### unmount(key: str) → Changed
-8360 8362 125
+8757 8759 130
 
 #### close() → None
-8800 8804 134
+9197 9201 139
 
 ### outrage.remount.notes_for_mount(after: MountedStore, prefix: str, \*, replaced: bool, builtin: bool = False, created: str | None = None) → list[Note]
-8920 8926 138
+9317 9323 143
 
 ### outrage.remount.notes_for_unmount(after: MountedStore, prefix: str, \*, started: bool = True) → list[Note]
-10773 10781 164
+11170 11178 169

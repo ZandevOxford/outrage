@@ -1105,6 +1105,7 @@ def _import_stale(
     key: str,
     path: str,
     exported_at: str,
+    matched_at: str | None = None,
     changed_at: str | None = None,
     storing: str | None = None,
     **_: Any,
@@ -1113,11 +1114,21 @@ def _import_stale(
     # it: a document written after this file last matched it is what makes the
     # file stale. "In step with" rather than "exported at" because a successful
     # import renews the record, so the moment is not always the export.
+    #
+    # The document's own stamp where the record has one, so that both times
+    # come from the store's clock at the store's precision. The export time is
+    # this machine's, to the second, and set beside a server's stamp it can
+    # read as later than a write that happened after it.
     since = f"written again at {changed_at}" if changed_at else "deleted since"
     lead, checker = _refused_write(name, key, path, storing)
+    matched = (
+        f"the document as written at {matched_at}"
+        if matched_at
+        else f"the document at {exported_at}"
+    )
     return (
-        f"{lead}: {checker} was last in step with the document at "
-        f"{exported_at}, and the document was {since}, so somebody else has "
+        f"{lead}: {checker} was last in step with {matched}, and the "
+        f"document was {since}, so somebody else has "
         f"written it and this write would lose their work. Export it again and "
         f"redo the edit, or repeat the call with overwrite to write it anyway"
     )
@@ -1405,6 +1416,15 @@ def _mount_builtin_takes_no_extensions(name: Namer, /, *, mount: str, **_: Any) 
         f"the built-in store at {keys.displayed(mount)!r} is opened by name, "
         f"not as a configurable tree: drop "
         f"`extensions`, or name a file to mount something else there."
+    )
+
+
+@template("mount-builtin-takes-no-service")
+def _mount_builtin_takes_no_service(name: Namer, /, *, mount: str, **_: Any) -> str:
+    return (
+        f"the built-in store at {keys.displayed(mount)!r} is opened by name, "
+        f"not over a connection: drop `service`, or name `type` 'postgres' to "
+        f"mount a PostgreSQL store there."
     )
 
 
@@ -1982,14 +2002,27 @@ def _service_file_malformed(name: Namer, /, *, path: str, reason: str, **_: Any)
 
 
 @template("service-not-found")
-def _service_not_found(name: Namer, /, *, service: str, searched: Any, **_: Any) -> str:
-    listed = ", ".join(str(one) for one in searched)
-    return (
-        f"no PostgreSQL service named {service!r} is defined in {listed}. A "
-        f"service is a [{service}] section of a service file listing the "
-        f"connection parameters; add one, or name another with `service=` on "
-        f"the mount."
+def _service_not_found(
+    name: Namer, /, *, service: str, searched: Any, missing: Any = (), **_: Any
+) -> str:
+    absent = [str(one) for one in missing]
+    present = [str(one) for one in searched if str(one) not in absent]
+    if not present:
+        return (
+            f"no PostgreSQL service file was found to look for {service!r} in: "
+            f"there is none at {' or '.join(absent)}. Write one there with a "
+            f"[{service}] section listing the connection parameters, or name "
+            f"the file that holds it on the mount."
+        )
+    said = (
+        f"no PostgreSQL service named {service!r} is defined in "
+        f"{', '.join(present)}. A service is a [{service}] section of a service "
+        f"file listing the connection parameters; add one, or name another "
+        f"with `service` on the mount."
     )
+    if absent:
+        said += f" Nothing is at {' or '.join(absent)}, which was looked in too."
+    return said
 
 
 @template("service-entry-nested")
@@ -2052,10 +2085,11 @@ def _postgres_service_unusable(
         else:
             lines.append(str(one))
     listed = " ".join(f"({index}) {line}" for index, line in enumerate(lines, start=1))
-    where = ", ".join(str(one) for one in searched)
+    # No paths here: every reason names the file it is about, and a list of
+    # everything searched would name files that are not there.
     return (
         f"the PostgreSQL service {service!r} cannot be used, for "
-        f"{'this reason' if len(lines) == 1 else 'these reasons'}, in {where}: {listed}"
+        f"{'this reason' if len(lines) == 1 else 'these reasons'}: {listed}"
     )
 
 

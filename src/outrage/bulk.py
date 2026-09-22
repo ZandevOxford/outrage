@@ -1375,9 +1375,11 @@ class ExportRecord:
     """The document's stored format."""
     updated_at: str | None = None
     """What the document's ``updated_at`` was. **Recorded for the sentence, not
-    for the decision**: it is normalised to second precision, so two writes
-    inside one second are indistinguishable. The hash decides; this is what
-    makes a refusal readable by a person."""
+    for the decision**: the hash decides, and this is what makes a refusal
+    readable by a person. The sentence prefers it to :attr:`exported_at`
+    because it is the store's own stamp, on the same clock and at the same
+    precision as the later write it is set beside -- which for a store on a
+    server is not this machine's clock."""
     store: str | None = None
     """Where the store was, when it could be asked. Recorded and **not
     enforced**: a file exported from one store and imported into another is a
@@ -1742,6 +1744,7 @@ def check_write(
             path=str(file),
             storing=None if storing is None else str(storing),
             exported_at=record.exported_at,
+            matched_at=record.updated_at,
             changed_at=changed_at,
         )
     return Check(
