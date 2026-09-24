@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 1.2.0 - 2026-09-24
 
 A PostgreSQL backend, `type=postgres` (or `type=postgresql`), for one store
 shared by several devices. **It is experimental**: its configuration and
