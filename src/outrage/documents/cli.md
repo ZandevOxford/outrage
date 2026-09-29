@@ -63,7 +63,8 @@ moves.
 outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
              [--mount KEY=FILE] [--mount-ro KEY=FILE] [--log [PATH]]
              [--log-content {none,excerpt,full}] [--no-info]
-             [--no-remount] [--no-versioning] [--dry-run] [--force]
+             [--no-remount] [--no-versioning] [--smart-search]
+             [--dry-run] [--force]
 ```
 
 ### Arguments
@@ -79,6 +80,7 @@ outrage init [-h] [--project-dir PATH] [--dir PATH] [--root-mount FILE]
 - `--no-info` - Record --no-info on the server entry, so the server offers no 'info' tool: no report of its Python environment, store directory, mount configuration files, mounts or log. On by default there. Like every option here it can only be added by a re-run, never removed by one -- taking it away is an edit to the file.
 - `--no-remount` - Record --no-remount on the server entry, so the server offers no 'mount' or 'unmount' tool and its mounts are only what it was started with. On by default there, and MCP-only: this front end builds its table from scratch every run and has nothing to change. Added by a re-run, never removed by one.
 - `--no-versioning` - Record --no-versioning on the server entry, so the server keeps no earlier version of what it overwrites or deletes. On by default there, in SQLite stores only. Added by a re-run, never removed by one.
+- `--smart-search` - Record --smart-search on the server entry, so the server offers the 'smart_search' tool, which sends document text to a System One model to be judged. Off by default there, and it needs a model configured: TYPESAFE_API_KEY, or the [smart_search] table of ~/.outrage/config.toml. Added by a re-run, never removed by one.
 - `--dry-run` - Report what would change without writing anything.
 - `--force` - Replace a packaged skill or agent that has been edited since outrage wrote it, which is otherwise refused. Every such file is named first, so this is a decision taken once with the whole list in view.
 
@@ -140,7 +142,8 @@ outrage config [-h] [--scope {project,user}] [--project-dir PATH]
                [--root-mount FILE] [--mount KEY=FILE]
                [--mount-ro KEY=FILE] [--log [PATH]]
                [--log-content {none,excerpt,full}] [--no-info]
-               [--no-remount] [--no-versioning] [--dry-run]
+               [--no-remount] [--no-versioning] [--smart-search]
+               [--dry-run]
 ```
 
 ### Arguments
@@ -159,6 +162,7 @@ outrage config [-h] [--scope {project,user}] [--project-dir PATH]
 - `--no-info` - Record --no-info on the server entry, so the server offers no 'info' tool: no report of its Python environment, store directory, mount configuration files, mounts or log. On by default there. Like every option here it can only be added by a re-run, never removed by one -- taking it away is an edit to the file.
 - `--no-remount` - Record --no-remount on the server entry, so the server offers no 'mount' or 'unmount' tool and its mounts are only what it was started with. On by default there, and MCP-only: this front end builds its table from scratch every run and has nothing to change. Added by a re-run, never removed by one.
 - `--no-versioning` - Record --no-versioning on the server entry, so the server keeps no earlier version of what it overwrites or deletes. On by default there, in SQLite stores only. Added by a re-run, never removed by one.
+- `--smart-search` - Record --smart-search on the server entry, so the server offers the 'smart_search' tool, which sends document text to a System One model to be judged. Off by default there, and it needs a model configured: TYPESAFE_API_KEY, or the [smart_search] table of ~/.outrage/config.toml. Added by a re-run, never removed by one.
 - `--dry-run` - Report what would change without writing anything.
 
 ## `backup`
@@ -459,9 +463,9 @@ its keywords, summary, contents and body, and going on to the next only while th
 unsure. Prints every document not ruled out, best first, with its probability, its decision and the
 level that made it. Document text is sent to the configured System One service, TypeSafe's by
 default: TYPESAFE_API_KEY, TYPESAFE_BASE_URL and TYPESAFE_DEFAULT_MODEL, or key, base_url and model
-in the [smart_search] table of ~/.outrage/config.toml. Unlike the tool, which judges one slice, this
-searches the whole subtree, a slice at a time -- which on a large one takes minutes and sends all of
-it.
+in the [smart_search] table of ~/.outrage/config.toml. One slice of the subtree is searched, --limit
+documents of it, as the tool does; stderr names the --after for the next. Each probability is a
+document's own, so the slices of a subtree can be merged by sorting on it.
 
 ### Usage
 
@@ -471,7 +475,7 @@ outrage smart-search [-h] [--dir PATH] [--store FILE]
                      [--mount-docs] [--mount-home] [--unmount KEY]
                      [--mount-config FILE] [--no-mount-config]
                      [--depth DEPTH] [--level LEVEL] [--evidence]
-                     [--limit N]
+                     [--limit N] [--after KEY]
                      query [key]
 ```
 
@@ -492,7 +496,8 @@ outrage smart-search [-h] [--dir PATH] [--store FILE]
 - `--depth DEPTH` - Levels below key to descend.
 - `--level LEVEL` - Judge at this level. Repeatable, in order; the default is title, keywords, summary, contents, body. Name only metadata levels to screen without sending any document's body.
 - `--evidence` - Follow each match with what every level said of it.
-- `--limit N` - Show at most N matches, and say so on stderr. Everything by default.
+- `--limit N` - Search a slice of N documents (default 100). Not a display bound, as it is elsewhere here: every match in the slice is printed, since each one cost a request and the slice is what bounds the cost.
+- `--after KEY` - Start after KEY, as the previous slice's stderr said.
 
 ## `copy`
 

@@ -3557,23 +3557,24 @@ def searchable(tmp_path, monkeypatch):
     return tmp_path / ".outrage"
 
 
-def test_smart_search_searches_the_whole_subtree_best_first(searchable, capsys):
+def test_smart_search_judges_one_slice_and_names_the_next(searchable, capsys):
     with SqliteStore(searchable) as store:
-        # One more than a slice, so the search has to go on to a second one.
-        for n in range(100):
-            store.store_document(f"d/{n:03}", "nothing here")
-        store.store_document("d/zz", "the MATCH is in the body")
+        for name in ("a", "b", "c"):
+            store.store_document(f"d/{name}", "nothing here")
+        store.store_document("d/d", "the MATCH is in the body")
         store.store_document("elsewhere", "another MATCH, outside the key")
+    search = ("smart-search", "--dir", str(searchable), "what matches?", "d", "--level", "body")
 
-    status, output = run(
-        "smart-search", "--dir", str(searchable), "what matches?", "d", "--level", "body"
-    )
+    status, first = run(*search, "--limit", "2")
+    err = capsys.readouterr().err
+    _, second = run(*search, "--limit", "2", "--after", "d/b")
 
     assert status == 0
-    assert output.splitlines() == ["0.97  yes     body      d/zz"]
-    err = capsys.readouterr().err
-    assert "judged 100 of 101 documents" in err
-    assert "101 documents screened, 1 not ruled out, 0 not judged" in err
+    assert first == "nothing at or below d is about that\n"
+    assert "2 of 4 documents screened, 0 not ruled out, 0 not judged" in err
+    assert "the next slice is --after d/b" in err
+    assert second.splitlines() == ["0.97  yes     body      d/d"]
+    assert "next slice" not in capsys.readouterr().err
 
 
 def test_smart_search_shows_evidence_and_reports_unjudged_apart(searchable, capsys):
@@ -3625,3 +3626,11 @@ def test_smart_search_says_when_nothing_matches(searchable):
 
     assert status == 0
     assert output == "nothing at or below a is about that\n"
+
+
+@pytest.mark.parametrize("command", ["config", "init"])
+def test_smart_search_is_recorded_on_the_server_entry_when_asked(tmp_path, command):
+    status, _ = run(command, "--project-dir", str(tmp_path), "--smart-search")
+
+    assert status == 0
+    assert "--smart-search" in servers(tmp_path / ".mcp.json")["outrage"]["args"]

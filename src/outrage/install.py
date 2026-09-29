@@ -1135,6 +1135,7 @@ def init(
     no_info: bool = False,
     no_remount: bool = False,
     no_versioning: bool = False,
+    smart_search: bool = False,
     root_mount: str | None = None,
     mounts: Sequence[str] = (),
     read_only_mounts: Sequence[str] = (),
@@ -1158,7 +1159,7 @@ def init(
 
     ``outrage config`` writes the server entry alone and this calls it rather than
     repeating it, which is also why ``log``, ``log_content``, ``no_info``,
-    ``no_remount`` and ``no_versioning`` are passed through. ``root_mount`` and
+    ``no_remount``, ``no_versioning`` and ``smart_search`` are passed through. ``root_mount`` and
     the two mount lists no longer reach the entry at all: a mount table lives in
     ``mounts.toml``, and they seed it - see :func:`outrage.mountfile.plan_starter`, and note that a
     table already there is reported and left alone rather than rewritten.
@@ -1197,6 +1198,7 @@ def init(
         no_info=no_info,
         no_remount=no_remount,
         no_versioning=no_versioning,
+        smart_search=smart_search,
     )
     server, servers, servers_text = config.plan(server_path, "project", entry)
     codex_path = config.codex_config_path(project)
@@ -1207,6 +1209,7 @@ def init(
         no_info=no_info,
         no_remount=no_remount,
         no_versioning=no_versioning,
+        smart_search=smart_search,
         marked=True,
     )
     codex_server, codex_document, codex_text = config.plan_codex(codex_path, codex_entry)

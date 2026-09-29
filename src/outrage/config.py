@@ -248,6 +248,7 @@ def server_entry(
     no_info: bool = False,
     no_remount: bool = False,
     no_versioning: bool = False,
+    smart_search: bool = False,
     marked: bool = False,
 ) -> dict[str, Any]:
     """Build the configuration entry for the stores in ``directory``.
@@ -292,6 +293,11 @@ def server_entry(
     others are, and because :func:`merge_entry` keeps an option it does not
     recognise but has no way to *write* one ``init`` was asked for.
 
+    ``smart_search`` adds ``--smart-search``, offering the tool that sends
+    document text to a model. The one option here that turns something *on*,
+    since sending a store's content off the machine is not a default; recorded
+    here for the reason the others are.
+
     ``marked`` puts :data:`SERVER_MARKER` ahead of every option, which is what
     the Codex entry needs to be recognised by a later run. See the module
     docstring on why it goes first.
@@ -313,6 +319,8 @@ def server_entry(
         args.append("--no-remount")
     if no_versioning:
         args.append("--no-versioning")
+    if smart_search:
+        args.append("--smart-search")
     return {"command": command_name, "args": args}
 
 
@@ -448,6 +456,7 @@ def known_options() -> frozenset[str]:
         no_info=True,
         no_remount=True,
         no_versioning=True,
+        smart_search=True,
     )
     return frozenset(flag for flag, _ in split_args(entry["args"]) if flag)
 

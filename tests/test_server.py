@@ -2742,8 +2742,8 @@ def test_smart_search_refuses_with_every_reason_at_once(store):
 
     said = call_expecting_error(server, "smart_search", query=" ", levels=["title", "title"])
 
-    assert "query is empty" in said
-    assert "more than once" in said
+    # Sentences, since each reason already uses "; " inside itself.
+    assert "about. The level 'title' is named more than once" in said
 
 
 def test_smart_search_pages_the_slice(store):
@@ -2776,14 +2776,21 @@ def test_smart_search_is_offered_when_a_model_is_configured(monkeypatch, tmp_pat
     _configure(monkeypatch, tmp_path, '[smart_search]\nkey = "k"\n')
 
     assert server_module._smart_search_judges(True) is not None
-    assert server_module._smart_search_judges(False) is None
+    assert server_module._smart_search_judges(False) is None, "off unless asked for"
     assert logging.getLogger("httpx2").level == logging.WARNING
 
 
-def test_smart_search_is_quietly_absent_when_nothing_is_configured(monkeypatch, tmp_path, capsys):
+def test_smart_search_asked_for_with_nothing_configured_says_so(monkeypatch, tmp_path, capsys):
     _configure(monkeypatch, tmp_path)
 
     assert server_module._smart_search_judges(True) is None
+    assert "smart_search is not offered: no model is configured" in capsys.readouterr().err
+
+
+def test_smart_search_not_asked_for_is_quietly_absent(monkeypatch, tmp_path, capsys):
+    _configure(monkeypatch, tmp_path, TYPESAFE_API_KEY="set for something else")
+
+    assert server_module._smart_search_judges(False) is None
     assert capsys.readouterr().err == ""
 
 
@@ -2803,6 +2810,6 @@ def test_a_configuration_problem_is_told_to_the_operator(monkeypatch, tmp_path, 
     assert "chmod 600" in err
 
 
-def test_the_operator_can_withhold_smart_search():
-    assert parse_args(["--no-smart-search"]).no_smart_search is True
-    assert parse_args([]).no_smart_search is False
+def test_smart_search_is_offered_only_when_the_operator_asks():
+    assert parse_args(["--smart-search"]).smart_search is True
+    assert parse_args([]).smart_search is False

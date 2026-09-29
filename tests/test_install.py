@@ -1525,6 +1525,7 @@ def test_the_option_whitelist_is_derived_rather_than_copied():
         no_info=True,
         no_remount=True,
         no_versioning=True,
+        smart_search=True,
     )
     emitted = {flag for flag, _ in config_module.split_args(every["args"]) if flag}
 

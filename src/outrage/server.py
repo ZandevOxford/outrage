@@ -69,7 +69,7 @@ from . import contents as contents_module
 from . import info as info_module
 from . import mounts as mounts_module
 from . import store as store_module
-from .errors import OutrageError
+from .errors import OutrageError, Refusal
 from .eventlog import EventLog
 from .mounts import MountedStore
 from .notes import Note
@@ -1734,8 +1734,11 @@ def build_server(
             chosen = tuple(levels) if levels is not None else smartsearch.LEVELS
             refused = smartsearch.refusals(query, chosen)
             if refused:
+                # Sentences, capitalised at the join as `_say` does: a refusal
+                # uses "; " inside itself, so that join ran the reasons together.
+                said = [messages.render(refusal.as_error()) for refusal in refused]
                 raise ToolError(
-                    "; ".join(messages.render(refusal.as_error()) for refusal in refused)
+                    ". ".join([said[0], *(f"{s[:1].upper()}{s[1:]}" for s in said[1:])])
                 )
             table = live.table
             at = _named_key(table, key)
@@ -2709,15 +2712,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--no-smart-search",
-        dest="no_smart_search",
+        "--smart-search",
+        dest="smart_search",
         action="store_true",
         help=(
-            "Do not offer the 'smart_search' tool, which sends document text to "
-            "a System One model to be judged. Offered by default only when a "
-            "model is configured -- TYPESAFE_API_KEY, or the [smart_search] "
-            "table of ~/.outrage/config.toml -- so this is for a key set for "
-            "something else, where this store's content should stay here."
+            "Offer the 'smart_search' tool, which sends document text to a "
+            "System One model to be judged. Off by default, because a store's "
+            "content leaving the machine should be somebody's decision rather "
+            "than a side effect of a key set for something else. Needs a model "
+            "configured -- TYPESAFE_API_KEY, or the [smart_search] table of "
+            "~/.outrage/config.toml -- and says on stderr why the tool is not "
+            "offered when it cannot be."
         ),
     )
     parser.add_argument(
@@ -2745,14 +2750,16 @@ def _smart_search_judges(
 ) -> Callable[[], AbstractContextManager[smartsearch.Judge]] | None:
     """What makes a judge for ``smart_search``, or None when it is not offered.
 
-    Not offered when the operator said so, when nothing is configured, or when
-    the configuration has problems -- and those are said on stderr, all of
-    them, since the operator is the one who can fix them and a tool that
-    silently fails to appear gives them nothing to go on.
+    Not offered unless the operator asked for it, and then not when nothing is
+    configured or the configuration has problems -- and those are said on
+    stderr, all of them, since the operator is the one who can fix them and a
+    tool that silently fails to appear gives them nothing to go on.
     """
     if not offered:
         return None
     settings, refused = systemone.Settings.read()
+    if not refused and not settings.configured:
+        refused.append(Refusal("smart-search-not-configured", overridable=False))
     for refusal in refused:
         said = messages.render(refusal.as_error(), spell=messages.flag)
         print(f"outrage: smart_search is not offered: {said}", file=sys.stderr)
@@ -2935,7 +2942,7 @@ def main(argv: list[str] | None = None) -> int:
                 remount_tool=not args.no_remount,
                 mount_config=args.config_files,
                 incomplete_mounts=startup_warnings.incomplete,
-                smart_search=_smart_search_judges(not args.no_smart_search),
+                smart_search=_smart_search_judges(args.smart_search),
             ).run("stdio")
     except OutrageError as exc:
         # The same rule `cli.main` follows, and for the same reason: a mount

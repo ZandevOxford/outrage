@@ -142,14 +142,14 @@
 ### outrage.config.script_command(script: str, executable: str | PathLike[str] | None = None) → list[str] | None
 27205 27241 411
 
-### outrage.config.server_entry(directory: str | PathLike[str], command: list[str] | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False, marked: bool = False) → dict[str, Any]
+### outrage.config.server_entry(directory: str | PathLike[str], command: list[str] | None = None, \*, log: Any = None, log_content: str | None = None, no_info: bool = False, no_remount: bool = False, no_versioning: bool = False, smart_search: bool = False, marked: bool = False) → dict[str, Any]
 28324 28362 425
 
 ### outrage.config.split_args(args: Sequence[str]) → list[tuple[str, list[str]]]
-32141 32181 473
+32479 32519 478
 
 ### outrage.config.write_config(path: Path, config: dict[str, Any], original: str | None = None) → None
-33152 33194 484
+33490 33532 489
 
 ### outrage.config.write_toml(path: Path, document: TOMLDocument, original: str | None = None) → None
-34067 34111 494
+34405 34449 499

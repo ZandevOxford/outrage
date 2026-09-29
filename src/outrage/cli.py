@@ -710,9 +710,10 @@ def argument_parser() -> argparse.ArgumentParser:
             "service, TypeSafe's by default: TYPESAFE_API_KEY, "
             "TYPESAFE_BASE_URL and TYPESAFE_DEFAULT_MODEL, or key, base_url and "
             "model in the [smart_search] table of ~/.outrage/config.toml. "
-            "Unlike the tool, which judges one slice, this searches the whole "
-            "subtree, a slice at a time -- which on a large one takes minutes "
-            "and sends all of it."
+            "One slice of the subtree is searched, --limit documents of it, as "
+            "the tool does; stderr names the --after for the next. Each "
+            "probability is a document's own, so the slices of a subtree can be "
+            "merged by sorting on it."
         ),
     )
     _store_option(smart_search)
@@ -741,7 +742,24 @@ def argument_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Follow each match with what every level said of it.",
     )
-    _limit_option(smart_search, "matches")
+    smart_search.add_argument(
+        "--limit",
+        type=int,
+        default=smartsearch.DEFAULT_LIMIT,
+        metavar="N",
+        help=(
+            "Search a slice of N documents (default "
+            f"{smartsearch.DEFAULT_LIMIT}). Not a display bound, as it is "
+            "elsewhere here: every match in the slice is printed, since each "
+            "one cost a request and the slice is what bounds the cost."
+        ),
+    )
+    smart_search.add_argument(
+        "--after",
+        default=None,
+        metavar="KEY",
+        help="Start after KEY, as the previous slice's stderr said.",
+    )
     smart_search.set_defaults(handler=_smart_search_command)
 
     copy = subcommands.add_parser(
@@ -1288,6 +1306,18 @@ def _log_options(parser: argparse.ArgumentParser) -> None:
             "removed by one."
         ),
     )
+    parser.add_argument(
+        "--smart-search",
+        dest="smart_search",
+        action="store_true",
+        help=(
+            "Record --smart-search on the server entry, so the server offers "
+            "the 'smart_search' tool, which sends document text to a System "
+            "One model to be judged. Off by default there, and it needs a "
+            "model configured: TYPESAFE_API_KEY, or the [smart_search] table "
+            "of ~/.outrage/config.toml. Added by a re-run, never removed by one."
+        ),
+    )
 
 
 def _mount_options(parser: argparse.ArgumentParser, verb: str) -> None:
@@ -1581,6 +1611,7 @@ def _init_command(args: argparse.Namespace, out: TextIO) -> int:
         no_info=args.no_info,
         no_remount=args.no_remount,
         no_versioning=args.no_versioning,
+        smart_search=args.smart_search,
         root_mount=args.root_mount,
         mounts=args.mounts,
         read_only_mounts=args.read_only_mounts,
@@ -1723,6 +1754,7 @@ def _config_command(args: argparse.Namespace, out: TextIO) -> int:
         no_info=args.no_info,
         no_remount=args.no_remount,
         no_versioning=args.no_versioning,
+        smart_search=args.smart_search,
     )
     table = mountfile.plan_starter(
         directory,
@@ -2270,7 +2302,7 @@ def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
 
 
 def _smart_search_command(args: argparse.Namespace, out: TextIO) -> int:
-    """Search the whole subtree, one slice at a time, and print the matches."""
+    """Search one slice of a subtree and print what it did not rule out, best first."""
     levels = tuple(args.levels) if args.levels is not None else smartsearch.LEVELS
     settings, refused = systemone.Settings.read()
     refused = [*smartsearch.refusals(args.query, levels), *refused]
@@ -2286,33 +2318,20 @@ def _smart_search_command(args: argparse.Namespace, out: TextIO) -> int:
             )
         return 1
 
-    matches: list[smartsearch.Match] = []
-    unjudged: list[smartsearch.Unjudged] = []
-    documents = tokens = 0
     with _open_table(args) as opened, systemone.SystemOne(settings) as judge:
         _resolved(opened, args)
-        after = None
-        while True:
-            found = smartsearch.smart_search(
-                opened, args.key, args.query, judge, depth=args.depth, after=after, levels=levels
-            )
-            matches.extend(found.matches)
-            unjudged.extend(found.unjudged)
-            documents += found.documents
-            tokens += found.input_tokens
-            after = found.next_cursor
-            if after is None:
-                break
-            # A slice takes seconds to a minute, so a large subtree is a long
-            # wait with nothing on the screen; this says it is moving.
-            print(f"outrage: judged {documents} of {found.total} documents", file=sys.stderr)
+        found = smartsearch.smart_search(
+            opened,
+            args.key,
+            args.query,
+            judge,
+            depth=args.depth,
+            limit=args.limit,
+            after=args.after,
+            levels=levels,
+        )
 
-    # Stable, so equal probabilities keep the store's order, as within a slice.
-    matches.sort(key=lambda match: -match.probability)
-    for shown, match in enumerate(matches):
-        if args.limit is not None and shown >= args.limit:
-            print(f"outrage: stopped at --limit {args.limit}", file=sys.stderr)
-            break
+    for match in found.matches:
         print(
             f"{match.probability:.2f}  {match.decision:<6}  {match.decided_at or '-':<8}  "
             f"{keys.displayed(match.key)}",
@@ -2320,18 +2339,26 @@ def _smart_search_command(args: argparse.Namespace, out: TextIO) -> int:
         )
         if args.evidence:
             print(f"      {_said_by_levels(match.evidence)}", file=out)
-    for failed in unjudged:
+    for failed in found.unjudged:
         reason = messages.render(OutrageError(failed.code, **failed.details))
         print(
             f"outrage: not judged at {failed.level}: {keys.displayed(failed.key)}: {reason}",
             file=sys.stderr,
         )
     print(
-        f"outrage: {documents} documents screened, {len(matches)} not ruled out, "
-        f"{len(unjudged)} not judged, {tokens} input tokens",
+        f"outrage: {found.documents} of {found.total} documents screened, "
+        f"{len(found.matches)} not ruled out, {len(found.unjudged)} not judged, "
+        f"{found.input_tokens} input tokens",
         file=sys.stderr,
     )
-    if not matches:
+    if found.next_cursor is not None:
+        # On stderr with the other remarks about the answer, and spelled as the
+        # option it is, so the next slice is a copy and paste away.
+        print(
+            f"outrage: the next slice is --after {shlex.quote(found.next_cursor)}",
+            file=sys.stderr,
+        )
+    if not found.matches:
         print(f"nothing at or below {args.key or 'the top level'} is about that", file=out)
     return 0
 

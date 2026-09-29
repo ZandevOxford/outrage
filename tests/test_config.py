@@ -143,6 +143,13 @@ def test_an_entry_offers_the_info_tool_unless_told_not_to(tmp_path):
     assert entry["args"][-1] == "--no-info"
 
 
+def test_an_entry_offers_smart_search_only_when_told_to(tmp_path):
+    """The one option that turns something on: a store's text leaving the machine."""
+    assert "--smart-search" not in server_entry(tmp_path, command=["outrage-server"])["args"]
+    entry = server_entry(tmp_path, command=["outrage-server"], smart_search=True)
+    assert entry["args"][-1] == "--smart-search"
+
+
 def test_a_valueless_flag_survives_a_re_run_that_does_not_mention_it(tmp_path):
     """`--no-info` takes no value, and inheritance is by flag rather than by pair.
 

@@ -422,7 +422,7 @@ property of the script -- the server has one and the command line has none
 -- so the caller who knows that decides, and a report that cannot name a
 command says so.
 
-### outrage.config.server_entry(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], command: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, marked: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
+### outrage.config.server_entry(directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], command: [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, log: [Any](https://docs.python.org/3/library/typing.html#typing.Any) = None, log_content: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, no_info: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_remount: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, no_versioning: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, smart_search: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, marked: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [dict](https://docs.python.org/3/builtins/stdtypes.html#dict)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Any](https://docs.python.org/3/library/typing.html#typing.Any)]
 
 Build the configuration entry for the stores in `directory`.
 
@@ -465,6 +465,11 @@ is no command line run to pass a flag to.
 versions. Written here rather than left to a hand edit for the reason the
 others are, and because [`merge_entry()`](#outrage.config.merge_entry) keeps an option it does not
 recognise but has no way to *write* one `init` was asked for.
+
+`smart_search` adds `--smart-search`, offering the tool that sends
+document text to a model. The one option here that turns something *on*,
+since sending a store's content off the machine is not a default; recorded
+here for the reason the others are.
 
 `marked` puts [`SERVER_MARKER`](#outrage.config.SERVER_MARKER) ahead of every option, which is what
 the Codex entry needs to be recognised by a later run. See the module
