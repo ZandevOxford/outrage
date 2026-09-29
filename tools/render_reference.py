@@ -21,6 +21,12 @@ Three moves, and each is a decision rather than a tidy-up:
   other are unchanged; only the promoted page moved relative to them, so only
   its links are rewritten.
 
+Each module page's opening paragraph is also its `!summary`. Both are generated
+from the module docstring, so there is one authored description and a change to
+it moves the introduction and the metadata together. The section landing page
+gets no summary: its title already says what it is, while its opening paragraph
+describes the reading order rather than the section's subject.
+
 Titles are not written here. `tools/document_titles.py` does that, over the
 whole tree, so that the one rule about not overwriting a hand-written title
 lives in one place. `tools/document_contents.py` writes the `!contents`
@@ -44,6 +50,11 @@ from pathlib import Path
 #: `reference/` on disk.
 SECTION = "reference"
 
+#: The direct metadata file written below each module document. The file is
+#: Markdown because its value is the rendered Markdown paragraph, not the RST
+#: docstring that Sphinx started from.
+SUMMARY_FILE = "!summary.md"
+
 #: Where the module pages sit in the Sphinx output, from `docs/api/`.
 SOURCE_SUBDIR = "api"
 
@@ -52,6 +63,38 @@ SOURCE_SUBDIR = "api"
 #: so it cannot match prose, and excluding a scheme so the absolute links to
 #: docs.python.org are left alone.
 SIBLING_LINK = re.compile(r"\]\((?!\w+:)([a-z_]+)\.md")
+
+
+def opening_summary(markdown: str) -> str | None:
+    """Return the first prose paragraph below a Markdown page heading.
+
+    Generated module pages begin with one level-one heading and then the module
+    docstring. A summary is deliberately a paragraph rather than an arbitrary
+    first block: a page that opens with another heading, a list or a code block
+    has no suitable introduction and must make that omission fail visibly.
+
+    Line wrapping is preserved. The rendered page and metadata therefore hold
+    exactly the same prose, and a reference rebuild does not introduce a
+    second formatter whose output can drift.
+    """
+    lines = markdown.splitlines()
+    if not lines or not re.fullmatch(r"# [^#].*", lines[0]):
+        return None
+
+    start = 1
+    while start < len(lines) and not lines[start].strip():
+        start += 1
+    if start == len(lines):
+        return None
+
+    first = lines[start].lstrip()
+    if first.startswith(("#", "- ", "* ", "+ ", ">", "```", "~~~")):
+        return None
+
+    end = start
+    while end < len(lines) and lines[end].strip():
+        end += 1
+    return "\n".join(lines[start:end]).strip() + "\n"
 
 
 def rearrange(build: Path, dest: Path) -> int:
@@ -70,6 +113,15 @@ def rearrange(build: Path, dest: Path) -> int:
         print(f"no landing page at {landing}", file=sys.stderr)
         return 1
 
+    module_pages = [page for page in pages if page != landing]
+    summaries: dict[Path, str] = {}
+    for page in module_pages:
+        summary = opening_summary(page.read_text())
+        if summary is None:
+            print(f"no opening prose paragraph in {page}", file=sys.stderr)
+            return 1
+        summaries[page] = summary
+
     section_dir, section_file = dest / SECTION, dest / f"{SECTION}.md"
     for stale in (section_dir, section_file):
         if stale.is_dir():
@@ -80,11 +132,13 @@ def rearrange(build: Path, dest: Path) -> int:
 
     section_file.write_text(SIBLING_LINK.sub(rf"]({SECTION}/\1.md", landing.read_text()))
     written = 0
-    for page in pages:
-        if page != landing:
-            shutil.copy(page, section_dir / page.name)
-            written += 1
-    print(f"{SECTION}.md from {landing.name}, {written} pages in {SECTION}/")
+    for page in module_pages:
+        shutil.copy(page, section_dir / page.name)
+        metadata = section_dir / page.stem / SUMMARY_FILE
+        metadata.parent.mkdir()
+        metadata.write_text(summaries[page])
+        written += 1
+    print(f"{SECTION}.md from {landing.name}, {written} pages and summaries in {SECTION}/")
     return 0
 
 

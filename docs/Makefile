@@ -109,6 +109,11 @@ markdown: check-env
 # what is on disk: a page rewritten afterwards would carry the offsets of the
 # page it replaced.
 #
+# `render_reference.py` also writes each generated module page's opening
+# paragraph as its `!summary`, before the sweeps below. It owns both copies:
+# the page and metadata are generated from the same module docstring and are
+# removed together when a module disappears.
+#
 # The last two sweep the **whole tree**, not the section a render wrote. That
 # is deliberate for the indexes: `design` and `implementation` are hand-written
 # and their `!contents` goes stale on an ordinary edit rather than at a render,

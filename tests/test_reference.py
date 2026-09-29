@@ -75,6 +75,48 @@ def test_the_section_is_there_at_all():
     assert pages(shipped.tree()), "no reference section in the documents tree"
 
 
+def test_the_summary_is_exactly_the_first_prose_paragraph():
+    page = "# outrage.example\n\nFirst line,\nstill the first paragraph.\n\nNot the summary.\n"
+
+    assert render_reference.opening_summary(page) == ("First line,\nstill the first paragraph.\n")
+    assert render_reference.opening_summary("# outrage.example\n\n- no introduction\n") is None
+
+
+def test_every_module_page_has_its_opening_paragraph_as_a_summary():
+    """One authored introduction supplies both the page and its metadata."""
+    root = shipped.tree()
+    module_pages = [page for page in pages(root) if page.parent == root / SECTION]
+
+    assert module_pages, "no module pages in the reference section"
+    for page in module_pages:
+        expected = render_reference.opening_summary(page.read_text())
+        assert expected is not None, f"{page.name} has no opening prose paragraph"
+        summary = page.with_suffix("") / render_reference.SUMMARY_FILE
+        assert summary.read_text() == expected
+
+    # `reference.md` is the section index. Its title says what it is and its
+    # opening paragraph is only about reading order, so it is deliberately not
+    # summarised by the module-page rule above.
+    assert not (root / SECTION / render_reference.SUMMARY_FILE).exists()
+
+
+def test_an_unintroduced_module_does_not_replace_the_committed_section(tmp_path, capsys):
+    """Validate every summary before deleting the previous generated tree."""
+    build = tmp_path / "build" / render_reference.SOURCE_SUBDIR
+    build.mkdir(parents=True)
+    (build / "index.md").write_text("# API reference\n\nReading order.\n")
+    (build / "empty.md").write_text("# outrage.empty\n")
+
+    dest = tmp_path / "documents"
+    old = dest / SECTION / "kept.md"
+    old.parent.mkdir(parents=True)
+    old.write_text("still here\n")
+
+    assert render_reference.rearrange(build.parent, dest) == 1
+    assert old.read_text() == "still here\n"
+    assert "no opening prose paragraph" in capsys.readouterr().err
+
+
 def test_no_signature_lost_its_keyword_only_marker():
     """The defect that made this file necessary.
 

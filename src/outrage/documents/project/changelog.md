@@ -4,6 +4,11 @@ Notable changes to `outrage`. This project follows [semantic versioning](https:/
 
 ## Unreleased
 
+The generated API reference now carries each module introduction as its
+`!summary` metadata. The page and summary are rebuilt together from the same
+module docstring, and a reference build refuses a module with no opening prose
+paragraph rather than silently leaving it out of summary-based searches.
+
 `smart_search` is a new optional MCP tool for finding documents by a
 plain-language query without bringing their contents into the calling agent's
 context. A System One model screens one bounded slice in a cascade over
