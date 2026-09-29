@@ -3523,3 +3523,105 @@ def test_a_listing_and_info_show_a_mount_that_could_not_be_opened(tmp_path, caps
     assert "unavailable mount" in row
     assert "not opened: the read-only mount at 'gone' has no store at" in row
     capsys.readouterr()
+
+
+class _MarkerJudge:
+    """Answers by marker words in the state: MATCH yes, BROKEN fails, else no."""
+
+    def judge(self, state, questions):
+        from outrage.smartsearch import Answer, JudgeError, Judgement
+
+        if "BROKEN" in state:
+            raise JudgeError("smart-search-service-failed", url="u", status=529, detail="busy")
+        p = 0.97 if "MATCH" in state else 0.03
+        answers = {
+            qid: Answer(score=3 * p, probabilities=(1 - p, 0.0, 0.0, p)) for qid in questions
+        }
+        return Judgement(answers, input_tokens=7)
+
+
+@pytest.fixture
+def searchable(tmp_path, monkeypatch):
+    """A store directory, a configured key, and a judge that sends nothing anywhere."""
+    import contextlib
+
+    from outrage import systemone
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    for variable in ("TYPESAFE_BASE_URL", "TYPESAFE_DEFAULT_MODEL"):
+        monkeypatch.delenv(variable, raising=False)
+    monkeypatch.setenv("TYPESAFE_API_KEY", "k")
+    monkeypatch.setattr(
+        systemone, "SystemOne", lambda settings: contextlib.nullcontext(_MarkerJudge())
+    )
+    return tmp_path / ".outrage"
+
+
+def test_smart_search_searches_the_whole_subtree_best_first(searchable, capsys):
+    with SqliteStore(searchable) as store:
+        # One more than a slice, so the search has to go on to a second one.
+        for n in range(100):
+            store.store_document(f"d/{n:03}", "nothing here")
+        store.store_document("d/zz", "the MATCH is in the body")
+        store.store_document("elsewhere", "another MATCH, outside the key")
+
+    status, output = run(
+        "smart-search", "--dir", str(searchable), "what matches?", "d", "--level", "body"
+    )
+
+    assert status == 0
+    assert output.splitlines() == ["0.97  yes     body      d/zz"]
+    err = capsys.readouterr().err
+    assert "judged 100 of 101 documents" in err
+    assert "101 documents screened, 1 not ruled out, 0 not judged" in err
+
+
+def test_smart_search_shows_evidence_and_reports_unjudged_apart(searchable, capsys):
+    with SqliteStore(searchable) as store:
+        store.store_document("a", "a MATCH", title="Title")
+        store.store_document("b", "BROKEN")
+
+    status, output = run("smart-search", "--dir", str(searchable), "q", "--evidence")
+
+    assert status == 0
+    first, said = output.splitlines()
+    assert first.endswith("  a")
+    assert said.strip().startswith("title 0.03,") and "body 0.97" in said
+    # Not a match, and not part of the answer a pipe reads.
+    assert "b" not in output.split()
+    assert "not judged at body: b:" in capsys.readouterr().err
+
+
+def test_smart_search_refuses_with_every_reason_before_opening_anything(
+    searchable, monkeypatch, capsys
+):
+    monkeypatch.delenv("TYPESAFE_API_KEY")
+
+    status, output = run(
+        "smart-search", "--dir", str(searchable), " ", "--level", "title", "--level", "title"
+    )
+
+    assert (status, output) == (1, "")
+    err = capsys.readouterr().err
+    assert "query is empty" in err
+    assert "more than once" in err
+    assert not searchable.exists()
+
+
+def test_smart_search_refuses_when_no_model_is_configured(searchable, monkeypatch, capsys):
+    monkeypatch.delenv("TYPESAFE_API_KEY")
+
+    status, _ = run("smart-search", "--dir", str(searchable), "q")
+
+    assert status == 1
+    assert "no model is configured" in capsys.readouterr().err
+
+
+def test_smart_search_says_when_nothing_matches(searchable):
+    with SqliteStore(searchable) as store:
+        store.store_document("a", "nothing")
+
+    status, output = run("smart-search", "--dir", str(searchable), "q", "a")
+
+    assert status == 0
+    assert output == "nothing at or below a is about that\n"

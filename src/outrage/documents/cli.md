@@ -8,7 +8,7 @@ Command line tool for the Outrage document store
 
 ```text
 outrage [-h] [--version]
-        {init,uninit,sessionstart,config,backup,log,get,set,ingest,make_contents,ls,dump,copy,export,import,pack,rm,check,schema,mounts,info}
+        {init,uninit,sessionstart,config,backup,log,get,set,ingest,make_contents,ls,dump,smart-search,copy,export,import,pack,rm,check,schema,mounts,info}
         ...
 ```
 
@@ -31,6 +31,7 @@ outrage [-h] [--version]
 - [`make_contents`](#make_contents) - store an offset index of a Markdown or HTML document's headings
 - [`ls`](#ls) - list the keys immediately below a key
 - [`dump`](#dump) - print every document at and below a key
+- [`smart-search`](#smart-search) - find the documents under a key that are about a query
 - [`copy`](#copy) - copy a range of documents within the mounted namespace
 - [`export`](#export) - write a subtree out as a directory of files
 - [`import`](#import) - store a directory of files as documents
@@ -450,6 +451,48 @@ outrage dump [-h] [--dir PATH] [--store FILE] [--mount KEY=FILE]
 - `--depth DEPTH` - Levels below key to descend.
 - `--max-chars MAX_CHARS` - Cap each document at this many characters, which turns off printing them whole. Matches the tool's own bulk cap at 2000.
 - `--limit N` - Show at most N documents, and say so on stderr. Everything by default.
+
+## `smart-search`
+
+Screen documents against a query with a small classification model, judging each on its title, then
+its keywords, summary, contents and body, and going on to the next only while the evidence leaves it
+unsure. Prints every document not ruled out, best first, with its probability, its decision and the
+level that made it. Document text is sent to the configured System One service, TypeSafe's by
+default: TYPESAFE_API_KEY, TYPESAFE_BASE_URL and TYPESAFE_DEFAULT_MODEL, or key, base_url and model
+in the [smart_search] table of ~/.outrage/config.toml. Unlike the tool, which judges one slice, this
+searches the whole subtree, a slice at a time -- which on a large one takes minutes and sends all of
+it.
+
+### Usage
+
+```text
+outrage smart-search [-h] [--dir PATH] [--store FILE]
+                     [--mount KEY=FILE] [--mount-ro KEY=FILE]
+                     [--mount-docs] [--mount-home] [--unmount KEY]
+                     [--mount-config FILE] [--no-mount-config]
+                     [--depth DEPTH] [--level LEVEL] [--evidence]
+                     [--limit N]
+                     query [key]
+```
+
+### Arguments
+
+- `-h, --help` - show this help message and exit
+- `--dir PATH` - Store directory. Defaults to OUTRAGE_DIR, then .outrage in the working directory.
+- `--store FILE, --root-mount FILE` - Which store in that directory, as a file relative to it (default: store.sqlite). On a command that takes mounts this is the root mount -- the store answering for every key no mount claims -- and --root-mount is the same option. Takes the same options a --mount does, so --store documents,type=files reads a directory of files as the whole store.
+- `--mount KEY=FILE` - Also mount the store FILE under KEY for this command, as in ref=reference.sqlite. FILE is relative to --dir, like --store, and may carry options after a comma: docs,type=files says which backend keeps the store, for one whose name cannot -- a directory of files has no extension to read. Types: duckdb, files, parquet, postgres, postgresql, pyarrow, sqlite. A tree also takes extensions=, one of strip, keep: `keep` makes a file name and a key the same string, for a bundle whose documents link to each other by name. A SQLite or PostgreSQL store also takes versioning=, one of on, off, over the run's default. A tree takes lock=, one of process, interprocess: `interprocess` keeps writers in other processes apart too, and every writer of the tree has to say it. A PostgreSQL store, which is experimental, has its libpq service file as FILE, which may be absolute or start with ~, or empty after type=postgres for libpq's own lookup; it takes service=, the entry in that file (default outrage). Repeatable. Reads, writes, surveys and recursive deletes cross mount boundaries.
+- `--mount-ro KEY=FILE` - As --mount, but every write routed there is refused before it reaches the store. Repeatable. The store must already exist.
+- `--mount-docs` - Also mount the documentation shipped with outrage, read-only, at 'outrage': what a key is, what the tools do, and the conventions worth following, as documents in the namespace. Off here and on in the MCP server, so a bare outrage command stays this project's own store.
+- `--mount-home` - Also mount the writable user-wide store at 'home'. Off here and on in the MCP server. Every project session can read and write it, so changes are global.
+- `--unmount KEY` - Do not mount the store mounted at KEY. The one thing an override cannot do -- naming a mount replaces it or adds it, and only this takes one away. Repeatable, and refused if nothing was mounted there to remove: the built-ins the MCP server carries at outrage and home are not mounted here unless their mount flags ask for them. A --mount for the same key written after this one mounts it again.
+- `--mount-config FILE` - Read the mount options from a TOML file, as though they had been typed here: an option before it loses, an option after it wins, and a mount named again replaces the one it names. Repeatable. mounts.toml in --dir is read first whenever it exists, so a project's own table needs no flag at all.
+- `--no-mount-config` - Ignore mounts.toml in --dir for this run, mounting only what is named here. The way to read a store no table can hold: a mount table needs a writable store at the root, and a packed parquet one is not.
+- `query` - What the documents should be about, in plain words.
+- `key` - Key whose subtree to search. Omit for everything.
+- `--depth DEPTH` - Levels below key to descend.
+- `--level LEVEL` - Judge at this level. Repeatable, in order; the default is title, keywords, summary, contents, body. Name only metadata levels to screen without sending any document's body.
+- `--evidence` - Follow each match with what every level said of it.
+- `--limit N` - Show at most N matches, and say so on stderr. Everything by default.
 
 ## `copy`
 

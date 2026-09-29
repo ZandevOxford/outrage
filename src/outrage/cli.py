@@ -45,11 +45,13 @@ from . import (
     mounts,
     pgservice,
     shipped,
+    smartsearch,
     store,
     store_files,
+    systemone,
 )
 from . import config as config_module
-from .errors import OutrageError
+from .errors import OutrageError, Refusal
 from .mounts import MOUNT_KIND, READ_ONLY_MOUNT_KIND, ROOT_KIND
 from .notes import Note
 
@@ -78,6 +80,7 @@ MOUNTED = (
     "make_contents",
     "ls",
     "dump",
+    "smart-search",
     "copy",
     "rm",
     "export",
@@ -693,6 +696,53 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     _limit_option(dump, "documents")
     dump.set_defaults(handler=_dump_command)
+
+    smart_search = subcommands.add_parser(
+        "smart-search",
+        help="find the documents under a key that are about a query",
+        description=(
+            "Screen documents against a query with a small classification "
+            "model, judging each on its title, then its keywords, summary, "
+            "contents and body, and going on to the next only while the "
+            "evidence leaves it unsure. Prints every document not ruled out, "
+            "best first, with its probability, its decision and the level that "
+            "made it. Document text is sent to the configured System One "
+            "service, TypeSafe's by default: TYPESAFE_API_KEY, "
+            "TYPESAFE_BASE_URL and TYPESAFE_DEFAULT_MODEL, or key, base_url and "
+            "model in the [smart_search] table of ~/.outrage/config.toml. "
+            "Unlike the tool, which judges one slice, this searches the whole "
+            "subtree, a slice at a time -- which on a large one takes minutes "
+            "and sends all of it."
+        ),
+    )
+    _store_option(smart_search)
+    _table_options(smart_search)
+    smart_search.add_argument("query", help="What the documents should be about, in plain words.")
+    smart_search.add_argument(
+        "key", nargs="?", default=None, help="Key whose subtree to search. Omit for everything."
+    )
+    smart_search.add_argument(
+        "--depth", type=int, default=None, help="Levels below key to descend."
+    )
+    smart_search.add_argument(
+        "--level",
+        dest="levels",
+        action="append",
+        default=None,
+        metavar="LEVEL",
+        help=(
+            "Judge at this level. Repeatable, in order; the default is "
+            f"{', '.join(smartsearch.LEVELS)}. Name only metadata levels to "
+            "screen without sending any document's body."
+        ),
+    )
+    smart_search.add_argument(
+        "--evidence",
+        action="store_true",
+        help="Follow each match with what every level said of it.",
+    )
+    _limit_option(smart_search, "matches")
+    smart_search.set_defaults(handler=_smart_search_command)
 
     copy = subcommands.add_parser(
         "copy",
@@ -2217,6 +2267,86 @@ def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
     if not shown:
         print(f"nothing at or below {args.key or 'the top level'}", file=out)
     return 0
+
+
+def _smart_search_command(args: argparse.Namespace, out: TextIO) -> int:
+    """Search the whole subtree, one slice at a time, and print the matches."""
+    levels = tuple(args.levels) if args.levels is not None else smartsearch.LEVELS
+    settings, refused = systemone.Settings.read()
+    refused = [*smartsearch.refusals(args.query, levels), *refused]
+    if not refused and not settings.configured:
+        refused.append(Refusal("smart-search-not-configured", overridable=False))
+    if refused:
+        # Every reason, as `_report_refusals` gives them, and before a store is
+        # opened: none of them is about the store.
+        for refusal in refused:
+            print(
+                f"outrage: {messages.render(refusal.as_error(), spell=messages.flag)}",
+                file=sys.stderr,
+            )
+        return 1
+
+    matches: list[smartsearch.Match] = []
+    unjudged: list[smartsearch.Unjudged] = []
+    documents = tokens = 0
+    with _open_table(args) as opened, systemone.SystemOne(settings) as judge:
+        _resolved(opened, args)
+        after = None
+        while True:
+            found = smartsearch.smart_search(
+                opened, args.key, args.query, judge, depth=args.depth, after=after, levels=levels
+            )
+            matches.extend(found.matches)
+            unjudged.extend(found.unjudged)
+            documents += found.documents
+            tokens += found.input_tokens
+            after = found.next_cursor
+            if after is None:
+                break
+            # A slice takes seconds to a minute, so a large subtree is a long
+            # wait with nothing on the screen; this says it is moving.
+            print(f"outrage: judged {documents} of {found.total} documents", file=sys.stderr)
+
+    # Stable, so equal probabilities keep the store's order, as within a slice.
+    matches.sort(key=lambda match: -match.probability)
+    for shown, match in enumerate(matches):
+        if args.limit is not None and shown >= args.limit:
+            print(f"outrage: stopped at --limit {args.limit}", file=sys.stderr)
+            break
+        print(
+            f"{match.probability:.2f}  {match.decision:<6}  {match.decided_at or '-':<8}  "
+            f"{keys.displayed(match.key)}",
+            file=out,
+        )
+        if args.evidence:
+            print(f"      {_said_by_levels(match.evidence)}", file=out)
+    for failed in unjudged:
+        reason = messages.render(OutrageError(failed.code, **failed.details))
+        print(
+            f"outrage: not judged at {failed.level}: {keys.displayed(failed.key)}: {reason}",
+            file=sys.stderr,
+        )
+    print(
+        f"outrage: {documents} documents screened, {len(matches)} not ruled out, "
+        f"{len(unjudged)} not judged, {tokens} input tokens",
+        file=sys.stderr,
+    )
+    if not matches:
+        print(f"nothing at or below {args.key or 'the top level'} is about that", file=out)
+    return 0
+
+
+def _said_by_levels(evidence: tuple[smartsearch.Evidence, ...]) -> str:
+    """What each level said of one document, on one line."""
+    said = []
+    for item in evidence:
+        text = f"{item.level} {item.probability:.2f}"
+        if item.chunks > 1:
+            text += f" over {item.chunks} chunks"
+        if item.partial:
+            text += " (partial)"
+        said.append(text)
+    return ", ".join(said)
 
 
 def _report_without_meta(opened: store.Store, args: argparse.Namespace) -> None:

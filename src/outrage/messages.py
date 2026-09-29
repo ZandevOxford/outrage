@@ -2675,6 +2675,15 @@ def _smart_search_unauthorised(
     return f"{url} refused the API key (HTTP {status}); check the key from {source}"
 
 
+@template("smart-search-not-configured")
+def _smart_search_not_configured(name: Namer, /, **_: Any) -> str:
+    return (
+        "no model is configured to search with; set TYPESAFE_API_KEY, or key in the "
+        "[smart_search] table of ~/.outrage/config.toml, or a base URL of a server "
+        "that needs no key"
+    )
+
+
 @template("smart-search-config-not-a-table")
 def _smart_search_config_not_a_table(name: Namer, /, *, path: str, table: str, **_: Any) -> str:
     return f"{path} has a {table!r} that is not a table; write it as [{table}]"
