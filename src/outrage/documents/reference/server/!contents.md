@@ -43,20 +43,20 @@
 ### *class* outrage.server.RequestLog(log: EventLog)
 6358 6358 125
 
-### outrage.server.build_server(store: Store | Live, log: EventLog | None = None, directory: str | PathLike[str] | None = None, \*, all_tools: bool = False, info_tool: bool = True, remount_tool: bool = True, mount_config: Sequence[str] = (), incomplete_mounts: bool = False) → MCPServer
+### outrage.server.build_server(store: Store | Live, log: EventLog | None = None, directory: str | PathLike[str] | None = None, \*, all_tools: bool = False, info_tool: bool = True, remount_tool: bool = True, mount_config: Sequence[str] = (), incomplete_mounts: bool = False, smart_search: Callable[[], AbstractContextManager[Judge]] | None = None) → MCPServer
 7665 7665 149
 
 ### outrage.server.delivered_text() → str
-11887 11889 209
+12733 12735 216
 
 ### outrage.server.instructions(store: Store, \*, incomplete_mounts: bool = False) → str
-12473 12477 221
+13319 13323 228
 
 ### outrage.server.main(argv: list[str] | None = None) → int
-14697 14703 258
+15543 15549 265
 
 ### outrage.server.parse_args(argv: list[str] | None = None) → Namespace
-15579 15587 271
+16425 16433 278
 
 ### outrage.server.tool_description(name: str) → str
-16910 16920 292
+17756 17766 299

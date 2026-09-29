@@ -1,6 +1,7 @@
 """Tests driving the tools through the MCP server's own dispatch."""
 
 import json
+import logging
 import sys
 import tempfile
 from pathlib import Path
@@ -196,6 +197,8 @@ def test_the_documentation_generator_gets_every_tool_regardless(store, monkeypat
 
     assert "ingest_document" in tools
     assert tools["ingest_document"].description == server_module.tool_description("ingest_document")
+    # Offered only where a model is configured; the documentation describes it anyway.
+    assert "smart_search" in tools
     # The other tool that can be absent, and absent here because this server
     # was told to withhold it: the documentation still describes it.
     assert "info" in tools
@@ -2680,3 +2683,126 @@ def test_a_builtin_home_without_a_readme_is_routed_to_the_shipped_template(tmp_p
     finally:
         built_in.close()
         root.close()
+
+
+class _MarkerJudge:
+    """Answers a smart_search question by marker words: MATCH yes, BROKEN fails, else no."""
+
+    def judge(self, state, questions):
+        from outrage.smartsearch import Answer, JudgeError, Judgement
+
+        answers = {}
+        for qid, question in questions.items():
+            text = state + " " + " ".join(question.instructions.values())
+            if "BROKEN" in text:
+                raise JudgeError("smart-search-service-failed", url="u", status=529, detail="busy")
+            p = 0.97 if "MATCH" in text else 0.03
+            answers[qid] = Answer(score=3 * p, probabilities=(1 - p, 0.0, 0.0, p))
+        return Judgement(answers, input_tokens=7)
+
+
+def _judges():
+    import contextlib
+
+    return contextlib.nullcontext(_MarkerJudge())
+
+
+def test_smart_search_is_not_offered_without_a_judge(server):
+    assert "smart_search" not in list_tools(server)
+
+
+def test_smart_search_names_keys_from_outside_a_mount(tmp_path):
+    """Two stores, so a key named for the wrong reader would show."""
+    with SqliteStore(tmp_path / "root") as root, SqliteStore(tmp_path / "ref") as ref:
+        root.store_document("notes/a", "nothing")
+        root.store_document("notes/a/!title", "unrelated")
+        ref.store_document("guide/b", "the MATCH is in the body")
+        ref.store_document("guide/b/!title", "Guide")
+        ref.store_document("guide/c", "BROKEN")
+        table = mounts_module.MountedStore({"": root, "ref": ref})
+        server = build_server(table, smart_search=_judges)
+
+        result = call(server, "smart_search", query="what matches?", key="ref")
+
+    assert result["key"] == "ref"
+    [match] = result["matches"]
+    assert match["key"] == "ref/guide/b"
+    assert match["decision"] == "yes" and match["decided_at"] == "body"
+    assert [e["level"] for e in match["evidence"]] == ["title", "body"]
+    [failed] = result["unjudged"]
+    assert failed["key"] == "ref/guide/c" and failed["level"] == "body"
+    assert "529" in failed["reason"]
+    assert result["levels"]["keywords"]["missing"] == 2
+    assert (result["documents"], result["total"], result["next_cursor"]) == (2, 2, None)
+    assert result["input_tokens"] > 0
+
+
+def test_smart_search_refuses_with_every_reason_at_once(store):
+    server = build_server(store, smart_search=_judges)
+
+    said = call_expecting_error(server, "smart_search", query=" ", levels=["title", "title"])
+
+    assert "query is empty" in said
+    assert "more than once" in said
+
+
+def test_smart_search_pages_the_slice(store):
+    for name in "abc":
+        store.store_document(f"d/{name}", "MATCH")
+    server = build_server(store, smart_search=_judges)
+
+    first = call(server, "smart_search", query="q", key="d", limit=2, levels=["body"])
+    second = call(server, "smart_search", query="q", key="d", after=first["next_cursor"])
+
+    assert [m["key"] for m in first["matches"]] == ["d/a", "d/b"]
+    assert [m["key"] for m in second["matches"]] == ["d/c"]
+    assert second["next_cursor"] is None
+
+
+def _configure(monkeypatch, tmp_path, text=None, mode=0o600, **environ):
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    for variable in ("TYPESAFE_API_KEY", "TYPESAFE_BASE_URL", "TYPESAFE_DEFAULT_MODEL"):
+        monkeypatch.delenv(variable, raising=False)
+    for variable, value in environ.items():
+        monkeypatch.setenv(variable, value)
+    if text is not None:
+        path = tmp_path / ".outrage" / "config.toml"
+        path.parent.mkdir(exist_ok=True)
+        path.write_text(text)
+        path.chmod(mode)
+
+
+def test_smart_search_is_offered_when_a_model_is_configured(monkeypatch, tmp_path):
+    _configure(monkeypatch, tmp_path, '[smart_search]\nkey = "k"\n')
+
+    assert server_module._smart_search_judges(True) is not None
+    assert server_module._smart_search_judges(False) is None
+    assert logging.getLogger("httpx2").level == logging.WARNING
+
+
+def test_smart_search_is_quietly_absent_when_nothing_is_configured(monkeypatch, tmp_path, capsys):
+    _configure(monkeypatch, tmp_path)
+
+    assert server_module._smart_search_judges(True) is None
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="mode bits are POSIX")
+def test_a_configuration_problem_is_told_to_the_operator(monkeypatch, tmp_path, capsys):
+    _configure(
+        monkeypatch,
+        tmp_path,
+        '[smart_search]\nkey = "k"\nmodle = "x"\n',
+        mode=0o644,
+        TYPESAFE_API_KEY="k",
+    )
+
+    assert server_module._smart_search_judges(True) is None
+    err = capsys.readouterr().err
+    assert err.count("smart_search is not offered") == 1
+    assert "chmod 600" in err
+
+
+def test_the_operator_can_withhold_smart_search():
+    assert parse_args(["--no-smart-search"]).no_smart_search is True
+    assert parse_args([]).no_smart_search is False

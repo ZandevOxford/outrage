@@ -146,7 +146,7 @@ risk is accepted on the same terms as `extra="forbid"`: what a change
 would cost is logging silently ceasing to happen, and
 `test_the_middleware_is_reached` fails loudly rather than letting it.
 
-### outrage.server.build_server(store: [Store](store.md#outrage.store.Store) | [Live](remount.md#outrage.remount.Live), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, remount_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), incomplete_mounts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → MCPServer
+### outrage.server.build_server(store: [Store](store.md#outrage.store.Store) | [Live](remount.md#outrage.remount.Live), log: [EventLog](eventlog.md#outrage.eventlog.EventLog) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, directory: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [PathLike](https://docs.python.org/3/library/os.html#os.PathLike)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, all_tools: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, info_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, remount_tool: [bool](https://docs.python.org/3/builtins/functions.html#bool) = True, mount_config: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = (), incomplete_mounts: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False, smart_search: [Callable](https://docs.python.org/3/library/collections.abc.html#collections.abc.Callable)[[], [AbstractContextManager](https://docs.python.org/3/library/contextlib.html#contextlib.AbstractContextManager)[[Judge](smartsearch.md#outrage.smartsearch.Judge)]] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → MCPServer
 
 Build a server exposing `store`, which may be one store or a mount table.
 
@@ -205,6 +205,13 @@ could not be opened; the individual reasons stay on the operator's stderr.
 reason and withheld the same way -- the server's `--no-remount`. They are
 MCP-only, which is a decision rather than an omission: the command line
 builds its table from scratch on every run and has nothing to change.
+
+`smart_search` makes the judge for the tool of that name, one per call,
+and the tool is offered only when there is one. It is passed in rather than
+worked out here because what decides it is the user's configuration --
+[`outrage.systemone.Settings.read()`](systemone.md#outrage.systemone.Settings.read) -- and [`main()`](#outrage.server.main) is where that
+is read and where a problem with it can be told to the operator. With
+`all_tools` and no judge, the tool reads the settings when it is called.
 
 ### outrage.server.delivered_text() → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 

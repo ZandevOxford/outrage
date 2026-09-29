@@ -27,10 +27,12 @@ import dataclasses
 import functools
 import itertools
 import json
+import logging
 import os
 import sys
 import time
 from collections.abc import Callable, Generator, Sequence
+from contextlib import AbstractContextManager
 from typing import Annotated, Any, Literal
 
 from mcp.server import MCPServer
@@ -59,6 +61,8 @@ from . import (
     mountfile,
     remount,
     shipped,
+    smartsearch,
+    systemone,
     titles,
 )
 from . import contents as contents_module
@@ -496,6 +500,73 @@ class _FindDocumentsResult(_ToolResult):
     next_cursor: Annotated[
         str | None, Field(description="Last candidate examined, or null when search is complete")
     ]
+    mounts_unavailable: Annotated[
+        list[str] | None,
+        Field(description="Mounted stores that could not be opened, left out of this answer"),
+    ] = None
+    note: Annotated[str | None, Field(description="Important qualification of the result")] = None
+
+
+class _EvidenceResult(_ToolResult):
+    level: Annotated[smartsearch.Level, Field(description="The level that was judged")]
+    probability: Annotated[float, Field(description="That level's probability of a match")]
+    chunks: Annotated[int, Field(description="Requests the level took: one, or a body's chunks")]
+    partial: Annotated[
+        bool, Field(description="Whether less than all of the value or body was judged")
+    ]
+
+
+class _SmartMatchResult(_ToolResult):
+    key: Annotated[str, Field(description="The document")]
+    probability: Annotated[float, Field(description="Combined probability of a match")]
+    decision: Annotated[
+        Literal["yes", "unsure"],
+        Field(description="Decided a match, or still unsure after every level"),
+    ]
+    decided_at: Annotated[
+        smartsearch.Level | None,
+        Field(description="The level that decided it a match, or null when none did"),
+    ]
+    evidence: Annotated[
+        list[_EvidenceResult], Field(description="What each level said, in cascade order")
+    ]
+
+
+class _UnjudgedResult(_ToolResult):
+    key: Annotated[str, Field(description="The document the cascade could not finish")]
+    level: Annotated[smartsearch.Level, Field(description="The level whose request failed")]
+    reason: Annotated[str, Field(description="Why, as a sentence")]
+
+
+class _LevelCountsResult(_ToolResult):
+    asked: Annotated[int, Field(description="Documents judged at this level")]
+    yes: Annotated[int, Field(description="Decided a match here")]
+    no: Annotated[int, Field(description="Ruled out here")]
+    missing: Annotated[
+        int, Field(description="Reached this level without its metadata, and went on unchanged")
+    ]
+    unjudged: Annotated[int, Field(description="Whose request failed here")]
+
+
+class _SmartSearchResult(_ToolResult):
+    key: Annotated[str, Field(description="The normalized subtree key")]
+    query: Annotated[str, Field(description="The query judged against")]
+    matches: Annotated[
+        list[_SmartMatchResult],
+        Field(description="Every document in the slice not ruled out, best first"),
+    ]
+    unjudged: Annotated[
+        list[_UnjudgedResult], Field(description="Documents whose requests failed, and why")
+    ]
+    levels: Annotated[
+        dict[str, _LevelCountsResult], Field(description="What happened at each level")
+    ]
+    documents: Annotated[int, Field(description="Documents in this slice")]
+    total: Annotated[int, Field(description="Documents in the whole subtree")]
+    next_cursor: Annotated[
+        str | None, Field(description="Where the next slice starts, or null at the end")
+    ]
+    input_tokens: Annotated[int, Field(description="Input tokens the model was sent")]
     mounts_unavailable: Annotated[
         list[str] | None,
         Field(description="Mounted stores that could not be opened, left out of this answer"),
@@ -999,6 +1070,7 @@ def build_server(
     remount_tool: bool = True,
     mount_config: Sequence[str] = (),
     incomplete_mounts: bool = False,
+    smart_search: Callable[[], AbstractContextManager[smartsearch.Judge]] | None = None,
 ) -> MCPServer:
     """Build a server exposing ``store``, which may be one store or a mount table.
 
@@ -1057,6 +1129,13 @@ def build_server(
     reason and withheld the same way -- the server's ``--no-remount``. They are
     MCP-only, which is a decision rather than an omission: the command line
     builds its table from scratch on every run and has nothing to change.
+
+    ``smart_search`` makes the judge for the tool of that name, one per call,
+    and the tool is offered only when there is one. It is passed in rather than
+    worked out here because what decides it is the user's configuration --
+    :meth:`outrage.systemone.Settings.read` -- and :func:`main` is where that
+    is read and where a problem with it can be told to the operator. With
+    ``all_tools`` and no judge, the tool reads the settings when it is called.
     """
     log = log if log is not None else eventlog.NULL
     live = (
@@ -1610,6 +1689,99 @@ def build_server(
         }
         _left_out(result, page.unavailable)
         return _FindDocumentsResult.model_validate(result)
+
+    if all_tools or smart_search is not None:
+        judges = smart_search or (lambda: systemone.SystemOne(systemone.Settings.load()))
+
+        @server.tool(
+            name="smart_search",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+            description=tool_description("smart_search"),
+        )
+        @_reported
+        def smart_search_tool(
+            query: Annotated[
+                str, Field(description="What the documents should be about, in plain words")
+            ],
+            key: Annotated[
+                str | None,
+                Field(description="Key whose subtree to search; omit for root"),
+            ] = None,
+            depth: Annotated[
+                int | None,
+                Field(
+                    description="How many levels below key to descend; unlimited when omitted",
+                    ge=0,
+                ),
+            ] = None,
+            limit: Annotated[
+                int, Field(description="Documents in this slice", gt=0)
+            ] = smartsearch.DEFAULT_LIMIT,
+            after: Annotated[
+                str | None,
+                Field(description="Resume after this key, from a previous result's next_cursor"),
+            ] = None,
+            levels: Annotated[
+                list[smartsearch.Level] | None,
+                Field(
+                    description=(
+                        "Levels to judge at, in order; defaults to title, keywords, "
+                        "summary, contents, body"
+                    ),
+                ),
+            ] = None,
+        ) -> _SmartSearchResult:
+            chosen = tuple(levels) if levels is not None else smartsearch.LEVELS
+            refused = smartsearch.refusals(query, chosen)
+            if refused:
+                raise ToolError(
+                    "; ".join(messages.render(refusal.as_error()) for refusal in refused)
+                )
+            table = live.table
+            at = _named_key(table, key)
+            with judges() as judge:
+                found = smartsearch.smart_search(
+                    table, at, query, judge, depth=depth, limit=limit, after=after, levels=chosen
+                )
+            result: dict[str, Any] = {
+                "key": at,
+                "query": found.query,
+                "matches": [
+                    {
+                        "key": match.key,
+                        "probability": match.probability,
+                        "decision": match.decision,
+                        "decided_at": match.decided_at,
+                        "evidence": [
+                            {
+                                "level": item.level,
+                                "probability": item.probability,
+                                "chunks": item.chunks,
+                                "partial": item.partial,
+                            }
+                            for item in match.evidence
+                        ],
+                    }
+                    for match in found.matches
+                ],
+                "unjudged": [
+                    {
+                        "key": failed.key,
+                        "level": failed.level,
+                        "reason": messages.render(OutrageError(failed.code, **failed.details)),
+                    }
+                    for failed in found.unjudged
+                ],
+                "levels": {
+                    level: dataclasses.asdict(counts) for level, counts in found.levels.items()
+                },
+                "documents": found.documents,
+                "total": found.total,
+                "next_cursor": found.next_cursor,
+                "input_tokens": found.input_tokens,
+            }
+            _left_out(result, found.unavailable)
+            return _SmartSearchResult.model_validate(result)
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -2537,6 +2709,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--no-smart-search",
+        dest="no_smart_search",
+        action="store_true",
+        help=(
+            "Do not offer the 'smart_search' tool, which sends document text to "
+            "a System One model to be judged. Offered by default only when a "
+            "model is configured -- TYPESAFE_API_KEY, or the [smart_search] "
+            "table of ~/.outrage/config.toml -- so this is for a key set for "
+            "something else, where this store's content should stay here."
+        ),
+    )
+    parser.add_argument(
         "--no-versioning",
         dest="no_versioning",
         action="store_true",
@@ -2554,6 +2738,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # can be asked without opening a store.
     args.config_files = mountfile.sources(written, builtin=True)
     return args
+
+
+def _smart_search_judges(
+    offered: bool,
+) -> Callable[[], AbstractContextManager[smartsearch.Judge]] | None:
+    """What makes a judge for ``smart_search``, or None when it is not offered.
+
+    Not offered when the operator said so, when nothing is configured, or when
+    the configuration has problems -- and those are said on stderr, all of
+    them, since the operator is the one who can fix them and a tool that
+    silently fails to appear gives them nothing to go on.
+    """
+    if not offered:
+        return None
+    settings, refused = systemone.Settings.read()
+    for refusal in refused:
+        said = messages.render(refusal.as_error(), spell=messages.flag)
+        print(f"outrage: smart_search is not offered: {said}", file=sys.stderr)
+    if refused or not settings.configured:
+        return None
+    # The HTTP client logs every request at INFO, and the SDK's handler passes
+    # INFO to the client's stderr: fifty lines for one search, saying nothing a
+    # failure does not say again as a warning or in the tool's result.
+    logging.getLogger("httpx2").setLevel(logging.WARNING)
+    return functools.partial(systemone.SystemOne, settings)
 
 
 def _documents(
@@ -2726,6 +2935,7 @@ def main(argv: list[str] | None = None) -> int:
                 remount_tool=not args.no_remount,
                 mount_config=args.config_files,
                 incomplete_mounts=startup_warnings.incomplete,
+                smart_search=_smart_search_judges(not args.no_smart_search),
             ).run("stdio")
     except OutrageError as exc:
         # The same rule `cli.main` follows, and for the same reason: a mount

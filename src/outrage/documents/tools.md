@@ -354,6 +354,84 @@ continuing. Pass it as `after` until `next_cursor` is null.
 - `end` (integer; required) — Exclusive character offset of the first match
 - `line` (integer; required) — One-based line containing the first match
 
+## `smart_search`
+
+Find which documents under a key are about a query, without reading them
+yourself. A small classification model judges each document in the slice on
+its `!title`, then `!keywords`, `!summary`, `!contents` and finally its body,
+and carries a document to the next level only while the evidence so far leaves
+it unsure. The result is every document not ruled out, best first, with the
+combined probability and what each level said.
+
+**Document text leaves this machine**: it is sent to the configured System One
+service (TypeSafe's Jev by default) to be judged. Do not search content that
+must stay local.
+
+The slice is a page of the subtree's documents, `limit` of them, as
+`get_documents` would page it; pass `next_cursor` as `after` for the next
+slice. A result cannot itself be paged, so `limit` is what bounds it. A
+document without some metadata goes on to the next level unchanged, and a title
+or keywords can count for a document but never rule it out. `levels` narrows or
+reorders the cascade, for example `["title", "summary"]` to screen on metadata
+alone.
+
+It is slower than the other tools, seconds to a minute for a slice of a
+hundred, and bodies take most of that. Documents whose requests failed are
+listed in `unjudged` with the reason, not dropped. The probabilities rank
+documents; treat them as a ranking rather than as calibrated.
+
+### Parameters
+
+- `query` (string; required) — What the documents should be about, in plain words
+- `key` (string or null; default null) — Key whose subtree to search; omit for root
+- `depth` (integer or null; default null; minimum 0) — How many levels below key to descend; unlimited when omitted
+- `limit` (integer; default 100; greater than 0) — Documents in this slice
+- `after` (string or null; default null) — Resume after this key, from a previous result's next_cursor
+- `levels` (array["title" or "keywords" or "summary" or "contents" or "body"] or null; default null) — Levels to judge at, in order; defaults to title, keywords, summary, contents, body
+
+### Returns
+
+- `key` (string; required) — The normalized subtree key
+- `query` (string; required) — The query judged against
+- `matches` (array[SmartMatch]; required) — Every document in the slice not ruled out, best first
+- `unjudged` (array[Unjudged]; required) — Documents whose requests failed, and why
+- `levels` (object[string, LevelCounts]; required) — What happened at each level
+- `documents` (integer; required) — Documents in this slice
+- `total` (integer; required) — Documents in the whole subtree
+- `next_cursor` (string or null; required) — Where the next slice starts, or null at the end
+- `input_tokens` (integer; required) — Input tokens the model was sent
+- `mounts_unavailable` (array[string] or null; optional) — Mounted stores that could not be opened, left out of this answer
+- `note` (string or null; optional) — Important qualification of the result
+
+#### `Evidence` fields
+
+- `level` ("title" or "keywords" or "summary" or "contents" or "body"; required) — The level that was judged
+- `probability` (number; required) — That level's probability of a match
+- `chunks` (integer; required) — Requests the level took: one, or a body's chunks
+- `partial` (boolean; required) — Whether less than all of the value or body was judged
+
+#### `LevelCounts` fields
+
+- `asked` (integer; required) — Documents judged at this level
+- `yes` (integer; required) — Decided a match here
+- `no` (integer; required) — Ruled out here
+- `missing` (integer; required) — Reached this level without its metadata, and went on unchanged
+- `unjudged` (integer; required) — Whose request failed here
+
+#### `SmartMatch` fields
+
+- `key` (string; required) — The document
+- `probability` (number; required) — Combined probability of a match
+- `decision` ("yes" or "unsure"; required) — Decided a match, or still unsure after every level
+- `decided_at` ("title" or "keywords" or "summary" or "contents" or "body" or null; required) — The level that decided it a match, or null when none did
+- `evidence` (array[Evidence]; required) — What each level said, in cascade order
+
+#### `Unjudged` fields
+
+- `key` (string; required) — The document the cascade could not finish
+- `level` ("title" or "keywords" or "summary" or "contents" or "body"; required) — The level whose request failed
+- `reason` (string; required) — Why, as a sentence
+
 ## `keys_missing_meta`
 
 List the document keys at and below a key that carry none of the named
