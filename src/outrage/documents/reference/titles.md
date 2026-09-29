@@ -1,6 +1,8 @@
 # Document titles
 
-Extract a document title from Markdown or HTML without storing it.
+Extract the first usable document title from Markdown or HTML. The parser
+recognises each format's title conventions while ignoring fenced or hidden
+content, and has no dependency on a store.
 
 ### outrage.titles.html_title(html: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None)
 

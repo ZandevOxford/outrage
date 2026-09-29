@@ -1,4 +1,7 @@
-"""The PostgreSQL backend: one store, shared by every device that can reach it.
+"""Implement a PostgreSQL document store shared by every device that can reach
+it. The backend preserves Outrage's ordering and concurrency contracts across
+a network connection, with explicit schema compatibility and server-clocked
+writes.
 
 The first backend whose store is not on this machine. Everything else in the
 package is a file inside a directory an operator named; this one is a

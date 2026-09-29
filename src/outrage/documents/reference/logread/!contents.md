@@ -2,232 +2,232 @@
 0 0 1
 
 ### outrage.logread.MESSAGE_CHARS *= 110*
-1196 1196 24
+1301 1301 26
 
 ### *class* outrage.logread.Event(line: int, record: dict[str, Any])
-1451 1451 30
+1556 1556 32
 
 #### line *: int*
-2220 2220 42
+2325 2325 44
 
 #### record *: dict[str, Any]*
-2296 2296 44
+2401 2401 46
 
 #### *property* event *: str*
-2501 2501 46
+2606 2606 48
 
 #### *property* session *: str*
-2588 2588 48
+2693 2693 50
 
 #### *property* seq *: int*
-2677 2677 50
+2782 2782 52
 
 #### *property* call *: int | None*
-2763 2763 52
+2868 2868 54
 
 #### *property* ts *: str*
-2915 2915 54
+3020 3020 56
 
 #### *property* ms *: float | None*
-2999 2999 56
+3104 3104 58
 
 #### *property* op *: str | None*
-3153 3153 58
+3258 3258 60
 
 #### *property* method *: str | None*
-3343 3343 62
+3448 3448 64
 
 #### *property* tool *: str | None*
-3544 3544 66
+3649 3649 68
 
 #### *property* args *: dict[str, Any]*
-3738 3738 70
+3843 3843 72
 
 #### *property* key *: str | None*
-4267 4267 79
+4372 4372 81
 
 #### *property* result *: dict[str, Any] | None*
-4417 4417 81
+4522 4522 83
 
 #### *property* error *: dict[str, Any] | None*
-4698 4698 83
+4803 4803 85
 
 #### *property* content *: dict[str, Any] | None*
-5312 5312 93
+5417 5417 95
 
 #### *property* next_offset *: int | None*
-5659 5659 97
+5764 5764 99
 
 ### *class* outrage.logread.Filter(session: str | None = None, call: int | None = None, op: str | None = None, method: str | None = None, event: str | None = None, key: str | None = None, errors: bool = False)
-5889 5889 101
+5994 5994 103
 
 #### session *: str | None* *= None*
-6996 6996 107
+7101 7101 109
 
 #### call *: int | None* *= None*
-7148 7148 109
+7253 7253 111
 
 #### op *: str | None* *= None*
-7298 7298 111
+7403 7403 113
 
 #### method *: str | None* *= None*
-7445 7445 113
+7550 7550 115
 
 #### event *: str | None* *= None*
-7596 7596 115
+7701 7701 117
 
 #### key *: str | None* *= None*
-7746 7746 117
+7851 7851 119
 
 #### errors *: bool* *= False*
-7894 7894 119
+7999 7999 121
 
 #### matches(event: Event) → bool
-7984 7984 121
+8089 8089 123
 
 #### select(events: Iterable[Event]) → list[Event]
-8387 8389 130
+8492 8494 132
 
 ### *class* outrage.logread.Log(path: Path, events: list[Event] = <factory>, malformed: list[int] = <factory>)
-8907 8911 138
+9012 9016 140
 
 #### path *: Path*
-9412 9416 144
+9517 9521 146
 
 #### events *: list[Event]*
-9495 9499 146
+9600 9604 148
 
 #### malformed *: list[int]*
-9607 9611 148
+9712 9716 150
 
 #### *property* sessions *: list[Session]*
-9751 9755 150
+9856 9860 152
 
 ### *exception* outrage.logread.LogError(code: str, \*\*details: Any)
-9880 9884 152
+9985 9989 154
 
 ### *class* outrage.logread.Session(id: str, events: list[Event] = <factory>)
-10207 10211 158
+10312 10316 160
 
 #### id *: str*
-10573 10577 164
+10678 10682 166
 
 #### events *: list[Event]*
-10646 10650 166
+10751 10755 168
 
 #### *property* start *: Event | None*
-10758 10762 168
+10863 10867 170
 
 #### *property* pid *: int | None*
-10950 10954 172
+11055 11059 174
 
 #### *property* version *: str | None*
-11101 11105 174
+11206 11210 176
 
 #### *property* first_ts *: str*
-11255 11259 176
+11360 11364 178
 
 #### *property* last_ts *: str*
-11345 11349 178
+11450 11454 180
 
 #### *property* calls *: list[int]*
-11434 11438 180
+11539 11543 182
 
 #### *property* tool_calls *: int*
-11619 11623 184
+11724 11728 186
 
 #### *property* store_accesses *: int*
-11712 11716 186
+11817 11821 188
 
 #### *property* is_discovery *: bool*
-11809 11813 188
+11914 11918 190
 
 ### *class* outrage.logread.Summary(path: Path, lines: int = 0, malformed: int = 0, sessions: list[Session] = <factory>, calls: int = 0, store_accesses: int = 0, accesses_per_call: Counter[tuple[str, int]]=<factory>, ops: Counter[str] = <factory>, methods: Counter[str] = <factory>, tools: Counter[str] = <factory>, errors: Counter[str] = <factory>, refused: int = 0, reads: int = 0, truncated: list[TruncatedRead] = <factory>, documents_truncated: int = 0)
-12441 12445 201
+12546 12550 203
 
 #### path *: Path*
-14209 14213 207
+14314 14318 209
 
 #### lines *: int* *= 0*
-14292 14296 209
+14397 14401 211
 
 #### malformed *: int* *= 0*
-14375 14379 211
+14480 14484 213
 
 #### sessions *: list[Session]*
-14462 14466 213
+14567 14571 215
 
 #### calls *: int* *= 0*
-14580 14584 215
+14685 14689 217
 
 #### store_accesses *: int* *= 0*
-14663 14667 217
+14768 14772 219
 
 #### accesses_per_call *: Counter[tuple[str, int]]*
-14755 14759 219
+14860 14864 221
 
 #### ops *: Counter[str]*
-15284 15288 226
+15389 15393 228
 
 #### methods *: Counter[str]*
-15441 15445 228
+15546 15550 230
 
 #### tools *: Counter[str]*
-15602 15606 230
+15707 15711 232
 
 #### errors *: Counter[str]*
-15761 15765 232
+15866 15870 234
 
 #### refused *: int* *= 0*
-15921 15925 234
+16026 16030 236
 
 #### reads *: int* *= 0*
-16006 16010 236
+16111 16115 238
 
 #### truncated *: list[TruncatedRead]*
-16089 16093 238
+16194 16198 240
 
 #### documents_truncated *: int* *= 0*
-16220 16224 240
+16325 16329 242
 
 #### *property* busiest_call *: tuple[int, str, int] | None*
-16317 16321 242
+16422 16426 244
 
 #### *property* mean_accesses *: float*
-16868 16876 249
+16973 16981 251
 
 #### *property* followed_up *: int*
-17235 17243 258
+17340 17348 260
 
 ### *class* outrage.logread.TruncatedRead(read: Event, resumed_by: Event | None)
-17577 17585 266
+17682 17690 268
 
 #### read *: Event*
-17918 17926 272
+18023 18031 274
 
 #### resumed_by *: Event | None*
-17965 17973 274
+18070 18078 276
 
 #### *property* followed_up *: bool*
-18083 18091 276
+18188 18196 278
 
 ### outrage.logread.format_event(event: Event, \*, content: bool = False) → Iterator[str]
-18456 18464 285
+18561 18569 287
 
 ### outrage.logread.format_session(session: Session) → str
-19046 19056 293
+19151 19161 295
 
 ### outrage.logread.format_summary(summary: Summary) → Iterator[str]
-19261 19273 297
+19366 19378 299
 
 ### outrage.logread.read_log(path: str | PathLike[str]) → Log
-19566 19580 301
+19671 19685 303
 
 ### outrage.logread.sessions(events: Iterable[Event]) → list[Session]
-20169 20185 310
+20274 20290 312
 
 ### outrage.logread.summarise(log: Log, events: Iterable[Event] | None = None) → Summary
-20732 20750 318
+20837 20855 320
 
 ### outrage.logread.truncated_reads(session: Session) → list[TruncatedRead]
-21262 21282 325
+21367 21387 327

@@ -1,6 +1,8 @@
 # outrage.home
 
-The writable document store shared by every project for one user.
+Locate and open the writable document store shared by every project for one
+user. The same user-wide Outrage directory also owns configuration that should
+not be tied to any individual project's store.
 
 This store is deliberately outside a project's store directory.  It is a
 built-in mount rather than an ordinary mount specification, so the rule that

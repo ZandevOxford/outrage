@@ -1,6 +1,8 @@
 # outrage.store_pyarrow
 
-The pyarrow backend: one columnar file, written once and read many times.
+Implement a read-only document store as one sorted Parquet file using
+PyArrow. It is built in one pass for large reference corpora, keeps only small
+index columns resident and loads document content lazily by row group.
 
 The second implementation of [`outrage.store.Store`](store.md#outrage.store.Store), and the one the
 reference-base case is for: tens of thousands of small documents, built in one

@@ -1,1 +1,3 @@
-The one base every failure a caller is meant to see inherits from.
+Define the structured failures and refusals that front ends are expected to
+render for callers. They carry stable codes and facts rather than prose, while
+unexpected exceptions remain visible as bugs.

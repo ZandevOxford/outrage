@@ -2,88 +2,88 @@
 0 0 1
 
 ## Why it is parsed here rather than handed to libpq
-938 938 19
+1069 1069 21
 
 ## Three deviations from libpq, all deliberate
-1672 1672 34
+1803 1803 36
 
 ## Reading, and what comes back
-2568 2568 49
+2699 2699 51
 
 ## Secrets
-3126 3126 58
+3257 3257 60
 
 ### outrage.pgservice.ADDED_PARAMETERS *: Mapping[str, str]* *= {'application_name': 'outrage', 'connect_timeout': '5'}*
-3557 3557 66
+3688 3688 68
 
 ### outrage.pgservice.CONNECTION_PARAMETERS *= frozenset({'application_name', 'channel_binding', 'client_encoding', 'connect_timeout', 'dbname', 'fallback_application_name', 'gssdelegation', 'gssencmode', 'gsslib', 'host', 'hostaddr', 'keepalives', 'keepalives_count', 'keepalives_idle', 'keepalives_interval', 'krbsrvname', 'load_balance_hosts', 'options', 'passfile', 'password', 'port', 'replication', 'require_auth', 'requirepeer', 'ssl_max_protocol_version', 'ssl_min_protocol_version', 'sslcert', 'sslcertmode', 'sslcompression', 'sslcrl', 'sslcrldir', 'sslkey', 'sslmode', 'sslnegotiation', 'sslpassword', 'sslrootcert', 'sslsni', 'target_session_attrs', 'tcp_user_timeout', 'user'})*
-4106 4106 73
+4237 4237 75
 
 ### outrage.pgservice.DEFAULT_SERVICE *= 'outrage'*
-5302 5302 84
+5433 5433 86
 
 ### outrage.pgservice.NESTED_PARAMETER *= 'service'*
-5589 5589 91
+5720 5720 93
 
 ### outrage.pgservice.NO_DEFAULT_SECTION *= '\\x00'*
-5802 5802 97
+5933 5933 99
 
 ### outrage.pgservice.PATH_PARAMETERS *= frozenset({'passfile', 'sslcert', 'sslcrl', 'sslcrldir', 'sslkey', 'sslrootcert'})*
-6166 6166 105
+6297 6297 107
 
 ### outrage.pgservice.REDACTION *= '(not shown)'*
-6570 6570 112
+6701 6701 114
 
 ### *class* outrage.pgservice.Resolution(service: Service | None = None, refusals: tuple[Refusal, ...] = (), searched: tuple[Path, ...] = ())
-6823 6823 118
+6954 6954 120
 
 #### service *: Service | None*
-7628 7628 128
+7759 7759 130
 
 #### refusals *: tuple[Refusal, ...]*
-7863 7863 132
+7994 7994 134
 
 #### searched *: tuple[Path, ...]*
-8060 8060 136
+8191 8191 138
 
 ### outrage.pgservice.SECRET_PARAMETERS *= frozenset({'password', 'sslpassword'})*
-8291 8291 140
+8422 8422 142
 
 ### outrage.pgservice.SERVICE_FILE_VARIABLE *= 'PGSERVICEFILE'*
-8505 8505 145
+8636 8636 147
 
 ### outrage.pgservice.SYSCONF_VARIABLE *= 'PGSYSCONFDIR'*
-8716 8716 150
+8847 8847 152
 
 ### outrage.pgservice.SYSTEM_FILE_NAME *= 'pg_service.conf'*
-8914 8914 155
+9045 9045 157
 
 ### outrage.pgservice.SYSTEM_TRUST_STORE *= 'system'*
-9142 9142 160
+9273 9273 162
 
 ### *class* outrage.pgservice.Service(name: str, path: Path, parameters: Mapping[str, str])
-9326 9326 165
+9457 9457 167
 
 #### name *: str*
-10110 10110 175
+10241 10241 177
 
 #### path *: Path*
-10229 10229 179
+10360 10360 181
 
 #### parameters *: Mapping[str, str]*
-10348 10348 183
+10479 10479 185
 
 #### *property* redacted *: dict[str, str]*
-10653 10653 187
+10784 10784 189
 
 #### *property* holds_secret *: bool*
-11133 11133 195
+11264 11264 197
 
 ### outrage.pgservice.USER_FILE_NAME *= '.pg_service.conf'*
-11500 11500 203
+11631 11631 205
 
 ### outrage.pgservice.candidates(file: str | PathLike[str] | None = None, \*, environ: Mapping[str, str] | None = None) → tuple[Path, ...]
-11619 11619 207
+11750 11750 209
 
 ### outrage.pgservice.resolve(file: str | PathLike[str] | None = None, service: str = DEFAULT_SERVICE, \*, environ: Mapping[str, str] | None = None) → Resolution
-13094 13096 222
+13225 13227 224

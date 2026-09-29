@@ -1,6 +1,8 @@
 # outrage.mounts
 
-Routing one key namespace across more than one backing store.
+Route one key namespace across more than one backing store. A longest-prefix
+mount table translates keys at store boundaries, then combines listings,
+subtrees and pages so callers still see one coherent namespace.
 
 A mount table maps a key prefix to a [`Store`](store.md#outrage.store.Store). The longest
 prefix matching a key owns it, exactly the way a filesystem mount table works,

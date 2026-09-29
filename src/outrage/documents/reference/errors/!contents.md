@@ -2,28 +2,28 @@
 0 0 1
 
 ## A refusal is the same facts, recorded instead of raised
-1965 1965 36
+2099 2099 38
 
 ### *exception* outrage.errors.OutrageError(code: str, \*\*details: Any)
-2613 2613 48
+2747 2747 50
 
 #### \_\_str_\_() → str
-3156 3156 58
+3290 3290 60
 
 ### *class* outrage.errors.Refusal(code: str, \*, overridable: bool = True, \*\*details: Any)
-3256 3258 62
+3390 3392 64
 
 #### code
-3919 3921 73
+4053 4055 75
 
 #### details *: Mapping[str, Any]*
-3930 3932 75
+4064 4066 77
 
 #### overridable
-4164 4166 77
+4298 4300 79
 
 #### *classmethod* of(error: OutrageError, \*, overridable: bool = False) → Refusal
-4591 4593 88
+4725 4727 90
 
 #### as_error() → OutrageError
-4989 4993 95
+5123 5127 97

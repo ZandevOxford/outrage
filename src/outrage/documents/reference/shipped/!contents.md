@@ -2,25 +2,25 @@
 0 0 1
 
 ### outrage.shipped.MOUNT_POINT *= 'outrage'*
-3105 3105 54
+3251 3251 56
 
 ### outrage.shipped.TREE_NAME *= 'documents'*
-3365 3365 60
+3511 3511 62
 
 ### *exception* outrage.shipped.DocumentsError(code: str, \*\*details: Any)
-3875 3875 70
+4021 4021 72
 
 ### outrage.shipped.attached(\*, log: EventLog | None = None) → dict[str, FilesystemStore]
-4292 4292 76
+4438 4438 78
 
 ### outrage.shipped.available() → bool
-4814 4816 83
+4960 4962 85
 
 ### outrage.shipped.document_text(\*parts: str) → str
-5258 5262 92
+5404 5408 94
 
 ### outrage.shipped.open_documents(\*, log: EventLog | None = None, mount_point: str = MOUNT_POINT) → FilesystemStore
-5913 5919 104
+6059 6065 106
 
 ### outrage.shipped.tree() → Path
-7351 7359 127
+7497 7505 129

@@ -1,6 +1,8 @@
 # Document contents
 
-Build a small offset index from the headings in a Markdown or HTML document.
+Build a compact, seekable contents index from the headings in a Markdown or
+HTML document. Each entry records character, UTF-8 byte and line offsets so
+the same index can address an in-memory document or its encoded file.
 
 Each heading carries character offset, byte offset, then a 1-based line number. The
 character offset is a fact about the document as a Python string; the byte

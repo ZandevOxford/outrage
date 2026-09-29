@@ -1,6 +1,8 @@
 # outrage.keys
 
-Parsing and validation for the Outrage key namespace.
+Parse, validate and order names in the Outrage key namespace. This module
+defines the shared grammar for ordinary segments, metadata, the root and
+store-resolved `?` forms, independent of any storage backend.
 
 A key is zero or more segments joined by `/`, and `/` is the only separator
 there is. A segment may hold almost any text: the intent is that a key can

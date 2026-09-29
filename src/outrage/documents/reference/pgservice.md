@@ -1,6 +1,8 @@
 # outrage.pgservice
 
-The connection details for a PostgreSQL store, read from libpq's own file.
+Resolve a PostgreSQL store's connection details from libpq's service-file
+format. This driver-free reader handles service lookup, path resolution and
+validation before any database connection is attempted.
 
 A Postgres store is named by a host, a database, a user and whatever it takes
 to authenticate, and none of that belongs in a mount table: a mount table is

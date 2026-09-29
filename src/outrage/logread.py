@@ -1,4 +1,6 @@
-"""Reading back what :mod:`outrage.eventlog` wrote.
+"""Turn the append-only event log into answers about calls, continuations and
+writes. It groups evidence by process session, reconstructs ordering and never
+modifies the log it is examining.
 
 The writer half exists because evidence was not being kept. This half is what
 turns the file it produces into answers, and the questions are already known -

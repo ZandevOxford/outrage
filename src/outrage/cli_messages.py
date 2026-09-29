@@ -1,4 +1,6 @@
-"""What the command line says about a note, which is mostly nothing.
+"""Choose which successful-operation notes the command line says and how it
+says them. This complements the shared wording layer by making silence
+explicit when the command's own report has already conveyed the same fact.
 
 The second wording table. :mod:`outrage.messages` holds the errors both front
 ends share and the tools' notes; this holds the command line's, and it is a

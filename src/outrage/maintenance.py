@@ -1,4 +1,6 @@
-"""Inspecting and repairing a store from outside an agent session.
+"""Inspect, back up and repair a store from outside an agent session. Common
+row and key invariants are checked here, while each backend supplies only the
+storage-specific checks and maintenance operations it can answer.
 
 The server has no reason to offer any of this. A session asks the store
 questions about documents; these are questions about the *store* - whether the

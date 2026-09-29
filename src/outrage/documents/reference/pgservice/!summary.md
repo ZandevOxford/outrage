@@ -1,1 +1,3 @@
-The connection details for a PostgreSQL store, read from libpq's own file.
+Resolve a PostgreSQL store's connection details from libpq's service-file
+format. This driver-free reader handles service lookup, path resolution and
+validation before any database connection is attempted.

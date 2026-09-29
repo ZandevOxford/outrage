@@ -1,4 +1,6 @@
 """Convert one local document to Markdown and store it under an Outrage key.
+Conversion is an optional, isolated path: unrelated imports and commands do
+not depend on the document-conversion stack being installed.
 
 MarkItDown is an optional dependency and is imported only when conversion is
 requested.  This keeps importing :mod:`outrage` and running every unrelated

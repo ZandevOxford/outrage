@@ -1,4 +1,7 @@
-"""A judge for :mod:`outrage.smartsearch` that speaks the System One protocol.
+"""Implement the judge used by :mod:`outrage.smartsearch` over the System One
+HTTP protocol. The direct client supports hosted and local servers, resolves
+configuration from the user environment and applies the protocol's retry
+policy without a vendor SDK.
 
 Direct HTTP rather than a vendor SDK, deliberately. The protocol is one POST
 with a JSON body, and more than one server speaks it: TypeSafe's hosted Jev

@@ -1,6 +1,8 @@
 # outrage.config
 
-Writing the MCP server configuration for a project or a user.
+Plan and write an MCP server configuration for a project or a user. The
+module preserves the surrounding user-owned configuration while translating
+one Outrage server entry into each supported client's native format.
 
 Separate from [`outrage.cli`](cli.md#module-outrage.cli) for the same reason the store is separate from
 the server: the CLI should shape arguments and print, nothing else. Everything

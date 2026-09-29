@@ -1,6 +1,8 @@
 # outrage.info
 
-What the process answering is: its environment, its stores, and its log.
+Describe the process answering a caller: its Python environment, mounted
+stores and event log. The module returns facts for either front end to render,
+including the executable paths a caller needs to reach this exact build.
 
 A caller reaching a store through the MCP server can see everything in it and
 nothing about the server holding it. That is a real gap rather than a cosmetic

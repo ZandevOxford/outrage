@@ -2,10 +2,10 @@
 0 0 1
 
 ### outrage.titles.html_title(html: str) → str | None
-87 87 5
+212 212 7
 
 ### outrage.titles.markdown_title(markdown: str) → str | None
-582 584 13
+707 709 15
 
 ### outrage.titles.parse_title(content: str, format: str) → str | None
-1095 1099 21
+1220 1224 23

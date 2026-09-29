@@ -1,6 +1,8 @@
 # outrage.install
 
-Setting a project up: the MCP entries, hooks, and harness-specific skills.
+Install and remove Outrage's project integration: MCP entries, session-start
+hooks and harness-specific assets. Each change is planned against user-owned
+configuration so reruns update what Outrage owns without rebuilding the rest.
 
 `init` is the whole of `outrage init` and the three parts are separable: the
 server entries - `.mcp.json`, `.codex/config.toml` for Codex and

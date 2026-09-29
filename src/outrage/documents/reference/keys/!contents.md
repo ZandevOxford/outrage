@@ -2,139 +2,139 @@
 0 0 1
 
 ### outrage.keys.DELIMITER *= '/'*
-2407 2407 46
+2562 2562 48
 
 ### outrage.keys.LAST *= '?last'*
-2518 2518 50
+2673 2673 52
 
 ### outrage.keys.LEGACY_META *= ':'*
-3041 3041 59
+3196 3196 61
 
 ### outrage.keys.MAX_JOINED_SEGMENTS *= 128*
-3295 3295 65
+3450 3450 67
 
 ### outrage.keys.MAX_SEGMENTS *= 64*
-3569 3569 71
+3724 3724 73
 
 ### outrage.keys.MAX_SEGMENT_CHARS *= 1024*
-4254 4254 84
+4409 4409 86
 
 ### outrage.keys.META_PREFIX *= '!'*
-4549 4549 91
+4704 4704 93
 
 ### outrage.keys.MIN_SEGMENT_CHAR *= '\\t'*
-4878 4878 98
+5033 5033 100
 
 ### outrage.keys.NUMERIC_RE *= re.compile('\\\\A[0-9]+\\\\Z')*
-5218 5218 105
+5373 5373 107
 
 ### outrage.keys.RESERVED_PREFIX *= '?'*
-5425 5425 110
+5580 5580 112
 
 ### outrage.keys.RESERVED_SEGMENTS *= frozenset({'?', '?last'})*
-6300 6300 126
+6455 6455 128
 
 ### outrage.keys.ROOT *= ''*
-6539 6539 132
+6694 6694 134
 
 ### outrage.keys.WILDCARD *= '?'*
-6911 6911 140
+7066 7066 142
 
 ### *exception* outrage.keys.InvalidKeyError(code: str, \*\*details: Any)
-7248 7248 147
+7403 7403 149
 
 ### *class* outrage.keys.Key(key: str, doc_key: str, meta_name: str | None, meta_path: str | None, parent: str, wildcard_parent: str | None = None)
-7843 7843 157
+7998 7998 159
 
 #### key *: str*
-8628 8628 163
+8783 8783 165
 
 #### doc_key *: str*
-8888 8888 169
+9043 9043 171
 
 #### meta_name *: str | None*
-9023 9023 173
+9178 9178 175
 
 #### meta_path *: str | None*
-9468 9468 180
+9623 9623 182
 
 #### parent *: str*
-10065 10065 191
+10220 10220 193
 
 #### wildcard_parent *: str | None*
-10422 10422 198
+10577 10577 200
 
 #### *property* is_metadata *: bool*
-10764 10764 204
+10919 10919 206
 
 #### *property* is_meta_value *: bool*
-10860 10860 206
+11015 11015 208
 
 #### *property* has_wildcard *: bool*
-11323 11323 215
+11478 11478 217
 
 #### *property* has_last *: bool*
-11420 11420 217
+11575 11575 219
 
 ### outrage.keys.LastChild
-11853 11853 226
+12008 12008 228
 
 ### outrage.keys.ancestors(key: str) → list[str]
-12582 12582 236
+12737 12737 238
 
 ### outrage.keys.depth(key: str) → int
-13353 13355 255
+13508 13510 257
 
 ### outrage.keys.displayed(key: str) → str
-13814 13818 268
+13969 13973 270
 
 ### outrage.keys.fits(key: str) → bool
-14360 14366 282
+14515 14521 284
 
 ### outrage.keys.is_valid(key: str, \*, allow_wildcard: bool = False, allow_last: bool = False, max_segments: int = MAX_SEGMENTS) → bool
-15123 15131 300
+15278 15286 302
 
 ### outrage.keys.meta_range(key: str) → tuple[str, str]
-15584 15594 304
+15739 15749 306
 
 ### outrage.keys.meta_sort_suffix(meta_name: str) → str
-16853 16865 327
+17008 17020 329
 
 ### outrage.keys.migrate_legacy(key: str) → str
-17822 17836 347
+17977 17991 349
 
 ### outrage.keys.normalise_key(key: str) → str
-18342 18358 360
+18497 18513 362
 
 ### outrage.keys.normalise_segment(segment: str) → str
-18929 18947 374
+19084 19102 376
 
 ### outrage.keys.parse(key: str, \*, allow_wildcard: bool = False, allow_last: bool = False, max_segments: int = MAX_SEGMENTS) → Key
-19481 19501 387
+19636 19656 389
 
 ### outrage.keys.relative(key: str, scope: str) → Key
-21131 21153 413
+21286 21308 415
 
 ### outrage.keys.remaining_depth(budget: int | None, key: str, below: str) → int | None
-23027 23051 453
+23182 23206 455
 
 ### outrage.keys.resolve_last(key: str, last_child: Callable[[str], str | None], \*, max_segments: int = MAX_SEGMENTS) → str
-24386 24412 476
+24541 24567 478
 
 ### outrage.keys.sort_form(key: str) → str
-26550 26578 513
+26705 26733 515
 
 ### outrage.keys.sort_subtree_end(key: str) → str
-28338 28368 551
+28493 28523 553
 
 ### outrage.keys.strip_prefix(prefix: str, key: str) → str | None
-29719 29751 580
+29874 29906 582
 
 ### outrage.keys.substitute_wildcard(key: str, segment: str) → str
-30750 30784 600
+30905 30939 602
 
 ### outrage.keys.subtree_range(key: str) → tuple[str, str]
-31126 31162 609
+31281 31317 611
 
 ### outrage.keys.with_prefix(prefix: str, key: str) → str
-32080 32118 624
+32235 32273 626

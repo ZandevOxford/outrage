@@ -1,6 +1,8 @@
 # outrage.store_sqlite
 
-The SQLite backend: one database file, one row per key.
+Implement the default read-write document store as one SQLite database with
+one row per key. This module owns the schema, migrations, connections and SQL
+that realise the backend-independent contract in [`outrage.store`](store.md#module-outrage.store).
 
 The read-write implementation of [`outrage.store.Store`](store.md#outrage.store.Store), and the one a store
 is opened as when its file says nothing else. Everything specific to SQLite

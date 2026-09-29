@@ -1,4 +1,6 @@
-"""What a document store is, in terms every backend has to answer in.
+"""Define the backend-independent contract of a key-addressed document store.
+Its ranges, subtrees, excerpts, pages, entries and abstract operations are the
+vocabulary every storage implementation and front end shares.
 
 A store maps a key to a document. This module says what that means -- the
 constants a caller configures it with, the value types every answer comes back

@@ -1,4 +1,6 @@
-"""The duckdb backend: parquet stores read through duckdb, one file or many.
+"""Read one or many Parquet parts as a document store through DuckDB. The
+backend accepts arbitrarily ordered parts without building a corpus-sized
+resident index, trading some read latency for bounded process memory.
 
 The fourth implementation of :class:`outrage.store.Store`, and the one a
 ``.parquet`` store file opens with unless a mount names another. It reads **one

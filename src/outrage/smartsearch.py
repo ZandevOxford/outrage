@@ -1,4 +1,6 @@
-"""Screen a slice of documents against a query with a System One model.
+"""Screen a bounded slice of documents against a query with a System One
+judge. A configurable cascade examines progressively richer metadata and then
+the body, retaining the evidence used to rank every document not ruled out.
 
 The cascade the ``outrage-search`` agent follows, moved out of an agent's
 context and into the library: every document in the slice is judged on its

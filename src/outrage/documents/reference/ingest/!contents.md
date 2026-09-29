@@ -2,34 +2,34 @@
 0 0 1
 
 ### *exception* outrage.ingest.IngestError(code: str, \*\*details: Any)
-296 296 9
+433 433 11
 
 ### *class* outrage.ingest.IngestResult(source: Path, key: str, title: str, characters: int, format: Literal['markdown'], title_key: str | None, dry_run: bool)
-691 691 15
+828 828 17
 
 #### source *: Path*
-1468 1468 21
+1605 1605 23
 
 #### key *: str*
-1599 1599 25
+1736 1736 27
 
 #### title *: str*
-1706 1706 29
+1843 1843 31
 
 #### characters *: int*
-1818 1818 33
+1955 1955 35
 
 #### format *: Literal['markdown']*
-1945 1945 37
+2082 2082 39
 
 #### title_key *: str | None*
-2087 2087 41
+2224 2224 43
 
 #### dry_run *: bool*
-2298 2298 45
+2435 2435 47
 
 ### outrage.ingest.available() → bool
-2443 2443 49
+2580 2580 51
 
 ### outrage.ingest.ingest_document(store: Store, source: str | PathLike[str], key: str, \*, title: str | None = None, overwrite: bool = False, dry_run: bool = False) → IngestResult
-3224 3226 64
+3361 3363 66
