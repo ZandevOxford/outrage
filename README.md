@@ -8,8 +8,9 @@ coding harnesses such as Claude Code, Codex, Cursor, and Copilot CLI.
 
 * Simple to get started with - built in initialisation configures everything.
 * Hierarchical key based store of data and arbitrary metadata.
-* LLM search - LLM subagents add summary and keyword metadata to documents, and
-  LLM subagents can search documents and metadata.
+* Search by exact text, by metadata, or optionally by meaning with a small
+  classification model that screens title, keywords, summary, contents and
+  body in turn.
 * Multiple data stores including parquet based stores for large-scale reference
   material, and an experimental PostgreSQL store shared by several devices.
 * Explicit support for command-line coding agents: Claude Code, OpenAI Codex
@@ -43,6 +44,36 @@ The server also mounts a writable user-wide store at `home`, kept in an
 One minor issue when using Copilot CLI: the working directory must be inside a
 Git repository. Otherwise, Copilot CLI will fail to load the MCP servers and
 other configuration.
+
+## Optional smart search
+
+`outrage smart-search "how are PostgreSQL stores backed up?"` screens one
+slice of the store against a plain-language query. It judges each document's
+title, keywords, summary and contents before sending its body, and prints every
+document not ruled out, best first. `--limit` bounds the slice and stderr names
+the `--after` cursor for the next one; `--level title --level summary` keeps a
+search to metadata only.
+
+The judge speaks the System One protocol. TypeSafe's hosted Jev is the default;
+configure it with `TYPESAFE_API_KEY`, and optionally `TYPESAFE_BASE_URL` and
+`TYPESAFE_DEFAULT_MODEL`. The same settings can live in
+`~/.outrage/config.toml`, which must be readable only by its owner:
+
+```toml
+[smart_search]
+key = "..."
+# base_url = "https://api.typesafe.ai"
+# model = "jev-latest"
+```
+
+The base URL is the API root; Outrage appends `/v1/systemone`. Pointing it at a
+local compatible server such as `laya-serve` needs no key.
+
+**The search sends the selected metadata and document text to that service.**
+The MCP `smart_search` tool is therefore off by default even when a key is
+configured. `outrage init --smart-search` or
+`outrage config --smart-search` records the explicit opt-in on the server
+entry; the command-line search remains available without changing the entry.
 
 ## Documentation
 
@@ -105,6 +136,11 @@ well, so the links below work here too.
   mode keeps recent writes in a sidecar file and copying the `.sqlite` alone
   yields a near-empty database that still opens cleanly. A PostgreSQL store is
   copied into a local SQLite file instead, so the backup opens with no server.
+* **Smart search** - an optional System One cascade over one bounded slice of
+  the mounted namespace. Missing metadata carries a document forward rather
+  than excluding it, partial text can only count in its favour, and failed
+  model requests are reported as unjudged rather than silently dropped. The
+  server offers the tool only when explicitly enabled.
 
 ## Parquet stores
 

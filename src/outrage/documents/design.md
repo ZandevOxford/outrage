@@ -29,6 +29,47 @@ answers is how much room is left before the cut. Over that cap the length is
 reported and nothing is inlined, because a silently shortened entry point is
 the failure the entry point exists to prevent.
 
+### Smart search
+
+An optional classifier cascade screens a bounded slice of documents against a
+plain-language query without bringing their contents into the calling agent's
+context. It is a library operation first, `outrage.smartsearch.smart_search`,
+with the MCP tool and command line as two renderings of the same result.
+
+The cascade follows the same cheapest-to-richest route as the search agent:
+`!title`, `!keywords`, `!summary`, `!contents`, then the body. Missing metadata
+means no evidence and carries a document forward. A truncated metadata value or
+partly read body can count for the document but cannot rule it out; neither can
+a title or keywords, since a short or generic label is weak negative evidence.
+Each answer is retained, then one `Scoring` object combines the evidence and
+decides whether to stop. This keeps the questions, request shape and scoring
+separate from traversal so evaluation can tune any one without changing the
+others.
+
+The server keeps no search state. One call judges one page of the subtree's
+documents, and its cursor advances over that input rather than over the ranked
+output. The whole result for the slice is returned, best probability first;
+the caller may search later slices and merge them by that probability. A model
+failure after retries makes the affected document `unjudged`, with its reason,
+rather than looking like a negative answer.
+
+`outrage.systemone` is one `Judge` implementation, speaking the small System
+One HTTP protocol directly. The query is the shared state for short metadata,
+so one request can classify many documents independently; a body is state in a
+request of its own, split first on the stored contents index and otherwise on
+character windows. An over-large request is halved down to a floor. The client
+is not tied to one provider: TypeSafe's Jev and a local `laya-serve` differ in
+base URL and model, not in the cascade.
+
+**Sending is an explicit capability.** A remote judge receives selected
+metadata and document text, across mounts including the user-wide store. The
+MCP tool is therefore registered only when the server was started with
+`--smart-search`, even if credentials are already configured for another
+program. Configuration lives in TypeSafe's environment variables or the
+user-only `[smart_search]` table of `~/.outrage/config.toml`; a non-default base
+URL also permits a local server with no key. Per-mount refusal to send remains
+deferred.
+
 ### Data store
 
 Python library for storing data used by the MCP server.

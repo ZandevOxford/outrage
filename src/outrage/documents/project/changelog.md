@@ -2,6 +2,34 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+`smart_search` is a new optional MCP tool for finding documents by a
+plain-language query without bringing their contents into the calling agent's
+context. A System One model screens one bounded slice in a cascade over
+`!title`, `!keywords`, `!summary`, `!contents` and the body, carrying a document
+forward only while it remains unsure. The result ranks every document not
+ruled out, retains the per-level evidence, reports failed requests as unjudged,
+and returns a cursor for the next input slice. Missing metadata never excludes
+a document; partial text and the short title and keyword labels can count for a
+document but not against it. The tool is off by default because document text
+may leave the machine: `outrage init --smart-search` or
+`outrage config --smart-search` records the opt-in on the server entry.
+
+`outrage smart-search QUERY [KEY]` exposes the same one-slice search on the
+command line. `--level` narrows or reorders the cascade, `--evidence` prints
+what each level contributed, and stderr reports unjudged documents, totals and
+the `--after` value for the next slice, leaving stdout as the ranked matches.
+
+The bundled HTTP client speaks the System One wire protocol directly, using
+TypeSafe's hosted Jev by default and also accepting compatible services such as
+a local `laya-serve`. It reads `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL` and
+`TYPESAFE_DEFAULT_MODEL`, with a `[smart_search]` table in
+`~/.outrage/config.toml` as the fallback. A user configuration file accessible
+to group or others is refused before it is read. Searches retry transient
+failures and report a request that still fails without discarding the rest of
+the slice.
+
 ## 1.2.0 - 2026-09-24
 
 A PostgreSQL backend, `type=postgres` (or `type=postgresql`), for one store

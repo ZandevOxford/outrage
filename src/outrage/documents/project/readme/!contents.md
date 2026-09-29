@@ -5,16 +5,19 @@
 235 235 7
 
 ## Getting started
-854 854 19
+889 889 20
+
+## Optional smart search
+1738 1738 48
 
 ## Documentation
-1703 1703 47
+3054 3054 78
 
 ## Components
-3385 3385 75
+4736 4736 106
 
 ## Parquet stores
-5678 5679 109
+7389 7390 145
 
 ## A shared PostgreSQL store
-6556 6557 134
+8267 8268 170

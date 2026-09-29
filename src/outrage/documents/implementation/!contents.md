@@ -5,46 +5,49 @@
 18 18 3
 
 ### 0. Project scaffolding - done
-772 772 16
+758 758 16
 
 ### 1. Key handling - `src/outrage/keys.py` - done
-967 967 22
+953 953 22
 
 ### 2. Data store - `src/outrage/store.py`, `src/outrage/store_sqlite.py` - done
-2296 2296 44
+2282 2282 44
 
 ### 2a. Pyarrow backend - `src/outrage/store_pyarrow.py` - done
-3289 3289 61
+3275 3275 61
 
 ### 2b. Duckdb backend - `src/outrage/store_duckdb.py` - done
-9411 9414 161
+9397 9400 161
 
 ### 2c. PostgreSQL backend - `src/outrage/store_postgres.py` - done
-12223 12226 207
+12209 12212 207
 
 ### 3. MCP server - `src/outrage/server.py` - done
-15374 15377 257
+15360 15363 257
 
-### 3a. Mounted stores - `src/outrage/mounts.py` - done
-16525 16528 277
+### 3a. Smart search - `src/outrage/smartsearch.py`, `src/outrage/systemone.py` - done
+16511 16514 277
+
+### 3b. Mounted stores - `src/outrage/mounts.py` - done
+18394 18397 307
 
 ### 4. Integration with Claude Code - done
-27725 27728 451
+29594 29597 481
 
 #### Getting a changed server to the agent
-28437 28440 464
+30306 30309 494
 
 #### What the session use changed
-29327 29330 481
+31196 31199 511
 
 ### 5. Skills - done
-32646 32649 540
+34515 34518 570
 
 #### Delivery
-34540 34543 573
+36409 36412 603
 
 ### 8. Event log - `src/outrage/eventlog.py` - done
-35641 35644 593
+37510 37513 623
 
 ## Planned work
-37712 37715 631
+39581 39584 661

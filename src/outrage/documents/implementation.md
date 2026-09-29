@@ -6,9 +6,9 @@ Environment: Python 3.12 or later, which is what `requires-python` asks for.
 Developed against SQLite 3.53 and, for the optional backends, pyarrow 25 and
 psycopg 3.3 against PostgreSQL 18. Package installed in editable mode with
 `pip install -e ".[dev]"`; the parquet backend needs `.[parquet]` as well and
-the PostgreSQL one `.[postgres]`. 3224 tests and 24 doctests passing,
-`ruff check .` clean, as of 2026-09-22. The PostgreSQL tests need a server:
-without `OUTRAGE_TEST_POSTGRES` they skip, and 2821 tests run. Doctests are not in
+the PostgreSQL one `.[postgres]`. 2938 tests and 24 doctests passing,
+`ruff check .` clean, as of 2026-09-29. The PostgreSQL tests need a server:
+without `OUTRAGE_TEST_POSTGRES`, 409 tests skip. Doctests are not in
 `testpaths` and need a second run: `pytest --doctest-modules src/outrage`.
 `ruff format --check` is clean across the tree as well, since the whole
 repository was brought up to the formatter.
@@ -274,7 +274,37 @@ Note the SDK in use is **mcp 2.0**, where `FastMCP` has become
 `structured_content`, `input_schema`), and a failing tool raises `ToolError`
 rather than returning a result with an error flag.
 
-### 3a. Mounted stores - `src/outrage/mounts.py` - done
+### 3a. Smart search - `src/outrage/smartsearch.py`, `src/outrage/systemone.py` - done
+
+`smartsearch` owns the store traversal and the result, independently of any
+model vendor. It pages the input documents once, reads one metadata name at a
+time only for those still unsure, batches short values as questions over the
+query, and sends bodies as state one document and chunk at a time. Contents
+indexes provide section boundaries where available; otherwise fixed character
+windows are used. A request rejected as too large is halved and retried down to
+a minimum chunk, while transient HTTP failures use the retry policy TypeSafe's
+SDK defaults to. The fake judge in `test_smartsearch.py` exercises the cascade
+without a network or credentials.
+
+`systemone` is the HTTP `Judge`. It reads settings in one place, from
+TypeSafe's environment variables over the `[smart_search]` table of the user's
+configuration file over defaults, and appends `/v1/systemone` to the configured
+API root. The key is excluded from representations, and on POSIX the file is
+refused before reading if any group or other permission bit is set. `httpx2` is
+a core dependency: MCP already installs it, so an extra would not make the
+feature independently optional.
+
+The MCP tool is registered only when `outrage-server --smart-search` asks for
+it (or the server is built with every tool), and makes one judge per call so
+its connection lifetime and credentials are bounded by that call. Synchronous
+model traffic runs in the SDK's worker thread. `outrage init --smart-search`
+and `outrage config --smart-search` record that server flag. The CLI command is
+always present, validates every argument and configuration refusal before it
+opens a store, and writes only ranked matches to stdout so a pipe is useful.
+Both front ends report the input cursor, per-level counts, token use and every
+unjudged document.
+
+### 3b. Mounted stores - `src/outrage/mounts.py` - done
 
 More than one database behind the one key namespace, configured at startup with
 a repeatable `--mount KEY=FILE`. `MountedStore` is a prefix to `Store` table;
