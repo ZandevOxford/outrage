@@ -41,9 +41,14 @@ as a memory.
 The server also mounts a writable user-wide store at `home`, kept in an
 `.outrage` directory in your home directory.
 
-One minor issue when using Copilot CLI: the working directory must be inside a
-Git repository. Otherwise, Copilot CLI will fail to load the MCP servers and
-other configuration.
+### A harmless `:memory:.ses` file on macOS
+
+Importing ONNX Runtime inside Codex's filesystem sandbox on macOS can leave a
+file named `:memory:.ses` in the working directory. In Outrage this may happen
+when MarkItDown is loaded for document ingestion. It is an
+[ONNX Runtime bug](https://github.com/microsoft/onnxruntime/issues/32476), not
+an Outrage store or session file; it contains no project data and can always be
+deleted safely.
 
 ## Optional smart search
 
