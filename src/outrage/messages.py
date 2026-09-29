@@ -2635,7 +2635,7 @@ def _smart_search_query_empty(name: Namer, /, **_: Any) -> str:
 
 @template("smart-search-levels-empty")
 def _smart_search_levels_empty(name: Namer, /, **_: Any) -> str:
-    return "no levels to judge at; name at least one of title, summary, contents and body"
+    return "no levels to judge at; name at least one of title, keywords, summary, contents and body"
 
 
 @template("smart-search-level-unknown")

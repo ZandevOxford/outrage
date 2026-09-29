@@ -5,6 +5,10 @@ shown contains: ``MATCH`` is a confident yes, ``NEAR`` a near miss, ``HUGE`` is
 refused as too large, ``BROKEN`` fails the request, and anything else is a
 confident no. So each test says what a document holds at each level and
 asserts on where the cascade stopped.
+
+A Score question, the default, is answered with its mass split between the
+bottom and top tiers, which reduces to exactly the Noul probability: the
+cascade tests then mean the same whichever question set is asked.
 """
 
 from __future__ import annotations
@@ -43,6 +47,8 @@ class FakeJudge:
             p = 0.97 if "MATCH" in text else 0.8 if "NEAR" in text else 0.03
             if self.score:
                 answers[qid] = Answer(score=round(p * 3), probabilities=_spread(p), confidence=1.0)
+            elif question.kind == "score":
+                answers[qid] = Answer(score=3 * p, probabilities=(1 - p, 0.0, 0.0, p))
             else:
                 answers[qid] = Answer(probability=p)
         return Judgement(answers, input_tokens=len(state) + len(questions))
@@ -74,9 +80,9 @@ def _put(store, key, body="nothing here", **meta):
         store.store_document(f"{key}/!{name}", value)
 
 
-def test_a_title_decides_where_it_can_and_the_rest_cascade(store):
+def test_a_title_decides_a_match_and_the_rest_cascade(store):
     _put(store, "d/yes", title="MATCH")
-    _put(store, "d/no", title="unrelated")
+    _put(store, "d/no", title="unrelated", summary="unrelated")
     _put(store, "d/later", title="NEAR", summary="NEAR", body="MATCH in the body")
     judge = FakeJudge()
 
@@ -87,8 +93,42 @@ def test_a_title_decides_where_it_can_and_the_rest_cascade(store):
     assert by_key["d/yes"].decided_at == "title"
     assert by_key["d/later"].decided_at in ("summary", "body")
     assert result.levels["title"].asked == 3
-    assert result.levels["title"].yes == 1 and result.levels["title"].no == 1
-    assert judge.judged("summary") == ["d/later"]
+    assert result.levels["title"].yes == 1 and result.levels["title"].no == 0
+    assert result.levels["summary"].no == 1
+    assert judge.judged("summary") == ["d/later", "d/no"]
+
+
+@pytest.mark.parametrize("level", ["title", "keywords"])
+def test_a_label_can_count_for_a_document_but_never_against_it(store, level):
+    _put(store, "d/generic", body="MATCH", **{level: "unrelated"})
+    _put(store, "d/named", **{level: "MATCH"})
+
+    result = smart_search(store, "d", "q", FakeJudge())
+
+    by_key = {m.key: m for m in result.matches}
+    assert by_key["d/generic"].decided_at == "body"
+    assert by_key["d/named"].decided_at == level
+    assert result.levels[level].no == 0
+
+
+def test_a_label_can_rule_out_when_the_scoring_says_so(store):
+    _put(store, "d/generic", title="unrelated", body="MATCH")
+
+    result = smart_search(store, "d", "q", FakeJudge(), scoring=Scoring(supporting=frozenset()))
+
+    assert result.matches == ()
+    assert result.levels["title"].no == 1
+
+
+def test_keywords_are_read_from_their_own_metadata(store):
+    _put(store, "d/a", title="unrelated", keywords="NEAR", summary="NEAR")
+    judge = FakeJudge()
+
+    result = smart_search(store, "d", "q", judge)
+
+    assert judge.judged("keywords") == ["d/a"]
+    [match] = result.matches
+    assert [e.level for e in match.evidence] == ["title", "keywords", "summary"]
 
 
 def test_two_near_misses_add_up_to_a_match(store):
@@ -117,7 +157,7 @@ def test_missing_metadata_is_unsure_and_goes_on_unchanged(store):
 def test_a_level_reads_only_the_documents_still_pending(store):
     _put(store, "d/a", title="MATCH", summary="MATCH")
     _put(store, "d/b", title="NEAR", summary="unrelated")
-    _put(store, "d/b/child", title="unrelated", summary="MATCH")
+    _put(store, "d/b/child", title="MATCH", summary="unrelated")
 
     judge = FakeJudge()
     smart_search(store, "d", "q", judge)
@@ -277,14 +317,14 @@ def test_partial_evidence_counts_for_but_never_against():
 
 
 def test_matches_are_best_first_and_the_slice_pages(store):
-    for name, title in [("a", "NEAR"), ("b", "MATCH"), ("c", "unrelated"), ("d", "MATCH")]:
-        _put(store, f"s/{name}", title=title)
+    for name, summary in [("a", "NEAR"), ("b", "MATCH"), ("c", "unrelated"), ("d", "MATCH")]:
+        _put(store, f"s/{name}", summary=summary)
 
-    first = smart_search(store, "s", "q", FakeJudge(), levels=["title"], limit=2)
+    first = smart_search(store, "s", "q", FakeJudge(), levels=["summary"], limit=2)
     assert (first.documents, first.total, first.next_cursor) == (2, 4, "s/b")
     assert [m.key for m in first.matches] == ["s/b", "s/a"]
 
-    second = smart_search(store, "s", "q", FakeJudge(), levels=["title"], after="s/b")
+    second = smart_search(store, "s", "q", FakeJudge(), levels=["summary"], after="s/b")
     assert [m.key for m in second.matches] == ["s/d"]
     assert second.next_cursor is None
 
@@ -317,3 +357,12 @@ def test_a_search_crosses_mounts(tmp_path):
         result = smart_search(table, None, "q", FakeJudge(), levels=["title"])
 
         assert [m.key for m in result.matches] == ["notes/a", "ref/b"]
+
+
+def test_score_questions_are_asked_by_default(store):
+    _put(store, "d/a", title="MATCH")
+    judge = FakeJudge()
+
+    smart_search(store, "d", "q", judge)
+
+    assert {q.kind for _, questions in judge.calls for q in questions.values()} == {"score"}

@@ -3,7 +3,7 @@
 The cascade the ``outrage-search`` agent follows, moved out of an agent's
 context and into the library: every document in the slice is judged on its
 ``!title`` first, and only the ones that level leaves unsure go on to its
-``!summary``, then its ``!contents``, then its body. What comes back is every
+``!keywords``, its ``!summary``, then its ``!contents``, then its body. What comes back is every
 document not ruled out, best first. The calling agent reads none of it.
 
 **The judging is not done here.** A :class:`Judge` answers questions about a
@@ -15,9 +15,9 @@ judge rather than a different cascade.
 Three things here are expected to change as the cascade is measured, and each
 is kept in one place so that tuning it touches nothing else:
 
-* **the question asked at each level** is data, :data:`NOUL_QUESTIONS` by
-  default and :data:`SCORE_QUESTIONS` as the measured alternative, since what a
-  title can show is not what a body can;
+* **the question asked at each level** is data, :data:`SCORE_QUESTIONS` by
+  default and :data:`NOUL_QUESTIONS` as the alternative, since what a title can
+  show is not what a body can;
 * **which way round** a level is asked -- the query as the state and many
   documents as the questions, or each document as the state and the query as
   its one question -- is a :data:`Shape` per level, and the body is always the
@@ -31,6 +31,13 @@ never no**: a document without a summary has told the cascade nothing, so it
 goes on to the next level as it was. And **a partial value cannot justify a
 no**: a truncated title, or a body judged in fewer chunks than it has, can
 count for a document but never against it.
+
+A third rule, from measuring: **a title or keywords can count only for a
+document**. Both are written to label a document rather than to describe it,
+so a short or generic one -- an API page titled by its module name, a README
+titled with the project's -- is uninformative, and a yes-or-no question has no
+answer for that but a low one. Counted against, a single such answer ruled out
+the best document for a query. :attr:`Scoring.supporting` holds the rule.
 
 Content leaves the machine whenever the judge is a remote service, which is
 the front ends' to say; this module cannot tell one judge from another.
@@ -49,14 +56,15 @@ from .errors import OutrageError, Refusal
 from .store import BoundedSubtree, KeyRange, Store
 
 #: What a level judges: a metadata value by its name, or the document itself.
-Level = Literal["title", "summary", "contents", "body"]
+Level = Literal["title", "keywords", "summary", "contents", "body"]
 
 #: The default cascade, cheapest and most telling first.
 #:
+#: Keywords beside the title, being as short and written for the same purpose.
 #: Summary before contents because a summary is the shorter of the two and says
 #: more about what a document is for; a contents index is headings, which name
 #: what is in a document without saying what it concludes.
-LEVELS: tuple[Level, ...] = ("title", "summary", "contents", "body")
+LEVELS: tuple[Level, ...] = ("title", "keywords", "summary", "contents", "body")
 
 #: Which way round a level is asked.
 #:
@@ -72,6 +80,7 @@ Decision = Literal["yes", "no", "unsure"]
 #: A starting point: many short values to a request, and a body on its own.
 DEFAULT_SHAPES: Mapping[Level, Shape] = {
     "title": "questions",
+    "keywords": "questions",
     "summary": "questions",
     "contents": "questions",
     "body": "state",
@@ -215,12 +224,13 @@ def _noul(level: str, what: str) -> LevelQuestions:
 
 _WHAT: Mapping[Level, str] = {
     "title": "title",
+    "keywords": "keywords",
     "summary": "summary",
     "contents": "table of contents (its headings)",
     "body": "text, or one part of it,",
 }
 
-#: The default question at each level: a single probability of relevance.
+#: The alternative question at each level: a single probability of relevance.
 NOUL_QUESTIONS: Mapping[Level, LevelQuestions] = {
     level: _noul(level, what) for level, what in _WHAT.items()
 }
@@ -241,11 +251,12 @@ def _score(level: str, what: str) -> LevelQuestions:
     )
 
 
-#: The measured alternative: four ordered levels of relevance.
+#: The default question at each level: four ordered levels of relevance.
 #:
-#: John's manual testing did possibly better with these at some levels. The same
-#: criteria everywhere for now; the evaluation is what says whether a level wants
-#: its own.
+#: Better than Noul at most levels in the first measurement, and in John's own
+#: testing: the tiers say what kind of match to look for, where a single
+#: probability leaves the model to decide what "relevant" means. The same
+#: criteria everywhere for now; tuning is what says whether a level wants its own.
 SCORE_QUESTIONS: Mapping[Level, LevelQuestions] = {
     level: _score(level, what) for level, what in _WHAT.items()
 }
@@ -287,8 +298,18 @@ class Scoring:
     """
 
     weights: Mapping[Level, float] = field(
-        default_factory=lambda: {"title": 0.6, "summary": 0.8, "contents": 0.6, "body": 1.0}
+        default_factory=lambda: {
+            "title": 0.6,
+            "keywords": 0.6,
+            "summary": 0.8,
+            "contents": 0.6,
+            "body": 1.0,
+        }
     )
+    supporting: frozenset[Level] = frozenset({"title", "keywords"})
+    """Levels whose evidence can count for a document and never against it, as
+    partial evidence cannot. A label too generic to say anything gets a low
+    answer, not an unsure one, and must not rule the document out."""
     yes: float = 0.8
     """At or above this, a document is decided a match and stops cascading."""
     no: float = 0.2
@@ -302,7 +323,7 @@ class Scoring:
             if item.answer.confidence is not None:
                 weight *= item.answer.confidence
             contribution = weight * _logit(item.probability)
-            if item.partial:
+            if item.partial or item.level in self.supporting:
                 contribution = max(contribution, 0.0)
             total += contribution
         return 1 / (1 + math.exp(-total))
@@ -438,7 +459,7 @@ def smart_search(
     after: str | None = None,
     levels: Sequence[Level] = LEVELS,
     shapes: Mapping[Level, Shape] | None = None,
-    questions: Mapping[Level, LevelQuestions] = NOUL_QUESTIONS,
+    questions: Mapping[Level, LevelQuestions] = SCORE_QUESTIONS,
     scoring: Scoring | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
     value_chars: int = DEFAULT_VALUE_CHARS,

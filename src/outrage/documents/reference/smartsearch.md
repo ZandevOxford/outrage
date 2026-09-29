@@ -5,7 +5,7 @@ Screen a slice of documents against a query with a System One model.
 The cascade the `outrage-search` agent follows, moved out of an agent's
 context and into the library: every document in the slice is judged on its
 `!title` first, and only the ones that level leaves unsure go on to its
-`!summary`, then its `!contents`, then its body. What comes back is every
+`!keywords`, its `!summary`, then its `!contents`, then its body. What comes back is every
 document not ruled out, best first. The calling agent reads none of it.
 
 **The judging is not done here.** A [`Judge`](#outrage.smartsearch.Judge) answers questions about a
@@ -17,9 +17,9 @@ judge rather than a different cascade.
 Three things here are expected to change as the cascade is measured, and each
 is kept in one place so that tuning it touches nothing else:
 
-* **the question asked at each level** is data, [`NOUL_QUESTIONS`](#outrage.smartsearch.NOUL_QUESTIONS) by
-  default and [`SCORE_QUESTIONS`](#outrage.smartsearch.SCORE_QUESTIONS) as the measured alternative, since what a
-  title can show is not what a body can;
+* **the question asked at each level** is data, [`SCORE_QUESTIONS`](#outrage.smartsearch.SCORE_QUESTIONS) by
+  default and [`NOUL_QUESTIONS`](#outrage.smartsearch.NOUL_QUESTIONS) as the alternative, since what a title can
+  show is not what a body can;
 * **which way round** a level is asked -- the query as the state and many
   documents as the questions, or each document as the state and the query as
   its one question -- is a [`Shape`](#outrage.smartsearch.Shape) per level, and the body is always the
@@ -33,6 +33,13 @@ never no**: a document without a summary has told the cascade nothing, so it
 goes on to the next level as it was. And **a partial value cannot justify a
 no**: a truncated title, or a body judged in fewer chunks than it has, can
 count for a document but never against it.
+
+A third rule, from measuring: **a title or keywords can count only for a
+document**. Both are written to label a document rather than to describe it,
+so a short or generic one -- an API page titled by its module name, a README
+titled with the project's -- is uninformative, and a yes-or-no question has no
+answer for that but a low one. Counted against, a single such answer ruled out
+the best document for a query. [`Scoring.supporting`](#outrage.smartsearch.Scoring.supporting) holds the rule.
 
 Content leaves the machine whenever the judge is a remote service, which is
 the front ends' to say; this module cannot tell one judge from another.
@@ -59,7 +66,7 @@ state, so a result for its slice cannot itself be paged.
 Body chunks judged per document before the rest is left unread. A document
 cut short this way is partial, so it can be kept but not ruled out.
 
-### outrage.smartsearch.DEFAULT_SHAPES *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state']]* *= {'body': 'state', 'contents': 'questions', 'summary': 'questions', 'title': 'questions'}*
+### outrage.smartsearch.DEFAULT_SHAPES *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state']]* *= {'body': 'state', 'contents': 'questions', 'keywords': 'questions', 'summary': 'questions', 'title': 'questions'}*
 
 A starting point: many short values to a request, and a body on its own.
 
@@ -68,10 +75,11 @@ A starting point: many short values to a request, and a body on its own.
 Longest metadata value read for judging. A longer one is judged on its
 first part and marked partial, so it cannot rule a document out.
 
-### outrage.smartsearch.LEVELS *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], ...]* *= ('title', 'summary', 'contents', 'body')*
+### outrage.smartsearch.LEVELS *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], ...]* *= ('title', 'keywords', 'summary', 'contents', 'body')*
 
 The default cascade, cheapest and most telling first.
 
+Keywords beside the title, being as short and written for the same purpose.
 Summary before contents because a summary is the shorter of the two and says
 more about what a document is for; a contents index is headings, which name
 what is in a document without saying what it concludes.
@@ -81,17 +89,18 @@ what is in a document without saying what it concludes.
 Below this, halving a chunk the model refuses as too large stops, and the
 document is reported unjudged rather than split into fragments.
 
-### outrage.smartsearch.NOUL_QUESTIONS *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], [LevelQuestions](#outrage.smartsearch.LevelQuestions)]* *= {'body': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'contents': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'summary': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'title': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={}))}*
+### outrage.smartsearch.NOUL_QUESTIONS *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], [LevelQuestions](#outrage.smartsearch.LevelQuestions)]* *= {'body': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'contents': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'keywords': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`keywords\` is the keywords of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the keywords of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'summary': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'title': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={}))}*
 
-The default question at each level: a single probability of relevance.
+The alternative question at each level: a single probability of relevance.
 
-### outrage.smartsearch.SCORE_QUESTIONS *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], [LevelQuestions](#outrage.smartsearch.LevelQuestions)]* *= {'body': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'contents': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'summary': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'title': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}))}*
+### outrage.smartsearch.SCORE_QUESTIONS *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], [LevelQuestions](#outrage.smartsearch.LevelQuestions)]* *= {'body': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'contents': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'keywords': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`keywords\` is the keywords of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the keywords of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'summary': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'title': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}))}*
 
-The measured alternative: four ordered levels of relevance.
+The default question at each level: four ordered levels of relevance.
 
-John's manual testing did possibly better with these at some levels. The same
-criteria everywhere for now; the evaluation is what says whether a level wants
-its own.
+Better than Noul at most levels in the first measurement, and in John's own
+testing: the tiers say what kind of match to look for, where a single
+probability leaves the model to decide what "relevant" means. The same
+criteria everywhere for now; tuning is what says whether a level wants its own.
 
 ### *class* outrage.smartsearch.Answer(probability: [float](https://docs.python.org/3/builtins/functions.html#float) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, score: [float](https://docs.python.org/3/builtins/functions.html#float) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, probabilities: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[float](https://docs.python.org/3/builtins/functions.html#float), ...] = (), confidence: [float](https://docs.python.org/3/builtins/functions.html#float) | [None](https://docs.python.org/3/builtins/constants.html#None) = None)
 
@@ -126,13 +135,13 @@ Where a level leaves a document: ruled in, ruled out, or carried to the next.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['yes', 'no', 'unsure']
 
-### *class* outrage.smartsearch.Evidence(level: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], answer: [Answer](#outrage.smartsearch.Answer), probability: [float](https://docs.python.org/3/builtins/functions.html#float), chunks: [int](https://docs.python.org/3/builtins/functions.html#int) = 1, partial: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
+### *class* outrage.smartsearch.Evidence(level: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], answer: [Answer](#outrage.smartsearch.Answer), probability: [float](https://docs.python.org/3/builtins/functions.html#float), chunks: [int](https://docs.python.org/3/builtins/functions.html#int) = 1, partial: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 What one level said about one document, kept whole for re-scoring.
 
-#### level *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body']*
+#### level *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body']*
 
 #### answer *: [Answer](#outrage.smartsearch.Answer)*
 
@@ -182,7 +191,7 @@ A judge's answers to one request, by the ids the questions were sent under.
 
 What a level judges: a metadata value by its name, or the document itself.
 
-alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body']
+alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body']
 
 ### *class* outrage.smartsearch.LevelCounts(asked: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, yes: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, no: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, missing: [int](https://docs.python.org/3/builtins/functions.html#int) = 0, unjudged: [int](https://docs.python.org/3/builtins/functions.html#int) = 0)
 
@@ -219,7 +228,7 @@ Asked with the query as the state; the document is in its instructions.
 
 Asked with the document's value as the state; names `{query}`.
 
-### *class* outrage.smartsearch.Match(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), probability: [float](https://docs.python.org/3/builtins/functions.html#float), decision: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['yes', 'unsure'], decided_at: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'] | [None](https://docs.python.org/3/builtins/constants.html#None), evidence: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Evidence](#outrage.smartsearch.Evidence), ...])
+### *class* outrage.smartsearch.Match(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), probability: [float](https://docs.python.org/3/builtins/functions.html#float), decision: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['yes', 'unsure'], decided_at: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'] | [None](https://docs.python.org/3/builtins/constants.html#None), evidence: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Evidence](#outrage.smartsearch.Evidence), ...])
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -231,7 +240,7 @@ One document not ruled out.
 
 #### decision *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['yes', 'unsure']*
 
-#### decided_at *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'] | [None](https://docs.python.org/3/builtins/constants.html#None)*
+#### decided_at *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'] | [None](https://docs.python.org/3/builtins/constants.html#None)*
 
 The level at which it was decided a match, or None when no level did
 and it is here as still unsure.
@@ -263,7 +272,7 @@ For a score, what each level means, lowest first. Two to ten of them.
 
 #### instructions *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
 
-### *class* outrage.smartsearch.Scoring(weights: ~collections.abc.Mapping[~typing.Literal['title', 'summary', 'contents', 'body'], float] = <factory>, yes: float = 0.8, no: float = 0.2)
+### *class* outrage.smartsearch.Scoring(weights: ~collections.abc.Mapping[~typing.Literal['title', 'keywords', 'summary', 'contents', 'body'], float] = <factory>, supporting: frozenset[~typing.Literal['title', 'keywords', 'summary', 'contents', 'body']] = frozenset({'keywords', 'title'}), yes: float = 0.8, no: float = 0.2)
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -283,7 +292,13 @@ rules the measuring may prefer -- the strongest level rather than the sum,
 a small fitted model over the per-level answers, or the last level alone
 with the earlier ones only pruning -- are each a different [`combine()`](#outrage.smartsearch.Scoring.combine).
 
-#### weights *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], [float](https://docs.python.org/3/builtins/functions.html#float)]*
+#### weights *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], [float](https://docs.python.org/3/builtins/functions.html#float)]*
+
+#### supporting *: [frozenset](https://docs.python.org/3/builtins/stdtypes.html#frozenset)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body']]*
+
+Levels whose evidence can count for a document and never against it, as
+partial evidence cannot. A label too generic to say anything gets a low
+answer, not an unsure one, and must not rule the document out.
 
 #### yes *: [float](https://docs.python.org/3/builtins/functions.html#float)*
 
@@ -312,7 +327,7 @@ measured; if one wins everywhere the other goes.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state']
 
-### *class* outrage.smartsearch.SmartSearchResult(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), query: [str](https://docs.python.org/3/builtins/stdtypes.html#str), matches: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Match](#outrage.smartsearch.Match), ...], unjudged: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Unjudged](#outrage.smartsearch.Unjudged), ...], levels: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], [LevelCounts](#outrage.smartsearch.LevelCounts)], documents: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), unavailable: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...], input_tokens: [int](https://docs.python.org/3/builtins/functions.html#int))
+### *class* outrage.smartsearch.SmartSearchResult(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), query: [str](https://docs.python.org/3/builtins/stdtypes.html#str), matches: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Match](#outrage.smartsearch.Match), ...], unjudged: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Unjudged](#outrage.smartsearch.Unjudged), ...], levels: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], [LevelCounts](#outrage.smartsearch.LevelCounts)], documents: [int](https://docs.python.org/3/builtins/functions.html#int), total: [int](https://docs.python.org/3/builtins/functions.html#int), next_cursor: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), unavailable: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...], input_tokens: [int](https://docs.python.org/3/builtins/functions.html#int))
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -332,7 +347,7 @@ Every document not ruled out, best first.
 
 #### unjudged *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Unjudged](#outrage.smartsearch.Unjudged), ...]*
 
-#### levels *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], [LevelCounts](#outrage.smartsearch.LevelCounts)]*
+#### levels *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], [LevelCounts](#outrage.smartsearch.LevelCounts)]*
 
 #### documents *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
@@ -356,7 +371,7 @@ Bases: [`JudgeError`](#outrage.smartsearch.JudgeError)
 
 The judge refused a request as too long. The cascade halves and retries.
 
-### *class* outrage.smartsearch.Unjudged(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), level: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), details: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [object](https://docs.python.org/3/builtins/functions.html#object)], evidence: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Evidence](#outrage.smartsearch.Evidence), ...])
+### *class* outrage.smartsearch.Unjudged(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), level: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), details: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [object](https://docs.python.org/3/builtins/functions.html#object)], evidence: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Evidence](#outrage.smartsearch.Evidence), ...])
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -364,7 +379,7 @@ A document the cascade could not finish, and why.
 
 #### key *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
-#### level *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body']*
+#### level *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body']*
 
 #### code *: [str](https://docs.python.org/3/builtins/stdtypes.html#str)*
 
@@ -380,7 +395,7 @@ Whatever the levels before this one said.
 
 Every reason these arguments cannot be searched with, at once.
 
-### outrage.smartsearch.smart_search(store: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), query: [str](https://docs.python.org/3/builtins/stdtypes.html#str), judge: [Judge](#outrage.smartsearch.Judge), \*, depth: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, limit: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_LIMIT, after: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, levels: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body']] = LEVELS, shapes: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state']] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, questions: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'summary', 'contents', 'body'], [LevelQuestions](#outrage.smartsearch.LevelQuestions)] = NOUL_QUESTIONS, scoring: [Scoring](#outrage.smartsearch.Scoring) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, batch_size: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_BATCH_SIZE, value_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_VALUE_CHARS, chunk_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_CHUNK_CHARS, max_chunks: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHUNKS) → [SmartSearchResult](#outrage.smartsearch.SmartSearchResult)
+### outrage.smartsearch.smart_search(store: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), query: [str](https://docs.python.org/3/builtins/stdtypes.html#str), judge: [Judge](#outrage.smartsearch.Judge), \*, depth: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, limit: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_LIMIT, after: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, levels: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body']] = LEVELS, shapes: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state']] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, questions: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['title', 'keywords', 'summary', 'contents', 'body'], [LevelQuestions](#outrage.smartsearch.LevelQuestions)] = SCORE_QUESTIONS, scoring: [Scoring](#outrage.smartsearch.Scoring) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, batch_size: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_BATCH_SIZE, value_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_VALUE_CHARS, chunk_chars: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_CHUNK_CHARS, max_chunks: [int](https://docs.python.org/3/builtins/functions.html#int) = DEFAULT_MAX_CHUNKS) → [SmartSearchResult](#outrage.smartsearch.SmartSearchResult)
 
 Screen one slice of the documents under `key` against `query`.
 
