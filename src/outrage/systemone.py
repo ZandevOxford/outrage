@@ -6,10 +6,14 @@ and a local ``laya-serve`` differ in their base URL and nothing else, so a
 client written against the wire rather than against one vendor's library is
 one client for both.
 
-**The three settings are read in one place**, :meth:`Settings.from_environment`,
-because they are expected to change shape once a second provider needs
-configuring. Until then a key in ``TYPESAFE_API_KEY`` is the whole of it, with
-TypeSafe's URL and ``jev-latest`` as defaults.
+**The three settings are read in one place**, :meth:`Settings.read`, because
+they are expected to change shape once a second provider needs configuring.
+Each comes from TypeSafe's own environment variable if it is set, else from
+the ``[smart_search]`` table of the user's configuration file
+(:func:`outrage.home.read_config`), else from a default. The variables are the
+ones TypeSafe's SDK reads, and they mean what they mean there: in particular
+``TYPESAFE_BASE_URL`` is the API root, with the protocol's path appended, so a
+value set for the SDK or for a gateway in front of it works here unchanged.
 
 Retrying follows the policy TypeSafe's own SDK defaults to -- two retries,
 backoff from half a second doubling to five with a quarter jitter, over 408,
@@ -25,20 +29,39 @@ import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Self
 
 import httpx2
 
+from . import home
+from .errors import Refusal
 from .smartsearch import Answer, JudgeError, Judgement, Question, StateTooLarge
 
-#: Where TypeSafe's hosted models answer.
-DEFAULT_URL = "https://api.typesafe.ai/v1/systemone"
+#: The root of TypeSafe's hosted API.
+DEFAULT_BASE_URL = "https://api.typesafe.ai"
+
+#: Where the protocol answers, below any base URL.
+ENDPOINT_PATH = "/v1/systemone"
 
 #: TypeSafe's alias for its current flagship model.
 DEFAULT_MODEL = "jev-latest"
 
-#: The environment variable holding the API key.
+#: The environment variable holding the API key, as TypeSafe's SDK names it.
 KEY_VARIABLE = "TYPESAFE_API_KEY"
+
+#: The environment variable holding the base URL, as TypeSafe's SDK names it.
+BASE_URL_VARIABLE = "TYPESAFE_BASE_URL"
+
+#: The environment variable naming the model, as TypeSafe's SDK names it.
+MODEL_VARIABLE = "TYPESAFE_DEFAULT_MODEL"
+
+#: The configuration file's table for these settings.
+CONFIG_TABLE = "smart_search"
+
+#: The settings that table may hold. Any other name is refused rather than
+#: ignored, so a misspelt setting is reported instead of silently not applying.
+CONFIG_NAMES = ("key", "base_url", "model")
 
 #: Longest stretch of an error response carried into a message. A validation
 #: failure names its field in the first line or two, and a proxy's HTML error
@@ -56,27 +79,130 @@ _TOO_LARGE = re.compile(r"token|too (?:long|large)|context|length|exceed", re.IG
 class Settings:
     """Where to send questions, which model answers them, and the key if any."""
 
-    url: str = DEFAULT_URL
+    base_url: str = DEFAULT_BASE_URL
+    """The API root, as ``TYPESAFE_BASE_URL`` means it; :attr:`url` is below it."""
     model: str = DEFAULT_MODEL
-    key: str | None = None
+    key: str | None = field(default=None, repr=False)
     """None sends no ``Authorization`` header, which is what a local server
-    wants; TypeSafe's refuses the request."""
+    wants; TypeSafe's refuses the request. Kept out of ``repr`` so a settings
+    object in a log or a traceback does not carry it."""
+    key_source: str | None = None
+    """Where the key came from, a variable name or a file path, so a refused
+    key can be looked for in the right place."""
+
+    @property
+    def url(self) -> str:
+        """Where requests are posted."""
+        return self.base_url.rstrip("/") + ENDPOINT_PATH
 
     @classmethod
-    def from_environment(cls, environ: Mapping[str, str] | None = None) -> Self:
-        """The settings this process is configured with."""
+    def read(
+        cls, environ: Mapping[str, str] | None = None, path: Path | None = None
+    ) -> tuple[Self, list[Refusal]]:
+        """The settings this process is configured with, and every problem with them.
+
+        ``path`` is the configuration file, :func:`outrage.home.config_path`
+        by default. The settings come back even when there are refusals, built
+        from whatever was usable, but a caller should not search with them: a
+        file that other users can open, in particular, refuses the search even
+        where the environment supplies everything, since the key in it has to be
+        treated as out either way.
+
+        An empty variable counts as unset, as a shell's ``VAR=`` usually means.
+        """
         environ = os.environ if environ is None else environ
-        return cls(key=environ.get(KEY_VARIABLE) or None)
+        path = home.config_path() if path is None else path
+        found: list[Refusal] = []
+        table: Mapping[str, Any] = {}
+        try:
+            config = home.read_config(path)
+        except home.UserConfigError as error:
+            found.append(Refusal.of(error))
+            config = {}
+        raw = config.get(CONFIG_TABLE, {})
+        if isinstance(raw, dict):
+            table = raw
+        else:
+            found.append(
+                Refusal(
+                    "smart-search-config-not-a-table",
+                    overridable=False,
+                    path=str(path),
+                    table=CONFIG_TABLE,
+                )
+            )
+        for name in sorted(set(table) - set(CONFIG_NAMES)):
+            found.append(
+                Refusal(
+                    "smart-search-config-name-unknown",
+                    overridable=False,
+                    path=str(path),
+                    table=CONFIG_TABLE,
+                    name=name,
+                    known=CONFIG_NAMES,
+                )
+            )
+        values: dict[str, tuple[str, str]] = {}
+        for name, variable in (
+            ("key", KEY_VARIABLE),
+            ("base_url", BASE_URL_VARIABLE),
+            ("model", MODEL_VARIABLE),
+        ):
+            if environ.get(variable):
+                values[name] = (environ[variable], variable)
+            elif name in table:
+                value = table[name]
+                if isinstance(value, str) and value:
+                    values[name] = (value, str(path))
+                else:
+                    found.append(
+                        Refusal(
+                            "smart-search-config-value",
+                            overridable=False,
+                            path=str(path),
+                            table=CONFIG_TABLE,
+                            name=name,
+                        )
+                    )
+        if "base_url" in values:
+            base_url, source = values["base_url"]
+            if not base_url.startswith(("http://", "https://")):
+                found.append(
+                    Refusal(
+                        "smart-search-base-url",
+                        overridable=False,
+                        base_url=base_url,
+                        source=source,
+                    )
+                )
+                del values["base_url"]
+        key = values.get("key")
+        settings = cls(
+            base_url=values.get("base_url", (DEFAULT_BASE_URL, ""))[0],
+            model=values.get("model", (DEFAULT_MODEL, ""))[0],
+            key=key[0] if key else None,
+            key_source=key[1] if key else None,
+        )
+        return settings, found
+
+    @classmethod
+    def load(cls, environ: Mapping[str, str] | None = None, path: Path | None = None) -> Self:
+        """:meth:`read`, raising the first refusal as its error."""
+        settings, found = cls.read(environ, path)
+        if found:
+            raise found[0].as_error()
+        return settings
 
     @property
     def configured(self) -> bool:
         """Whether a search can be sent anywhere with these settings.
 
-        A key, for now: the URL and model always have defaults, and the only
-        server that needs no key is a local one, which has no configuration
-        of its own yet.
+        A key, or a base URL of its own: TypeSafe's hosted API refuses a
+        request without a key, while a local server usually wants none, and
+        is only reached by setting its URL. A gateway that wants a key and has
+        none says so on the first request.
         """
-        return self.key is not None
+        return self.key is not None or self.base_url != DEFAULT_BASE_URL
 
 
 @dataclass(frozen=True, slots=True)
@@ -173,7 +299,12 @@ class SystemOne:
                 continue
             detail = _detail(response)
             if status in (401, 403):
-                raise JudgeError("smart-search-unauthorised", url=url, status=status)
+                raise JudgeError(
+                    "smart-search-unauthorised",
+                    url=url,
+                    status=status,
+                    source=self.settings.key_source,
+                )
             if status == 422 and _TOO_LARGE.search(detail):
                 raise StateTooLarge("smart-search-state-too-large", url=url, detail=detail)
             if status == 422:
@@ -230,10 +361,15 @@ def _detail(response: httpx2.Response) -> str:
 
 
 __all__ = [
+    "BASE_URL_VARIABLE",
+    "CONFIG_NAMES",
+    "CONFIG_TABLE",
+    "DEFAULT_BASE_URL",
     "DEFAULT_MODEL",
-    "DEFAULT_URL",
     "DETAIL_CHARS",
+    "ENDPOINT_PATH",
     "KEY_VARIABLE",
+    "MODEL_VARIABLE",
     "RetryPolicy",
     "Settings",
     "SystemOne",

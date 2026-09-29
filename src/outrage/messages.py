@@ -1738,6 +1738,25 @@ def _config_server_not_a_table(name: Namer, /, *, path: str, server: str, **_: A
     return f"{path} has a {server!r} server that is not a table; leaving it alone"
 
 
+@template("user-config-exposed")
+def _user_config_exposed(name: Namer, /, *, path: str, mode: str, **_: Any) -> str:
+    return (
+        f"refusing to read {path}: other users can open it (mode {mode}), and it may "
+        f"hold an API key; run chmod 600 {path}, and replace the key if others may "
+        "have read it"
+    )
+
+
+@template("user-config-unreadable")
+def _user_config_unreadable(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
+    return f"cannot read {path}: {reason}"
+
+
+@template("user-config-not-toml")
+def _user_config_not_toml(name: Namer, /, *, path: str, reason: str, **_: Any) -> str:
+    return f"{path} is not valid TOML ({reason})"
+
+
 # -- installation ----------------------------------------------------------
 
 
@@ -2645,8 +2664,45 @@ def _smart_search_body_shape(name: Namer, /, *, shape: str, **_: Any) -> str:
 
 
 @template("smart-search-unauthorised")
-def _smart_search_unauthorised(name: Namer, /, *, url: str, status: int, **_: Any) -> str:
-    return f"{url} refused the API key (HTTP {status}); check the key in TYPESAFE_API_KEY"
+def _smart_search_unauthorised(
+    name: Namer, /, *, url: str, status: int, source: str | None = None, **_: Any
+) -> str:
+    if source is None:
+        return (
+            f"{url} wants an API key (HTTP {status}) and none is configured; set "
+            "TYPESAFE_API_KEY, or key in the [smart_search] table of ~/.outrage/config.toml"
+        )
+    return f"{url} refused the API key (HTTP {status}); check the key from {source}"
+
+
+@template("smart-search-config-not-a-table")
+def _smart_search_config_not_a_table(name: Namer, /, *, path: str, table: str, **_: Any) -> str:
+    return f"{path} has a {table!r} that is not a table; write it as [{table}]"
+
+
+@template("smart-search-config-name-unknown")
+def _smart_search_config_name_unknown(
+    namer: Namer, /, *, path: str, table: str, name: str, known: Sequence[str], **_: Any
+) -> str:
+    return (
+        f"{path} has {name!r} in [{table}], which is not a setting; "
+        f"the settings are {', '.join(known)}"
+    )
+
+
+@template("smart-search-config-value")
+def _smart_search_config_value(
+    namer: Namer, /, *, path: str, table: str, name: str, **_: Any
+) -> str:
+    return f"{path} has a {name!r} in [{table}] that is not a non-empty string"
+
+
+@template("smart-search-base-url")
+def _smart_search_base_url(name: Namer, /, *, base_url: str, source: str, **_: Any) -> str:
+    return (
+        f"the base URL {base_url!r} from {source} is not an http or https URL; "
+        "it is the API root, such as https://api.typesafe.ai"
+    )
 
 
 @template("smart-search-state-too-large")

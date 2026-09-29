@@ -1,65 +1,89 @@
 # outrage.systemone
 0 0 1
 
-### outrage.systemone.DEFAULT_MODEL *= 'jev-latest'*
-1067 1067 21
+### outrage.systemone.BASE_URL_VARIABLE *= 'TYPESAFE_BASE_URL'*
+1411 1411 25
 
-### outrage.systemone.DEFAULT_URL *= 'https://api.typesafe.ai/v1/systemone'*
-1171 1171 25
+### outrage.systemone.CONFIG_NAMES *= ('key', 'base_url', 'model')*
+1552 1552 29
+
+### outrage.systemone.CONFIG_TABLE *= 'smart_search'*
+1771 1771 34
+
+### outrage.systemone.DEFAULT_BASE_URL *= 'https://api.typesafe.ai'*
+1878 1878 38
+
+### outrage.systemone.DEFAULT_MODEL *= 'jev-latest'*
+1984 1984 42
 
 ### outrage.systemone.DETAIL_CHARS *= 300*
-1289 1289 29
+2088 2088 46
+
+### outrage.systemone.ENDPOINT_PATH *= '/v1/systemone'*
+2306 2306 52
 
 ### outrage.systemone.KEY_VARIABLE *= 'TYPESAFE_API_KEY'*
-1507 1507 35
+2412 2412 56
+
+### outrage.systemone.MODEL_VARIABLE *= 'TYPESAFE_DEFAULT_MODEL'*
+2546 2546 60
 
 ### *class* outrage.systemone.RetryPolicy(max_retries: int = 2, backoff_initial: float = 0.5, backoff_max: float = 5.0, backoff_jitter: float = 0.25, statuses: frozenset[int] = <factory>, timeout: float = 30.0)
-1613 1613 39
+2685 2685 64
 
 #### max_retries *: int*
-2380 2380 45
+3452 3452 70
 
 #### backoff_initial *: float*
-2463 2463 47
+3535 3535 72
 
 #### backoff_max *: float*
-2554 2554 49
+3626 3626 74
 
 #### backoff_jitter *: float*
-2641 2641 51
+3713 3713 76
 
 #### statuses *: frozenset[int]*
-2731 2731 53
+3803 3803 78
 
 #### timeout *: float*
-2884 2884 55
+3956 3956 80
 
 #### delay(attempt: int, retry_after: str | None = None) → float
-2967 2967 57
+4039 4039 82
 
-### *class* outrage.systemone.Settings(url: str = 'https://api.typesafe.ai/v1/systemone', model: str = 'jev-latest', key: str | None = None)
-3330 3332 61
+### *class* outrage.systemone.Settings(base_url: str = 'https://api.typesafe.ai', model: str = 'jev-latest', key: str | None = None, key_source: str | None = None)
+4402 4404 86
 
-#### url *: str*
-3847 3849 67
+#### base_url *: str*
+5056 5058 92
 
 #### model *: str*
-3921 3923 69
+5237 5239 96
 
 #### key *: str | None*
-3997 3999 71
+5313 5315 98
 
-#### *classmethod* from_environment(environ: Mapping[str, str] | None = None) → Self
-4243 4245 76
+#### key_source *: str | None*
+5642 5644 104
+
+#### *property* url *: str*
+5901 5903 109
+
+#### *classmethod* read(environ: Mapping[str, str] | None = None, path: Path | None = None) → tuple[Self, list[Refusal]]
+6014 6016 113
+
+#### *classmethod* load(environ: Mapping[str, str] | None = None, path: Path | None = None) → Self
+7280 7284 126
 
 #### *property* configured *: bool*
-4689 4693 80
+7901 7907 130
 
 ### *class* outrage.systemone.SystemOne(settings: Settings, \*, retry: RetryPolicy | None = None, transport: BaseTransport | None = None, sleep: Callable[[float], None] = time.sleep)
-4998 5002 88
+8296 8302 139
 
 #### close() → None
-5897 5901 98
+9195 9201 149
 
 #### judge(state: str, questions: Mapping[str, Question]) → Judgement
-5976 5982 100
+9274 9282 151

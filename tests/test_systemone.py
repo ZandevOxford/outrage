@@ -8,13 +8,22 @@ protocol, not that a fake drifted from it.
 from __future__ import annotations
 
 import json
+import os
 
 import httpx2
 import pytest
 
 from outrage import messages
+from outrage.errors import OutrageError
 from outrage.smartsearch import JudgeError, Question, StateTooLarge
-from outrage.systemone import KEY_VARIABLE, RetryPolicy, Settings, SystemOne
+from outrage.systemone import (
+    BASE_URL_VARIABLE,
+    KEY_VARIABLE,
+    MODEL_VARIABLE,
+    RetryPolicy,
+    Settings,
+    SystemOne,
+)
 
 NOUL = Question("noul", "Is it relevant?")
 SCORE = Question("score", "How relevant?", criteria=("none", "some", "much"))
@@ -185,8 +194,124 @@ def test_a_response_in_the_wrong_shape_is_reported():
     assert raised.value.code == "smart-search-response-malformed"
 
 
-def test_settings_come_from_the_environment():
-    assert Settings.from_environment({}).configured is False
-    settings = Settings.from_environment({KEY_VARIABLE: "secret"})
-    assert settings.configured and settings.key == "secret"
-    assert Settings.from_environment({KEY_VARIABLE: ""}).key is None
+def _config(tmp_path, text, mode=0o600):
+    path = tmp_path / "config.toml"
+    path.write_text(text, encoding="utf-8")
+    path.chmod(mode)
+    return path
+
+
+def _read(tmp_path, environ=None, text=None):
+    path = _config(tmp_path, text) if text is not None else tmp_path / "config.toml"
+    return Settings.read(environ or {}, path)
+
+
+def test_with_nothing_configured_the_defaults_are_unconfigured(tmp_path):
+    settings, found = _read(tmp_path)
+    assert found == []
+    assert settings == Settings()
+    assert settings.url == "https://api.typesafe.ai/v1/systemone"
+    assert settings.configured is False
+
+
+def test_settings_come_from_the_file(tmp_path):
+    settings, found = _read(
+        tmp_path,
+        text='[smart_search]\nkey = "secret"\nbase_url = "http://localhost:8000/"\n'
+        'model = "jev-1"\n',
+    )
+    assert found == []
+    assert settings.key == "secret"
+    assert settings.key_source == str(tmp_path / "config.toml")
+    assert settings.url == "http://localhost:8000/v1/systemone"
+    assert settings.model == "jev-1"
+
+
+def test_the_environment_wins_over_the_file_setting_by_setting(tmp_path):
+    settings, found = _read(
+        tmp_path,
+        {KEY_VARIABLE: "from-env", MODEL_VARIABLE: "jev-2", BASE_URL_VARIABLE: ""},
+        '[smart_search]\nkey = "from-file"\nbase_url = "https://gateway.example/typesafe"\n'
+        'model = "jev-1"\n',
+    )
+    assert found == []
+    assert (settings.key, settings.key_source) == ("from-env", KEY_VARIABLE)
+    assert settings.model == "jev-2"
+    # An empty variable is unset, so the file's base URL stands.
+    assert settings.url == "https://gateway.example/typesafe/v1/systemone"
+
+
+def test_the_base_url_is_the_root_as_the_sdk_means_it(tmp_path):
+    settings, _ = _read(tmp_path, {BASE_URL_VARIABLE: "https://openrouter.ai/api"})
+    assert settings.url == "https://openrouter.ai/api/v1/systemone"
+    assert settings.configured, "a server of its own may want no key"
+
+
+def test_the_key_is_kept_out_of_the_repr():
+    assert "secret" not in repr(Settings(key="secret"))
+
+
+def test_every_problem_with_the_file_is_reported_at_once(tmp_path):
+    settings, found = _read(
+        tmp_path,
+        {BASE_URL_VARIABLE: "api.typesafe.ai"},
+        '[smart_search]\nkey = ""\nmodel = 3\nurl = "x"\nmodle = "y"\n',
+    )
+    assert [refusal.code for refusal in found] == [
+        "smart-search-config-name-unknown",
+        "smart-search-config-name-unknown",
+        "smart-search-config-value",
+        "smart-search-config-value",
+        "smart-search-base-url",
+    ]
+    assert [refusal.details.get("name") for refusal in found[:4]] == [
+        "modle",
+        "url",
+        "key",
+        "model",
+    ]
+    for refusal in found:
+        assert messages.render(refusal.as_error())
+    assert settings == Settings()
+
+
+def test_a_table_that_is_not_a_table_is_refused(tmp_path):
+    _, found = _read(tmp_path, text='smart_search = "on"\n')
+    assert [refusal.code for refusal in found] == ["smart-search-config-not-a-table"]
+
+
+def test_other_tables_in_the_file_are_left_to_their_own_readers(tmp_path):
+    _, found = _read(tmp_path, text="[something_else]\nanything = 1\n")
+    assert found == []
+
+
+@pytest.mark.skipif(os.name != "posix", reason="mode bits are POSIX")
+def test_an_exposed_file_refuses_even_when_the_environment_has_the_key(tmp_path):
+    path = _config(tmp_path, '[smart_search]\nkey = "secret"\n')
+    path.chmod(0o644)
+    settings, found = Settings.read({KEY_VARIABLE: "from-env"}, path)
+    assert [refusal.code for refusal in found] == ["user-config-exposed"]
+    assert settings.key == "from-env"
+    with pytest.raises(OutrageError) as raised:
+        Settings.load({KEY_VARIABLE: "from-env"}, path)
+    assert raised.value.code == "user-config-exposed"
+
+
+def test_load_gives_the_settings_when_nothing_is_refused(tmp_path):
+    settings = Settings.load({KEY_VARIABLE: "k"}, tmp_path / "config.toml")
+    assert settings.key == "k"
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [(KEY_VARIABLE, "check the key from TYPESAFE_API_KEY"), (None, "none is configured")],
+)
+def test_a_refused_key_names_where_it_came_from(source, expected):
+    client = SystemOne(
+        Settings(key="k" if source else None, key_source=source),
+        transport=httpx2.MockTransport(lambda request: httpx2.Response(401)),
+        sleep=lambda _: None,
+    )
+    with pytest.raises(JudgeError) as raised:
+        client.judge("s", {"q": NOUL})
+    assert expected in messages.render(raised.value)

@@ -1,32 +1,47 @@
 # outrage.home
 0 0 1
 
+### outrage.home.CONFIG_EXPOSED_BITS *= 63*
+558 558 14
+
+### outrage.home.CONFIG_FILE *= 'config.toml'*
+736 736 19
+
 ### outrage.home.DIRECTORY_NAME *= '.outrage'*
-304 304 9
+839 839 23
 
 ### *exception* outrage.home.HomeStoreError(code: str, \*\*details: Any)
-417 417 13
+952 952 27
 
 ### outrage.home.MOUNT_POINT *= 'home'*
-815 815 19
+1350 1350 33
 
 ### outrage.home.README_DOCUMENT *= 'home_readme'*
-916 916 23
+1451 1451 37
 
 ### outrage.home.README_KEY *= 'readme'*
-1024 1024 27
+1559 1559 41
 
 ### outrage.home.README_TITLE *= 'Home store'*
-1119 1119 31
+1654 1654 45
 
 ### outrage.home.STORE_FILE *= 'home.sqlite'*
-1209 1209 35
+1744 1744 49
+
+### *exception* outrage.home.UserConfigError(code: str, \*\*details: Any)
+1855 1855 53
+
+### outrage.home.config_path() → Path
+2248 2248 59
 
 ### outrage.home.open_store(\*, log: EventLog | None = None, mount_point: str = MOUNT_POINT, versioning: bool = True) → Store
-1320 1320 39
+2404 2406 63
 
 ### outrage.home.path() → Path
-1759 1761 43
+2843 2847 67
+
+### outrage.home.read_config(path: Path | None = None) → dict[str, Any]
+3008 3014 71
 
 ### outrage.home.readme() → str
-1924 1928 47
+3883 3891 82
