@@ -107,6 +107,8 @@ ordinary mount files are relative to ``--dir``.
    contents
    titles
    ingest
+   smartsearch
+   systemone
 
 Front ends
 ----------

@@ -2606,6 +2606,81 @@ def _ingest_target_exists(name: Namer, /, *, spell: Speller, key: str, **_: Any)
     )
 
 
+# -- Smart search ----------------------------------------------------------
+
+
+@template("smart-search-query-empty")
+def _smart_search_query_empty(name: Namer, /, **_: Any) -> str:
+    return "the query is empty; say what the documents should be about"
+
+
+@template("smart-search-levels-empty")
+def _smart_search_levels_empty(name: Namer, /, **_: Any) -> str:
+    return "no levels to judge at; name at least one of title, summary, contents and body"
+
+
+@template("smart-search-level-unknown")
+def _smart_search_level_unknown(
+    name: Namer, /, *, level: str, known: Sequence[str], **_: Any
+) -> str:
+    return f"{level!r} is not a level; the levels are {', '.join(known)}"
+
+
+@template("smart-search-level-repeated")
+def _smart_search_level_repeated(name: Namer, /, *, level: str, **_: Any) -> str:
+    return f"the level {level!r} is named more than once; each is judged at most once"
+
+
+@template("smart-search-shape-unknown")
+def _smart_search_shape_unknown(name: Namer, /, *, level: str, shape: str, **_: Any) -> str:
+    return f"{shape!r} is not a shape for the {level} level; use 'questions' or 'state'"
+
+
+@template("smart-search-body-shape")
+def _smart_search_body_shape(name: Namer, /, *, shape: str, **_: Any) -> str:
+    return (
+        f"the body level cannot be asked with the {shape!r} shape: a body is too long "
+        "for a question, so it is always the state"
+    )
+
+
+@template("smart-search-unauthorised")
+def _smart_search_unauthorised(name: Namer, /, *, url: str, status: int, **_: Any) -> str:
+    return f"{url} refused the API key (HTTP {status}); check the key in TYPESAFE_API_KEY"
+
+
+@template("smart-search-state-too-large")
+def _smart_search_state_too_large(name: Namer, /, *, url: str, detail: str, **_: Any) -> str:
+    return f"{url} refused the request as too long: {detail}"
+
+
+@template("smart-search-request-rejected")
+def _smart_search_request_rejected(name: Namer, /, *, url: str, detail: str, **_: Any) -> str:
+    return f"{url} rejected the request as invalid: {detail}"
+
+
+@template("smart-search-service-failed")
+def _smart_search_service_failed(
+    name: Namer, /, *, url: str, status: int, detail: str, **_: Any
+) -> str:
+    return f"{url} failed with HTTP {status}, retries included: {detail}"
+
+
+@template("smart-search-unreachable")
+def _smart_search_unreachable(name: Namer, /, *, url: str, reason: str, **_: Any) -> str:
+    return f"could not reach {url}, retries included: {reason}"
+
+
+@template("smart-search-response-malformed")
+def _smart_search_response_malformed(name: Namer, /, *, url: str, reason: str, **_: Any) -> str:
+    return f"{url} answered in a shape this client does not read: {reason}"
+
+
+@template("smart-search-answer-missing")
+def _smart_search_answer_missing(name: Namer, /, *, question: str, **_: Any) -> str:
+    return f"the model's answer left out question {question!r}"
+
+
 # -- Document contents ---------------------------------------------------
 
 

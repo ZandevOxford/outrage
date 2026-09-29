@@ -21,7 +21,9 @@ classifiers = [
 # named so that the wheel and the sdist carry it.
 license = "MIT"
 license-files = ["LICENSE"]
-dependencies = ["filelock>=3.12", "mcp>=1.2", "pydantic>=2", "tomlkit>=0.13"]
+# httpx2 is the smart search client's, and core rather than an extra because mcp
+# already requires it: an extra would install nothing a core install lacks.
+dependencies = ["filelock>=3.12", "httpx2>=2.12", "mcp>=1.2", "pydantic>=2", "tomlkit>=0.13"]
 
 [project.urls]
 # The same repository twice, because a package index shows them as separate

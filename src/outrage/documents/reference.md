@@ -98,6 +98,8 @@ ordinary mount files are relative to `--dir`.
 * [Document contents](reference/contents.md)
 * [Document titles](reference/titles.md)
 * [outrage.ingest](reference/ingest.md)
+* [outrage.smartsearch](reference/smartsearch.md)
+* [outrage.systemone](reference/systemone.md)
 
 ## Front ends
 
