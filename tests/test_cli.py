@@ -3634,3 +3634,18 @@ def test_smart_search_is_recorded_on_the_server_entry_when_asked(tmp_path, comma
 
     assert status == 0
     assert "--smart-search" in servers(tmp_path / ".mcp.json")["outrage"]["args"]
+
+
+def test_smart_search_refuses_over_a_broken_tuning_file(searchable, monkeypatch, capsys):
+    from outrage import smartsearch
+    from outrage.errors import Refusal
+
+    refusal = Refusal(
+        "smart-search-tuning-not-json", overridable=False, source="tuning.json", reason="line 1"
+    )
+    monkeypatch.setattr(smartsearch, "packaged_tuning", lambda: (None, (refusal,)))
+
+    status, _ = run("smart-search", "--dir", str(searchable), "q")
+
+    assert status == 1
+    assert "the smart search tuning tuning.json is not JSON" in capsys.readouterr().err

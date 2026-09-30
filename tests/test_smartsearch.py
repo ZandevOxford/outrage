@@ -18,7 +18,7 @@ import json
 import pytest
 
 from outrage import messages, shipped, smartsearch
-from outrage.errors import OutrageError
+from outrage.errors import OutrageError, Refusal
 from outrage.mounts import MountedStore
 from outrage.smartsearch import (
     Answer,
@@ -432,7 +432,6 @@ def test_every_tuning_refusal_is_reported_at_once():
         ("smart-search-tuning-name-unknown", "levels[0]"),
         ("smart-search-tuning-value", "question.criteria"),
         ("smart-search-tuning-name-missing", "levels[1]"),
-        ("smart-search-tuning-value", "levels[1].what"),
         ("smart-search-tuning-value", "levels[2].name"),
         ("smart-search-tuning-value", "levels[3].shape"),
         ("smart-search-tuning-value", "levels[4].kind"),
@@ -521,3 +520,71 @@ def test_a_level_may_override_the_question_and_read_other_metadata():
     assert tuning.level("title").questions.state.kind == "score"
     assert tuning.scoring.weights["tags"] == 0.5
     assert tuning.level("body").meta is None
+
+
+def _broken_packaged_tuning(monkeypatch):
+    refusal = Refusal(
+        "smart-search-tuning-value",
+        overridable=False,
+        source="tuning.json",
+        where="scoring.no",
+        expected="below scoring.yes, 0.8",
+    )
+    monkeypatch.setattr(smartsearch, "packaged_tuning", lambda: (None, (refusal,)))
+
+
+def test_a_broken_packaged_tuning_is_among_the_refusals(monkeypatch, store):
+    _broken_packaged_tuning(monkeypatch)
+
+    found = smartsearch.refusals("", ["title"])
+
+    assert [r.code for r in found] == ["smart-search-tuning-value", "smart-search-query-empty"]
+    with pytest.raises(OutrageError) as raised:
+        smart_search(store, None, "q", FakeJudge())
+    assert "scoring.no" in messages.render(raised.value)
+
+
+def test_the_cascade_follows_the_tuning_it_is_given(store):
+    data = _tuning_data()
+    data["levels"] = [
+        {
+            "name": "tags",
+            "meta": "labels",
+            "kind": "value",
+            "what": "tags",
+            "shape": "questions",
+            "weight": 1.0,
+        },
+        {"name": "text", "kind": "body", "what": "text", "shape": "state", "weight": 1.0},
+    ]
+    data["requests"]["limit"] = 2
+    tuning, found = Tuning.read(data, "t")
+    assert found == []
+    _put(store, "s/a", "nothing", labels="MATCH")
+    _put(store, "s/b", "a MATCH in the body", labels="unrelated", title="MATCH")
+    _put(store, "s/c", "MATCH")
+
+    result = smart_search(store, "s", "q", FakeJudge(), tuning=tuning)
+
+    assert (result.documents, result.next_cursor) == (2, "s/b"), "the tuning's limit"
+    assert list(result.levels) == ["tags", "text"]
+    assert [(m.key, m.decided_at) for m in result.matches] == [("s/a", "tags")]
+    assert result.levels["tags"].no == 1, "s/b's title is not a level of this tuning"
+    assert smartsearch.refusals("q", ["title"], tuning=tuning)[0].code == (
+        "smart-search-level-unknown"
+    )
+
+
+def test_a_missing_field_is_reported_once_as_missing():
+    data = _tuning_data()
+    del data["levels"][0]["weight"]
+    del data["scoring"]["clamp"]
+    del data["requests"]["limit"]
+
+    _, found = Tuning.read(data, "t")
+
+    assert [(r.code, r.details["where"], r.details["name"]) for r in found] == [
+        ("smart-search-tuning-name-missing", "levels[0]", "weight"),
+        ("smart-search-tuning-name-missing", "scoring", "clamp"),
+        ("smart-search-tuning-name-missing", "requests", "limit"),
+    ]

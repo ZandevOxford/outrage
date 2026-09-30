@@ -2813,3 +2813,19 @@ def test_a_configuration_problem_is_told_to_the_operator(monkeypatch, tmp_path, 
 def test_smart_search_is_offered_only_when_the_operator_asks():
     assert parse_args(["--smart-search"]).smart_search is True
     assert parse_args([]).smart_search is False
+
+
+def test_a_broken_tuning_file_is_told_to_the_operator(monkeypatch, tmp_path, capsys):
+    from outrage import smartsearch
+    from outrage.errors import Refusal
+
+    _configure(monkeypatch, tmp_path, '[smart_search]\nkey = "k"\n')
+    refusal = Refusal(
+        "smart-search-tuning-not-json", overridable=False, source="tuning.json", reason="line 1"
+    )
+    monkeypatch.setattr(smartsearch, "packaged_tuning", lambda: (None, (refusal,)))
+
+    assert server_module._smart_search_judges(True) is None
+    assert "smart_search is not offered: the smart search tuning tuning.json is not JSON" in (
+        capsys.readouterr().err
+    )

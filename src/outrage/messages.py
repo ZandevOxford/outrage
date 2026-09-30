@@ -2636,8 +2636,8 @@ def _smart_search_query_empty(name: Namer, /, **_: Any) -> str:
 
 
 @template("smart-search-levels-empty")
-def _smart_search_levels_empty(name: Namer, /, **_: Any) -> str:
-    return "no levels to judge at; name at least one of title, keywords, summary, contents and body"
+def _smart_search_levels_empty(name: Namer, /, *, known: Sequence[str], **_: Any) -> str:
+    return f"no levels to judge at; name at least one of {', '.join(known)}"
 
 
 @template("smart-search-level-unknown")
@@ -2658,10 +2658,10 @@ def _smart_search_shape_unknown(name: Namer, /, *, level: str, shape: str, **_: 
 
 
 @template("smart-search-body-shape")
-def _smart_search_body_shape(name: Namer, /, *, shape: str, **_: Any) -> str:
+def _smart_search_body_shape(name: Namer, /, *, level: str, shape: str, **_: Any) -> str:
     return (
-        f"the body level cannot be asked with the {shape!r} shape: a body is too long "
-        "for a question, so it is always the state"
+        f"the {level} level reads the body, so cannot be asked with the {shape!r} shape: "
+        "a body is too long for a question, so it is always the state"
     )
 
 

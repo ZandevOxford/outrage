@@ -1694,13 +1694,10 @@ def build_server(
 
     if all_tools or smart_search is not None:
         judges = smart_search or (lambda: systemone.SystemOne(systemone.Settings.load()))
+        tuning, broken = smartsearch.packaged_tuning()
+        if tuning is None:
+            raise broken[0].as_error()
 
-        @server.tool(
-            name="smart_search",
-            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
-            description=tool_description("smart_search"),
-        )
-        @_reported
         def smart_search_tool(
             query: Annotated[
                 str, Field(description="What the documents should be about, in plain words")
@@ -1718,23 +1715,14 @@ def build_server(
             ] = None,
             limit: Annotated[
                 int, Field(description="Documents in this slice", gt=0)
-            ] = smartsearch.DEFAULT_LIMIT,
+            ] = tuning.requests.limit,
             after: Annotated[
                 str | None,
                 Field(description="Resume after this key, from a previous result's next_cursor"),
             ] = None,
-            levels: Annotated[
-                list[smartsearch.Level] | None,
-                Field(
-                    description=(
-                        "Levels to judge at, in order; defaults to title, keywords, "
-                        "summary, contents, body"
-                    ),
-                ),
-            ] = None,
+            levels: list[str] | None = None,
         ) -> _SmartSearchResult:
-            chosen = tuple(levels) if levels is not None else smartsearch.LEVELS
-            refused = smartsearch.refusals(query, chosen)
+            refused = smartsearch.refusals(query, levels, tuning=tuning)
             if refused:
                 # Sentences, capitalised at the join as `_say` does: a refusal
                 # uses "; " inside itself, so that join ran the reasons together.
@@ -1746,7 +1734,15 @@ def build_server(
             at = _named_key(table, key)
             with judges() as judge:
                 found = smartsearch.smart_search(
-                    table, at, query, judge, depth=depth, limit=limit, after=after, levels=chosen
+                    table,
+                    at,
+                    query,
+                    judge,
+                    tuning=tuning,
+                    depth=depth,
+                    limit=limit,
+                    after=after,
+                    levels=levels,
                 )
             result: dict[str, Any] = {
                 "key": at,
@@ -1787,6 +1783,21 @@ def build_server(
             }
             _left_out(result, found.unavailable)
             return _SmartSearchResult.model_validate(result)
+
+        # The levels are the tuning's, so the schema offers exactly those. Set
+        # as an object rather than written in the signature, where postponed
+        # evaluation would look the tuning's names up in the module's globals.
+        smart_search_tool.__annotations__["levels"] = Annotated[
+            list[Literal[tuning.names]] | None,  # type: ignore[valid-type]
+            Field(
+                description=f"Levels to judge at, in order; defaults to {', '.join(tuning.names)}"
+            ),
+        ]
+        server.tool(
+            name="smart_search",
+            annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
+            description=tool_description("smart_search"),
+        )(_reported(smart_search_tool))
 
     @server.tool(
         annotations=ToolAnnotations(read_only_hint=True, idempotent_hint=True),
@@ -2753,7 +2764,8 @@ def _smart_search_judges(
     """What makes a judge for ``smart_search``, or None when it is not offered.
 
     Not offered unless the operator asked for it, and then not when nothing is
-    configured or the configuration has problems -- and those are said on
+    configured or the configuration or the packaged tuning has problems --
+    and those are said on
     stderr, all of them, since the operator is the one who can fix them and a
     tool that silently fails to appear gives them nothing to go on.
     """
@@ -2762,6 +2774,7 @@ def _smart_search_judges(
     settings, refused = systemone.Settings.read()
     if not refused and not settings.configured:
         refused.append(Refusal("smart-search-not-configured", overridable=False))
+    refused = [*smartsearch.packaged_tuning()[1], *refused]
     for refusal in refused:
         said = messages.render(refusal.as_error(), spell=messages.flag)
         print(f"outrage: smart_search is not offered: {said}", file=sys.stderr)

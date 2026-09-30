@@ -720,6 +720,11 @@ def argument_parser() -> argparse.ArgumentParser:
     )
     _store_option(smart_search)
     _table_options(smart_search)
+    # The tuning's own problems are reported when the command runs; the help
+    # only needs something to say meanwhile.
+    tuning = smartsearch.packaged_tuning()[0]
+    level_names = ", ".join(tuning.names) if tuning else "the tuning file's levels"
+    slice_default = f"default {tuning.requests.limit}" if tuning else "the tuning file's default"
     smart_search.add_argument("query", help="What the documents should be about, in plain words.")
     smart_search.add_argument(
         "key", nargs="?", default=None, help="Key whose subtree to search. Omit for everything."
@@ -735,7 +740,7 @@ def argument_parser() -> argparse.ArgumentParser:
         metavar="LEVEL",
         help=(
             "Judge at this level. Repeatable, in order; the default is "
-            f"{', '.join(smartsearch.LEVELS)}. Name only metadata levels to "
+            f"{level_names}. Name only metadata levels to "
             "screen without sending any document's body."
         ),
     )
@@ -747,11 +752,10 @@ def argument_parser() -> argparse.ArgumentParser:
     smart_search.add_argument(
         "--limit",
         type=int,
-        default=smartsearch.DEFAULT_LIMIT,
+        default=None,
         metavar="N",
         help=(
-            "Search a slice of N documents (default "
-            f"{smartsearch.DEFAULT_LIMIT}). Not a display bound, as it is "
+            f"Search a slice of N documents ({slice_default}). Not a display bound, as it is "
             "elsewhere here: every match in the slice is printed, since each "
             "one cost a request and the slice is what bounds the cost."
         ),
@@ -2305,9 +2309,8 @@ def _dump_command(args: argparse.Namespace, out: TextIO) -> int:
 
 def _smart_search_command(args: argparse.Namespace, out: TextIO) -> int:
     """Search one slice of a subtree and print what it did not rule out, best first."""
-    levels = tuple(args.levels) if args.levels is not None else smartsearch.LEVELS
     settings, refused = systemone.Settings.read()
-    refused = [*smartsearch.refusals(args.query, levels), *refused]
+    refused = [*smartsearch.refusals(args.query, args.levels), *refused]
     if not refused and not settings.configured:
         refused.append(Refusal("smart-search-not-configured", overridable=False))
     if refused:
@@ -2330,7 +2333,7 @@ def _smart_search_command(args: argparse.Namespace, out: TextIO) -> int:
             depth=args.depth,
             limit=args.limit,
             after=args.after,
-            levels=levels,
+            levels=args.levels,
         )
 
     for match in found.matches:

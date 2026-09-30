@@ -405,7 +405,7 @@ documents; treat them as a ranking rather than as calibrated.
 
 #### `Evidence` fields
 
-- `level` ("title" or "keywords" or "summary" or "contents" or "body"; required) — The level that was judged
+- `level` (string; required) — The level that was judged
 - `probability` (number; required) — That level's probability of a match
 - `chunks` (integer; required) — Requests the level took: one, or a body's chunks
 - `partial` (boolean; required) — Whether less than all of the value or body was judged
@@ -423,13 +423,13 @@ documents; treat them as a ranking rather than as calibrated.
 - `key` (string; required) — The document
 - `probability` (number; required) — Combined probability of a match
 - `decision` ("yes" or "unsure"; required) — Decided a match, or still unsure after every level
-- `decided_at` ("title" or "keywords" or "summary" or "contents" or "body" or null; required) — The level that decided it a match, or null when none did
+- `decided_at` (string or null; required) — The level that decided it a match, or null when none did
 - `evidence` (array[Evidence]; required) — What each level said, in cascade order
 
 #### `Unjudged` fields
 
 - `key` (string; required) — The document the cascade could not finish
-- `level` ("title" or "keywords" or "summary" or "contents" or "body"; required) — The level whose request failed
+- `level` (string; required) — The level whose request failed
 - `reason` (string; required) — Why, as a sentence
 
 ## `keys_missing_meta`

@@ -47,6 +47,7 @@ the front ends' to say; this module cannot tell one judge from another.
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import re
@@ -60,8 +61,9 @@ from . import keys, shipped
 from .errors import OutrageError, Refusal
 from .store import BoundedSubtree, KeyRange, Store
 
-#: What a level judges: a metadata value by its name, or the document itself.
-Level = Literal["title", "keywords", "summary", "contents", "body"]
+#: A level's name, as the tuning defines it: a metadata name for a level that
+#: reads metadata, or whatever the tuning calls the level reading the body.
+Level = str
 
 #: The default cascade, cheapest and most telling first.
 #:
@@ -554,14 +556,18 @@ class _TuningReader:
             if level is None:
                 continue
             name = level.get("name")
-            if not _meta_name(name):
+            if "name" not in level:
+                pass
+            elif not _meta_name(name):
                 self._value(f"{where}.name", "a metadata name: not empty, without '!' or '/'")
             elif name in seen:
                 self._value(f"{where}.name", "a name no other level has")
             else:
                 seen.add(name)
             kind = level.get("kind")
-            if kind not in _KINDS:
+            if "kind" not in level:
+                pass
+            elif kind not in _KINDS:
                 self._value(f"{where}.kind", _one_of(_KINDS))
             elif kind != "value" and kind in kinds:
                 self._value(f"{where}.kind", f"not {kind!r} again: only one level reads it")
@@ -574,15 +580,17 @@ class _TuningReader:
                 elif not _meta_name(meta):
                     self._value(f"{where}.meta", "a metadata name: not empty, without '!' or '/'")
             what = level.get("what")
-            if not isinstance(what, str) or not what:
+            if "what" in level and (not isinstance(what, str) or not what):
                 self._value(f"{where}.what", "a non-empty string")
             shape = level.get("shape")
-            if shape not in _SHAPES:
+            if "shape" not in level:
+                pass
+            elif shape not in _SHAPES:
                 self._value(f"{where}.shape", _one_of(_SHAPES))
             elif kind == "body" and shape != "state":
                 self._value(f"{where}.shape", "'state', since a body is too long for a question")
             weight = level.get("weight")
-            if not _number(weight) or weight < 0:
+            if "weight" in level and (not _number(weight) or weight < 0):
                 self._value(f"{where}.weight", "a number, zero or more")
             supporting = level.get("supporting", False)
             if not isinstance(supporting, bool):
@@ -675,16 +683,16 @@ class _TuningReader:
             return None
         if table.get("rule", RULES[0]) not in RULES:
             self._value("scoring.rule", _one_of(RULES))
-        valid = True
+        valid = "yes" in table and "no" in table
         for name in ("yes", "no"):
             value = table.get(name)
-            if not _number(value) or not 0 < value < 1:
+            if name in table and (not _number(value) or not 0 < value < 1):
                 self._value(f"scoring.{name}", "a number between 0 and 1")
                 valid = False
         if valid and table["no"] >= table["yes"]:
             self._value("scoring.no", f"below scoring.yes, {table['yes']}")
         clamp = table.get("clamp")
-        if not _number(clamp) or not 0 < clamp < 0.5:
+        if "clamp" in table and (not _number(clamp) or not 0 < clamp < 0.5):
             self._value("scoring.clamp", "a number between 0 and 0.5")
         if self.found or levels is None:
             return None
@@ -890,23 +898,46 @@ class _Candidate:
     """The raw ``!contents`` value, kept from that level for chunking a body."""
 
 
+@functools.cache
+def packaged_tuning() -> tuple[Tuning | None, tuple[Refusal, ...]]:
+    """The tuning shipped in the package, and every problem with it.
+
+    Read once per process, so an edit to the file reaches the next process
+    rather than one already running -- the same as an edit to the code.
+    """
+    tuning, found = Tuning.read_file()
+    return tuning, tuple(found)
+
+
 def refusals(
     query: str,
-    levels: Sequence[str] = LEVELS,
+    levels: Sequence[str] | None = None,
     shapes: Mapping[str, str] | None = None,
+    *,
+    tuning: Tuning | None = None,
 ) -> list[Refusal]:
-    """Every reason these arguments cannot be searched with, at once."""
+    """Every reason these arguments cannot be searched with, at once.
+
+    ``tuning`` is the packaged one by default, and its own problems are
+    among the reasons, so a front end asking this hears of a broken file too.
+    """
     found: list[Refusal] = []
+    if tuning is None:
+        tuning, broken = packaged_tuning()
+        found.extend(broken)
+    known = tuning.names if tuning is not None else ()
     if not query.strip():
         found.append(Refusal("smart-search-query-empty", overridable=False))
-    if not levels:
-        found.append(Refusal("smart-search-levels-empty", overridable=False))
-    for level in levels:
-        if level not in LEVELS:
+    if tuning is None:
+        return found
+    if levels is not None and not levels:
+        found.append(Refusal("smart-search-levels-empty", overridable=False, known=known))
+    for level in levels or ():
+        if level not in known:
             found.append(
-                Refusal("smart-search-level-unknown", overridable=False, level=level, known=LEVELS)
+                Refusal("smart-search-level-unknown", overridable=False, level=level, known=known)
             )
-    repeated = sorted({level for level in levels if list(levels).count(level) > 1})
+    repeated = sorted({level for level in levels or () if list(levels or ()).count(level) > 1})
     for level in repeated:
         found.append(Refusal("smart-search-level-repeated", overridable=False, level=level))
     for level, shape in (shapes or {}).items():
@@ -914,8 +945,10 @@ def refusals(
             found.append(
                 Refusal("smart-search-shape-unknown", overridable=False, level=level, shape=shape)
             )
-        elif level == "body" and shape != "state":
-            found.append(Refusal("smart-search-body-shape", overridable=False, shape=shape))
+        elif level in known and tuning.level(level).kind == "body" and shape != "state":
+            found.append(
+                Refusal("smart-search-body-shape", overridable=False, level=level, shape=shape)
+            )
     return found
 
 
@@ -925,37 +958,55 @@ def smart_search(
     query: str,
     judge: Judge,
     *,
+    tuning: Tuning | None = None,
     depth: int | None = None,
-    limit: int = DEFAULT_LIMIT,
+    limit: int | None = None,
     after: str | None = None,
-    levels: Sequence[Level] = LEVELS,
+    levels: Sequence[Level] | None = None,
     shapes: Mapping[Level, Shape] | None = None,
-    questions: Mapping[Level, LevelQuestions] = SCORE_QUESTIONS,
+    questions: Mapping[Level, LevelQuestions] | None = None,
     scoring: Scoring | None = None,
-    batch_size: int = DEFAULT_BATCH_SIZE,
-    value_chars: int = DEFAULT_VALUE_CHARS,
-    chunk_chars: int = DEFAULT_CHUNK_CHARS,
-    max_chunks: int = DEFAULT_MAX_CHUNKS,
+    batch_size: int | None = None,
+    value_chars: int | None = None,
+    chunk_chars: int | None = None,
+    max_chunks: int | None = None,
 ) -> SmartSearchResult:
     """Screen one slice of the documents under ``key`` against ``query``.
 
     The slice is a page of the subtree's documents, ``limit`` of them after
     ``after``, exactly as ``get_documents`` would page it. Each is judged at
-    the first of ``levels`` and carried to the next only while the combined
-    evidence leaves it unsure.
+    the first of ``levels`` -- every level of ``tuning`` by default, in its
+    order -- and carried to the next only while the combined evidence leaves
+    it unsure.
+
+    ``tuning`` is :func:`packaged_tuning` by default. The keywords after
+    ``levels`` each override one part of it for this call.
 
     Raises the first of :func:`refusals` as an error; a front end wanting
     every reason calls that first. A failed request never
     raises: its documents are reported in :attr:`SmartSearchResult.unjudged`.
     """
-    problems = refusals(query, levels, shapes)
+    problems = refusals(query, levels, shapes, tuning=tuning)
     if problems:
         raise problems[0].as_error()
-    shapes = {**DEFAULT_SHAPES, **(shapes or {})}
-    scoring = scoring or Scoring()
+    if tuning is None:
+        tuning = packaged_tuning()[0]
+        assert tuning is not None, "refusals() reports a broken packaged tuning"
+    sizes = tuning.requests
+    levels = tuple(levels) if levels is not None else tuning.names
+    plans = {name: tuning.level(name) for name in levels}
+    shapes = {**{name: plan.shape for name, plan in plans.items()}, **(shapes or {})}
+    asked = {name: plan.questions for name, plan in plans.items()} | dict(questions or {})
+    scoring = scoring or tuning.scoring
+    batch_size = sizes.batch_size if batch_size is None else batch_size
+    value_chars = sizes.value_chars if value_chars is None else value_chars
+    chunk_chars = sizes.chunk_chars if chunk_chars is None else chunk_chars
+    max_chunks = sizes.max_chunks if max_chunks is None else max_chunks
     subtree = BoundedSubtree(key, depth)
 
-    page = store.get_documents(subtree, cursor=after, limit=limit, max_chars=1)
+    page = store.get_documents(
+        subtree, cursor=after, limit=sizes.limit if limit is None else limit, max_chars=1
+    )
     candidates = [_Candidate(excerpt.key) for excerpt in page.items]
     unavailable = set(page.unavailable)
     counts: dict[Level, LevelCounts] = {level: LevelCounts() for level in levels}
@@ -965,15 +1016,25 @@ def smart_search(
         pending = [c for c in candidates if c.decision == "unsure" and c.failure is None]
         if not pending:
             break
+        plan = plans[level]
         tally = counts[level]
-        if level == "body":
+        if plan.kind == "body":
             judged, spent = _judge_bodies(
-                store, pending, query, judge, questions[level].state, chunk_chars, max_chunks
+                store,
+                pending,
+                level,
+                query,
+                judge,
+                asked[level].state,
+                chunk_chars,
+                max_chunks,
+                sizes.min_chunk_chars,
             )
         else:
-            values, missed = _values(store, subtree, level, pending, value_chars)
+            assert plan.meta is not None, "a metadata level names its metadata"
+            values, missed = _values(store, subtree, plan.meta, pending, value_chars)
             unavailable.update(missed)
-            if level == "contents":
+            if plan.kind == "contents":
                 for candidate in pending:
                     if candidate.key in values:
                         candidate.contents = values[candidate.key][0]
@@ -981,7 +1042,7 @@ def smart_search(
             tally.missing += sum(1 for c in pending if c.key not in values)
             present = [c for c in pending if c.key in values]
             judged, spent = _judge_values(
-                present, values, level, query, judge, questions[level], shapes[level], batch_size
+                present, values, level, query, judge, asked[level], shapes[level], batch_size
             )
         tokens += spent
         for candidate in pending:
@@ -1033,7 +1094,7 @@ def smart_search(
 def _values(
     store: Store,
     subtree: BoundedSubtree,
-    level: Level,
+    meta: str,
     pending: Sequence[_Candidate],
     value_chars: int,
 ) -> tuple[dict[str, tuple[str, bool]], tuple[str, ...]]:
@@ -1046,14 +1107,14 @@ def _values(
     in there is dropped rather than asked for key by key.
     """
     wanted = {c.key for c in pending}
-    suffix = keys.META_PREFIX + level
+    suffix = keys.META_PREFIX + meta
     stretch = KeyRange(after_inclusive=pending[0].key, final_subtree=pending[-1].key)
     values: dict[str, tuple[str, bool]] = {}
     missed: set[str] = set()
     cursor: str | None = None
     while True:
         page = store.get_documents(
-            subtree, key_range=stretch, meta_name=level, cursor=cursor, max_chars=value_chars
+            subtree, key_range=stretch, meta_name=meta, cursor=cursor, max_chars=value_chars
         )
         missed.update(page.unavailable)
         for excerpt in page.items:
@@ -1152,11 +1213,13 @@ def _failed(candidate: _Candidate, level: Level, error: OutrageError) -> Unjudge
 def _judge_bodies(
     store: Store,
     pending: Sequence[_Candidate],
+    level: Level,
     query: str,
     judge: Judge,
     asked: Question,
     chunk_chars: int,
     max_chunks: int,
+    min_chunk_chars: int,
 ) -> tuple[dict[str, Evidence], int]:
     """Judge each document's body, a chunk at a time, keeping its best chunk.
 
@@ -1187,14 +1250,14 @@ def _judge_bodies(
                 tokens += judgement.input_tokens
                 answer = _answer(judgement, "q")
             except StateTooLarge as error:
-                if end - start < 2 * MIN_CHUNK_CHARS:
-                    candidate.failure = _failed(candidate, "body", error)
+                if end - start < 2 * min_chunk_chars:
+                    candidate.failure = _failed(candidate, level, error)
                     break
                 middle = start + (end - start) // 2
                 windows[:0] = [(start, middle), (middle, end)]
                 continue
             except JudgeError as error:
-                candidate.failure = _failed(candidate, "body", error)
+                candidate.failure = _failed(candidate, level, error)
                 break
             asked_count += 1
             p = answer.as_probability(levels)
@@ -1203,7 +1266,7 @@ def _judge_bodies(
         if candidate.failure is not None or best is None:
             continue
         judged[candidate.key] = Evidence(
-            "body", best, best_p, chunks=asked_count, partial=bool(windows)
+            level, best, best_p, chunks=asked_count, partial=bool(windows)
         )
     return judged, tokens
 
@@ -1280,6 +1343,7 @@ __all__ = [
     "StateTooLarge",
     "Tuning",
     "Unjudged",
+    "packaged_tuning",
     "refusals",
     "smart_search",
 ]

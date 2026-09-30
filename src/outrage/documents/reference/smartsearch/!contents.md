@@ -13,317 +13,320 @@
 ### outrage.smartsearch.DEFAULT_MAX_CHUNKS *= 16*
 3651 3651 66
 
-### outrage.smartsearch.DEFAULT_SHAPES *: Mapping[Literal['title', 'keywords', 'summary', 'contents', 'body'], Literal['questions', 'state']]* *= {'body': 'state', 'contents': 'questions', 'keywords': 'questions', 'summary': 'questions', 'title': 'questions'}*
+### outrage.smartsearch.DEFAULT_SHAPES *: Mapping[str, Literal['questions', 'state']]* *= {'body': 'state', 'contents': 'questions', 'keywords': 'questions', 'summary': 'questions', 'title': 'questions'}*
 3846 3846 71
 
 ### outrage.smartsearch.DEFAULT_VALUE_CHARS *= 8000*
-4392 4392 75
+4328 4328 75
 
-### outrage.smartsearch.LEVELS *: tuple[Literal['title', 'keywords', 'summary', 'contents', 'body'], ...]* *= ('title', 'keywords', 'summary', 'contents', 'body')*
-4583 4583 80
+### outrage.smartsearch.LEVELS *: tuple[str, ...]* *= ('title', 'keywords', 'summary', 'contents', 'body')*
+4519 4519 80
 
 ### outrage.smartsearch.MIN_CHUNK_CHARS *= 1000*
-5211 5211 89
+5083 5083 89
 
-### outrage.smartsearch.NOUL_QUESTIONS *: Mapping[Literal['title', 'keywords', 'summary', 'contents', 'body'], LevelQuestions]* *= {'body': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'contents': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'keywords': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`keywords\` is the keywords of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the keywords of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'summary': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'title': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={}))}*
-5400 5400 94
+### outrage.smartsearch.NOUL_QUESTIONS *: Mapping[str, LevelQuestions]* *= {'body': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'contents': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'keywords': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`keywords\` is the keywords of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the keywords of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'summary': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'title': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={}))}*
+5272 5272 94
 
 ### outrage.smartsearch.RULES *= ('log-odds-sum',)*
-8006 8006 98
+7814 7814 98
 
-### outrage.smartsearch.SCORE_QUESTIONS *: Mapping[Literal['title', 'keywords', 'summary', 'contents', 'body'], LevelQuestions]* *= {'body': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'contents': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'keywords': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`keywords\` is the keywords of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the keywords of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'summary': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'title': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}))}*
-8234 8234 103
+### outrage.smartsearch.SCORE_QUESTIONS *: Mapping[str, LevelQuestions]* *= {'body': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'contents': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'keywords': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`keywords\` is the keywords of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the keywords of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'summary': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'title': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}))}*
+8042 8042 103
 
 ### outrage.smartsearch.TUNING_FORMAT *= 1*
-12414 12414 112
+12158 12158 112
 
 ### outrage.smartsearch.TUNING_NAMES *= ('format', 'question', 'levels', 'scoring', 'requests', 'kind', 'criteria', 'questions', 'state', 'name', 'meta', 'what', 'shape', 'weight', 'supporting', 'rule', 'yes', 'no', 'clamp', 'limit', 'batch_size', 'value_chars', 'chunk_chars', 'max_chunks', 'min_chunk_chars', 'note', 'value', 'contents', 'body', 'score', 'noul', 'log-odds-sum')*
-12528 12528 116
+12272 12272 116
 
 ### outrage.smartsearch.TUNING_PATH *= ('smart-search', 'tuning.json')*
-13065 13065 121
+12809 12809 121
 
 ### *class* outrage.smartsearch.Answer(probability: float | None = None, score: float | None = None, probabilities: tuple[float, ...] = (), confidence: float | None = None)
-13283 13283 126
+13027 13027 126
 
 #### probability *: float | None*
-14251 14251 136
+13995 13995 136
 
 #### score *: float | None*
-14403 14403 138
+14147 14147 138
 
 #### probabilities *: tuple[float, ...]*
-14549 14549 140
+14293 14293 140
 
 #### confidence *: float | None*
-14708 14708 142
+14452 14452 142
 
 #### as_probability(levels: int | None = None) → float
-14859 14859 144
+14603 14603 144
 
 ### outrage.smartsearch.Decision
-15394 15396 153
+15138 15140 153
 
-### *class* outrage.smartsearch.Evidence(level: Literal['title', 'keywords', 'summary', 'contents', 'body'], answer: Answer, probability: float, chunks: int = 1, partial: bool = False)
-15614 15616 159
+### *class* outrage.smartsearch.Evidence(level: str, answer: Answer, probability: float, chunks: int = 1, partial: bool = False)
+15358 15360 159
 
-#### level *: Literal['title', 'keywords', 'summary', 'contents', 'body']*
-16214 16216 165
+#### level *: str*
+15894 15896 165
 
 #### answer *: Answer*
-16354 16356 167
+15970 15972 167
 
 #### probability *: float*
-16409 16411 169
+16025 16027 169
 
 #### chunks *: int*
-16545 16547 173
+16161 16163 173
 
 #### partial *: bool*
-16743 16745 178
+16359 16361 178
 
 ### *class* outrage.smartsearch.Judge(\*args, \*\*kwargs)
-16970 16972 183
+16586 16588 183
 
 #### judge(state: str, questions: Mapping[str, Question]) → Judgement
-17412 17414 193
+17028 17030 193
 
 ### *exception* outrage.smartsearch.JudgeError(code: str, \*\*details: Any)
-17744 17748 195
+17360 17364 195
 
 ### *class* outrage.smartsearch.Judgement(answers: Mapping[str, Answer], input_tokens: int = 0)
-18157 18161 201
+17773 17777 201
 
 #### answers *: Mapping[str, Answer]*
-18634 18638 207
+18250 18254 207
 
 #### input_tokens *: int*
-18842 18846 209
+18458 18462 209
 
 ### outrage.smartsearch.Kind
-18926 18930 211
+18542 18546 211
 
 ### outrage.smartsearch.Level
-19313 19317 220
+18929 18933 220
 
 ### *class* outrage.smartsearch.LevelCounts(asked: int = 0, yes: int = 0, no: int = 0, missing: int = 0, unjudged: int = 0)
-19556 19560 226
+19109 19113 225
 
 #### asked *: int*
-20090 20094 232
+19643 19647 231
 
 #### yes *: int*
-20200 20204 236
+19753 19757 235
 
 #### no *: int*
-20275 20279 238
+19828 19832 237
 
 #### missing *: int*
-20349 20353 240
+19902 19906 239
 
 #### unjudged *: int*
-20520 20524 245
+20073 20077 244
 
 ### *class* outrage.smartsearch.LevelQuestions(questions: Question, state: Question)
-20600 20604 247
+20153 20157 246
 
 #### questions *: Question*
-20885 20889 253
+20438 20442 252
 
 #### state *: Question*
-21020 21024 257
+20573 20577 256
 
 ### *class* outrage.smartsearch.LevelTuning(name: str, kind: Literal['value', 'contents', 'body'], meta: str | None, shape: Literal['questions', 'state'], weight: float, supporting: bool, questions: LevelQuestions)
-21142 21146 261
+20695 20699 260
 
 #### name *: str*
-21942 21946 267
+21495 21499 266
 
 #### kind *: Literal['value', 'contents', 'body']*
-22085 22089 271
+21638 21642 270
 
 #### meta *: str | None*
-22201 22205 273
+21754 21758 272
 
 #### shape *: Literal['questions', 'state']*
-22402 22406 277
+21955 21959 276
 
 #### weight *: float*
-22512 22516 279
+22065 22069 278
 
 #### supporting *: bool*
-22594 22598 281
+22147 22151 280
 
 #### questions *: LevelQuestions*
-22678 22682 283
+22231 22235 282
 
-### *class* outrage.smartsearch.Match(key: str, probability: float, decision: Literal['yes', 'unsure'], decided_at: Literal['title', 'keywords', 'summary', 'contents', 'body'] | None, evidence: tuple[Evidence, ...])
-22823 22827 287
+### *class* outrage.smartsearch.Match(key: str, probability: float, decision: Literal['yes', 'unsure'], decided_at: str | None, evidence: tuple[Evidence, ...])
+22376 22380 286
 
 #### key *: str*
-23538 23542 293
+23027 23031 292
 
 #### probability *: float*
-23612 23616 295
+23101 23105 294
 
 #### decision *: Literal['yes', 'unsure']*
-23699 23703 297
+23188 23192 296
 
-#### decided_at *: Literal['title', 'keywords', 'summary', 'contents', 'body'] | None*
-23807 23811 299
+#### decided_at *: str | None*
+23296 23300 298
 
 #### evidence *: tuple[Evidence, ...]*
-24119 24123 304
+23544 23548 303
 
 ### *class* outrage.smartsearch.Question(kind: ~typing.Literal['noul', 'score'], text: str, criteria: tuple[str, ...] = (), instructions: ~collections.abc.Mapping[str, str] = <factory>)
-24250 24254 306
+23675 23679 305
 
 #### kind *: Literal['noul', 'score']*
-24943 24947 318
+24368 24372 317
 
 #### text *: str*
-25159 25163 323
+24584 24588 322
 
 #### criteria *: tuple[str, ...]*
-25234 25238 325
+24659 24663 324
 
 #### instructions *: Mapping[str, str]*
-25454 25458 329
+24879 24883 328
 
 ### *class* outrage.smartsearch.Requests(limit: int, batch_size: int, value_chars: int, chunk_chars: int, max_chunks: int, min_chunk_chars: int)
-25689 25693 331
+25114 25118 330
 
 #### limit *: int*
-26354 26358 337
+25779 25783 336
 
 #### batch_size *: int*
-26431 26435 339
+25856 25860 338
 
 #### value_chars *: int*
-26513 26517 341
+25938 25942 340
 
 #### chunk_chars *: int*
-26596 26600 343
+26021 26025 342
 
 #### max_chunks *: int*
-26679 26683 345
+26104 26108 344
 
 #### min_chunk_chars *: int*
-26761 26765 347
+26186 26190 346
 
-### *class* outrage.smartsearch.Scoring(weights: ~collections.abc.Mapping[~typing.Literal['title', 'keywords', 'summary', 'contents', 'body'], float] = <factory>, supporting: frozenset[~typing.Literal['title', 'keywords', 'summary', 'contents', 'body']] = frozenset({'keywords', 'title'}), yes: float = 0.8, no: float = 0.2, clamp: float = 0.0001)
-26848 26852 349
+### *class* outrage.smartsearch.Scoring(weights: Mapping[str, float]=<factory>, supporting: frozenset[str] = frozenset({'keywords', 'title'}), yes: float = 0.8, no: float = 0.2, clamp: float = 0.0001)
+26273 26277 348
 
-#### weights *: Mapping[Literal['title', 'keywords', 'summary', 'contents', 'body'], float]*
-28198 28202 369
+#### weights *: Mapping[str, float]*
+27771 27775 368
 
-#### supporting *: frozenset[Literal['title', 'keywords', 'summary', 'contents', 'body']]*
-28497 28501 371
+#### supporting *: frozenset[str]*
+28006 28010 370
 
 #### yes *: float*
-28923 28927 377
+28368 28372 376
 
 #### no *: float*
-29072 29076 381
+28517 28521 380
 
 #### clamp *: float*
-29194 29198 385
+28639 28643 384
 
 #### combine(evidence: Sequence[Evidence]) → float
-29407 29411 390
+28852 28856 389
 
 #### decide(probability: float) → Literal['yes', 'no', 'unsure']
-29703 29709 394
+29148 29154 393
 
 ### outrage.smartsearch.Shape
-29933 29941 398
+29378 29386 397
 
-### *class* outrage.smartsearch.SmartSearchResult(key: str | None, query: str, matches: tuple[Match, ...], unjudged: tuple[Unjudged, ...], levels: Mapping[Literal['title', 'keywords', 'summary', 'contents', 'body'], LevelCounts], documents: int, total: int, next_cursor: str | None, unavailable: tuple[str, ...], input_tokens: int)
-30379 30387 409
+### *class* outrage.smartsearch.SmartSearchResult(key: str | None, query: str, matches: tuple[Match, ...], unjudged: tuple[Unjudged, ...], levels: Mapping[str, LevelCounts], documents: int, total: int, next_cursor: str | None, unavailable: tuple[str, ...], input_tokens: int)
+29824 29832 408
 
 #### key *: str | None*
-31924 31932 419
+31305 31313 418
 
 #### query *: str*
-32063 32071 421
+31444 31452 420
 
 #### matches *: tuple[Match, ...]*
-32139 32147 423
+31520 31528 422
 
 #### unjudged *: tuple[Unjudged, ...]*
-32306 32314 427
+31687 31695 426
 
-#### levels *: Mapping[Literal['title', 'keywords', 'summary', 'contents', 'body'], LevelCounts]*
-32437 32445 429
+#### levels *: Mapping[str, LevelCounts]*
+31818 31826 428
 
 #### documents *: int*
-32718 32726 431
+32035 32043 430
 
 #### total *: int*
-32825 32833 435
+32142 32150 434
 
 #### next_cursor *: str | None*
-32935 32943 439
+32252 32260 438
 
 #### unavailable *: tuple[str, ...]*
-33082 33090 441
+32399 32407 440
 
 #### input_tokens *: int*
-33276 33284 445
+32593 32601 444
 
 ### *exception* outrage.smartsearch.StateTooLarge(code: str, \*\*details: Any)
-33360 33368 447
+32677 32685 446
 
 ### *class* outrage.smartsearch.Tuning(levels: tuple[LevelTuning, ...], scoring: Scoring, requests: Requests, source: str)
-33686 33694 453
+33003 33011 452
 
 #### levels *: tuple[LevelTuning, ...]*
-34423 34431 463
+33740 33748 462
 
 #### scoring *: Scoring*
-34577 34585 467
+33894 33902 466
 
 #### requests *: Requests*
-34635 34643 469
+33952 33960 468
 
 #### source *: str*
-34696 34704 471
+34013 34021 470
 
 #### *property* names *: tuple[str, ...]*
-34821 34829 475
+34138 34146 474
 
 #### level(name: str) → LevelTuning
-35014 35022 479
+34331 34339 478
 
 #### *classmethod* read(data: object, source: str) → tuple[Tuning | None, list[Refusal]]
-35263 35273 483
+34580 34590 482
 
 #### *classmethod* read_file(path: Path | None = None) → tuple[Tuning | None, list[Refusal]]
-36026 36038 492
+35343 35355 491
 
 #### *classmethod* load(path: Path | None = None) → Tuning
-36572 36586 496
+35889 35903 495
 
-### *class* outrage.smartsearch.Unjudged(key: str, level: Literal['title', 'keywords', 'summary', 'contents', 'body'], code: str, details: Mapping[str, object], evidence: tuple[Evidence, ...])
-36881 36897 500
+### *class* outrage.smartsearch.Unjudged(key: str, level: str, code: str, details: Mapping[str, object], evidence: tuple[Evidence, ...])
+36198 36214 499
 
 #### key *: str*
-37668 37684 506
+36921 36937 505
 
-#### level *: Literal['title', 'keywords', 'summary', 'contents', 'body']*
-37742 37758 508
+#### level *: str*
+36995 37011 507
 
 #### code *: str*
-37882 37898 510
+37071 37087 509
 
 #### details *: Mapping[str, object]*
-38051 38067 514
+37240 37256 513
 
 #### evidence *: tuple[Evidence, ...]*
-38288 38304 516
+37477 37493 515
 
-### outrage.smartsearch.refusals(query: str, levels: Sequence[str] = LEVELS, shapes: Mapping[str, str] | None = None) → list[Refusal]
-38462 38478 520
+### outrage.smartsearch.packaged_tuning() → tuple[Tuning | None, tuple[Refusal, ...]]
+37651 37667 519
 
-### outrage.smartsearch.smart_search(store: Store, key: str | None, query: str, judge: Judge, \*, depth: int | None = None, limit: int = DEFAULT_LIMIT, after: str | None = None, levels: Sequence[Literal['title', 'keywords', 'summary', 'contents', 'body']] = LEVELS, shapes: Mapping[Literal['title', 'keywords', 'summary', 'contents', 'body'], Literal['questions', 'state']] | None = None, questions: Mapping[Literal['title', 'keywords', 'summary', 'contents', 'body'], LevelQuestions] = SCORE_QUESTIONS, scoring: Scoring | None = None, batch_size: int = DEFAULT_BATCH_SIZE, value_chars: int = DEFAULT_VALUE_CHARS, chunk_chars: int = DEFAULT_CHUNK_CHARS, max_chunks: int = DEFAULT_MAX_CHUNKS) → SmartSearchResult
-39201 39219 524
+### outrage.smartsearch.refusals(query: str, levels: Sequence[str] | None = None, shapes: Mapping[str, str] | None = None, \*, tuning: Tuning | None = None) → list[Refusal]
+38182 38200 526
+
+### outrage.smartsearch.smart_search(store: Store, key: str | None, query: str, judge: Judge, \*, tuning: Tuning | None = None, depth: int | None = None, limit: int | None = None, after: str | None = None, levels: Sequence[str] | None = None, shapes: Mapping[str, Literal['questions', 'state']] | None = None, questions: Mapping[str, LevelQuestions] | None = None, scoring: Scoring | None = None, batch_size: int | None = None, value_chars: int | None = None, chunk_chars: int | None = None, max_chunks: int | None = None) → SmartSearchResult
+39248 39268 533
