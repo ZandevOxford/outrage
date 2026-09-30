@@ -57,7 +57,9 @@ slice of the store against a plain-language query. It judges each document's
 title, keywords, summary and contents before sending its body, and prints every
 document not ruled out, best first. `--limit` bounds the slice and stderr names
 the `--after` cursor for the next one; `--level title --level summary` keeps a
-search to metadata only.
+search to metadata only. The levels, questions and scoring constants are in a
+packaged file, `outrage/smart-search/tuning`, described by
+`outrage/smart-search/readme`.
 
 The judge speaks the System One protocol. TypeSafe's hosted Jev is the default;
 configure it with `TYPESAFE_API_KEY`, and optionally `TYPESAFE_BASE_URL` and

@@ -5,10 +5,11 @@ judge. A configurable cascade examines progressively richer metadata and then
 the body, retaining the evidence used to rank every document not ruled out.
 
 The cascade the `outrage-search` agent follows, moved out of an agent's
-context and into the library: every document in the slice is judged on its
-`!title` first, and only the ones that level leaves unsure go on to its
-`!keywords`, its `!summary`, then its `!contents`, then its body. What comes back is every
-document not ruled out, best first. The calling agent reads none of it.
+context and into the library: every document in the slice is judged at the
+first level -- its `!title`, as shipped -- and only the ones that level
+leaves unsure go on to the next, through richer metadata to the body. What
+comes back is every document not ruled out, best first. The calling agent
+reads none of it.
 
 **The judging is not done here.** A [`Judge`](#outrage.smartsearch.Judge) answers questions about a
 piece of state -- the protocol System One models speak -- and this module
@@ -16,19 +17,17 @@ decides what to ask, of which documents, and what the answers add up to. So the
 suite runs against a fake, and a second model or a local server is a different
 judge rather than a different cascade.
 
-Three things here are expected to change as the cascade is measured, and each
-is kept in one place so that tuning it touches nothing else:
-
-* **the question asked at each level** is data, [`SCORE_QUESTIONS`](#outrage.smartsearch.SCORE_QUESTIONS) by
-  default and [`NOUL_QUESTIONS`](#outrage.smartsearch.NOUL_QUESTIONS) as the alternative, since what a title can
-  show is not what a body can;
-* **which way round** a level is asked -- the query as the state and many
-  documents as the questions, or each document as the state and the query as
-  its one question -- is a [`Shape`](#outrage.smartsearch.Shape) per level, and the body is always the
-  second, being too long to sit in a question;
-* **how the per-level answers become a decision** is [`Scoring`](#outrage.smartsearch.Scoring), one
-  object over the evidence, which the result keeps whole so that a tuning run
-  can re-score without asking the model again.
+What is expected to change as the cascade is measured is not in this module
+at all. The levels and their order, the question asked at each, **which way
+round** each is asked (the query as the state and many documents as the
+questions, or each document as the state and the query as its one question),
+the scoring constants and the request sizes are a [`Tuning`](#outrage.smartsearch.Tuning), read from
+a JSON file shipped in the package, [`TUNING_PATH`](#outrage.smartsearch.TUNING_PATH), beside a readme
+saying what each part means and how to tune it. What stays here is the rules:
+what each [`Kind`](#outrage.smartsearch.Kind) of level reads, and how [`Scoring`](#outrage.smartsearch.Scoring) turns the
+per-level answers into a decision -- one object over the evidence, which the
+result keeps whole so that a tuning run can re-score without asking the
+model again.
 
 Two rules carry over from the agent unchanged. **Missing metadata is unsure,
 never no**: a document without a summary has told the cascade nothing, so it
@@ -36,78 +35,20 @@ goes on to the next level as it was. And **a partial value cannot justify a
 no**: a truncated title, or a body judged in fewer chunks than it has, can
 count for a document but never against it.
 
-A third rule, from measuring: **a title or keywords can count only for a
-document**. Both are written to label a document rather than to describe it,
-so a short or generic one -- an API page titled by its module name, a README
-titled with the project's -- is uninformative, and a yes-or-no question has no
-answer for that but a low one. Counted against, a single such answer ruled out
-the best document for a query. [`Scoring.supporting`](#outrage.smartsearch.Scoring.supporting) holds the rule.
+A third rule, from measuring, is that **a supporting level can count only
+for a document**. A title or keywords label a document rather than describe
+it, so a generic one gets a low answer rather than an unsure one; counted
+against, a single such answer ruled out the best document for a query. The
+tuning says which levels are supporting, and [`Scoring.supporting`](#outrage.smartsearch.Scoring.supporting)
+applies it.
 
 Content leaves the machine whenever the judge is a remote service, which is
 the front ends' to say; this module cannot tell one judge from another.
-
-### outrage.smartsearch.DEFAULT_BATCH_SIZE *= 50*
-
-Documents judged in one `"questions"` request. Each question is evaluated
-in isolation, so this bounds the request rather than what the model weighs.
-
-### outrage.smartsearch.DEFAULT_CHUNK_CHARS *= 60000*
-
-Characters of body in one state. Jev takes 32k tokens for the state and the
-longest question together, and English runs near four characters a token, so
-this leaves room for the question and for text that tokenises badly. A chunk
-the model still refuses as too large is halved and asked again.
-
-### outrage.smartsearch.DEFAULT_LIMIT *= 100*
-
-Documents in one slice, which is what bounds a result: the server keeps no
-state, so a result for its slice cannot itself be paged.
-
-### outrage.smartsearch.DEFAULT_MAX_CHUNKS *= 16*
-
-Body chunks judged per document before the rest is left unread. A document
-cut short this way is partial, so it can be kept but not ruled out.
-
-### outrage.smartsearch.DEFAULT_SHAPES *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state']]* *= {'body': 'state', 'contents': 'questions', 'keywords': 'questions', 'summary': 'questions', 'title': 'questions'}*
-
-A starting point: many short values to a request, and a body on its own.
-
-### outrage.smartsearch.DEFAULT_VALUE_CHARS *= 8000*
-
-Longest metadata value read for judging. A longer one is judged on its
-first part and marked partial, so it cannot rule a document out.
-
-### outrage.smartsearch.LEVELS *: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), ...]* *= ('title', 'keywords', 'summary', 'contents', 'body')*
-
-The default cascade, cheapest and most telling first.
-
-Keywords beside the title, being as short and written for the same purpose.
-Summary before contents because a summary is the shorter of the two and says
-more about what a document is for; a contents index is headings, which name
-what is in a document without saying what it concludes.
-
-### outrage.smartsearch.MIN_CHUNK_CHARS *= 1000*
-
-Below this, halving a chunk the model refuses as too large stops, and the
-document is reported unjudged rather than split into fragments.
-
-### outrage.smartsearch.NOUL_QUESTIONS *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [LevelQuestions](#outrage.smartsearch.LevelQuestions)]* *= {'body': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'contents': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'keywords': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`keywords\` is the keywords of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the keywords of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'summary': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={})), 'title': LevelQuestions(questions=Question(kind='noul', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=(), instructions={}), state=Question(kind='noul', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=(), instructions={}))}*
-
-The alternative question at each level: a single probability of relevance.
 
 ### outrage.smartsearch.RULES *= ('log-odds-sum',)*
 
 How each combination rule is named in the tuning. The rule is code, so a
 second one is a new name here and a new [`Scoring.combine()`](#outrage.smartsearch.Scoring.combine).
-
-### outrage.smartsearch.SCORE_QUESTIONS *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [LevelQuestions](#outrage.smartsearch.LevelQuestions)]* *= {'body': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`body\` is the text, or one part of it, of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the text, or one part of it, of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'contents': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`contents\` is the table of contents (its headings) of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the table of contents (its headings) of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'keywords': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`keywords\` is the keywords of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the keywords of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'summary': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`summary\` is the summary of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the summary of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={})), 'title': LevelQuestions(questions=Question(kind='score', text='The state is a search query. \`title\` is the title of the stored document at \`key\`. Is that document likely to be relevant to the query?', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}), state=Question(kind='score', text='The state is the title of one stored document. Is that document likely to be relevant to this search query: {query}', criteria=('no relevance to the query topic', 'relevant to a related topic', 'relevant to the query topic', 'directly addresses the query'), instructions={}))}*
-
-The default question at each level: four ordered levels of relevance.
-
-Better than Noul at most levels in the first measurement, and in John's own
-testing: the tiers say what kind of match to look for, where a single
-probability leaves the model to decide what "relevant" means. The same
-criteria everywhere for now; tuning is what says whether a level wants its own.
 
 ### outrage.smartsearch.TUNING_FORMAT *= 1*
 
@@ -345,7 +286,7 @@ How much is read and sent at once. See [`TUNING_PATH`](#outrage.smartsearch.TUNI
 
 #### min_chunk_chars *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-### *class* outrage.smartsearch.Scoring(weights: Mapping[str, float]=<factory>, supporting: [frozenset](https://docs.python.org/3/builtins/stdtypes.html#frozenset)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] = frozenset({'keywords', 'title'}), yes: [float](https://docs.python.org/3/builtins/functions.html#float) = 0.8, no: [float](https://docs.python.org/3/builtins/functions.html#float) = 0.2, clamp: [float](https://docs.python.org/3/builtins/functions.html#float) = 0.0001)
+### *class* outrage.smartsearch.Scoring(weights: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [float](https://docs.python.org/3/builtins/functions.html#float)], supporting: [frozenset](https://docs.python.org/3/builtins/stdtypes.html#frozenset)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)], yes: [float](https://docs.python.org/3/builtins/functions.html#float), no: [float](https://docs.python.org/3/builtins/functions.html#float), clamp: [float](https://docs.python.org/3/builtins/functions.html#float))
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -359,13 +300,16 @@ and forget them. The levels are not independent -- a title and a summary
 written together say much the same thing -- and weights below one are the
 damping for that.
 
-The weights and thresholds here are a starting point and not a result:
-measuring the cascade against labelled queries is what sets them. Other
+The numbers come from the tuning file, [`TUNING_PATH`](#outrage.smartsearch.TUNING_PATH), and are a
+starting point rather than a result: measuring the cascade against
+labelled queries is what sets them. Other
 rules the measuring may prefer -- the strongest level rather than the sum,
 a small fitted model over the per-level answers, or the last level alone
 with the earlier ones only pruning -- are each a different [`combine()`](#outrage.smartsearch.Scoring.combine).
 
 #### weights *: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [float](https://docs.python.org/3/builtins/functions.html#float)]*
+
+How much each level's answer counts, by level name.
 
 #### supporting *: [frozenset](https://docs.python.org/3/builtins/stdtypes.html#frozenset)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)]*
 
@@ -523,14 +467,14 @@ The tuning shipped in the package, and every problem with it.
 Read once per process, so an edit to the file reaches the next process
 rather than one already running -- the same as an edit to the code.
 
-### outrage.smartsearch.refusals(query: [str](https://docs.python.org/3/builtins/stdtypes.html#str), levels: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, shapes: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, tuning: [Tuning](#outrage.smartsearch.Tuning) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Refusal](errors.md#outrage.errors.Refusal)]
+### outrage.smartsearch.refusals(query: [str](https://docs.python.org/3/builtins/stdtypes.html#str), levels: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, tuning: [Tuning](#outrage.smartsearch.Tuning) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [list](https://docs.python.org/3/builtins/stdtypes.html#list)[[Refusal](errors.md#outrage.errors.Refusal)]
 
 Every reason these arguments cannot be searched with, at once.
 
 `tuning` is the packaged one by default, and its own problems are
 among the reasons, so a front end asking this hears of a broken file too.
 
-### outrage.smartsearch.smart_search(store: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), query: [str](https://docs.python.org/3/builtins/stdtypes.html#str), judge: [Judge](#outrage.smartsearch.Judge), \*, tuning: [Tuning](#outrage.smartsearch.Tuning) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, depth: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, after: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, levels: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, shapes: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state']] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, questions: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [LevelQuestions](#outrage.smartsearch.LevelQuestions)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None, scoring: [Scoring](#outrage.smartsearch.Scoring) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, batch_size: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, value_chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, chunk_chars: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, max_chunks: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [SmartSearchResult](#outrage.smartsearch.SmartSearchResult)
+### outrage.smartsearch.smart_search(store: [Store](store.md#outrage.store.Store), key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), query: [str](https://docs.python.org/3/builtins/stdtypes.html#str), judge: [Judge](#outrage.smartsearch.Judge), \*, tuning: [Tuning](#outrage.smartsearch.Tuning) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, depth: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, limit: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, after: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, levels: [Sequence](https://docs.python.org/3/library/collections.abc.html#collections.abc.Sequence)[[str](https://docs.python.org/3/builtins/stdtypes.html#str)] | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [SmartSearchResult](#outrage.smartsearch.SmartSearchResult)
 
 Screen one slice of the documents under `key` against `query`.
 
@@ -540,8 +484,8 @@ the first of `levels` -- every level of `tuning` by default, in its
 order -- and carried to the next only while the combined evidence leaves
 it unsure.
 
-`tuning` is [`packaged_tuning()`](#outrage.smartsearch.packaged_tuning) by default. The keywords after
-`levels` each override one part of it for this call.
+`tuning` is [`packaged_tuning()`](#outrage.smartsearch.packaged_tuning) by default: everything about the
+cascade that is a number or a sentence rather than a rule.
 
 Raises the first of [`refusals()`](#outrage.smartsearch.refusals) as an error; a front end wanting
 every reason calls that first. A failed request never

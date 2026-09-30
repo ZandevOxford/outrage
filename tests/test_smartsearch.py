@@ -13,6 +13,7 @@ cascade tests then mean the same whichever question set is asked.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 import pytest
@@ -72,6 +73,26 @@ def _spread(p):
     return tuple(1.0 if i == top else 0.0 for i in range(4))
 
 
+def _tuned(shapes=None, **changes):
+    """The packaged tuning with some of its sizes, scoring or shapes changed."""
+    tuning = Tuning.load()
+    sizes = {k: v for k, v in changes.items() if k in Requests.__dataclass_fields__}
+    scores = {k: v for k, v in changes.items() if k in Scoring.__dataclass_fields__}
+    assert len(sizes) + len(scores) == len(changes), changes
+    levels = tuple(
+        dataclasses.replace(level, shape=shapes[level.name])
+        if shapes and level.name in shapes
+        else level
+        for level in tuning.levels
+    )
+    return dataclasses.replace(
+        tuning,
+        levels=levels,
+        requests=dataclasses.replace(tuning.requests, **sizes),
+        scoring=dataclasses.replace(tuning.scoring, **scores),
+    )
+
+
 @pytest.fixture
 def store(tmp_path):
     with SqliteStore(tmp_path / "store") as opened:
@@ -118,7 +139,7 @@ def test_a_label_can_count_for_a_document_but_never_against_it(store, level):
 def test_a_label_can_rule_out_when_the_scoring_says_so(store):
     _put(store, "d/generic", title="unrelated", body="MATCH")
 
-    result = smart_search(store, "d", "q", FakeJudge(), scoring=Scoring(supporting=frozenset()))
+    result = smart_search(store, "d", "q", FakeJudge(), tuning=_tuned(supporting=frozenset()))
 
     assert result.matches == ()
     assert result.levels["title"].no == 1
@@ -172,7 +193,9 @@ def test_a_level_reads_only_the_documents_still_pending(store):
 def test_a_truncated_value_cannot_rule_a_document_out(store):
     _put(store, "d/long", title="unrelated " * 20, body="unrelated")
 
-    result = smart_search(store, "d", "q", FakeJudge(), levels=["title"], value_chars=10)
+    result = smart_search(
+        store, "d", "q", FakeJudge(), levels=["title"], tuning=_tuned(value_chars=10)
+    )
 
     [match] = result.matches
     assert match.decision == "unsure"
@@ -184,7 +207,7 @@ def test_a_body_is_judged_by_its_best_chunk(store):
     _put(store, "d/a", body=body)
     judge = FakeJudge()
 
-    result = smart_search(store, "d", "q", judge, levels=["body"], chunk_chars=100)
+    result = smart_search(store, "d", "q", judge, levels=["body"], tuning=_tuned(chunk_chars=100))
 
     [match] = result.matches
     assert match.decided_at == "body"
@@ -196,7 +219,7 @@ def test_a_body_cut_short_is_partial_and_kept(store):
     _put(store, "d/a", body="filler. " * 50)
 
     result = smart_search(
-        store, "d", "q", FakeJudge(), levels=["body"], chunk_chars=100, max_chunks=2
+        store, "d", "q", FakeJudge(), levels=["body"], tuning=_tuned(chunk_chars=100, max_chunks=2)
     )
 
     [match] = result.matches
@@ -210,10 +233,8 @@ def test_body_chunks_follow_the_contents_sections(store):
     _put(store, "d/a", body=body, contents=contents)
     judge = FakeJudge()
 
-    carry_on = Scoring(yes=1.0, no=0.0)
-    smart_search(
-        store, "d", "q", judge, levels=["contents", "body"], chunk_chars=60, scoring=carry_on
-    )
+    carry_on = _tuned(yes=1.0, no=0.0, chunk_chars=60)
+    smart_search(store, "d", "q", judge, levels=["contents", "body"], tuning=carry_on)
 
     contents_state = judge.calls[0][1]["d0"].instructions["contents"]
     assert contents_state == "# One\n# Two\n# Three"
@@ -248,7 +269,7 @@ def test_a_failed_request_reports_its_documents_unjudged(store):
     _put(store, "d/a", title="NEAR", summary="BROKEN")
     _put(store, "d/b", title="NEAR", summary="NEAR")
 
-    result = smart_search(store, "d", "q", FakeJudge(), batch_size=1)
+    result = smart_search(store, "d", "q", FakeJudge(), tuning=_tuned(batch_size=1))
 
     [failure] = result.unjudged
     assert failure.key == "d/a" and failure.level == "summary"
@@ -272,7 +293,7 @@ def test_the_state_shape_puts_the_value_in_the_state(store):
     _put(store, "d/a", title="MATCH")
     judge = FakeJudge()
 
-    smart_search(store, "d", "cats", judge, levels=["title"], shapes={"title": "state"})
+    smart_search(store, "d", "cats", judge, levels=["title"], tuning=_tuned({"title": "state"}))
 
     [(state, questions)] = judge.calls
     assert state == "MATCH"
@@ -298,9 +319,7 @@ def test_score_questions_reduce_to_a_probability(store):
     _put(store, "d/a", title="MATCH")
     _put(store, "d/b", title="unrelated")
 
-    result = smart_search(
-        store, "d", "q", FakeJudge(score=True), questions=smartsearch.SCORE_QUESTIONS
-    )
+    result = smart_search(store, "d", "q", FakeJudge(score=True))
 
     assert [m.key for m in result.matches] == ["d/a"]
     assert result.matches[0].evidence[0].probability == 1.0
@@ -313,7 +332,7 @@ def test_an_answer_scales_its_expected_level():
 
 
 def test_partial_evidence_counts_for_but_never_against():
-    scoring = Scoring()
+    scoring = Tuning.load().scoring
     against = Evidence("title", Answer(probability=0.01), 0.01, partial=True)
     in_favour = Evidence("title", Answer(probability=0.99), 0.99, partial=True)
     assert scoring.combine([against]) == 0.5
@@ -334,15 +353,11 @@ def test_matches_are_best_first_and_the_slice_pages(store):
 
 
 def test_every_refusal_is_reported(store):
-    found = smartsearch.refusals(
-        " ", ["title", "nope", "title", "body"], {"body": "questions", "title": "sideways"}
-    )
+    found = smartsearch.refusals(" ", ["title", "nope", "title", "body"])
     assert [r.code for r in found] == [
         "smart-search-query-empty",
         "smart-search-level-unknown",
         "smart-search-level-repeated",
-        "smart-search-body-shape",
-        "smart-search-shape-unknown",
     ]
     for refusal in found:
         assert messages.render(refusal.as_error())
@@ -383,26 +398,8 @@ def test_the_packaged_tuning_loads():
     tuning, found = Tuning.read_file()
 
     assert found == []
-    assert tuning.names == smartsearch.LEVELS
+    assert tuning.names == ("title", "keywords", "summary", "contents", "body")
     assert tuning.source.endswith("tuning.json")
-
-
-def test_the_packaged_tuning_is_todays_constants():
-    # Scaffolding for the move onto the file, and removed with the constants.
-    tuning = Tuning.load()
-
-    for level in tuning.levels:
-        assert level.questions == smartsearch.SCORE_QUESTIONS[level.name]
-        assert level.shape == smartsearch.DEFAULT_SHAPES[level.name]
-    assert tuning.scoring == Scoring()
-    assert tuning.requests == Requests(
-        limit=smartsearch.DEFAULT_LIMIT,
-        batch_size=smartsearch.DEFAULT_BATCH_SIZE,
-        value_chars=smartsearch.DEFAULT_VALUE_CHARS,
-        chunk_chars=smartsearch.DEFAULT_CHUNK_CHARS,
-        max_chunks=smartsearch.DEFAULT_MAX_CHUNKS,
-        min_chunk_chars=smartsearch.MIN_CHUNK_CHARS,
-    )
 
 
 def test_the_readme_describes_every_name_the_tuning_accepts():

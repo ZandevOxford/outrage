@@ -17,7 +17,11 @@ forward only while it remains unsure. The result ranks every document not
 ruled out, retains the per-level evidence, reports failed requests as unjudged,
 and returns a cursor for the next input slice. Missing metadata never excludes
 a document; partial text and the short title and keyword labels can count for a
-document but not against it. The tool is off by default because document text
+document but not against it. The levels, the questions asked at each, the
+scoring constants and the request sizes are a packaged JSON file, read as
+`outrage/smart-search/tuning` and described by `outrage/smart-search/readme`,
+so they can be tuned without changing code; a file that does not validate is
+refused with every reason. The tool is off by default because document text
 may leave the machine: `outrage init --smart-search` or
 `outrage config --smart-search` records the opt-in on the server entry.
 

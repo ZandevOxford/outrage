@@ -286,6 +286,15 @@ a minimum chunk, while transient HTTP failures use the retry policy TypeSafe's
 SDK defaults to. The fake judge in `test_smartsearch.py` exercises the cascade
 without a network or credentials.
 
+Everything tunable is a `Tuning`, loaded once per process from
+`documents/smart-search/tuning.json` and validated by `Tuning.read`, which
+reports every problem at once, names where in the file each is, and refuses
+unknown names so that a misspelling is not silently ignored. The loader takes
+the source as an argument so that an override file can be added later. The MCP
+tool's `levels` enum, its `limit` default and the CLI's help are built from the
+loaded tuning. `test_smartsearch.py` holds `smart-search/readme` to naming
+every field and value the loader accepts.
+
 `systemone` is the HTTP `Judge`. It reads settings in one place, from
 TypeSafe's environment variables over the `[smart_search]` table of the user's
 configuration file over defaults, and appends `/v1/systemone` to the configured

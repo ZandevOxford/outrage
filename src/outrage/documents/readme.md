@@ -55,6 +55,9 @@ If reading this via the MCP server,
   document rather than inline in the server: read
   `outrage/instructions/instructions` there for the whole of what a client may
   have cut short.
+* [smart-search](smart-search) contains the tuning smart search runs with,
+  `tuning`, and a `readme` saying what each part of it means and how to tune
+  it.
 * [tools](tools) contains the documents that the MCP server sends as tool
   descriptions.
 

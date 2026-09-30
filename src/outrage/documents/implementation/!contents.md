@@ -29,25 +29,25 @@
 16511 16514 277
 
 ### 3b. Mounted stores - `src/outrage/mounts.py` - done
-18394 18397 307
+18963 18966 316
 
 ### 4. Integration with Claude Code - done
-29594 29597 481
+30163 30166 490
 
 #### Getting a changed server to the agent
-30306 30309 494
+30875 30878 503
 
 #### What the session use changed
-31196 31199 511
+31765 31768 520
 
 ### 5. Skills - done
-34515 34518 570
+35084 35087 579
 
 #### Delivery
-36409 36412 603
+36978 36981 612
 
 ### 8. Event log - `src/outrage/eventlog.py` - done
-37510 37513 623
+38079 38082 632
 
 ## Planned work
-39581 39584 661
+40150 40153 670

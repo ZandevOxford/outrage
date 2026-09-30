@@ -36,15 +36,24 @@ plain-language query without bringing their contents into the calling agent's
 context. It is a library operation first, `outrage.smartsearch.smart_search`,
 with the MCP tool and command line as two renderings of the same result.
 
-The cascade follows the same cheapest-to-richest route as the search agent:
-`!title`, `!keywords`, `!summary`, `!contents`, then the body. Missing metadata
+The cascade follows the same cheapest-to-richest route as the search agent. As
+shipped, that is `!title`, `!keywords`, `!summary`, `!contents`, then the body. Missing metadata
 means no evidence and carries a document forward. A truncated metadata value or
 partly read body can count for the document but cannot rule it out; neither can
 a title or keywords, since a short or generic label is weak negative evidence.
 Each answer is retained, then one `Scoring` object combines the evidence and
-decides whether to stop. This keeps the questions, request shape and scoring
-separate from traversal so evaluation can tune any one without changing the
-others.
+decides whether to stop.
+
+**The numbers and sentences are data; the rules are code.** The levels, their
+order, the metadata each reads, the question and shape at each, the scoring
+weights and thresholds, and the request sizes are one packaged JSON file,
+`smart-search/tuning`, beside a readme describing it. Evaluation tunes the
+file, and a kept result can be re-scored under an edited file without asking
+the model again. How a level of each kind reads, and how answers combine, stay
+in code, and the file chooses among them by name. It is read from the package
+rather than through the mount, so a mount table naming `outrage` cannot change
+how search behaves. A file that does not validate is refused with every
+reason: the server does not offer the tool, and the command refuses to run.
 
 The server keeps no search state. One call judges one page of the subtree's
 documents, and its cursor advances over that input rather than over the ranked

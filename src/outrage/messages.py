@@ -2652,19 +2652,6 @@ def _smart_search_level_repeated(name: Namer, /, *, level: str, **_: Any) -> str
     return f"the level {level!r} is named more than once; each is judged at most once"
 
 
-@template("smart-search-shape-unknown")
-def _smart_search_shape_unknown(name: Namer, /, *, level: str, shape: str, **_: Any) -> str:
-    return f"{shape!r} is not a shape for the {level} level; use 'questions' or 'state'"
-
-
-@template("smart-search-body-shape")
-def _smart_search_body_shape(name: Namer, /, *, level: str, shape: str, **_: Any) -> str:
-    return (
-        f"the {level} level reads the body, so cannot be asked with the {shape!r} shape: "
-        "a body is too long for a question, so it is always the state"
-    )
-
-
 @template("smart-search-unauthorised")
 def _smart_search_unauthorised(
     name: Namer, /, *, url: str, status: int, source: str | None = None, **_: Any

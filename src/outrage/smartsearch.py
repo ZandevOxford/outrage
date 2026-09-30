@@ -3,10 +3,11 @@ judge. A configurable cascade examines progressively richer metadata and then
 the body, retaining the evidence used to rank every document not ruled out.
 
 The cascade the ``outrage-search`` agent follows, moved out of an agent's
-context and into the library: every document in the slice is judged on its
-``!title`` first, and only the ones that level leaves unsure go on to its
-``!keywords``, its ``!summary``, then its ``!contents``, then its body. What comes back is every
-document not ruled out, best first. The calling agent reads none of it.
+context and into the library: every document in the slice is judged at the
+first level -- its ``!title``, as shipped -- and only the ones that level
+leaves unsure go on to the next, through richer metadata to the body. What
+comes back is every document not ruled out, best first. The calling agent
+reads none of it.
 
 **The judging is not done here.** A :class:`Judge` answers questions about a
 piece of state -- the protocol System One models speak -- and this module
@@ -14,19 +15,17 @@ decides what to ask, of which documents, and what the answers add up to. So the
 suite runs against a fake, and a second model or a local server is a different
 judge rather than a different cascade.
 
-Three things here are expected to change as the cascade is measured, and each
-is kept in one place so that tuning it touches nothing else:
-
-* **the question asked at each level** is data, :data:`SCORE_QUESTIONS` by
-  default and :data:`NOUL_QUESTIONS` as the alternative, since what a title can
-  show is not what a body can;
-* **which way round** a level is asked -- the query as the state and many
-  documents as the questions, or each document as the state and the query as
-  its one question -- is a :data:`Shape` per level, and the body is always the
-  second, being too long to sit in a question;
-* **how the per-level answers become a decision** is :class:`Scoring`, one
-  object over the evidence, which the result keeps whole so that a tuning run
-  can re-score without asking the model again.
+What is expected to change as the cascade is measured is not in this module
+at all. The levels and their order, the question asked at each, **which way
+round** each is asked (the query as the state and many documents as the
+questions, or each document as the state and the query as its one question),
+the scoring constants and the request sizes are a :class:`Tuning`, read from
+a JSON file shipped in the package, :data:`TUNING_PATH`, beside a readme
+saying what each part means and how to tune it. What stays here is the rules:
+what each :data:`Kind` of level reads, and how :class:`Scoring` turns the
+per-level answers into a decision -- one object over the evidence, which the
+result keeps whole so that a tuning run can re-score without asking the
+model again.
 
 Two rules carry over from the agent unchanged. **Missing metadata is unsure,
 never no**: a document without a summary has told the cascade nothing, so it
@@ -34,12 +33,12 @@ goes on to the next level as it was. And **a partial value cannot justify a
 no**: a truncated title, or a body judged in fewer chunks than it has, can
 count for a document but never against it.
 
-A third rule, from measuring: **a title or keywords can count only for a
-document**. Both are written to label a document rather than to describe it,
-so a short or generic one -- an API page titled by its module name, a README
-titled with the project's -- is uninformative, and a yes-or-no question has no
-answer for that but a low one. Counted against, a single such answer ruled out
-the best document for a query. :attr:`Scoring.supporting` holds the rule.
+A third rule, from measuring, is that **a supporting level can count only
+for a document**. A title or keywords label a document rather than describe
+it, so a generic one gets a low answer rather than an unsure one; counted
+against, a single such answer ruled out the best document for a query. The
+tuning says which levels are supporting, and :attr:`Scoring.supporting`
+applies it.
 
 Content leaves the machine whenever the judge is a remote service, which is
 the front ends' to say; this module cannot tell one judge from another.
@@ -65,14 +64,6 @@ from .store import BoundedSubtree, KeyRange, Store
 #: reads metadata, or whatever the tuning calls the level reading the body.
 Level = str
 
-#: The default cascade, cheapest and most telling first.
-#:
-#: Keywords beside the title, being as short and written for the same purpose.
-#: Summary before contents because a summary is the shorter of the two and says
-#: more about what a document is for; a contents index is headings, which name
-#: what is in a document without saying what it concludes.
-LEVELS: tuple[Level, ...] = ("title", "keywords", "summary", "contents", "body")
-
 #: Which way round a level is asked.
 #:
 #: ``"questions"`` puts the query in the state and one document in each question,
@@ -83,41 +74,6 @@ Shape = Literal["questions", "state"]
 
 #: Where a level leaves a document: ruled in, ruled out, or carried to the next.
 Decision = Literal["yes", "no", "unsure"]
-
-#: A starting point: many short values to a request, and a body on its own.
-DEFAULT_SHAPES: Mapping[Level, Shape] = {
-    "title": "questions",
-    "keywords": "questions",
-    "summary": "questions",
-    "contents": "questions",
-    "body": "state",
-}
-
-#: Documents in one slice, which is what bounds a result: the server keeps no
-#: state, so a result for its slice cannot itself be paged.
-DEFAULT_LIMIT = 100
-
-#: Documents judged in one ``"questions"`` request. Each question is evaluated
-#: in isolation, so this bounds the request rather than what the model weighs.
-DEFAULT_BATCH_SIZE = 50
-
-#: Longest metadata value read for judging. A longer one is judged on its
-#: first part and marked partial, so it cannot rule a document out.
-DEFAULT_VALUE_CHARS = 8000
-
-#: Characters of body in one state. Jev takes 32k tokens for the state and the
-#: longest question together, and English runs near four characters a token, so
-#: this leaves room for the question and for text that tokenises badly. A chunk
-#: the model still refuses as too large is halved and asked again.
-DEFAULT_CHUNK_CHARS = 60000
-
-#: Body chunks judged per document before the rest is left unread. A document
-#: cut short this way is partial, so it can be kept but not ruled out.
-DEFAULT_MAX_CHUNKS = 16
-
-#: Below this, halving a chunk the model refuses as too large stops, and the
-#: document is reported unjudged rather than split into fragments.
-MIN_CHUNK_CHARS = 1000
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,61 +170,6 @@ class LevelQuestions:
     """Asked with the document's value as the state; names ``{query}``."""
 
 
-def _noul(level: str, what: str) -> LevelQuestions:
-    return LevelQuestions(
-        questions=Question(
-            "noul",
-            f"The state is a search query. `{level}` is the {what} of the stored "
-            f"document at `key`. Is that document likely to be relevant to the query?",
-        ),
-        state=Question(
-            "noul",
-            f"The state is the {what} of one stored document. Is that document "
-            f"likely to be relevant to this search query: {{query}}",
-        ),
-    )
-
-
-_WHAT: Mapping[Level, str] = {
-    "title": "title",
-    "keywords": "keywords",
-    "summary": "summary",
-    "contents": "table of contents (its headings)",
-    "body": "text, or one part of it,",
-}
-
-#: The alternative question at each level: a single probability of relevance.
-NOUL_QUESTIONS: Mapping[Level, LevelQuestions] = {
-    level: _noul(level, what) for level, what in _WHAT.items()
-}
-
-_CRITERIA = (
-    "no relevance to the query topic",
-    "relevant to a related topic",
-    "relevant to the query topic",
-    "directly addresses the query",
-)
-
-
-def _score(level: str, what: str) -> LevelQuestions:
-    noul = _noul(level, what)
-    return LevelQuestions(
-        questions=replace(noul.questions, kind="score", criteria=_CRITERIA),
-        state=replace(noul.state, kind="score", criteria=_CRITERIA),
-    )
-
-
-#: The default question at each level: four ordered levels of relevance.
-#:
-#: Better than Noul at most levels in the first measurement, and in John's own
-#: testing: the tiers say what kind of match to look for, where a single
-#: probability leaves the model to decide what "relevant" means. The same
-#: criteria everywhere for now; tuning is what says whether a level wants its own.
-SCORE_QUESTIONS: Mapping[Level, LevelQuestions] = {
-    level: _score(level, what) for level, what in _WHAT.items()
-}
-
-
 @dataclass(frozen=True, slots=True)
 class Evidence:
     """What one level said about one document, kept whole for re-scoring."""
@@ -297,31 +198,25 @@ class Scoring:
     written together say much the same thing -- and weights below one are the
     damping for that.
 
-    The weights and thresholds here are a starting point and not a result:
-    measuring the cascade against labelled queries is what sets them. Other
+    The numbers come from the tuning file, :data:`TUNING_PATH`, and are a
+    starting point rather than a result: measuring the cascade against
+    labelled queries is what sets them. Other
     rules the measuring may prefer -- the strongest level rather than the sum,
     a small fitted model over the per-level answers, or the last level alone
     with the earlier ones only pruning -- are each a different :meth:`combine`.
     """
 
-    weights: Mapping[Level, float] = field(
-        default_factory=lambda: {
-            "title": 0.6,
-            "keywords": 0.6,
-            "summary": 0.8,
-            "contents": 0.6,
-            "body": 1.0,
-        }
-    )
-    supporting: frozenset[Level] = frozenset({"title", "keywords"})
+    weights: Mapping[Level, float]
+    """How much each level's answer counts, by level name."""
+    supporting: frozenset[Level]
     """Levels whose evidence can count for a document and never against it, as
     partial evidence cannot. A label too generic to say anything gets a low
     answer, not an unsure one, and must not rule the document out."""
-    yes: float = 0.8
+    yes: float
     """At or above this, a document is decided a match and stops cascading."""
-    no: float = 0.2
+    no: float
     """At or below this, a document is ruled out."""
-    clamp: float = 1e-4
+    clamp: float
     """How close to 0 or 1 a probability is taken to be, so that a certain
     answer adds a large finite amount rather than an infinite one."""
 
@@ -912,7 +807,6 @@ def packaged_tuning() -> tuple[Tuning | None, tuple[Refusal, ...]]:
 def refusals(
     query: str,
     levels: Sequence[str] | None = None,
-    shapes: Mapping[str, str] | None = None,
     *,
     tuning: Tuning | None = None,
 ) -> list[Refusal]:
@@ -940,15 +834,6 @@ def refusals(
     repeated = sorted({level for level in levels or () if list(levels or ()).count(level) > 1})
     for level in repeated:
         found.append(Refusal("smart-search-level-repeated", overridable=False, level=level))
-    for level, shape in (shapes or {}).items():
-        if shape not in ("questions", "state"):
-            found.append(
-                Refusal("smart-search-shape-unknown", overridable=False, level=level, shape=shape)
-            )
-        elif level in known and tuning.level(level).kind == "body" and shape != "state":
-            found.append(
-                Refusal("smart-search-body-shape", overridable=False, level=level, shape=shape)
-            )
     return found
 
 
@@ -963,13 +848,6 @@ def smart_search(
     limit: int | None = None,
     after: str | None = None,
     levels: Sequence[Level] | None = None,
-    shapes: Mapping[Level, Shape] | None = None,
-    questions: Mapping[Level, LevelQuestions] | None = None,
-    scoring: Scoring | None = None,
-    batch_size: int | None = None,
-    value_chars: int | None = None,
-    chunk_chars: int | None = None,
-    max_chunks: int | None = None,
 ) -> SmartSearchResult:
     """Screen one slice of the documents under ``key`` against ``query``.
 
@@ -979,14 +857,14 @@ def smart_search(
     order -- and carried to the next only while the combined evidence leaves
     it unsure.
 
-    ``tuning`` is :func:`packaged_tuning` by default. The keywords after
-    ``levels`` each override one part of it for this call.
+    ``tuning`` is :func:`packaged_tuning` by default: everything about the
+    cascade that is a number or a sentence rather than a rule.
 
     Raises the first of :func:`refusals` as an error; a front end wanting
     every reason calls that first. A failed request never
     raises: its documents are reported in :attr:`SmartSearchResult.unjudged`.
     """
-    problems = refusals(query, levels, shapes, tuning=tuning)
+    problems = refusals(query, levels, tuning=tuning)
     if problems:
         raise problems[0].as_error()
     if tuning is None:
@@ -995,13 +873,7 @@ def smart_search(
     sizes = tuning.requests
     levels = tuple(levels) if levels is not None else tuning.names
     plans = {name: tuning.level(name) for name in levels}
-    shapes = {**{name: plan.shape for name, plan in plans.items()}, **(shapes or {})}
-    asked = {name: plan.questions for name, plan in plans.items()} | dict(questions or {})
-    scoring = scoring or tuning.scoring
-    batch_size = sizes.batch_size if batch_size is None else batch_size
-    value_chars = sizes.value_chars if value_chars is None else value_chars
-    chunk_chars = sizes.chunk_chars if chunk_chars is None else chunk_chars
-    max_chunks = sizes.max_chunks if max_chunks is None else max_chunks
+    scoring = tuning.scoring
     subtree = BoundedSubtree(key, depth)
 
     page = store.get_documents(
@@ -1025,14 +897,14 @@ def smart_search(
                 level,
                 query,
                 judge,
-                asked[level].state,
-                chunk_chars,
-                max_chunks,
+                plan.questions.state,
+                sizes.chunk_chars,
+                sizes.max_chunks,
                 sizes.min_chunk_chars,
             )
         else:
             assert plan.meta is not None, "a metadata level names its metadata"
-            values, missed = _values(store, subtree, plan.meta, pending, value_chars)
+            values, missed = _values(store, subtree, plan.meta, pending, sizes.value_chars)
             unavailable.update(missed)
             if plan.kind == "contents":
                 for candidate in pending:
@@ -1042,7 +914,14 @@ def smart_search(
             tally.missing += sum(1 for c in pending if c.key not in values)
             present = [c for c in pending if c.key in values]
             judged, spent = _judge_values(
-                present, values, level, query, judge, asked[level], shapes[level], batch_size
+                present,
+                values,
+                level,
+                query,
+                judge,
+                plan.questions,
+                plan.shape,
+                sizes.batch_size,
             )
         tokens += spent
         for candidate in pending:
@@ -1309,17 +1188,7 @@ def _windows(length: int, starts: Sequence[int], chunk_chars: int) -> Iterator[t
 
 
 __all__ = [
-    "DEFAULT_BATCH_SIZE",
-    "DEFAULT_CHUNK_CHARS",
-    "DEFAULT_LIMIT",
-    "DEFAULT_MAX_CHUNKS",
-    "DEFAULT_SHAPES",
-    "DEFAULT_VALUE_CHARS",
-    "LEVELS",
-    "MIN_CHUNK_CHARS",
-    "NOUL_QUESTIONS",
     "RULES",
-    "SCORE_QUESTIONS",
     "TUNING_FORMAT",
     "TUNING_NAMES",
     "TUNING_PATH",
