@@ -2716,6 +2716,40 @@ def _smart_search_base_url(name: Namer, /, *, base_url: str, source: str, **_: A
     )
 
 
+@template("smart-search-tuning-unreadable")
+def _smart_search_tuning_unreadable(name: Namer, /, *, source: str, reason: str, **_: Any) -> str:
+    return f"cannot read the smart search tuning {source}: {reason}"
+
+
+@template("smart-search-tuning-not-json")
+def _smart_search_tuning_not_json(name: Namer, /, *, source: str, reason: str, **_: Any) -> str:
+    return f"the smart search tuning {source} is not JSON: {reason}"
+
+
+@template("smart-search-tuning-name-unknown")
+def _smart_search_tuning_name_unknown(
+    namer: Namer, /, *, source: str, where: str, name: str, known: Sequence[str], **_: Any
+) -> str:
+    return (
+        f"the smart search tuning {source} has {name!r} in {where}, which it does not "
+        f"read; the names there are {', '.join(known)} and note"
+    )
+
+
+@template("smart-search-tuning-name-missing")
+def _smart_search_tuning_name_missing(
+    namer: Namer, /, *, source: str, where: str, name: str, **_: Any
+) -> str:
+    return f"the smart search tuning {source} has no {name!r} in {where}"
+
+
+@template("smart-search-tuning-value")
+def _smart_search_tuning_value(
+    name: Namer, /, *, source: str, where: str, expected: str, **_: Any
+) -> str:
+    return f"in the smart search tuning {source}, {where} must be {expected}"
+
+
 @template("smart-search-state-too-large")
 def _smart_search_state_too_large(name: Namer, /, *, url: str, detail: str, **_: Any) -> str:
     return f"{url} refused the request as too long: {detail}"

@@ -47,13 +47,16 @@ the front ends' to say; this module cannot tell one judge from another.
 
 from __future__ import annotations
 
+import json
 import math
 import re
+import string
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Literal, Protocol
+from pathlib import Path
+from typing import Any, Literal, Protocol
 
-from . import keys
+from . import keys, shipped
 from .errors import OutrageError, Refusal
 from .store import BoundedSubtree, KeyRange, Store
 
@@ -316,6 +319,9 @@ class Scoring:
     """At or above this, a document is decided a match and stops cascading."""
     no: float = 0.2
     """At or below this, a document is ruled out."""
+    clamp: float = 1e-4
+    """How close to 0 or 1 a probability is taken to be, so that a certain
+    answer adds a large finite amount rather than an infinite one."""
 
     def combine(self, evidence: Sequence[Evidence]) -> float:
         """The probability that a document matches, on everything seen so far."""
@@ -324,7 +330,7 @@ class Scoring:
             weight = self.weights.get(item.level, 1.0)
             if item.answer.confidence is not None:
                 weight *= item.answer.confidence
-            contribution = weight * _logit(item.probability)
+            contribution = weight * _logit(item.probability, self.clamp)
             if item.partial or item.level in self.supporting:
                 contribution = max(contribution, 0.0)
             total += contribution
@@ -339,9 +345,472 @@ class Scoring:
         return "unsure"
 
 
-def _logit(p: float) -> float:
-    p = min(max(p, 1e-4), 1 - 1e-4)
+def _logit(p: float, clamp: float) -> float:
+    p = min(max(p, clamp), 1 - clamp)
     return math.log(p / (1 - p))
+
+
+#: What a level reads: a plain metadata value, a ``!contents`` index (judged on
+#: its headings, its offsets kept for chunking the body), or the body itself.
+#: Behaviour rather than a number, so the tuning picks one per level but cannot
+#: invent another.
+Kind = Literal["value", "contents", "body"]
+
+#: The tuning file's layout version; a file naming another is refused.
+TUNING_FORMAT = 1
+
+#: Where the tuning lives in the shipped documents tree, which is what serves it
+#: as ``outrage/smart-search/tuning`` beside the readme describing it.
+TUNING_PATH = ("smart-search", "tuning.json")
+
+#: How each combination rule is named in the tuning. The rule is code, so a
+#: second one is a new name here and a new :meth:`Scoring.combine`.
+RULES = ("log-odds-sum",)
+
+#: Accepted anywhere an object is, and ignored: the short reason beside a
+#: number, where the readme holds the longer account.
+_NOTE = "note"
+_TOP = ("format", "question", "levels", "scoring", "requests")
+_QUESTION = ("kind", "criteria", "questions", "state")
+_LEVEL = ("name", "kind", "meta", "what", "shape", "weight", "supporting", "question")
+_LEVEL_REQUIRED = ("name", "kind", "what", "shape", "weight")
+_SCORING = ("rule", "yes", "no", "clamp")
+_REQUESTS = ("limit", "batch_size", "value_chars", "chunk_chars", "max_chunks", "min_chunk_chars")
+_KINDS = ("value", "contents", "body")
+_SHAPES = ("questions", "state")
+_QUESTION_KINDS = ("score", "noul")
+_CRITERIA_RANGE = (2, 10)
+
+#: A top-level section the file leaves out, which is refused once as missing,
+#: as against one written as ``null``, which is refused as not an object.
+_ABSENT = object()
+
+#: The placeholders each template may name. ``{query}`` only where the query is
+#: not already the state, and there it is required.
+_PLACEHOLDERS = {"questions": ("level", "what"), "state": ("level", "what", "query")}
+
+#: Every name the tuning file accepts, as field names and as the values of its
+#: enumerated fields, so that the readme can be held to describing all of them.
+TUNING_NAMES = tuple(
+    dict.fromkeys(
+        (
+            *_TOP,
+            *_QUESTION,
+            *_LEVEL,
+            *_SCORING,
+            *_REQUESTS,
+            _NOTE,
+            *_KINDS,
+            *_SHAPES,
+            *_QUESTION_KINDS,
+            *RULES,
+        )
+    )
+)
+
+
+@dataclass(frozen=True, slots=True)
+class LevelTuning:
+    """One level of the cascade, as the tuning defines it."""
+
+    name: str
+    """What the level is called, in a result and in a request's ``levels``."""
+    kind: Kind
+    meta: str | None
+    """The metadata name read, without its ``!``; None for the body."""
+    shape: Shape
+    weight: float
+    supporting: bool
+    questions: LevelQuestions
+    """The question in both shapes, with the level's placeholders filled in."""
+
+
+@dataclass(frozen=True, slots=True)
+class Requests:
+    """How much is read and sent at once. See :data:`TUNING_PATH`'s readme."""
+
+    limit: int
+    batch_size: int
+    value_chars: int
+    chunk_chars: int
+    max_chunks: int
+    min_chunk_chars: int
+
+
+@dataclass(frozen=True, slots=True)
+class Tuning:
+    """Everything about the cascade that is a number or a sentence, not a rule.
+
+    Read from a JSON file -- the packaged one, :data:`TUNING_PATH`, unless a
+    caller names another -- so that the levels, the questions, the scoring
+    constants and the request sizes can be tuned without touching the code.
+    """
+
+    levels: tuple[LevelTuning, ...]
+    """In cascade order."""
+    scoring: Scoring
+    requests: Requests
+    source: str
+    """Where it was read from, as a refusal names it."""
+
+    @property
+    def names(self) -> tuple[str, ...]:
+        """The level names, in cascade order."""
+        return tuple(level.name for level in self.levels)
+
+    def level(self, name: str) -> LevelTuning:
+        """The level called ``name``; a :class:`KeyError` for one it lacks."""
+        for level in self.levels:
+            if level.name == name:
+                return level
+        raise KeyError(name)
+
+    @classmethod
+    def read(cls, data: object, source: str) -> tuple[Tuning | None, list[Refusal]]:
+        """``data`` as a tuning, and every problem with it at once.
+
+        ``data`` is the parsed JSON, from wherever it came: ``source`` is
+        only what a refusal names, so that a second file's problems can be
+        told from the packaged one's. The tuning is None whenever there is a
+        refusal, since there is no sensible part of a cascade to run.
+        """
+        return _TuningReader(source).read(data)
+
+    @classmethod
+    def read_file(cls, path: Path | None = None) -> tuple[Tuning | None, list[Refusal]]:
+        """:meth:`read` over a file, the packaged tuning by default."""
+        path = shipped.tree().joinpath(*TUNING_PATH) if path is None else path
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as error:
+            reason = error.strerror or str(error)
+            return None, [
+                Refusal(
+                    "smart-search-tuning-unreadable",
+                    overridable=False,
+                    source=str(path),
+                    reason=reason,
+                )
+            ]
+        try:
+            data = json.loads(text)
+        except json.JSONDecodeError as error:
+            return None, [
+                Refusal(
+                    "smart-search-tuning-not-json",
+                    overridable=False,
+                    source=str(path),
+                    reason=str(error),
+                )
+            ]
+        return cls.read(data, str(path))
+
+    @classmethod
+    def load(cls, path: Path | None = None) -> Tuning:
+        """:meth:`read_file`, raising the first refusal as its error."""
+        tuning, found = cls.read_file(path)
+        if found or tuning is None:
+            raise found[0].as_error()
+        return tuning
+
+
+class _TuningReader:
+    """One pass over a tuning file, collecting every refusal as it goes."""
+
+    def __init__(self, source: str) -> None:
+        self.source = source
+        self.found: list[Refusal] = []
+
+    def read(self, data: object) -> tuple[Tuning | None, list[Refusal]]:
+        top = self._object(data, "the tuning", _TOP, _TOP)
+        if top is None:
+            return None, self.found
+        found = top.get("format", TUNING_FORMAT)
+        if type(found) is not int or found != TUNING_FORMAT:
+            self._value("format", f"{TUNING_FORMAT}, the only format this version reads")
+        default = self._object(top.get("question", _ABSENT), "question", _QUESTION, _QUESTION)
+        levels = self._levels(top.get("levels", _ABSENT), default)
+        scoring = self._scoring(top.get("scoring", _ABSENT), levels)
+        requests = self._requests(top.get("requests", _ABSENT))
+        if self.found or levels is None or scoring is None or requests is None:
+            assert self.found, "a tuning that could not be built says why"
+            return None, self.found
+        return Tuning(levels, scoring, requests, self.source), []
+
+    def _levels(
+        self, data: object, default: Mapping[str, Any] | None
+    ) -> tuple[LevelTuning, ...] | None:
+        if data is _ABSENT:
+            return None
+        if not isinstance(data, list) or not data:
+            self._value("levels", "a list of at least one level")
+            return None
+        levels: list[LevelTuning] = []
+        seen: set[str] = set()
+        kinds: set[str] = set()
+        for index, item in enumerate(data):
+            where = f"levels[{index}]"
+            level = self._object(item, where, _LEVEL, _LEVEL_REQUIRED)
+            if level is None:
+                continue
+            name = level.get("name")
+            if not _meta_name(name):
+                self._value(f"{where}.name", "a metadata name: not empty, without '!' or '/'")
+            elif name in seen:
+                self._value(f"{where}.name", "a name no other level has")
+            else:
+                seen.add(name)
+            kind = level.get("kind")
+            if kind not in _KINDS:
+                self._value(f"{where}.kind", _one_of(_KINDS))
+            elif kind != "value" and kind in kinds:
+                self._value(f"{where}.kind", f"not {kind!r} again: only one level reads it")
+            else:
+                kinds.add(kind)
+            meta = level.get("meta", name if kind != "body" else None)
+            if "meta" in level:
+                if kind == "body":
+                    self._value(f"{where}.meta", "left out, since the body is not metadata")
+                elif not _meta_name(meta):
+                    self._value(f"{where}.meta", "a metadata name: not empty, without '!' or '/'")
+            what = level.get("what")
+            if not isinstance(what, str) or not what:
+                self._value(f"{where}.what", "a non-empty string")
+            shape = level.get("shape")
+            if shape not in _SHAPES:
+                self._value(f"{where}.shape", _one_of(_SHAPES))
+            elif kind == "body" and shape != "state":
+                self._value(f"{where}.shape", "'state', since a body is too long for a question")
+            weight = level.get("weight")
+            if not _number(weight) or weight < 0:
+                self._value(f"{where}.weight", "a number, zero or more")
+            supporting = level.get("supporting", False)
+            if not isinstance(supporting, bool):
+                self._value(f"{where}.supporting", "true or false")
+            own = self._object(level.get("question", {}), f"{where}.question", _QUESTION, ())
+            asked = None
+            if default is not None and own is not None and isinstance(name, str):
+                asked = self._questions(default, own, where, name, what)
+            if asked is not None and not self.found:
+                levels.append(
+                    LevelTuning(name, kind, meta, shape, float(weight), supporting, asked)
+                )
+        return tuple(levels) if not self.found else None
+
+    def _questions(
+        self,
+        default: Mapping[str, Any],
+        own: Mapping[str, Any],
+        where: str,
+        name: str,
+        what: object,
+    ) -> LevelQuestions | None:
+        """The level's question: the default's fields, overridden by its own."""
+        merged = {**default, **own}
+
+        def at(field_name: str) -> str:
+            owner = f"{where}.question" if field_name in own else "question"
+            return f"{owner}.{field_name}"
+
+        kind = merged.get("kind")
+        if kind not in _QUESTION_KINDS:
+            self._once(at("kind"), _one_of(_QUESTION_KINDS))
+            kind = None
+        criteria = merged.get("criteria", [])
+        low, high = _CRITERIA_RANGE
+        if not isinstance(criteria, list) or not all(isinstance(c, str) and c for c in criteria):
+            self._once(at("criteria"), "a list of non-empty strings")
+            criteria = None
+        elif kind == "score" and not low <= len(criteria) <= high:
+            self._once(at("criteria"), f"{low} to {high} of them, lowest first, for a score")
+            criteria = None
+        texts: dict[str, str] = {}
+        for shape in _SHAPES:
+            template = merged.get(shape)
+            text = self._template(template, at(shape), shape)
+            if text is not None and isinstance(what, str):
+                texts[shape] = _fill(text, shape, name, what)
+        if kind is None or criteria is None or len(texts) != len(_SHAPES):
+            return None
+        kept = tuple(criteria) if kind == "score" else ()
+        return LevelQuestions(
+            questions=Question(kind, texts["questions"], kept),
+            state=Question(kind, texts["state"], kept),
+        )
+
+    def _template(self, template: object, where: str, shape: str) -> str | None:
+        allowed = _PLACEHOLDERS[shape]
+        if not isinstance(template, str) or not template:
+            self._once(where, "a non-empty string")
+            return None
+        try:
+            named = [
+                placeholder
+                for _, placeholder, _, _ in string.Formatter().parse(template)
+                if placeholder is not None
+            ]
+            plain = all(
+                not spec and conversion is None
+                for _, placeholder, spec, conversion in string.Formatter().parse(template)
+                if placeholder is not None
+            )
+        except ValueError:
+            self._once(where, "a template whose braces balance; write a literal one as {{ or }}")
+            return None
+        if not plain:
+            self._once(where, "a template whose placeholders are plain names, such as {what}")
+            return None
+        unknown = [name for name in named if name not in allowed]
+        if unknown:
+            self._once(where, f"a template naming only {_braced(allowed)}, not {_braced(unknown)}")
+            return None
+        if shape == "state" and "query" not in named:
+            self._once(where, "a template naming {query}, where the query goes")
+            return None
+        return template
+
+    def _scoring(self, data: object, levels: Sequence[LevelTuning] | None) -> Scoring | None:
+        table = self._object(data, "scoring", _SCORING, _SCORING)
+        if table is None:
+            return None
+        if table.get("rule", RULES[0]) not in RULES:
+            self._value("scoring.rule", _one_of(RULES))
+        valid = True
+        for name in ("yes", "no"):
+            value = table.get(name)
+            if not _number(value) or not 0 < value < 1:
+                self._value(f"scoring.{name}", "a number between 0 and 1")
+                valid = False
+        if valid and table["no"] >= table["yes"]:
+            self._value("scoring.no", f"below scoring.yes, {table['yes']}")
+        clamp = table.get("clamp")
+        if not _number(clamp) or not 0 < clamp < 0.5:
+            self._value("scoring.clamp", "a number between 0 and 0.5")
+        if self.found or levels is None:
+            return None
+        return Scoring(
+            weights={level.name: level.weight for level in levels},
+            supporting=frozenset(level.name for level in levels if level.supporting),
+            yes=float(table["yes"]),
+            no=float(table["no"]),
+            clamp=float(clamp),
+        )
+
+    def _requests(self, data: object) -> Requests | None:
+        table = self._object(data, "requests", _REQUESTS, _REQUESTS)
+        if table is None:
+            return None
+        valid = True
+        for name in _REQUESTS:
+            value = table.get(name)
+            if name in table and (
+                not isinstance(value, int) or isinstance(value, bool) or value < 1
+            ):
+                self._value(f"requests.{name}", "a whole number, one or more")
+                valid = False
+        sizes = [table.get(name) for name in ("min_chunk_chars", "chunk_chars")]
+        if valid and None not in sizes and sizes[0] > sizes[1]:
+            self._value("requests.min_chunk_chars", "at most requests.chunk_chars")
+        if self.found or len(table) - (_NOTE in table) < len(_REQUESTS):
+            return None
+        return Requests(**{name: table[name] for name in _REQUESTS})
+
+    def _object(
+        self, data: object, where: str, known: Sequence[str], required: Sequence[str]
+    ) -> Mapping[str, Any] | None:
+        """``data`` if it is an object, refusing its unknown and missing names."""
+        if data is _ABSENT:
+            return None
+        if not isinstance(data, dict):
+            self._value(where, "an object")
+            return None
+        for name in data:
+            if name == _NOTE:
+                if not isinstance(data[name], str):
+                    self._value(f"{where}.{_NOTE}", "a string")
+            elif name not in known:
+                self.found.append(
+                    Refusal(
+                        "smart-search-tuning-name-unknown",
+                        overridable=False,
+                        source=self.source,
+                        where=where,
+                        name=name,
+                        known=tuple(known),
+                    )
+                )
+        for name in required:
+            if name not in data:
+                self.found.append(
+                    Refusal(
+                        "smart-search-tuning-name-missing",
+                        overridable=False,
+                        source=self.source,
+                        where=where,
+                        name=name,
+                    )
+                )
+        return data
+
+    def _value(self, where: str, expected: str) -> None:
+        self.found.append(
+            Refusal(
+                "smart-search-tuning-value",
+                overridable=False,
+                source=self.source,
+                where=where,
+                expected=expected,
+            )
+        )
+
+    def _once(self, where: str, expected: str) -> None:
+        """:meth:`_value`, but a default question's fault is reported once, not per level."""
+        for refusal in self.found:
+            if refusal.code == "smart-search-tuning-value" and refusal.details["where"] == where:
+                return
+        self._value(where, expected)
+
+
+def _meta_name(name: object) -> bool:
+    return (
+        isinstance(name, str)
+        and bool(name)
+        and not name.startswith(keys.META_PREFIX)
+        and keys.DELIMITER not in name
+    )
+
+
+def _number(value: object) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _one_of(names: Sequence[str]) -> str:
+    return "one of " + ", ".join(repr(name) for name in names)
+
+
+def _braced(names: Sequence[str]) -> str:
+    return ", ".join("{" + name + "}" for name in names)
+
+
+def _fill(template: str, shape: str, level: str, what: str) -> str:
+    """A template with the level's placeholders filled in.
+
+    A ``"state"`` text still names ``{query}``, filled per search with
+    :meth:`str.format`, so everything else in it is left escaped for that.
+    """
+    if shape == "questions":
+        return template.format(level=level, what=what)
+    escape = {"level": level, "what": what}
+    text = []
+    for literal, placeholder, _, _ in string.Formatter().parse(template):
+        text.append(literal.replace("{", "{{").replace("}", "}}"))
+        if placeholder is not None:
+            text.append(
+                "{query}"
+                if placeholder == "query"
+                else escape[placeholder].replace("{", "{{").replace("}", "}}")
+            )
+    return "".join(text)
 
 
 @dataclass(frozen=True, slots=True)
@@ -786,22 +1255,30 @@ __all__ = [
     "LEVELS",
     "MIN_CHUNK_CHARS",
     "NOUL_QUESTIONS",
+    "RULES",
     "SCORE_QUESTIONS",
+    "TUNING_FORMAT",
+    "TUNING_NAMES",
+    "TUNING_PATH",
     "Answer",
     "Decision",
     "Evidence",
     "Judge",
     "JudgeError",
     "Judgement",
+    "Kind",
     "Level",
     "LevelCounts",
     "LevelQuestions",
+    "LevelTuning",
     "Match",
     "Question",
+    "Requests",
     "Scoring",
     "Shape",
     "SmartSearchResult",
     "StateTooLarge",
+    "Tuning",
     "Unjudged",
     "refusals",
     "smart_search",

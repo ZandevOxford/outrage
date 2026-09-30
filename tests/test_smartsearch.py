@@ -13,9 +13,11 @@ cascade tests then mean the same whichever question set is asked.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from outrage import messages, smartsearch
+from outrage import messages, shipped, smartsearch
 from outrage.errors import OutrageError
 from outrage.mounts import MountedStore
 from outrage.smartsearch import (
@@ -23,8 +25,10 @@ from outrage.smartsearch import (
     Evidence,
     JudgeError,
     Judgement,
+    Requests,
     Scoring,
     StateTooLarge,
+    Tuning,
     smart_search,
 )
 from outrage.store_sqlite import SqliteStore
@@ -366,3 +370,154 @@ def test_score_questions_are_asked_by_default(store):
     smart_search(store, "d", "q", judge)
 
     assert {q.kind for _, questions in judge.calls for q in questions.values()} == {"score"}
+
+
+# -- The tuning file ---------------------------------------------------------
+
+
+def _tuning_data():
+    return json.loads(shipped.tree().joinpath(*smartsearch.TUNING_PATH).read_text())
+
+
+def test_the_packaged_tuning_loads():
+    tuning, found = Tuning.read_file()
+
+    assert found == []
+    assert tuning.names == smartsearch.LEVELS
+    assert tuning.source.endswith("tuning.json")
+
+
+def test_the_packaged_tuning_is_todays_constants():
+    # Scaffolding for the move onto the file, and removed with the constants.
+    tuning = Tuning.load()
+
+    for level in tuning.levels:
+        assert level.questions == smartsearch.SCORE_QUESTIONS[level.name]
+        assert level.shape == smartsearch.DEFAULT_SHAPES[level.name]
+    assert tuning.scoring == Scoring()
+    assert tuning.requests == Requests(
+        limit=smartsearch.DEFAULT_LIMIT,
+        batch_size=smartsearch.DEFAULT_BATCH_SIZE,
+        value_chars=smartsearch.DEFAULT_VALUE_CHARS,
+        chunk_chars=smartsearch.DEFAULT_CHUNK_CHARS,
+        max_chunks=smartsearch.DEFAULT_MAX_CHUNKS,
+        min_chunk_chars=smartsearch.MIN_CHUNK_CHARS,
+    )
+
+
+def test_the_readme_describes_every_name_the_tuning_accepts():
+    readme = shipped.document_text("smart-search", "readme")
+
+    assert [name for name in smartsearch.TUNING_NAMES if f"`{name}`" not in readme] == []
+
+
+def test_every_tuning_refusal_is_reported_at_once():
+    data = _tuning_data()
+    data["format"] = 2
+    data["question"]["criteria"] = ["only one"]
+    data["levels"][0]["weigth"] = 1
+    del data["levels"][1]["what"]
+    data["levels"][2]["name"] = "title"
+    data["levels"][3]["kind"] = "body"
+    data["levels"][4]["shape"] = "questions"
+    data["levels"][4]["question"] = {"state": "no query here"}
+    data["scoring"]["no"] = 0.9
+    data["requests"]["min_chunk_chars"] = 10**6
+
+    tuning, found = Tuning.read(data, "edited.json")
+
+    assert tuning is None
+    assert [(r.code, r.details.get("where")) for r in found] == [
+        ("smart-search-tuning-value", "format"),
+        ("smart-search-tuning-name-unknown", "levels[0]"),
+        ("smart-search-tuning-value", "question.criteria"),
+        ("smart-search-tuning-name-missing", "levels[1]"),
+        ("smart-search-tuning-value", "levels[1].what"),
+        ("smart-search-tuning-value", "levels[2].name"),
+        ("smart-search-tuning-value", "levels[3].shape"),
+        ("smart-search-tuning-value", "levels[4].kind"),
+        ("smart-search-tuning-value", "levels[4].shape"),
+        ("smart-search-tuning-value", "levels[4].question.state"),
+        ("smart-search-tuning-value", "scoring.no"),
+        ("smart-search-tuning-value", "requests.min_chunk_chars"),
+    ]
+    for refusal in found:
+        assert refusal.details["source"] == "edited.json"
+        assert messages.render(refusal.as_error())
+
+
+def test_a_missing_section_is_one_refusal():
+    data = _tuning_data()
+    del data["scoring"]
+
+    _, found = Tuning.read(data, "t")
+
+    assert [(r.code, r.details["name"]) for r in found] == [
+        ("smart-search-tuning-name-missing", "scoring")
+    ]
+
+
+@pytest.mark.parametrize("section", ["question", "levels", "scoring", "requests"])
+def test_a_null_section_is_refused_rather_than_taken_as_missing(section):
+    data = _tuning_data()
+    data[section] = None
+
+    tuning, found = Tuning.read(data, "t")
+
+    assert tuning is None
+    assert [(r.code, r.details["where"]) for r in found][:1] == [
+        ("smart-search-tuning-value", section)
+    ]
+
+
+def test_a_template_placeholder_must_be_a_plain_name():
+    data = _tuning_data()
+    data["question"]["state"] = "{what!r} for {query:>5}"
+
+    _, found = Tuning.read(data, "t")
+
+    assert [(r.code, r.details["where"]) for r in found] == [
+        ("smart-search-tuning-value", "question.state")
+    ]
+
+
+def test_a_file_that_cannot_be_read_or_parsed_is_refused(tmp_path):
+    missing = tmp_path / "absent.json"
+    broken = tmp_path / "broken.json"
+    broken.write_text("{")
+
+    assert [r.code for r in Tuning.read_file(missing)[1]] == ["smart-search-tuning-unreadable"]
+    assert [r.code for r in Tuning.read_file(broken)[1]] == ["smart-search-tuning-not-json"]
+    with pytest.raises(OutrageError) as raised:
+        Tuning.load(broken)
+    assert str(broken) in messages.render(raised.value)
+
+
+def test_a_level_may_override_the_question_and_read_other_metadata():
+    data = _tuning_data()
+    data["levels"].insert(
+        1,
+        {
+            "name": "tags",
+            "meta": "labels",
+            "kind": "value",
+            "what": "tags {braced}",
+            "shape": "state",
+            "weight": 0.5,
+            "question": {"kind": "noul", "state": "Tags {{x}}: {what}. Relevant to {query}?"},
+            "note": "ignored",
+        },
+    )
+
+    tuning, found = Tuning.read(data, "t")
+
+    assert found == []
+    tags = tuning.level("tags")
+    assert (tags.meta, tags.shape, tags.supporting) == ("labels", "state", False)
+    assert tags.questions.state.kind == "noul"
+    assert tags.questions.state.criteria == ()
+    assert tags.questions.state.text.format(query="Q") == "Tags {x}: tags {braced}. Relevant to Q?"
+    assert tags.questions.questions.kind == "noul"
+    assert tuning.level("title").questions.state.kind == "score"
+    assert tuning.scoring.weights["tags"] == 0.5
+    assert tuning.level("body").meta is None

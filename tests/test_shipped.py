@@ -65,6 +65,7 @@ EXPECTED = (
     "readme",
     "reference",
     "requirements",
+    "smart-search",
     "tools",
     "workflow",
 )

@@ -1,0 +1,74 @@
+{
+  "format": 1,
+  "note": "Read by smart search at startup; smart-search/readme says what every field means and how to tune them.",
+  "question": {
+    "note": "Score rather than Noul: better at most levels in the first measurement, since the tiers say what kind of match to look for. The same criteria everywhere until tuning says a level wants its own.",
+    "kind": "score",
+    "criteria": [
+      "no relevance to the query topic",
+      "relevant to a related topic",
+      "relevant to the query topic",
+      "directly addresses the query"
+    ],
+    "questions": "The state is a search query. `{level}` is the {what} of the stored document at `key`. Is that document likely to be relevant to the query?",
+    "state": "The state is the {what} of one stored document. Is that document likely to be relevant to this search query: {query}"
+  },
+  "levels": [
+    {
+      "name": "title",
+      "kind": "value",
+      "what": "title",
+      "shape": "questions",
+      "weight": 0.6,
+      "supporting": true,
+      "note": "Supporting only: a title labels rather than describes, so a generic one gets a low answer, and counted against it ruled out the best document for a query."
+    },
+    {
+      "name": "keywords",
+      "kind": "value",
+      "what": "keywords",
+      "shape": "questions",
+      "weight": 0.6,
+      "supporting": true,
+      "note": "Beside the title, being as short and written for the same purpose, and supporting only for the same reason."
+    },
+    {
+      "name": "summary",
+      "kind": "value",
+      "what": "summary",
+      "shape": "questions",
+      "weight": 0.8,
+      "note": "Before contents: shorter, and says what a document is for rather than what is in it."
+    },
+    {
+      "name": "contents",
+      "kind": "contents",
+      "what": "table of contents (its headings)",
+      "shape": "questions",
+      "weight": 0.6
+    },
+    {
+      "name": "body",
+      "kind": "body",
+      "what": "text, or one part of it,",
+      "shape": "state",
+      "weight": 1.0
+    }
+  ],
+  "scoring": {
+    "rule": "log-odds-sum",
+    "yes": 0.8,
+    "no": 0.2,
+    "clamp": 0.0001,
+    "note": "A starting point, not a result: measuring against labelled queries is what sets these."
+  },
+  "requests": {
+    "limit": 100,
+    "batch_size": 50,
+    "value_chars": 8000,
+    "chunk_chars": 60000,
+    "max_chunks": 16,
+    "min_chunk_chars": 1000,
+    "note": "chunk_chars: Jev takes 32k tokens for the state and the longest question together, at near four characters a token, less room for the question and for text that tokenises badly."
+  }
+}
