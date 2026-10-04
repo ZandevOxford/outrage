@@ -44,7 +44,7 @@ class FakeJudge:
         self.calls.append((state, dict(questions)))
         answers = {}
         for qid, question in questions.items():
-            text = state + " " + " ".join(question.instructions.values())
+            text = " ".join([*state.values(), *question.instructions.values()])
             if "HUGE" in text:
                 raise StateTooLarge("smart-search-test-too-large")
             if "BROKEN" in text:
@@ -59,12 +59,12 @@ class FakeJudge:
         return Judgement(answers, input_tokens=len(state) + len(questions))
 
     def judged(self, level):
-        """The keys that were judged at a metadata level in the questions shape."""
+        """The values that were judged at a level, in either shape."""
         return [
-            question.instructions["key"]
-            for _, questions in self.calls
-            for question in questions.values()
-            if level in question.instructions
+            sent[level]
+            for state, questions in self.calls
+            for sent in (state, *(question.instructions for question in questions.values()))
+            if level in sent
         ]
 
 
@@ -107,8 +107,8 @@ def _put(store, key, body="nothing here", **meta):
 
 def test_a_title_decides_a_match_and_the_rest_cascade(store):
     _put(store, "d/yes", title="MATCH")
-    _put(store, "d/no", title="unrelated", summary="unrelated")
-    _put(store, "d/later", title="NEAR", summary="NEAR", body="MATCH in the body")
+    _put(store, "d/no", title="unrelated", summary="unrelated summary")
+    _put(store, "d/later", title="NEAR", summary="NEAR summary", body="MATCH in the body")
     judge = FakeJudge()
 
     result = smart_search(store, "d", "anything", judge)
@@ -120,7 +120,7 @@ def test_a_title_decides_a_match_and_the_rest_cascade(store):
     assert result.levels["title"].asked == 3
     assert result.levels["title"].yes == 1 and result.levels["title"].no == 0
     assert result.levels["summary"].no == 1
-    assert judge.judged("summary") == ["d/later", "d/no"]
+    assert judge.judged("summary") == ["NEAR summary", "unrelated summary"]
 
 
 @pytest.mark.parametrize("level", ["title", "keywords"])
@@ -151,7 +151,7 @@ def test_keywords_are_read_from_their_own_metadata(store):
 
     result = smart_search(store, "d", "q", judge)
 
-    assert judge.judged("keywords") == ["d/a"]
+    assert judge.judged("keywords") == ["NEAR"]
     [match] = result.matches
     assert [e.level for e in match.evidence] == ["title", "keywords", "summary"]
 
@@ -181,13 +181,13 @@ def test_missing_metadata_is_unsure_and_goes_on_unchanged(store):
 
 def test_a_level_reads_only_the_documents_still_pending(store):
     _put(store, "d/a", title="MATCH", summary="MATCH")
-    _put(store, "d/b", title="NEAR", summary="unrelated")
-    _put(store, "d/b/child", title="MATCH", summary="unrelated")
+    _put(store, "d/b", title="NEAR", summary="unrelated, of b")
+    _put(store, "d/b/child", title="MATCH", summary="unrelated, of the child")
 
     judge = FakeJudge()
     smart_search(store, "d", "q", judge)
 
-    assert judge.judged("summary") == ["d/b"]
+    assert judge.judged("summary") == ["unrelated, of b"]
 
 
 def test_a_truncated_value_cannot_rule_a_document_out(store):
@@ -212,7 +212,7 @@ def test_a_body_is_judged_by_its_best_chunk(store):
     [match] = result.matches
     assert match.decided_at == "body"
     assert match.evidence[0].chunks == len(judge.calls) > 1
-    assert "".join(state for state, _ in judge.calls) == body
+    assert "".join(judge.judged("body")) == body
 
 
 def test_a_body_cut_short_is_partial_and_kept(store):
@@ -236,13 +236,8 @@ def test_body_chunks_follow_the_contents_sections(store):
     carry_on = _tuned(yes=1.0, no=0.0, chunk_chars=60)
     smart_search(store, "d", "q", judge, levels=["contents", "body"], tuning=carry_on)
 
-    contents_state = judge.calls[0][1]["d0"].instructions["contents"]
-    assert contents_state == "# One\n# Two\n# Three"
-    assert [state for state, _ in judge.calls[1:]] == [
-        body[:two],
-        body[two:three],
-        body[three:],
-    ]
+    assert judge.judged("contents") == ["# One\n# Two\n# Three"]
+    assert judge.judged("body") == [body[:two], body[two:three], body[three:]]
 
 
 def test_windows_split_a_section_too_long_for_one_chunk():
@@ -296,8 +291,9 @@ def test_the_state_shape_puts_the_value_in_the_state(store):
     smart_search(store, "d", "cats", judge, levels=["title"], tuning=_tuned({"title": "state"}))
 
     [(state, questions)] = judge.calls
-    assert state == "MATCH"
-    assert questions["q"].text.endswith("cats")
+    assert state == {"title": "MATCH"}
+    assert questions["q"].instructions == {"query": "cats"}
+    assert "cats" not in questions["q"].text
 
 
 def test_the_questions_shape_puts_the_query_in_the_state(store):
@@ -308,11 +304,22 @@ def test_the_questions_shape_puts_the_query_in_the_state(store):
     smart_search(store, "d", "cats", judge, levels=["title"])
 
     [(state, questions)] = judge.calls
-    assert state == "cats"
+    assert state == {"query": "cats"}
     assert [q.instructions for q in questions.values()] == [
-        {"key": "d/a", "title": "MATCH"},
-        {"key": "d/b", "title": "MATCH"},
+        {"title": "MATCH"},
+        {"title": "MATCH"},
     ]
+
+
+def test_a_question_reads_the_same_in_either_shape(store):
+    _put(store, "d/a", title="MATCH")
+    batched, single = FakeJudge(), FakeJudge()
+
+    smart_search(store, "d", "cats", batched, levels=["title"])
+    smart_search(store, "d", "cats", single, levels=["title"], tuning=_tuned({"title": "state"}))
+
+    [text] = {q.text for judge in (batched, single) for _, qs in judge.calls for q in qs.values()}
+    assert "`title`" in text and "`query`" in text
 
 
 def test_score_questions_reduce_to_a_probability(store):
@@ -417,7 +424,7 @@ def test_every_tuning_refusal_is_reported_at_once():
     data["levels"][2]["name"] = "title"
     data["levels"][3]["kind"] = "body"
     data["levels"][4]["shape"] = "questions"
-    data["levels"][4]["question"] = {"state": "no query here"}
+    data["levels"][4]["question"] = {"text": "Is {query} about `{level}`?"}
     data["scoring"]["no"] = 0.9
     data["requests"]["min_chunk_chars"] = 10**6
 
@@ -433,7 +440,7 @@ def test_every_tuning_refusal_is_reported_at_once():
         ("smart-search-tuning-value", "levels[3].shape"),
         ("smart-search-tuning-value", "levels[4].kind"),
         ("smart-search-tuning-value", "levels[4].shape"),
-        ("smart-search-tuning-value", "levels[4].question.state"),
+        ("smart-search-tuning-value", "levels[4].question.text"),
         ("smart-search-tuning-value", "scoring.no"),
         ("smart-search-tuning-value", "requests.min_chunk_chars"),
     ]
@@ -468,12 +475,25 @@ def test_a_null_section_is_refused_rather_than_taken_as_missing(section):
 
 def test_a_template_placeholder_must_be_a_plain_name():
     data = _tuning_data()
-    data["question"]["state"] = "{what!r} for {query:>5}"
+    data["question"]["text"] = "{what!r} for {level:>5}"
 
     _, found = Tuning.read(data, "t")
 
     assert [(r.code, r.details["where"]) for r in found] == [
-        ("smart-search-tuning-value", "question.state")
+        ("smart-search-tuning-value", "question.text")
+    ]
+
+
+@pytest.mark.parametrize("name", ["query", "question"])
+def test_a_level_cannot_take_a_name_a_request_uses(name):
+    data = _tuning_data()
+    data["levels"][0]["name"] = name
+    data["levels"][0]["meta"] = "title"
+
+    _, found = Tuning.read(data, "t")
+
+    assert [(r.code, r.details["where"]) for r in found] == [
+        ("smart-search-tuning-value", "levels[0].name")
     ]
 
 
@@ -500,7 +520,7 @@ def test_a_level_may_override_the_question_and_read_other_metadata():
             "what": "tags {braced}",
             "shape": "state",
             "weight": 0.5,
-            "question": {"kind": "noul", "state": "Tags {{x}}: {what}. Relevant to {query}?"},
+            "question": {"kind": "noul", "text": "Tags {{x}} `{level}`: {what}. Fits `query`?"},
             "note": "ignored",
         },
     )
@@ -510,11 +530,10 @@ def test_a_level_may_override_the_question_and_read_other_metadata():
     assert found == []
     tags = tuning.level("tags")
     assert (tags.meta, tags.shape, tags.supporting) == ("labels", "state", False)
-    assert tags.questions.state.kind == "noul"
-    assert tags.questions.state.criteria == ()
-    assert tags.questions.state.text.format(query="Q") == "Tags {x}: tags {braced}. Relevant to Q?"
-    assert tags.questions.questions.kind == "noul"
-    assert tuning.level("title").questions.state.kind == "score"
+    assert tags.question.kind == "noul"
+    assert tags.question.criteria == ()
+    assert tags.question.text == "Tags {x} `tags`: tags {braced}. Fits `query`?"
+    assert tuning.level("title").question.kind == "score"
     assert tuning.scoring.weights["tags"] == 0.5
     assert tuning.level("body").meta is None
 

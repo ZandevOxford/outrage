@@ -265,10 +265,10 @@ class SystemOne:
     def __exit__(self, *_: object) -> None:
         self.close()
 
-    def judge(self, state: str, questions: Mapping[str, Question]) -> Judgement:
+    def judge(self, state: Mapping[str, str], questions: Mapping[str, Question]) -> Judgement:
         body = {
             "model": self.settings.model,
-            "state": state,
+            "state": dict(state),
             "questions": {qid: _wire(question) for qid, question in questions.items()},
         }
         response = self._send(body)

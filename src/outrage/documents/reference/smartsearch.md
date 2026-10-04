@@ -20,7 +20,7 @@ judge rather than a different cascade.
 What is expected to change as the cascade is measured is not in this module
 at all. The levels and their order, the question asked at each, **which way
 round** each is asked (the query as the state and many documents as the
-questions, or each document as the state and the query as its one question),
+questions, or each document as the state and the query with its one question),
 the scoring constants and the request sizes are a [`Tuning`](#outrage.smartsearch.Tuning), read from
 a JSON file shipped in the package, [`TUNING_PATH`](#outrage.smartsearch.TUNING_PATH), beside a readme
 saying what each part means and how to tune it. What stays here is the rules:
@@ -45,6 +45,10 @@ applies it.
 Content leaves the machine whenever the judge is a remote service, which is
 the front ends' to say; this module cannot tell one judge from another.
 
+### outrage.smartsearch.QUERY *= 'query'*
+
+The name the query is sent under, in the state or beside the question.
+
 ### outrage.smartsearch.RULES *= ('log-odds-sum',)*
 
 How each combination rule is named in the tuning. The rule is code, so a
@@ -54,7 +58,7 @@ second one is a new name here and a new [`Scoring.combine()`](#outrage.smartsear
 
 The tuning file's layout version; a file naming another is refused.
 
-### outrage.smartsearch.TUNING_NAMES *= ('format', 'question', 'levels', 'scoring', 'requests', 'kind', 'criteria', 'questions', 'state', 'name', 'meta', 'what', 'shape', 'weight', 'supporting', 'rule', 'yes', 'no', 'clamp', 'limit', 'batch_size', 'value_chars', 'chunk_chars', 'max_chunks', 'min_chunk_chars', 'note', 'value', 'contents', 'body', 'score', 'noul', 'log-odds-sum')*
+### outrage.smartsearch.TUNING_NAMES *= ('format', 'question', 'levels', 'scoring', 'requests', 'kind', 'criteria', 'text', 'name', 'meta', 'what', 'shape', 'weight', 'supporting', 'rule', 'yes', 'no', 'clamp', 'limit', 'batch_size', 'value_chars', 'chunk_chars', 'max_chunks', 'min_chunk_chars', 'note', 'value', 'contents', 'body', 'questions', 'state', 'score', 'noul', 'log-odds-sum')*
 
 Every name the tuning file accepts, as field names and as the values of its
 enumerated fields, so that the readme can be held to describing all of them.
@@ -131,7 +135,7 @@ The System One protocol, reduced to what the cascade needs. A client
 retries what is worth retrying before it raises, so a [`JudgeError`](#outrage.smartsearch.JudgeError)
 reaching the cascade is final for the documents that request carried.
 
-#### judge(state: [str](https://docs.python.org/3/builtins/stdtypes.html#str), questions: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Question](#outrage.smartsearch.Question)]) → [Judgement](#outrage.smartsearch.Judgement)
+#### judge(state: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)], questions: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Question](#outrage.smartsearch.Question)]) → [Judgement](#outrage.smartsearch.Judgement)
 
 ### *exception* outrage.smartsearch.JudgeError(code: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*\*details: [Any](https://docs.python.org/3/library/typing.html#typing.Any))
 
@@ -184,21 +188,7 @@ so went on unchanged.
 
 #### unjudged *: [int](https://docs.python.org/3/builtins/functions.html#int)*
 
-### *class* outrage.smartsearch.LevelQuestions(questions: [Question](#outrage.smartsearch.Question), state: [Question](#outrage.smartsearch.Question))
-
-Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
-
-The question for one level, in each of the two shapes.
-
-#### questions *: [Question](#outrage.smartsearch.Question)*
-
-Asked with the query as the state; the document is in its instructions.
-
-#### state *: [Question](#outrage.smartsearch.Question)*
-
-Asked with the document's value as the state; names `{query}`.
-
-### *class* outrage.smartsearch.LevelTuning(name: [str](https://docs.python.org/3/builtins/stdtypes.html#str), kind: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['value', 'contents', 'body'], meta: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), shape: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state'], weight: [float](https://docs.python.org/3/builtins/functions.html#float), supporting: [bool](https://docs.python.org/3/builtins/functions.html#bool), questions: [LevelQuestions](#outrage.smartsearch.LevelQuestions))
+### *class* outrage.smartsearch.LevelTuning(name: [str](https://docs.python.org/3/builtins/stdtypes.html#str), kind: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['value', 'contents', 'body'], meta: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), shape: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state'], weight: [float](https://docs.python.org/3/builtins/functions.html#float), supporting: [bool](https://docs.python.org/3/builtins/functions.html#bool), question: [Question](#outrage.smartsearch.Question))
 
 Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
@@ -220,9 +210,9 @@ The metadata name read, without its `!`; None for the body.
 
 #### supporting *: [bool](https://docs.python.org/3/builtins/functions.html#bool)*
 
-#### questions *: [LevelQuestions](#outrage.smartsearch.LevelQuestions)*
+#### question *: [Question](#outrage.smartsearch.Question)*
 
-The question in both shapes, with the level's placeholders filled in.
+The question, with the level's placeholders filled in.
 
 ### *class* outrage.smartsearch.Match(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), probability: [float](https://docs.python.org/3/builtins/functions.html#float), decision: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['yes', 'unsure'], decided_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), evidence: [tuple](https://docs.python.org/3/builtins/stdtypes.html#tuple)[[Evidence](#outrage.smartsearch.Evidence), ...])
 
@@ -249,11 +239,11 @@ Bases: [`object`](https://docs.python.org/3/builtins/functions.html#object)
 
 One question put to a judge, in terms that do not depend on the wire.
 
-`text` may name `{query}`, which is filled in when the query is not the
-state. `instructions` are the facts the question is about -- for the
-`"questions"` shape, the document's key and the value being judged. They
-travel beside the text rather than inside it, so the text names them in
-backticks, the way System One expects a question to point at its data.
+`text` names what it is about in backticks, the way System One expects a
+question to point at its data: a field of the state, or of
+`instructions`, the named values that travel beside the text rather than
+inside it. Which of the two holds the query and which the document's value
+is the level's [`Shape`](#outrage.smartsearch.Shape), and the text reads the same either way.
 
 #### kind *: [Literal](https://docs.python.org/3/library/typing.html#typing.Literal)['noul', 'score']*
 
@@ -342,10 +332,12 @@ Yes, no, or carry on to the next level.
 
 Which way round a level is asked.
 
-`"questions"` puts the query in the state and one document in each question,
-so one request judges many documents. `"state"` puts the document in the
-state and the query in its one question, a request per document. Both are
-measured; if one wins everywhere the other goes.
+Every request carries two named values, the query and one value of a
+document, and the question names both in backticks whichever side each is
+on. `"questions"` puts the query in the state and one document's value
+beside each question, so one request judges many documents. `"state"` puts
+the document's value in the state and the query beside its one question, a
+request per document.
 
 alias of [`Literal`](https://docs.python.org/3/library/typing.html#typing.Literal)['questions', 'state']
 

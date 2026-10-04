@@ -3531,9 +3531,10 @@ class _MarkerJudge:
     def judge(self, state, questions):
         from outrage.smartsearch import Answer, JudgeError, Judgement
 
-        if "BROKEN" in state:
+        text = " ".join(state.values())
+        if "BROKEN" in text:
             raise JudgeError("smart-search-service-failed", url="u", status=529, detail="busy")
-        p = 0.97 if "MATCH" in state else 0.03
+        p = 0.97 if "MATCH" in text else 0.03
         answers = {
             qid: Answer(score=3 * p, probabilities=(1 - p, 0.0, 0.0, p)) for qid in questions
         }

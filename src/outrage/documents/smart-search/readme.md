@@ -49,23 +49,32 @@ The default question, used at every level that does not override it.
 * `criteria` — for `score`, what each tier means, lowest first, two to ten of
   them. A score answer becomes a probability as its expected tier scaled to 0–1,
   so a document the model splits between two tiers sits between them.
-* `questions` — the text asked in the `questions` shape, where the query is the
-  state and the document is in the question's instructions. It may name
-  `{level}`, the level's name, which is also the name the value is sent under,
-  and `{what}`, the level's description. It must not name `{query}`, since the
-  query is already the state.
-* `state` — the text asked in the `state` shape, where the document's value is
-  the state. It may name `{level}` and `{what}`, and must name `{query}`, where
-  the search query goes.
+* `text` — the question itself, the same whichever `shape` a level uses. It
+  refers to the two values every request carries by their names in backticks:
+  `query`, the search query, and the document's value, which is sent under the
+  level's name. Neither is written into the text, so the query's own wording
+  never becomes part of the question.
 
-Write a literal brace as `{{` or `}}`.
+  Two placeholders are filled in when the file is read: `{level}`, the level's
+  name, and `{what}`, the level's description. At the summary level, a text
+  beginning `` `{level}` is the {what} of one stored document`` reaches the
+  model as `` `summary` is the summary of one stored document``. Write a
+  literal brace as `{{` or `}}`.
+
+What is sent for a summary in the `questions` shape is a state of
+`{"query": "…"}` and, for each document, instructions of
+`{"question": "…", "summary": "…"}`. In the `state` shape it is a state of
+`{"summary": "…"}` and instructions of `{"question": "…", "query": "…"}`. The
+model is told nothing else about a document, and in particular not its key.
 
 ### `levels`
 
 The cascade, in order. Each level is an object with the following fields:
 
-* `name` — what the level is called in a result and in a request's `levels`.
-  It must be a valid metadata name, and no two levels may share one.
+* `name` — what the level is called in a result and in a request's `levels`,
+  and the name its value is sent to the model under. It must be a valid
+  metadata name, and no two levels may share one. `query` and `question` are
+  refused, since a request already uses both.
 * `kind` — what the level reads, which is behaviour the file can choose but not
   define:
   * `value` reads one metadata value, `!<meta>`. A value longer than
@@ -80,9 +89,10 @@ The cascade, in order. Each level is an object with the following fields:
   `!`. Defaults to `name`, so adding `!tags` as a level is a new entry here and
   no code. A `body` level has none.
 * `what` — how the question describes what is being judged, filling `{what}`.
-* `shape` — `questions` puts the query in the state and one document in each
-  question, so one request judges up to `batch_size` documents. `state` puts
-  the document in the state and the query in its one question, which is one
+* `shape` — which side of a request holds which value. `questions` puts the
+  query in the state and one document's value beside each question, so one
+  request judges up to `batch_size` documents. `state` puts the document's
+  value in the state and the query beside its one question, which is one
   request per document.
 * `weight` — how much the level's answer counts, zero or more (see
   `scoring`).

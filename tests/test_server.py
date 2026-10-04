@@ -2693,7 +2693,7 @@ class _MarkerJudge:
 
         answers = {}
         for qid, question in questions.items():
-            text = state + " " + " ".join(question.instructions.values())
+            text = " ".join([*state.values(), *question.instructions.values()])
             if "BROKEN" in text:
                 raise JudgeError("smart-search-service-failed", url="u", status=529, detail="busy")
             p = 0.97 if "MATCH" in text else 0.03

@@ -18,7 +18,7 @@ judge rather than a different cascade.
 What is expected to change as the cascade is measured is not in this module
 at all. The levels and their order, the question asked at each, **which way
 round** each is asked (the query as the state and many documents as the
-questions, or each document as the state and the query as its one question),
+questions, or each document as the state and the query with its one question),
 the scoring constants and the request sizes are a :class:`Tuning`, read from
 a JSON file shipped in the package, :data:`TUNING_PATH`, beside a readme
 saying what each part means and how to tune it. What stays here is the rules:
@@ -66,10 +66,12 @@ Level = str
 
 #: Which way round a level is asked.
 #:
-#: ``"questions"`` puts the query in the state and one document in each question,
-#: so one request judges many documents. ``"state"`` puts the document in the
-#: state and the query in its one question, a request per document. Both are
-#: measured; if one wins everywhere the other goes.
+#: Every request carries two named values, the query and one value of a
+#: document, and the question names both in backticks whichever side each is
+#: on. ``"questions"`` puts the query in the state and one document's value
+#: beside each question, so one request judges many documents. ``"state"`` puts
+#: the document's value in the state and the query beside its one question, a
+#: request per document.
 Shape = Literal["questions", "state"]
 
 #: Where a level leaves a document: ruled in, ruled out, or carried to the next.
@@ -80,11 +82,11 @@ Decision = Literal["yes", "no", "unsure"]
 class Question:
     """One question put to a judge, in terms that do not depend on the wire.
 
-    ``text`` may name ``{query}``, which is filled in when the query is not the
-    state. ``instructions`` are the facts the question is about -- for the
-    ``"questions"`` shape, the document's key and the value being judged. They
-    travel beside the text rather than inside it, so the text names them in
-    backticks, the way System One expects a question to point at its data.
+    ``text`` names what it is about in backticks, the way System One expects a
+    question to point at its data: a field of the state, or of
+    ``instructions``, the named values that travel beside the text rather than
+    inside it. Which of the two holds the query and which the document's value
+    is the level's :data:`Shape`, and the text reads the same either way.
     """
 
     kind: Literal["noul", "score"]
@@ -149,7 +151,7 @@ class Judge(Protocol):
     reaching the cascade is final for the documents that request carried.
     """
 
-    def judge(self, state: str, questions: Mapping[str, Question]) -> Judgement: ...
+    def judge(self, state: Mapping[str, str], questions: Mapping[str, Question]) -> Judgement: ...
 
 
 class JudgeError(OutrageError, RuntimeError):
@@ -158,16 +160,6 @@ class JudgeError(OutrageError, RuntimeError):
 
 class StateTooLarge(JudgeError):
     """The judge refused a request as too long. The cascade halves and retries."""
-
-
-@dataclass(frozen=True, slots=True)
-class LevelQuestions:
-    """The question for one level, in each of the two shapes."""
-
-    questions: Question
-    """Asked with the query as the state; the document is in its instructions."""
-    state: Question
-    """Asked with the document's value as the state; names ``{query}``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,7 +260,7 @@ RULES = ("log-odds-sum",)
 #: number, where the readme holds the longer account.
 _NOTE = "note"
 _TOP = ("format", "question", "levels", "scoring", "requests")
-_QUESTION = ("kind", "criteria", "questions", "state")
+_QUESTION = ("kind", "criteria", "text")
 _LEVEL = ("name", "kind", "meta", "what", "shape", "weight", "supporting", "question")
 _LEVEL_REQUIRED = ("name", "kind", "what", "shape", "weight")
 _SCORING = ("rule", "yes", "no", "clamp")
@@ -282,9 +274,15 @@ _CRITERIA_RANGE = (2, 10)
 #: as against one written as ``null``, which is refused as not an object.
 _ABSENT = object()
 
-#: The placeholders each template may name. ``{query}`` only where the query is
-#: not already the state, and there it is required.
-_PLACEHOLDERS = {"questions": ("level", "what"), "state": ("level", "what", "query")}
+#: The name the query is sent under, in the state or beside the question.
+QUERY = "query"
+
+#: Names a request uses itself, which a level therefore cannot have: the query,
+#: and the field of a question's instructions that System One reads as its text.
+_RESERVED = (QUERY, "question")
+
+#: The placeholders a question's text may name, filled in when the tuning is read.
+_PLACEHOLDERS = ("level", "what")
 
 #: Every name the tuning file accepts, as field names and as the values of its
 #: enumerated fields, so that the readme can be held to describing all of them.
@@ -318,8 +316,8 @@ class LevelTuning:
     shape: Shape
     weight: float
     supporting: bool
-    questions: LevelQuestions
-    """The question in both shapes, with the level's placeholders filled in."""
+    question: Question
+    """The question, with the level's placeholders filled in."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -455,6 +453,10 @@ class _TuningReader:
                 pass
             elif not _meta_name(name):
                 self._value(f"{where}.name", "a metadata name: not empty, without '!' or '/'")
+            elif name in _RESERVED:
+                self._value(
+                    f"{where}.name", f"not {name!r}, which a request names something else by"
+                )
             elif name in seen:
                 self._value(f"{where}.name", "a name no other level has")
             else:
@@ -493,21 +495,21 @@ class _TuningReader:
             own = self._object(level.get("question", {}), f"{where}.question", _QUESTION, ())
             asked = None
             if default is not None and own is not None and isinstance(name, str):
-                asked = self._questions(default, own, where, name, what)
+                asked = self._question(default, own, where, name, what)
             if asked is not None and not self.found:
                 levels.append(
                     LevelTuning(name, kind, meta, shape, float(weight), supporting, asked)
                 )
         return tuple(levels) if not self.found else None
 
-    def _questions(
+    def _question(
         self,
         default: Mapping[str, Any],
         own: Mapping[str, Any],
         where: str,
         name: str,
         what: object,
-    ) -> LevelQuestions | None:
+    ) -> Question | None:
         """The level's question: the default's fields, overridden by its own."""
         merged = {**default, **own}
 
@@ -527,22 +529,17 @@ class _TuningReader:
         elif kind == "score" and not low <= len(criteria) <= high:
             self._once(at("criteria"), f"{low} to {high} of them, lowest first, for a score")
             criteria = None
-        texts: dict[str, str] = {}
-        for shape in _SHAPES:
-            template = merged.get(shape)
-            text = self._template(template, at(shape), shape)
-            if text is not None and isinstance(what, str):
-                texts[shape] = _fill(text, shape, name, what)
-        if kind is None or criteria is None or len(texts) != len(_SHAPES):
+        template = self._template(merged.get("text"), at("text"))
+        if kind is None or criteria is None or template is None or not isinstance(what, str):
             return None
-        kept = tuple(criteria) if kind == "score" else ()
-        return LevelQuestions(
-            questions=Question(kind, texts["questions"], kept),
-            state=Question(kind, texts["state"], kept),
+        return Question(
+            kind,
+            template.format(level=name, what=what),
+            tuple(criteria) if kind == "score" else (),
         )
 
-    def _template(self, template: object, where: str, shape: str) -> str | None:
-        allowed = _PLACEHOLDERS[shape]
+    def _template(self, template: object, where: str) -> str | None:
+        allowed = _PLACEHOLDERS
         if not isinstance(template, str) or not template:
             self._once(where, "a non-empty string")
             return None
@@ -566,9 +563,6 @@ class _TuningReader:
         unknown = [name for name in named if name not in allowed]
         if unknown:
             self._once(where, f"a template naming only {_braced(allowed)}, not {_braced(unknown)}")
-            return None
-        if shape == "state" and "query" not in named:
-            self._once(where, "a template naming {query}, where the query goes")
             return None
         return template
 
@@ -693,27 +687,6 @@ def _one_of(names: Sequence[str]) -> str:
 
 def _braced(names: Sequence[str]) -> str:
     return ", ".join("{" + name + "}" for name in names)
-
-
-def _fill(template: str, shape: str, level: str, what: str) -> str:
-    """A template with the level's placeholders filled in.
-
-    A ``"state"`` text still names ``{query}``, filled per search with
-    :meth:`str.format`, so everything else in it is left escaped for that.
-    """
-    if shape == "questions":
-        return template.format(level=level, what=what)
-    escape = {"level": level, "what": what}
-    text = []
-    for literal, placeholder, _, _ in string.Formatter().parse(template):
-        text.append(literal.replace("{", "{{").replace("}", "}}"))
-        if placeholder is not None:
-            text.append(
-                "{query}"
-                if placeholder == "query"
-                else escape[placeholder].replace("{", "{{").replace("}", "}}")
-            )
-    return "".join(text)
 
 
 @dataclass(frozen=True, slots=True)
@@ -897,7 +870,7 @@ def smart_search(
                 level,
                 query,
                 judge,
-                plan.questions.state,
+                plan.question,
                 sizes.chunk_chars,
                 sizes.max_chunks,
                 sizes.min_chunk_chars,
@@ -919,7 +892,7 @@ def smart_search(
                 level,
                 query,
                 judge,
-                plan.questions,
+                plan.question,
                 plan.shape,
                 sizes.batch_size,
             )
@@ -1021,11 +994,15 @@ def _judge_values(
     level: Level,
     query: str,
     judge: Judge,
-    asked: LevelQuestions,
+    asked: Question,
     shape: Shape,
     batch_size: int,
 ) -> tuple[dict[str, Evidence], int]:
-    """Judge one metadata value per document, in whichever shape the level uses."""
+    """Judge one metadata value per document, in whichever shape the level uses.
+
+    The value is sent under the level's name and the query under
+    :data:`QUERY`, which are the names the question's text uses for them.
+    """
     judged: dict[str, Evidence] = {}
     tokens = 0
     if shape == "questions":
@@ -1033,14 +1010,11 @@ def _judge_values(
             batch = present[start : start + batch_size]
             ids = {f"d{i}": c for i, c in enumerate(batch)}
             sent = {
-                qid: replace(
-                    asked.questions,
-                    instructions={"key": c.key, level: values[c.key][0]},
-                )
+                qid: replace(asked, instructions={level: values[c.key][0]})
                 for qid, c in ids.items()
             }
             try:
-                judgement = judge.judge(query, sent)
+                judgement = judge.judge({QUERY: query}, sent)
             except JudgeError as error:
                 for candidate in batch:
                     candidate.failure = _failed(candidate, level, error)
@@ -1052,15 +1026,13 @@ def _judge_values(
                 except JudgeError as error:
                     candidate.failure = _failed(candidate, level, error)
                     continue
-                judged[candidate.key] = _evidence(
-                    level, answer, asked.questions, values[candidate.key][1]
-                )
+                judged[candidate.key] = _evidence(level, answer, asked, values[candidate.key][1])
     else:
-        question = replace(asked.state, text=asked.state.text.format(query=query))
+        question = replace(asked, instructions={QUERY: query})
         for candidate in present:
             value, partial = values[candidate.key]
             try:
-                judgement = judge.judge(value, {"q": question})
+                judgement = judge.judge({level: value}, {"q": question})
                 tokens += judgement.input_tokens
                 answer = _answer(judgement, "q")
             except JudgeError as error:
@@ -1106,7 +1078,7 @@ def _judge_bodies(
     evidence -- and a document whose chunks run out before its end is partial,
     since the part left unread might have been the relevant one.
     """
-    question = replace(asked, text=asked.text.format(query=query))
+    question = replace(asked, instructions={QUERY: query})
     levels = len(question.criteria) or None
     judged: dict[str, Evidence] = {}
     tokens = 0
@@ -1125,7 +1097,7 @@ def _judge_bodies(
                 else ""
             )
             try:
-                judgement = judge.judge(text, {"q": question})
+                judgement = judge.judge({level: text}, {"q": question})
                 tokens += judgement.input_tokens
                 answer = _answer(judgement, "q")
             except StateTooLarge as error:
@@ -1188,6 +1160,7 @@ def _windows(length: int, starts: Sequence[int], chunk_chars: int) -> Iterator[t
 
 
 __all__ = [
+    "QUERY",
     "RULES",
     "TUNING_FORMAT",
     "TUNING_NAMES",
@@ -1201,7 +1174,6 @@ __all__ = [
     "Kind",
     "Level",
     "LevelCounts",
-    "LevelQuestions",
     "LevelTuning",
     "Match",
     "Question",

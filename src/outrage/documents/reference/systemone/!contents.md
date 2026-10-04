@@ -85,5 +85,5 @@
 #### close() → None
 9373 9379 152
 
-#### judge(state: str, questions: Mapping[str, Question]) → Judgement
+#### judge(state: Mapping[str, str], questions: Mapping[str, Question]) → Judgement
 9452 9460 154

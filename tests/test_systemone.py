@@ -59,19 +59,19 @@ def test_a_request_is_the_documented_body():
         return _ok({"a": {"type": "noul", "noul": 0.9}})
 
     client, _ = _client(handler)
-    question = Question("noul", "Is `title` relevant?", instructions={"key": "k", "title": "T"})
-    client.judge("the query", {"a": question, "b": SCORE})
+    question = Question("noul", "Is `title` relevant to `query`?", instructions={"title": "T"})
+    client.judge({"query": "the query"}, {"a": question, "b": SCORE})
 
     [(request, body)] = sent
     assert request.url == "https://api.typesafe.ai/v1/systemone"
     assert request.headers["authorization"] == "Bearer k"
     assert body == {
         "model": "jev-latest",
-        "state": "the query",
+        "state": {"query": "the query"},
         "questions": {
             "a": {
                 "type": "noul",
-                "instructions": {"question": "Is `title` relevant?", "key": "k", "title": "T"},
+                "instructions": {"question": "Is `title` relevant to `query`?", "title": "T"},
             },
             "b": {
                 "type": "score",
@@ -99,7 +99,7 @@ def test_answers_are_read_in_both_types():
         )
 
     client, _ = _client(handler)
-    judgement = client.judge("s", {"n": NOUL, "s": SCORE})
+    judgement = client.judge({"s": "s"}, {"n": NOUL, "s": SCORE})
 
     assert judgement.answers["n"].probability == 0.25
     score = judgement.answers["s"]
@@ -116,7 +116,7 @@ def test_no_key_sends_no_authorisation():
         return _ok({})
 
     client, _ = _client(handler, key=None)
-    client.judge("s", {})
+    client.judge({"s": "s"}, {})
     assert seen == [None]
 
 
@@ -130,7 +130,7 @@ def test_a_busy_service_is_retried_with_backoff():
         )
 
     client, sleeps = _client(handler)
-    assert client.judge("s", {"q": NOUL}).answers["q"].probability == 1.0
+    assert client.judge({"s": "s"}, {"q": NOUL}).answers["q"].probability == 1.0
     assert sleeps == [0.5, 1.0]
 
 
@@ -143,7 +143,7 @@ def test_retry_after_is_honoured():
         return _ok({})
 
     client, sleeps = _client(handler)
-    client.judge("s", {})
+    client.judge({"s": "s"}, {})
     assert sleeps == [2.0]
 
 
@@ -151,7 +151,7 @@ def test_retries_run_out():
     client, sleeps = _client(lambda request: httpx2.Response(503, text="down for maintenance"))
 
     with pytest.raises(JudgeError) as raised:
-        client.judge("s", {"q": NOUL})
+        client.judge({"s": "s"}, {"q": NOUL})
     assert raised.value.code == "smart-search-service-failed"
     assert raised.value.details["detail"] == "down for maintenance"
     assert len(sleeps) == 2
@@ -164,7 +164,7 @@ def test_an_unreachable_service_is_retried_then_reported():
 
     client, sleeps = _client(handler)
     with pytest.raises(JudgeError) as raised:
-        client.judge("s", {})
+        client.judge({"s": "s"}, {})
     assert raised.value.code == "smart-search-unreachable"
     assert len(sleeps) == 2
 
@@ -181,7 +181,7 @@ def test_an_unreachable_service_is_retried_then_reported():
 def test_a_refusal_is_final(status, text, error, code):
     client, sleeps = _client(lambda request: httpx2.Response(status, text=text))
     with pytest.raises(error) as raised:
-        client.judge("s", {"q": NOUL})
+        client.judge({"s": "s"}, {"q": NOUL})
     assert raised.value.code == code
     assert sleeps == []
     assert messages.render(raised.value)
@@ -190,7 +190,7 @@ def test_a_refusal_is_final(status, text, error, code):
 def test_a_response_in_the_wrong_shape_is_reported():
     client, _ = _client(lambda request: _ok({"q": {"type": "noul"}}))
     with pytest.raises(JudgeError) as raised:
-        client.judge("s", {"q": NOUL})
+        client.judge({"s": "s"}, {"q": NOUL})
     assert raised.value.code == "smart-search-response-malformed"
 
 
@@ -313,5 +313,5 @@ def test_a_refused_key_names_where_it_came_from(source, expected):
         sleep=lambda _: None,
     )
     with pytest.raises(JudgeError) as raised:
-        client.judge("s", {"q": NOUL})
+        client.judge({"s": "s"}, {"q": NOUL})
     assert expected in messages.render(raised.value)

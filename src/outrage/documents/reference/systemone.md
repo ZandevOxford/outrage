@@ -151,4 +151,4 @@ Close it, or use it as a context manager.
 
 #### close() → [None](https://docs.python.org/3/builtins/constants.html#None)
 
-#### judge(state: [str](https://docs.python.org/3/builtins/stdtypes.html#str), questions: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Question](smartsearch.md#outrage.smartsearch.Question)]) → [Judgement](smartsearch.md#outrage.smartsearch.Judgement)
+#### judge(state: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [str](https://docs.python.org/3/builtins/stdtypes.html#str)], questions: [Mapping](https://docs.python.org/3/library/collections.abc.html#collections.abc.Mapping)[[str](https://docs.python.org/3/builtins/stdtypes.html#str), [Question](smartsearch.md#outrage.smartsearch.Question)]) → [Judgement](smartsearch.md#outrage.smartsearch.Judgement)

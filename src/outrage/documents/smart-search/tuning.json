@@ -10,8 +10,7 @@
       "relevant to the query topic",
       "directly addresses the query"
     ],
-    "questions": "The state is a search query. `{level}` is the {what} of the stored document at `key`. Is that document likely to be relevant to the query?",
-    "state": "The state is the {what} of one stored document. Is that document likely to be relevant to this search query: {query}"
+    "text": "`{level}` is the {what} of one stored document. Is that document likely to be relevant to the search query `query`?"
   },
   "levels": [
     {
