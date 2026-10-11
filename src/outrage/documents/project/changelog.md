@@ -11,7 +11,9 @@ paragraph rather than silently leaving it out of summary-based searches.
 
 `smart_search` is a new optional MCP tool for finding documents by a
 plain-language query without bringing their contents into the calling agent's
-context. A System One model screens one bounded slice in a cascade over
+context. **It is experimental**, as is the `outrage smart-search` command
+below: results, tuning, options and configuration may still change in a minor
+release. A System One model screens one bounded slice in a cascade over
 `!title`, `!keywords`, `!summary`, `!contents` and the body, carrying a document
 forward only while it remains unsure. The result ranks every document not
 ruled out, retains the per-level evidence, reports failed requests as unjudged,

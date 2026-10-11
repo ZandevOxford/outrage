@@ -703,6 +703,8 @@ def argument_parser() -> argparse.ArgumentParser:
         "smart-search",
         help="find the documents under a key that are about a query",
         description=(
+            "Experimental: results, options and configuration may still change "
+            "in a minor release. "
             "Screen documents against a query with a small classification "
             "model, judging each on its title, then its keywords, summary, "
             "contents and body, and going on to the next only while the "
@@ -1318,8 +1320,9 @@ def _log_options(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help=(
             "Record --smart-search on the server entry, so the server offers "
-            "the 'smart_search' tool, which sends document text to a System "
-            "One model to be judged. Off by default there, and it needs a "
+            "the experimental 'smart_search' tool, which sends document text "
+            "to a System One model to be judged. Off by default there, and it "
+            "needs a "
             "model configured: TYPESAFE_API_KEY, or the [smart_search] table "
             "of ~/.outrage/config.toml. Added by a re-run, never removed by one."
         ),

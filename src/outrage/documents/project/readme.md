@@ -10,7 +10,7 @@ coding harnesses such as Claude Code, Codex, Cursor, and Copilot CLI.
 * Hierarchical key based store of data and arbitrary metadata.
 * Search by exact text, by metadata, or optionally by meaning with a small
   classification model that screens title, keywords, summary, contents and
-  body in turn.
+  body in turn. Search by meaning is experimental.
 * Multiple data stores including parquet based stores for large-scale reference
   material, and an experimental PostgreSQL store shared by several devices.
 * Explicit support for command-line coding agents: Claude Code, OpenAI Codex
@@ -51,6 +51,10 @@ an Outrage store or session file; it contains no project data and can always be
 deleted safely.
 
 ## Optional smart search
+
+**Experimental.** It works, but it is new and its tuning has barely begun:
+its results, its tuning file, its options and its configuration may still
+change in a minor release, which the stable interfaces of 1.0 do not.
 
 `outrage smart-search "how are PostgreSQL stores backed up?"` screens one
 slice of the store against a plain-language query. It judges each document's
@@ -143,11 +147,11 @@ well, so the links below work here too.
   mode keeps recent writes in a sidecar file and copying the `.sqlite` alone
   yields a near-empty database that still opens cleanly. A PostgreSQL store is
   copied into a local SQLite file instead, so the backup opens with no server.
-* **Smart search** - an optional System One cascade over one bounded slice of
-  the mounted namespace. Missing metadata carries a document forward rather
-  than excluding it, partial text can only count in its favour, and failed
-  model requests are reported as unjudged rather than silently dropped. The
-  server offers the tool only when explicitly enabled.
+* **Smart search** - an optional and, for now, experimental System One cascade
+  over one bounded slice of the mounted namespace. Missing metadata carries a
+  document forward rather than excluding it, partial text can only count in
+  its favour, and failed model requests are reported as unjudged rather than
+  silently dropped. The server offers the tool only when explicitly enabled.
 
 ## Parquet stores
 

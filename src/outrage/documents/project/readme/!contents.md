@@ -5,22 +5,22 @@
 235 235 7
 
 ## Getting started
-889 889 20
+924 924 20
 
 ### A harmless `:memory:.ses` file on macOS
-1560 1560 44
+1595 1595 44
 
 ## Optional smart search
-1997 1997 53
+2032 2032 53
 
 ## Documentation
-3456 3456 85
+3711 3711 89
 
 ## Components
-5138 5138 113
+5393 5393 117
 
 ## Parquet stores
-7791 7792 152
+8073 8074 156
 
 ## A shared PostgreSQL store
-8669 8670 177
+8951 8952 181

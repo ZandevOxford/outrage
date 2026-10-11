@@ -363,6 +363,10 @@ and carries a document to the next level only while the evidence so far leaves
 it unsure. The result is every document not ruled out, best first, with the
 combined probability and what each level said.
 
+**This tool is experimental**: its tuning is young, so treat a ranking as a
+lead to check rather than an answer, and its parameters and result may still
+change.
+
 **Document text leaves this machine**: it is sent to the configured System One
 service (TypeSafe's Jev by default) to be judged. Do not search content that
 must stay local.
