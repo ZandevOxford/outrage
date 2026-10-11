@@ -2,6 +2,12 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+The `smart_search` tool now refuses a level it does not have in its own words,
+beside every other reason the call cannot run, instead of the argument
+validator's single complaint. The tool's schema still lists the levels.
+
 ## 1.3.0 - 2026-10-11
 
 The generated API reference now carries each module introduction as its

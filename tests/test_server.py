@@ -2746,6 +2746,27 @@ def test_smart_search_refuses_with_every_reason_at_once(store):
     assert "about. The level 'title' is named more than once" in said
 
 
+def test_smart_search_refuses_an_unknown_level_beside_the_other_reasons(store):
+    # The schema offers the levels as an enum, and a validator enforcing it
+    # would answer first, with its own wording and only its own complaint.
+    server = build_server(store, smart_search=_judges)
+
+    said = call_expecting_error(server, "smart_search", query=" ", levels=["nope"])
+
+    assert "about. 'nope' is not a level; the levels are title," in said
+    assert "validation error" not in said
+
+
+def test_smart_search_still_offers_its_levels_in_the_schema(store):
+    from outrage import smartsearch
+
+    server = build_server(store, smart_search=_judges)
+
+    levels = list_tools(server)["smart_search"].input_schema["properties"]["levels"]
+
+    assert levels["anyOf"][0]["items"]["enum"] == list(smartsearch.packaged_tuning()[0].names)
+
+
 def test_smart_search_pages_the_slice(store):
     for name in "abc":
         store.store_document(f"d/{name}", "MATCH")

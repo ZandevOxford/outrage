@@ -47,6 +47,7 @@ from pydantic import (
     ConfigDict,
     Field,
     SerializerFunctionWrapHandler,
+    WithJsonSchema,
     model_serializer,
 )
 
@@ -1787,8 +1788,19 @@ def build_server(
         # The levels are the tuning's, so the schema offers exactly those. Set
         # as an object rather than written in the signature, where postponed
         # evaluation would look the tuning's names up in the module's globals.
+        # Offered and not enforced: a name outside them has to reach
+        # `refusals`, or the caller gets the validator's one complaint in
+        # place of every reason at once.
         smart_search_tool.__annotations__["levels"] = Annotated[
-            list[Literal[tuning.names]] | None,  # type: ignore[valid-type]
+            list[str] | None,
+            WithJsonSchema(
+                {
+                    "anyOf": [
+                        {"type": "array", "items": {"type": "string", "enum": list(tuning.names)}},
+                        {"type": "null"},
+                    ]
+                }
+            ),
             Field(
                 description=f"Levels to judge at, in order; defaults to {', '.join(tuning.names)}"
             ),
