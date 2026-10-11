@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 1.3.0 - 2026-10-11
 
 The generated API reference now carries each module introduction as its
 `!summary` metadata. The page and summary are rebuilt together from the same
