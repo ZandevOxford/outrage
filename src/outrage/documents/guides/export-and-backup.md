@@ -1,8 +1,11 @@
 # Export and backup
 
-Outrage has two ways to copy a store, and they answer different questions.
-**Backup** keeps everything, for restoring. **Export** writes documents out as
-ordinary files, for reading, editing and moving them.
+To export data from *outrage* in bulk, there are three main options:
+
+* Use the *backup* function, which will keep everything suitable for restoring.
+* Use the *export* function, which writes documents as ordinary files which can
+  be viewed and edited as usual.
+* Use mounts and copy data into them.
 
 ## Backup
 
@@ -71,13 +74,24 @@ bundle whose files link to each other by name.
 between mounted stores. `--reroot` lands it *at* `TARGET` instead, which is
 what moving a subtree needs.
 
+The `copy_tree` tool is the equivalent in the MCP server.
+
 ## Checking a store
 
 `outrage check` reports whether a store is sound, and `outrage check --repair`
 fixes what can be fixed - for SQLite, folding the write-ahead log back into the
 database. No repair changes a document.
 
-## Reference
+## Using mounts as an export
+
+If you mount a file backed store, then any files copied into it become visible
+in the file system. This can be used as an alternative to export.
+
+Alternatively, you can create a new [Parquet store](parquet-stores.md) as
+an archive of part of the tree.
+
+## References
 
 * [Command line](../cli.md) - `backup`, `export`, `import`, `copy` and
-  `check` in full.
+  `check`.
+* [Mounting data stores](mounting-data-stores.md)
