@@ -69,8 +69,11 @@ dist/
 # A project that is not outrage itself has every reason to commit these. This
 # one has the hook, and no store to point at in a fresh clone anyway - .outrage/
 # is ignored above.
-CLAUDE.md
-AGENTS.md
+#
+# Anchored to the root: git matches case-insensitively on macOS, so a bare
+# AGENTS.md also ignores the shipped src/outrage/documents/agents.md.
+/CLAUDE.md
+/AGENTS.md
 .outrage-*/
 .rage-*/
 

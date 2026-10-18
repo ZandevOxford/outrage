@@ -55,6 +55,7 @@ EXPECTED = (
     "default_readme",
     "design",
     "development",
+    "guides",
     "home_readme",
     "hooks",
     "implementation",

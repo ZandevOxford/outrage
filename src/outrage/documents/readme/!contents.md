@@ -1,14 +1,20 @@
 # Outrage
 0 0 1
 
-## Documentation
+## Guides
 623 623 16
 
+## Reference
+1815 1815 41
+
+## Background
+2387 2387 54
+
 ## Documentation used at runtime
-2507 2507 50
+3088 3088 67
 
 ## What this is not
-3164 3164 64
+3780 3780 81
 
 ## Turning it off, or replacing it
-3602 3602 75
+4218 4218 92
