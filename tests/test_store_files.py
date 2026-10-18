@@ -455,6 +455,32 @@ def test_a_foreign_tree_can_be_opened_with_its_dotfiles_left_alone(tmp_path):
         assert ".hidden" in [entry.key for entry in store.list_keys().items]
 
 
+def test_a_foreign_file_with_no_known_extension_reads_at_its_whole_name(tmp_path):
+    """A listing and a read have to agree on where `myfile.py` is.
+
+    The listing keeps a name carrying no known extension whole, so the file
+    `src/myfile.py` is the key `src/myfile.py`. A read that looked only for
+    that key with an extension appended -- `myfile.py.md` and the rest --
+    listed a document it could not open, and every import of a tree holding
+    one failed on it.
+    """
+    (tmp_path / "foreign" / "src").mkdir(parents=True)
+    (tmp_path / "foreign" / "src" / "myfile.py").write_text("x = 1\n")
+    (tmp_path / "foreign" / "Makefile").write_text("all:\n")
+
+    with FilesystemStore(tmp_path / "foreign", create=False) as tree:
+        assert [entry.key for entry in tree.list_keys("src").items] == ["src/myfile.py"]
+        assert tree.retrieve_document("src/myfile.py").content == "x = 1\n"
+        assert tree.retrieve_document("Makefile").content == "all:\n"
+
+    with SqliteStore(tmp_path / "s") as store:
+        moved = list(bulk.import_tree(store, tmp_path / "foreign"))
+        assert [transfer.action for transfer in moved] == [store_module.WROTE] * 2
+        # And the report names the file read, not one the mapping would write.
+        assert {transfer.path.name for transfer in moved} == {"Makefile", "myfile.py"}
+        assert store.retrieve_document("src/myfile.py").content == "x = 1\n"
+
+
 def test_an_empty_directory_is_not_a_key(files):
     (files.root / "hollow" / "deeper").mkdir(parents=True)
 

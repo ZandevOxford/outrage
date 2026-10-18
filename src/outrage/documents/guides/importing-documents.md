@@ -13,8 +13,6 @@ stores every file under `DIRECTORY` as a document, beneath `key` or at the top
 level. A path becomes a key: `notes/design.md` is stored at `notes/design`. A
 `.md` or `.json` extension is stripped and read as the format; any other file
 name is kept whole, so `src/myfile.py` is stored at the key `src/myfile.py`.
-*(Draft: in 1.3.0 such a file fails to import under the default
-`--extensions strip`; `--extensions keep` works. Remove this once fixed.)*
 
 ```text
 outrage import ./manuals reference/manuals --dry-run

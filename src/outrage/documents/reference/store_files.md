@@ -208,6 +208,12 @@ on: a report is not the place to raise, and asking with a format the
 key's own extension contradicts would answer None for a key whose file
 is perfectly well known.
 
+**No format is the exception, under \`\`strip\`\`.** A listing gives none
+exactly where a file's name declares none -- the foreign myfile.py --
+and that document is read from the bare name, which the mapping's own
+answer, myfile.py.md, does not reach. So where such a file is held,
+it is the one named.
+
 #### store_document(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), content: [str](https://docs.python.org/3/builtins/stdtypes.html#str), format: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, \*, title: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, contents: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, encoding: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None, updated_at: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None) = None) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
 One file per key, written whole, with supplied metadata beside it.

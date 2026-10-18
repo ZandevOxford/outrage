@@ -484,12 +484,14 @@ class FilesystemStore(FileStore):
             found = [] if path is None else [path]
         else:
             candidates = [self._readable(key, format) for format in bulk.EXTENSION_BY_FORMAT]
-            candidates.append(self._readable(key, None))
-            found = [
-                path if path.suffix in bulk.FORMAT_BY_EXTENSION else path.with_suffix("")
-                for path in candidates
-                if path is not None
-            ]
+            found = [path for path in candidates if path is not None]
+            # A name declaring no format is a key kept whole -- the file
+            # `myfile.py` is the key `myfile.py` -- so its file is the bare
+            # name too, which no extension appended to the key can reach.
+            if bulk.declared_format(last) is None:
+                bare = self._readable(key, None)
+                if bare is not None:
+                    found.append(bare.with_suffix(""))
         return sorted(
             (path for path in set(found) if path.is_file() and not path.is_symlink()),
             key=lambda path: path.name,
@@ -518,7 +520,17 @@ class FilesystemStore(FileStore):
         on: a report is not the place to raise, and asking with a format the
         key's own extension contradicts would answer None for a key whose file
         is perfectly well known.
+
+        **No format is the exception, under ``strip``.** A listing gives none
+        exactly where a file's name declares none -- the foreign `myfile.py` --
+        and that document is read from the bare name, which the mapping's own
+        answer, `myfile.py.md`, does not reach. So where such a file is held,
+        it is the one named.
         """
+        if self._extensions != "keep" and format is None:
+            held = self._file_for(key)
+            if held is not None:
+                return held
         return self._readable(key, None if self._extensions == "keep" else format)
 
     def _dir_for(self, key: str) -> Path:

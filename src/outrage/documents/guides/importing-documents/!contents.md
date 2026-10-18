@@ -5,19 +5,19 @@
 291 291 8
 
 ## Converting PDFs and office documents
-1692 1692 39
+1553 1553 37
 
 ## Mounting files instead of importing them
-2400 2400 56
+2261 2261 54
 
 ## Getting an agent to write documents
-3268 3268 77
+3129 3129 75
 
 ## Making documents findable
-3984 3984 93
+3845 3845 91
 
 ## Building a Parquet store
-4871 4871 112
+4732 4732 110
 
 ## Reference
-5863 5863 138
+5724 5724 136

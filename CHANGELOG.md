@@ -8,6 +8,11 @@ The `smart_search` tool now refuses a level it does not have in its own words,
 beside every other reason the call cannot run, instead of the argument
 validator's single complaint. The tool's schema still lists the levels.
 
+`outrage import` and a mounted directory of files now read a file whose name
+declares no format, such as `myfile.py` or `Makefile`, at the key it is
+listed under. Such a file was listed but could not be read, so an import of a
+tree holding one failed on it, and its report named a file that was not there.
+
 The shipped documentation has guides, a topic at a time: getting started,
 setting up projects, mounting data stores, importing documents, export and
 backup, Parquet stores, PostgreSQL and smart search, read as
