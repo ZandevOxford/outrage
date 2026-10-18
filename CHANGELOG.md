@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 1.3.1 - 2026-10-18
 
 The `smart_search` tool now refuses a level it does not have in its own words,
 beside every other reason the call cannot run, instead of the argument
