@@ -8,6 +8,13 @@ The `smart_search` tool now refuses a level it does not have in its own words,
 beside every other reason the call cannot run, instead of the argument
 validator's single complaint. The tool's schema still lists the levels.
 
+The SessionStart hook `outrage init` writes now names the interpreter of the
+environment Outrage is installed in, rather than the base interpreter a venv's
+`python` links to. In a venv that base interpreter does not have Outrage
+installed, so every session's hook failed with `No module named outrage`.
+Re-run `outrage init` to repair a project set up from a venv. Environments
+whose interpreter is not a link, such as conda's, were not affected.
+
 `outrage import` and a mounted directory of files now read a file whose name
 declares no format, such as `myfile.py` or `Makefile`, at the key it is
 listed under. Such a file was listed but could not be read, so an import of a

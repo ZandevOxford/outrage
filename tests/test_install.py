@@ -133,7 +133,7 @@ def test_the_installed_command_emits_valid_json_and_hides_the_marker(shell):
 
 def test_the_shared_hook_command_names_the_running_python_environment():
     expected = [
-        str(Path(sys.executable).resolve()),
+        str(Path(sys.executable).absolute()),
         "-m",
         "outrage",
         "sessionstart",
@@ -147,13 +147,32 @@ def test_the_shared_hook_command_names_the_running_python_environment():
         assert shlex.split(command) == expected
 
 
+@pytest.mark.skipif(os.name == "nt", reason="a venv there copies the interpreter")
+def test_the_hook_names_a_venv_interpreter_not_the_one_it_links_to(tmp_path):
+    """A venv's `bin/python` is a symlink to the base interpreter.
+
+    The base interpreter does not have outrage installed, so a hook naming it
+    fails every session with `No module named outrage`. Resolving the link
+    is what did that, and only the installed-wheel test caught it: a venv
+    built from an interpreter that *does* have outrage installed passes either
+    way.
+    """
+    (tmp_path / "venv" / "bin").mkdir(parents=True)
+    linked = tmp_path / "venv" / "bin" / "python"
+    linked.symlink_to(sys.executable)
+
+    command = sessionstart_command(linked)
+
+    assert shlex.split(command)[0] == str(linked)
+
+
 @pytest.mark.parametrize(
     ("target", "flag"), [(COPILOT_HOOK, "--copilot"), (CURSOR_HOOK, "--cursor")]
 )
 def test_a_flat_harness_command_selects_its_own_payload(target, flag):
     """The flag is how the hook asks for the key its harness reads back."""
     expected = [
-        str(Path(sys.executable).resolve()),
+        str(Path(sys.executable).absolute()),
         "-m",
         "outrage",
         "sessionstart",

@@ -448,7 +448,10 @@ def _sessionstart_command(
     shell: str | None = None,
 ) -> str:
     """The shared hook command, quoted for one harness's actual shell."""
-    interpreter = str(Path(executable or sys.executable).resolve())
+    # Absolute, never resolved: a venv's `bin/python` is a symlink to the base
+    # interpreter, which does not have this package installed, so following
+    # the link names a Python the hook cannot run outrage with.
+    interpreter = str(Path(executable or sys.executable).absolute())
     if sys.platform == "win32":
         interpreter = interpreter.replace("\\", "/")
     argv = [
