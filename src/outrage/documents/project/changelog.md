@@ -9,11 +9,12 @@ beside every other reason the call cannot run, instead of the argument
 validator's single complaint. The tool's schema still lists the levels.
 
 The shipped documentation has guides, a topic at a time: getting started,
-setting up projects, mounting data stores, export and backup, Parquet stores,
-PostgreSQL and smart search, read as `outrage/guides/<topic>`. The README is
-shorter, routing to them for what it used to describe itself. The `agents`
-document, which a repository ignore rule had kept out of git though not out of
-the published packages, is now committed.
+setting up projects, mounting data stores, importing documents, export and
+backup, Parquet stores, PostgreSQL and smart search, read as
+`outrage/guides/<topic>`. The README is shorter, routing to them for what it
+used to describe itself. The `agents` document, which a repository ignore rule
+had kept out of git though not out of the published packages, is now
+committed.
 
 ## 1.3.0 - 2026-10-11
 

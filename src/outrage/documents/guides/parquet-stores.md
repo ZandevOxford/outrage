@@ -11,17 +11,21 @@ smaller than the same corpus in SQLite. It needs the extra:
 Parquet stores are not updated in place; `outrage pack` writes one whole.
 From a directory of files, mapped to keys as `outrage import` maps them:
 
-`outrage pack reference.parquet --from-dir ./manuals`
+`outrage pack .outrage/reference.parquet --from-dir ./manuals`
 
 or from an existing store, whose documents, metadata and timestamps all come
 across:
 
-`outrage pack reference.parquet --from-store staging.sqlite`
+`outrage pack .outrage/reference.parquet --from-store staging.sqlite`
 
 The second is the usual way to build a reference base: accumulate it in a
 SQLite store, then compact it. A key prefix packs only that subtree, or stores
 a directory's documents beneath it. Nothing is written until the whole file
 is, so an interrupted pack leaves nothing behind.
+
+The file to write is a path from the working directory, unlike a mount,
+which is relative to the store directory. Writing it into `.outrage/` is what
+lets the mount below name it as `reference.parquet`.
 
 ## Mounting it
 

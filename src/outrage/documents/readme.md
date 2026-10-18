@@ -23,6 +23,9 @@ How to do things with Outrage, a topic at a time.
   writes, its options, and the conventions in a store's readme.
 * [Mounting data stores](guides/mounting-data-stores.md) - the mount table,
   the kinds of store, and adding one to the namespace.
+* [Importing documents](guides/importing-documents.md) - bringing files,
+  office documents and agent-written notes into a store, and packing a
+  reference base.
 * [Export and backup](guides/export-and-backup.md) - copying a store safely,
   and writing one out as files.
 * [Parquet stores](guides/parquet-stores.md) - packing and mounting read-only

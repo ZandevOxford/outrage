@@ -5,16 +5,16 @@
 260 260 9
 
 ## Mounting it
-906 906 26
+1128 1128 30
 
 ## Reading one directly
-1543 1543 52
+1765 1765 56
 
 ## Checking one
-1826 1826 61
+2048 2048 65
 
 ## Importing a wiki
-1949 1949 66
+2171 2171 70
 
 ## Reference
-2145 2145 72
+2367 2367 76

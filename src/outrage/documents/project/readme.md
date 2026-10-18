@@ -38,6 +38,7 @@ has more.
 * [Getting started](src/outrage/documents/guides/getting-started.md)
 * [Setting up projects](src/outrage/documents/guides/setting-up-projects.md)
 * [Mounting data stores](src/outrage/documents/guides/mounting-data-stores.md)
+* [Importing documents](src/outrage/documents/guides/importing-documents.md)
 * [Export and backup](src/outrage/documents/guides/export-and-backup.md)
 * [Parquet stores](src/outrage/documents/guides/parquet-stores.md)
 * [Postgres](src/outrage/documents/guides/postgres.md) - experimental.
