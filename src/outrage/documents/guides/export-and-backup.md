@@ -1,8 +1,9 @@
 # Export and backup
 
-To export data from *outrage* in bulk, there are three main options:
+To export data from Outrage in bulk, there are three main options:
 
-* Use the *backup* function, which will keep everything suitable for restoring.
+* Use the *backup* function, which keeps everything, so the copy can be
+  restored.
 * Use the *export* function, which writes documents as ordinary files which can
   be viewed and edited as usual.
 * Use mounts and copy data into them.
@@ -76,19 +77,19 @@ what moving a subtree needs.
 
 The `copy_tree` tool is the equivalent in the MCP server.
 
+## Using mounts as an export
+
+If you mount a file-backed store, then any documents copied into it appear as
+files in the file system. This can be used as an alternative to export.
+
+Alternatively, you can create a new [Parquet store](parquet-stores.md) as
+an archive of part of the tree.
+
 ## Checking a store
 
 `outrage check` reports whether a store is sound, and `outrage check --repair`
 fixes what can be fixed - for SQLite, folding the write-ahead log back into the
 database. No repair changes a document.
-
-## Using mounts as an export
-
-If you mount a file backed store, then any files copied into it become visible
-in the file system. This can be used as an alternative to export.
-
-Alternatively, you can create a new [Parquet store](parquet-stores.md) as
-an archive of part of the tree.
 
 ## References
 

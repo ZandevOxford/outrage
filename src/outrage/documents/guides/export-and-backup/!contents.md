@@ -2,22 +2,25 @@
 0 0 1
 
 ## Backup
-230 230 7
+325 325 11
 
 ### Restoring
-934 934 25
+1029 1029 29
 
 ## Export and import
-1276 1276 35
+1371 1371 39
 
 ### Editing a store as files
-2110 2110 56
+2205 2205 60
 
 ## Copying within the namespace
-2523 2523 68
+2618 2618 72
+
+## Using mounts as an export
+2893 2893 80
 
 ## Checking a store
-2739 2739 74
+3181 3181 88
 
-## Reference
-2960 2960 80
+## References
+3402 3402 94
