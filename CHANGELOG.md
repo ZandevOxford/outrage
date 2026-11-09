@@ -2,7 +2,7 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
-## Unreleased
+## 1.4.0 - 2026-11-09
 
 `unchanged_since` now counts a write stamped in the watermark's own
 millisecond as a change, on every backend. Stamps are to the millisecond, so
