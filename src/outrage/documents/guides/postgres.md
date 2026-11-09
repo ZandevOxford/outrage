@@ -48,6 +48,13 @@ options=-csearch_path=memory
 
 The schema and its tables are created on first open.
 
+**Give every device the same role.** A dry run's `checked_at` is held back to
+the start of the oldest transaction open on the database, so that a write
+still in flight when it looked is caught by `unchanged_since` afterwards.
+PostgreSQL shows another role's transactions only to a role granted
+`pg_read_all_stats`. Without that grant, a write in flight from a device
+connecting as another role can pass `unchanged_since` unseen.
+
 ## Passwords
 
 **Keep the password out of the service file.** libpq reads `~/.pgpass` on

@@ -8,19 +8,19 @@
 1189 1189 40
 
 ## Passwords
-1467 1467 51
+1897 1897 58
 
 ## Verifying the server
-2016 2016 66
+2446 2446 73
 
 ## Amazon RDS
-2394 2394 74
+2824 2824 81
 
 ## Schema versions
-3056 3056 87
+3486 3486 94
 
 ## Working offline
-3499 3499 98
+3929 3929 105
 
 ## Checking and backing up
-3868 3868 106
+4298 4298 113

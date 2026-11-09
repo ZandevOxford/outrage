@@ -378,6 +378,12 @@ _STAMP = _stamp_sql("now()")
 #: since autovacuum and replication hold transactions open and write no
 #: documents. ``least`` passes over a NULL, which is what a session that is
 #: not in a transaction shows.
+#:
+#: **Blind to other roles** unless this one has ``pg_read_all_stats``: the
+#: server shows every column of another role's session as NULL, its
+#: ``backend_type`` included, so such a session is passed over rather than
+#: holding the watermark back. Documented rather than detected, there being
+#: nothing safe to fall back to.
 _WATERMARK = _stamp_sql(
     "least(now(), (SELECT min(xact_start) FROM pg_stat_activity"
     " WHERE datname = current_database() AND pid <> pg_backend_pid()"
