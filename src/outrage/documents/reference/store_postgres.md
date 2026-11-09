@@ -31,7 +31,9 @@ follows from that is most of what is written down here.
   devices with skewed clocks would otherwise let a precondition pass over a
   newer write. A write that carries no `updated_at` is stamped inside the
   statement that writes it (`_STAMP`), and [`PostgresStore.now()`](#outrage.store_postgres.PostgresStore.now)
-  answers from the same clock, which is what a watermark is taken from.
+  answers from the same clock, which is what a watermark is taken from --
+  held back to the oldest open transaction, since a write is stamped when
+  its transaction began.
 * **The database's encoding is checked on the way in.** `_utf8()`'s guard in
   the SQLite backend, moved to the one moment a connection can answer it: a
   database that is not UTF8 would make every byte-addressed read a conversion,
@@ -139,6 +141,13 @@ exercises the migrations.
 The oldest schema this build can still operate at. Raising it is a release
 decision rather than a tidy-up, because it turns stores this build used to
 open into stores it refuses, on devices whose owner did not ask for that.
+
+### outrage.store_postgres.POOL_IDLE *= 4*
+
+How many idle connections a store keeps for the next caller. A connection
+is a backend process at the far end, so one that comes back to a pool
+already holding this many is closed rather than kept: a burst of
+concurrent calls costs a connection each while it lasts, and not after.
 
 ### outrage.store_postgres.READAHEAD *= 1048576*
 
@@ -389,7 +398,7 @@ secret by growing a field.
 
 Close every connection this store opened, from whichever thread asks.
 
-All of them, unlike the SQLite backend, which can only close its own:
+Idle and lent alike, unlike the SQLite backend, which can only close its own:
 sqlite3 refuses to let one thread touch another's connection at all,
 and psycopg does not. A connection left open here is one the server
 holds a backend process for, which is a resource at the far end rather
@@ -473,10 +482,23 @@ all. A dry run checks it the ordinary way.
 
 #### now(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str) = keys.ROOT, \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED) → [str](https://docs.python.org/3/builtins/stdtypes.html#str)
 
-The server's time, from the clock that stamps this store's writes.
+A watermark from the server's clock, held back to the oldest open transaction.
 
 One statement, and `key` does not change the answer: the whole store
 is stamped by the one server.
+
+**Not simply the server's time**, because a write is stamped when its
+transaction *began* (`_STAMP`) and is invisible until it
+commits. A write that began before a look and commits after it is one
+the look could not see, stamped earlier than the look -- so a watermark
+of the look's own time would let a later precondition pass over it.
+Every such write belongs to a transaction open at the moment of the
+look, so the watermark is the earliest of the server's time and the
+start of every other open transaction on the database
+(`_WATERMARK`), and a stamp at or after it is a change. What that
+costs is a refusal when a transaction was open and something changed
+after it began, which is a refusal a caller recovers from by looking
+again.
 
 #### descendant_count(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, key_range: [KeyRange](store.md#outrage.store.KeyRange) = UNBOUNDED, whole_subtree: [bool](https://docs.python.org/3/builtins/functions.html#bool) = False) → [int](https://docs.python.org/3/builtins/functions.html#int)
 

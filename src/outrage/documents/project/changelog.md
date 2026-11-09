@@ -2,6 +2,30 @@
 
 Notable changes to `outrage`. This project follows [semantic versioning](https://semver.org).
 
+## Unreleased
+
+`unchanged_since` now counts a write stamped in the watermark's own
+millisecond as a change, on every backend. Stamps are to the millisecond, so
+such a write may have landed either side of the look. A delete or copy that
+was in fact safe can now be refused when it follows a write within the same
+millisecond; look again and retry.
+
+A PostgreSQL store's `checked_at` is now held back to the start of the oldest
+transaction open on the database. A write is stamped when its transaction
+began, so one that began before a dry run and committed after it was stamped
+earlier than the dry run's `checked_at` and passed the check unseen. The
+watermark now sees transactions of the role the store connects as, or of every
+role where that role has `pg_read_all_stats`.
+
+A PostgreSQL store now keeps a small pool of connections and lends one to each
+call, instead of opening one for every thread that has ever used the store. A
+server such as the MCP server, which calls from many worker threads, now holds
+about as many connections as it uses at once.
+
+The refusal of a write to a read-only mount, the `mount` tool's `read_only`
+description and the `--mount-ro` help now say the *store* is not read-only to
+anything else, rather than the file, which a PostgreSQL mount does not have.
+
 ## 1.3.1 - 2026-10-18
 
 The `smart_search` tool now refuses a level it does not have in its own words,

@@ -101,6 +101,20 @@ answer from the registry rather than a list retyped in each place that
 needs to name them. An alias is listed because it is accepted; what it
 means is `_ALIASES`'s to say.
 
+### outrage.store.changed_since(stamp: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), watermark: [str](https://docs.python.org/3/builtins/stdtypes.html#str)) → [bool](https://docs.python.org/3/builtins/functions.html#bool)
+
+Whether a document stamped `stamp` was written at or after `watermark`.
+
+**At or after, not after.** Stamps are to the millisecond, so a write in
+the same millisecond as the look may have landed either side of it, and
+the two cannot be told apart. Counting it as a change refuses a write that
+was in fact safe; not counting it would let a write go over a change the
+caller never saw. The first is the failure a caller can recover from by
+looking again, so it is the one taken.
+
+Both sides in the spelling `_watermark()` gives, so that the
+comparison is a string comparison. None -- nothing stored -- has not changed.
+
 ### outrage.store.check_read_position(key: [str](https://docs.python.org/3/builtins/stdtypes.html#str), \*, offset: [int](https://docs.python.org/3/builtins/functions.html#int), byte_offset: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), line: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), lines: [int](https://docs.python.org/3/builtins/functions.html#int) | [None](https://docs.python.org/3/builtins/constants.html#None), pattern: [str](https://docs.python.org/3/builtins/stdtypes.html#str) | [None](https://docs.python.org/3/builtins/constants.html#None), occurrence: [int](https://docs.python.org/3/builtins/functions.html#int)) → [None](https://docs.python.org/3/builtins/constants.html#None)
 
 Refuse a read that names its position twice, or names it impossibly.

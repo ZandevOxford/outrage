@@ -696,7 +696,7 @@ does an `unavailable mount` reopened, because startup is what named it.
 - `type` (string or null; default null) — Backend to open `file` with, when the file name does not say: 'files' for a directory of files, 'duckdb' for a directory of parquet parts, 'pyarrow' to read one parquet file with pyarrow rather than duckdb, 'postgres' for a store on a PostgreSQL server
 - `service` (string or null; default null) — For 'postgres', which entry of the service file to connect with; 'outrage' when omitted
 - `extensions` (string or null; default null) — For a directory of files, whether a known extension is part of the key: 'strip' takes it off, 'keep' makes the file name and the key one string, for a bundle whose documents link to each other by name
-- `read_only` (boolean; default false) — Refuse every write routed here; the file itself is untouched
+- `read_only` (boolean; default false) — Refuse every write routed here; the store itself is untouched
 
 ### Returns
 

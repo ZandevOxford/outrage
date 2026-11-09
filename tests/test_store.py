@@ -487,7 +487,25 @@ def test_a_change_inside_the_second_of_the_watermark_is_seen(store):
 
     with pytest.raises(store_module.ChangedSinceError):
         store.delete("a", recursive=True, unchanged_since="2026-09-13T10:00:00.300+00:00")
-    assert store.delete("a", recursive=True, unchanged_since="2026-09-13T10:00:00.400+00:00")
+    assert store.delete("a", recursive=True, unchanged_since="2026-09-13T10:00:00.401+00:00")
+
+
+def test_a_change_in_the_watermarks_own_millisecond_is_seen(store):
+    """A tie may have landed either side of the look, so it counts as a change.
+
+    Refusing a write that was safe costs the caller another look; passing one
+    over a change it never saw costs the change.
+    """
+    store.store_document("a", "x", updated_at="2026-09-13T10:00:00.400+00:00")
+
+    with raises_rendered(store_module.ChangedSinceError) as raised:
+        store.delete("a", unchanged_since="2026-09-13T10:00:00.400+00:00")
+    assert store.exists("a")
+    # Not "after": the two times read the same, and the sentence has to say why
+    # that is still a refusal.
+    rendered = messages.render(raised.value)
+    assert "after the" not in rendered
+    assert "the same millisecond as" in rendered
 
 
 def test_a_write_that_names_no_timestamp_is_now(store):
@@ -637,6 +655,21 @@ def test_copy_from_leaves_a_key_written_after_the_check_and_names_it(store, sour
     assert store.retrieve_document("context/a1b2/task").content == "Mine, since."
     # The rest of the copy still crossed.
     assert store.exists("project/reference/implementation")
+
+
+def test_copy_from_counts_a_write_in_the_watermarks_own_millisecond_as_a_change(store, source):
+    """The second layer takes a tie as the pre-pass does: as a change."""
+    store.store_document("context/a1b2/task", "Mine.", updated_at=OLD)
+    transfers = store.copy_from(
+        source, on_conflict=store_module.OVERWRITE_UNCHANGED, unchanged_since=NEW
+    )
+    next(transfers)
+    store.store_document("context/a1b2/task", "Mine, since.", updated_at=NEW)
+
+    rest = {t.key: t for t in transfers}
+
+    assert rest["context/a1b2/task"].action == store_module.CHANGED
+    assert store.retrieve_document("context/a1b2/task").content == "Mine, since."
 
 
 def test_copy_from_measures_the_watermark_against_where_the_copy_lands(store, source):
@@ -2073,15 +2106,16 @@ def test_a_plain_delete_is_measured_over_the_unit_it_takes(store):
     the wrong keys refuses a delete that would have taken nothing anybody
     touched.
     """
+    between = "2026-03-01T00:00:00+00:00"
     store.store_document("a", "x", updated_at=OLD)
     store.store_document("a/!title", "T", updated_at=NEW)
     store.store_document("a/b", "y", updated_at=NEW)
 
     with raises_rendered(store_module.ChangedSinceError):
-        store.delete("a", unchanged_since=OLD)
+        store.delete("a", unchanged_since=between)
 
     store.store_document("a/!title", "T", updated_at=OLD)
-    assert store.delete("a", unchanged_since=OLD) == ["a", "a/!title"]
+    assert store.delete("a", unchanged_since=between) == ["a", "a/!title"]
 
 
 def test_a_recursive_delete_is_measured_over_the_subtree_it_takes(store):
@@ -2110,7 +2144,11 @@ def test_a_watermark_is_compared_in_one_spelling(store):
     """
     store.store_document("a/b", "x", updated_at="2026-01-01T10:15:00+00:00")
 
-    assert store.delete("a/b", unchanged_since="2026-01-01T11:15:00+01:00") == ["a/b"]
+    # 10:00 UTC: before the write, though it sorts after it as written.
+    with pytest.raises(store_module.ChangedSinceError):
+        store.delete("a/b", unchanged_since="2026-01-01T11:00:00+01:00")
+    # 10:30 UTC: after the write, though it sorts before it as written.
+    assert store.delete("a/b", unchanged_since="2026-01-01T09:30:00-01:00") == ["a/b"]
 
 
 def test_storing_an_empty_document_is_not_a_deletion(store):

@@ -27,9 +27,9 @@ is.
 A mount may be **read-only**, which is where the whole feature was pointed: a
 shared read-mostly reference base beside a local read-write store. The refusal
 lives here, in the routing, and is checked before the store is called at all --
-`Store` knows nothing about it, and the database file is not opened any
+`Store` knows nothing about it, and the store is not opened any
 differently. So this refuses writes *through this server*; it does not make the
-file read-only to anything else.
+store read-only to anything else.
 
 A table is **immutable**: it has no mutable state after `__init__`, and a
 change is a *new* table built by [`MountedStore.remounted()`](#outrage.mounts.MountedStore.remounted) rather than an

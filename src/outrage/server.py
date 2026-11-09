@@ -2287,7 +2287,7 @@ def build_server(
             ] = None,
             read_only: Annotated[
                 bool,
-                Field(description="Refuse every write routed here; the file itself is untouched"),
+                Field(description="Refuse every write routed here; the store itself is untouched"),
             ] = False,
         ) -> _MountsResult:
             changed = live.mount(
@@ -2625,7 +2625,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "base beside a local read-write store. Repeatable. The store must "
             "already exist, since a mistyped name would otherwise be created "
             "and mount as an empty one. This refuses writes through this "
-            "server; it does not make the file read-only to anything else."
+            "server; it does not make the store read-only to anything else."
         ),
     )
     parser.add_argument(

@@ -2834,7 +2834,7 @@ def check_unchanged(
         newest = _later(newest, opened.latest_change(key, key_range=key_range, whole_subtree=True))
     else:
         newest = _later(newest, _metadata_change(opened, key, key_range))
-    if newest is not None and newest > watermark:
+    if changed_since(newest, watermark):
         raise ChangedSinceError(
             "changed-since",
             key=key,
@@ -2843,6 +2843,22 @@ def check_unchanged(
             unchanged_since=watermark,
             changed_at=newest,
         )
+
+
+def changed_since(stamp: str | None, watermark: str) -> bool:
+    """Whether a document stamped ``stamp`` was written at or after ``watermark``.
+
+    **At or after, not after.** Stamps are to the millisecond, so a write in
+    the same millisecond as the look may have landed either side of it, and
+    the two cannot be told apart. Counting it as a change refuses a write that
+    was in fact safe; not counting it would let a write go over a change the
+    caller never saw. The first is the failure a caller can recover from by
+    looking again, so it is the one taken.
+
+    Both sides in the spelling :func:`_watermark` gives, so that the
+    comparison is a string comparison. None -- nothing stored -- has not changed.
+    """
+    return stamp is not None and stamp >= watermark
 
 
 def _watermark(unchanged_since: str) -> str:
@@ -3854,6 +3870,7 @@ __all__ = [
     "DEFAULT_BACKEND",
     "backend_for",
     "backend_names",
+    "changed_since",
     "check_read_position",
     "check_unchanged",
     "DEFAULT_BULK_MAX_CHARS",

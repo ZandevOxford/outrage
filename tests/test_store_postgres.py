@@ -44,6 +44,7 @@ from outrage.store import (
 )
 from outrage.store_postgres import (
     MIN_SCHEMA_VERSION,
+    POOL_IDLE,
     SCHEMA_TABLE,
     SCHEMA_VERSION,
     VERSIONS,
@@ -64,10 +65,23 @@ def query(store, statement, parameters=()):
     whether a statement returned rows is only known once a pipeline is
     synchronised, and this asks before fetching.
     """
-    conn = store._conn
-    with conn.transaction(), conn.cursor() as cursor:
+    with store._connection() as conn, conn.transaction(), conn.cursor() as cursor:
         cursor.execute(statement, parameters)
         return cursor.fetchall() if cursor.description else []
+
+
+def assert_left_idle(store):
+    """Every connection the store kept is back in the pool, in no transaction.
+
+    A connection returned mid-transaction is closed rather than kept, so a
+    stranded transaction shows as a pool with nothing idle in it as well as
+    by its status.
+    """
+    psycopg = pytest.importorskip("psycopg")
+    assert store._idle
+    assert set(store._idle) == set(store._connections)
+    idle = psycopg.pq.TransactionStatus.IDLE
+    assert all(conn.info.transaction_status == idle for conn in store._idle)
 
 
 def run(*argv):
@@ -492,29 +506,108 @@ def test_a_store_written_by_something_far_newer_is_refused(tmp_path, postgres_se
 # -- connections -----------------------------------------------------------
 
 
-def test_each_thread_gets_its_own_connection_and_close_takes_them_all(tmp_path, postgres_service):
+def test_connections_are_lent_and_kept_for_the_next_caller(tmp_path, postgres_service):
+    """A thread holds a connection only while it works, so calls in turn share one.
+
+    What the pool is for: one connection per thread that ever called would
+    leave a server-side backend process behind for every worker thread an MCP
+    server has used.
+    """
+    path, service, _schema = postgres_service
+    with PostgresStore(tmp_path / "dir", filename=path, service=service) as opened:
+        opened.store_document("a", "x")
+
+        def work(_index):
+            opened.retrieve_document("a")
+
+        for _turn in range(4):
+            in_threads(work, threads=1)
+        assert len(opened._connections) == 1
+        assert set(opened._idle) == set(opened._connections)
+
+
+def test_concurrent_callers_get_their_own_connections_and_close_takes_them_all(
+    tmp_path, postgres_service
+):
     """Unlike the SQLite backend, which can only close the calling thread's.
 
     psycopg lets a connection be closed from another thread, so a store here
     need not leave one to its thread's lifetime -- and a connection left open
     is a backend process at the far end rather than a file handle at this one.
+    Lent ones are closed as well as idle ones.
     """
     path, service, _schema = postgres_service
     with PostgresStore(tmp_path / "dir", filename=path, service=service) as opened:
         seen = {}
         lock = threading.Lock()
+        barrier = threading.Barrier(4)
 
         def work(index):
-            conn = opened._conn
-            with lock:
-                seen[index] = conn
+            with opened._connection() as conn:
+                with lock:
+                    seen[index] = conn
+                barrier.wait()
 
         in_threads(work, threads=4)
         assert len({id(conn) for conn in seen.values()}) == 4
         held = list(opened._connections)
-        assert len(held) == 5  # four workers and the one the open used
+        assert len(held) == 4  # the open's own connection was lent to one of them
+        assert len(opened._idle) == 4
+        lending = opened._connection()
+        lent = lending.__enter__()
 
     assert all(conn.closed for conn in held)
+    assert lent.closed
+    assert opened._connections == []
+
+
+def test_a_connection_is_shared_by_nested_borrowers_in_one_thread(postgres_store):
+    """A backup's snapshot and its named cursors must be one session."""
+    with postgres_store._connection() as outer, postgres_store._connection() as inner:
+        assert inner is outer
+        assert postgres_store._idle == []
+    assert postgres_store._idle == [outer]
+
+
+def test_idle_connections_beyond_the_limit_are_closed(tmp_path, postgres_service):
+    """A burst costs a connection per caller while it lasts, and not after."""
+    path, service, _schema = postgres_service
+    with PostgresStore(tmp_path / "dir", filename=path, service=service) as opened:
+        count = POOL_IDLE + 2
+        seen = []
+        lock = threading.Lock()
+        barrier = threading.Barrier(count)
+
+        def work(_index):
+            with opened._connection() as conn:
+                with lock:
+                    seen.append(conn)
+                barrier.wait()
+
+        in_threads(work, threads=count)
+        assert len(opened._idle) == POOL_IDLE
+        assert set(opened._connections) == set(opened._idle)
+        assert sum(conn.closed for conn in seen) == count - POOL_IDLE
+
+
+def test_a_connection_returned_in_a_transaction_is_closed_not_kept(postgres_store):
+    """It would carry the transaction to whoever borrowed it next."""
+    with postgres_store._connection() as conn:
+        conn.execute("BEGIN")
+        conn.execute("SELECT 1")
+    assert conn.closed
+    assert conn not in postgres_store._connections
+    postgres_store.store_document("a", "x")
+    assert postgres_store.retrieve_document("a").content == "x"
+
+
+def test_a_closed_store_lends_nothing(tmp_path, postgres_service):
+    path, service, _schema = postgres_service
+    opened = PostgresStore(tmp_path / "dir", filename=path, service=service)
+    opened.close()
+    with pytest.raises(BackendError) as raised, opened._connection():
+        pass
+    assert raised.value.code == "postgres-store-closed"
 
 
 def test_a_failed_open_closes_the_connection_it_had(tmp_path, postgres_service):
@@ -971,9 +1064,8 @@ def test_the_sql_metadata_split_agrees_with_keys_relative(postgres_store, meta_n
     On the store's own connection, so the scratch table lands in the test's
     schema and goes with it.
     """
-    assert_the_split_agrees_with_keys_relative(
-        postgres_store._conn, meta_name, find="strpos", mark="%s"
-    )
+    with postgres_store._connection() as conn:
+        assert_the_split_agrees_with_keys_relative(conn, meta_name, find="strpos", mark="%s")
 
 
 def _paged(read):
@@ -1320,8 +1412,7 @@ def test_a_read_leaves_no_transaction_open(postgres_store):
     postgres_store.store_document("a", "x")
     postgres_store.retrieve_document("a")
     postgres_store.list_keys()
-    psycopg = pytest.importorskip("psycopg")
-    assert postgres_store._conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+    assert_left_idle(postgres_store)
 
 
 # -- the archive -----------------------------------------------------------
@@ -1747,6 +1838,66 @@ def test_a_watermark_from_the_server_guards_a_write_this_machine_would_miss(
         postgres_store.delete("a", recursive=True, unchanged_since=looked)
 
 
+def _open_transaction(postgres_service):
+    """A second session on the store's schema, with a transaction begun and left open."""
+    psycopg = pytest.importorskip("psycopg")
+    _path, _service, schema = postgres_service
+    conn = psycopg.connect(postgres_dsn(), options=f"-csearch_path={schema}", autocommit=True)
+    conn.execute("BEGIN")
+    begun = conn.execute(f"SELECT {store_postgres._STAMP}").fetchone()[0]
+    return conn, begun
+
+
+def test_the_watermark_is_held_back_to_an_open_transaction(postgres_store, postgres_service):
+    """Its writes will be stamped from when it began, so the watermark cannot be later."""
+    other, begun = _open_transaction(postgres_service)
+    try:
+        time.sleep(0.05)
+        looked = postgres_store.now("a")
+        assert looked <= begun
+        other.execute("COMMIT")
+        assert postgres_store.now("a") > begun
+    finally:
+        other.close()
+
+
+def test_a_write_begun_before_the_look_and_committed_after_it_is_a_change(
+    postgres_store, postgres_service
+):
+    """The window a watermark of the server's own time left open.
+
+    The write's stamp is its transaction's start, earlier than the look, and
+    the look could not see it because it had not committed. Measured against
+    the look's own time it would pass for unchanged.
+    """
+    postgres_store.store_document("a", "x", updated_at="2020-01-01T00:00:00+00:00")
+    other, begun = _open_transaction(postgres_service)
+    try:
+        time.sleep(0.05)
+        looked = postgres_store.now("a")
+        other.execute(
+            f"INSERT INTO documents {store_postgres._COLUMNS} VALUES ({store_postgres._ROW})",
+            store_postgres._row_values(keys.parse("a/b"), "unseen", "markdown", None),
+        )
+        other.execute("COMMIT")
+    finally:
+        other.close()
+
+    assert postgres_store.retrieve_document("a/b").updated_at == begun
+    assert _server_time(postgres_store) > begun
+    with pytest.raises(store_module.ChangedSinceError):
+        postgres_store.delete("a", recursive=True, unchanged_since=looked)
+    assert postgres_store.exists("a/b")
+
+
+def test_the_watermark_passes_over_sessions_not_in_a_transaction(postgres_store):
+    """An idle session -- the pool keeps several -- holds nothing back."""
+    with postgres_store._connection():
+        pass
+    looked = postgres_store.now("a")
+    assert _close(looked, _server_time(postgres_store), seconds=1)
+
+
 # -- round trips -------------------------------------------------------------
 
 
@@ -1854,15 +2005,14 @@ def test_a_write_costs_the_round_trips_it_has_to(counted_store, operation, trips
 
 def test_a_write_that_fails_leaves_no_transaction_open(postgres_store):
     """Rolled back by hand, since ``BEGIN`` is: a failure inside must not strand one."""
-    psycopg = pytest.importorskip("psycopg")
     postgres_store.store_document("a", "x", updated_at="2026-12-01T00:00:00+00:00")
     with pytest.raises(store_module.ChangedSinceError):
         postgres_store.delete("a", unchanged_since="2026-06-01T00:00:00+00:00")
-    assert postgres_store._conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+    assert_left_idle(postgres_store)
     query(postgres_store, f"UPDATE {SCHEMA_TABLE} SET write_floor = %s", (SCHEMA_VERSION + 1,))
     with pytest.raises(ReadOnlyStoreError):
         postgres_store.store_document("b", "x")
-    assert postgres_store._conn.info.transaction_status == psycopg.pq.TransactionStatus.IDLE
+    assert_left_idle(postgres_store)
 
 
 # -- the write floor, at the server ----------------------------------------
@@ -2158,8 +2308,7 @@ def test_a_backup_that_fails_leaves_no_file_and_no_transaction(
 
     assert raised.value.code == "backup-unwritable"
     assert not (tmp_path / "copy.sqlite").exists()
-    idle = pytest.importorskip("psycopg").pq.TransactionStatus.IDLE
-    assert postgres_store._conn.info.transaction_status == idle
+    assert_left_idle(postgres_store)
 
 
 def test_backup_on_the_command_line_names_the_store_by_where_it_is(tmp_path, postgres_store):

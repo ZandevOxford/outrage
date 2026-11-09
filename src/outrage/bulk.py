@@ -698,7 +698,7 @@ def copied(
                 # pre-pass has already covered the copy as a whole; this is
                 # what catches a write made since it ran.
                 moved = _updated_at(target, landed)
-                if moved is not None and watermark is not None and moved > watermark:
+                if watermark is not None and store.changed_since(moved, watermark):
                     yield Transfer(CHANGED, landed, path, f"written again at {moved}")
                     continue
 

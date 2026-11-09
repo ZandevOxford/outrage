@@ -1268,7 +1268,7 @@ def _mount_read_only(name: Namer, /, *, key: str, mount: str, action: str, **_: 
         f"by the `mount` tool with `read_only`. Mounting it again writable is "
         f"what changes that: the `mount` tool with `read_only` false, where "
         f"this server offers it, and otherwise --mount rather than --mount-ro "
-        f"at startup, which is an operator's to do. The file itself is not "
+        f"at startup, which is an operator's to do. The store itself is not "
         f"read-only to anything else."
     )
 
@@ -2533,10 +2533,18 @@ def _changed_since(
     # and nothing else: saying "at or below it" there would send the reader
     # looking through a subtree the guard never asked about.
     moved = "something at or below it" if subtree else "it or its metadata"
+    # A tie is refused too, since stamps are to the millisecond and a write in
+    # the look's own one may have landed after it -- so "after" would be false
+    # of the very case the reader is most likely to doubt.
+    when = (
+        f"at {changed_at}, the same millisecond as the {unchanged_since} you say "
+        f"you looked at and so possibly after it"
+        if changed_at == unchanged_since
+        else f"at {changed_at}, after the {unchanged_since} you say you looked at"
+    )
     return (
         f"refusing to {action} {name(key)!r}: {moved} was "
-        f"written at {changed_at}, after the {unchanged_since} you say you "
-        f"looked at, so this would act on work done since. Nothing has been "
+        f"written {when}, so this would act on work done since. Nothing has been "
         f"changed. Look again and repeat the call with the newer time, or drop "
         f"{spell('unchanged_since')} to go ahead regardless"
     )

@@ -29,7 +29,9 @@ follows from that is most of what is written down here.
   devices with skewed clocks would otherwise let a precondition pass over a
   newer write. A write that carries no ``updated_at`` is stamped inside the
   statement that writes it (:data:`_STAMP`), and :meth:`PostgresStore.now`
-  answers from the same clock, which is what a watermark is taken from.
+  answers from the same clock, which is what a watermark is taken from --
+  held back to the oldest open transaction, since a write is stamped when
+  its transaction began.
 * **The database's encoding is checked on the way in.** ``_utf8()``'s guard in
   the SQLite backend, moved to the one moment a connection can answer it: a
   database that is not UTF8 would make every byte-addressed read a conversion,
@@ -234,6 +236,12 @@ RETRY_PAUSE = 0.01
 #: failure, and a deadlock, which the server resolves by failing one side.
 _RETRYABLE = frozenset({"40001", "40P01"})
 
+#: How many idle connections a store keeps for the next caller. A connection
+#: is a backend process at the far end, so one that comes back to a pool
+#: already holding this many is closed rather than kept: a burst of
+#: concurrent calls costs a connection each while it lasts, and not after.
+POOL_IDLE = 4
+
 #: What a failed connect says when the server answered and refused, as the
 #: code each refusal is raised under. **Matched in the text, because there is
 #: nothing else to match**: psycopg carries no SQLSTATE for a connection that
@@ -357,10 +365,24 @@ def _stamp_sql(moment: str) -> str:
 #: ``now()`` is the time the transaction began, so a document and its
 #: metadata carry one stamp, as they do on every other backend. That is
 #: before the transaction commits, and a write is invisible until it does, so
-#: a watermark taken in between is later than a write it could not see. The
-#: window is one write transaction -- a round trip or two -- which is the
-#: price of the shared stamp.
+#: a watermark of the server's time taken in between would be later than a
+#: write it could not see. :data:`_WATERMARK` is held back to cover that.
 _STAMP = _stamp_sql("now()")
+
+#: The server's time as a watermark: the earliest of ``now()`` and the start
+#: of every other client's open transaction on this database, which is where
+#: a write the look cannot see yet may have been stamped -- see
+#: :meth:`PostgresStore.now`. Every open transaction rather than only the ones
+#: that have written (``backend_xid``), since one that has begun and not yet
+#: written will be stamped from its start all the same. Client backends only,
+#: since autovacuum and replication hold transactions open and write no
+#: documents. ``least`` passes over a NULL, which is what a session that is
+#: not in a transaction shows.
+_WATERMARK = _stamp_sql(
+    "least(now(), (SELECT min(xact_start) FROM pg_stat_activity"
+    " WHERE datname = current_database() AND pid <> pg_backend_pid()"
+    " AND backend_type = 'client backend'))"
+)
 
 #: One row's values, with the stamp left to the server where the caller gave none.
 _ROW = f"%s, %s, %s, %s, %s, %s, %s, coalesce(%s, {_STAMP}), %s"
@@ -818,12 +840,14 @@ class PostgresStore(FileStore):
         #: through :data:`VERSIONING_SETTING`, which every connection declares.
         self.versioning = versioning
 
-        # One connection per thread, opened on first use, and every one of
-        # them remembered so that `close` can close the lot. psycopg lets a
-        # connection be closed from another thread, which sqlite3 does not,
-        # so this backend need not leave a connection to its thread's lifetime.
+        # A pool: connections opened on demand, lent to one thread at a time
+        # and kept idle in between, and every one of them remembered so that
+        # `close` can close the lot. psycopg lets a connection be closed from
+        # another thread, which sqlite3 does not, so this backend need not
+        # leave a connection to its thread's lifetime. See `_connection`.
         self._local = threading.local()
         self._connections: list[Any] = []
+        self._idle: list[Any] = []
         self._guard = threading.Lock()
         self._closed = False
 
@@ -892,7 +916,8 @@ class PostgresStore(FileStore):
         written into statement text that is also given parameters and a schema
         is free to be called anything.
         """
-        return _psycopg().sql.Identifier(self.schema, name).as_string(self._conn).replace("%", "%%")
+        with self._connection() as conn:
+            return _psycopg().sql.Identifier(self.schema, name).as_string(conn).replace("%", "%%")
 
     # -- where the store is ----------------------------------------------
 
@@ -1085,22 +1110,80 @@ class PostgresStore(FileStore):
             raise
         return conn
 
-    @property
-    def _conn(self) -> Any:
-        """This thread's connection, opened on first use."""
-        conn = getattr(self._local, "conn", None)
-        if conn is not None and not conn.closed:
-            return conn
+    @contextmanager
+    def _connection(self) -> Iterator[Any]:
+        """A connection lent to this thread for the duration of the block.
+
+        **Re-entrant within a thread**: a block inside another gets the
+        connection the outer one holds, so an operation that reads through
+        several helpers -- a backup's snapshot and the named cursors that
+        stream it -- runs on one session and sees one transaction. Without
+        that, a helper would take a second connection that could not see the
+        first one's snapshot.
+
+        **Lent, not owned**: when the outermost block ends the connection
+        goes back to :meth:`_return`, so a thread holds one only while it is
+        working and the store holds about as many as are used at once,
+        rather than one for every thread that has ever called it.
+
+        Not :mod:`psycopg_pool`, which connects in worker threads of its own
+        and only logs what went wrong there: a caller would wait out a
+        timeout and learn nothing, where :meth:`_connect` refuses at once and
+        says whether the server was unreachable or refused the login.
+        """
+        held = getattr(self._local, "held", None)
+        if held is not None:
+            yield held
+            return
+        conn = self._borrow()
+        self._local.held = conn
+        try:
+            yield conn
+        finally:
+            self._local.held = None
+            self._return(conn)
+
+    def _borrow(self) -> Any:
+        """An idle connection if there is one that is still open, otherwise a new one."""
+        with self._guard:
+            self._refuse_if_closed()
+            while self._idle:
+                conn = self._idle.pop()
+                if not conn.closed:
+                    return conn
+                self._connections.remove(conn)
         conn = self._connect()
         with self._guard:
             if self._closed:
                 conn.close()
-                raise BackendError(
-                    "postgres-store-closed", service=self.service_name, path=str(self.path)
-                )
+                self._refuse_if_closed()
             self._connections.append(conn)
-        self._local.conn = conn
         return conn
+
+    def _return(self, conn: Any) -> None:
+        """Keep ``conn`` for the next caller, or close it.
+
+        Kept only when it is open, in no transaction, and the pool is short
+        of :data:`POOL_IDLE`: a connection left in a transaction would carry
+        that transaction to whoever borrows it next, and one the server
+        dropped is not worth handing on.
+        """
+        idle = _psycopg().pq.TransactionStatus.IDLE
+        reusable = not conn.closed and conn.info.transaction_status == idle
+        with self._guard:
+            if reusable and not self._closed and len(self._idle) < POOL_IDLE:
+                self._idle.append(conn)
+                return
+            if conn in self._connections:
+                self._connections.remove(conn)
+        conn.close()
+
+    def _refuse_if_closed(self) -> None:
+        """Refuse to lend a connection from a store that has been closed."""
+        if self._closed:
+            raise BackendError(
+                "postgres-store-closed", service=self.service_name, path=str(self.path)
+            )
 
     @contextmanager
     def _transaction(self, *, serializable: bool = False) -> Iterator[Any]:
@@ -1136,18 +1219,18 @@ class PostgresStore(FileStore):
         one that waits -- measured against PostgreSQL 18, not inferred. A write
         that wants the net goes through :meth:`_writing`, which also retries it.
         """
-        conn = self._conn
         level = "SERIALIZABLE" if serializable else "READ COMMITTED"
-        try:
-            with conn.pipeline(), conn.cursor() as cursor:
-                conn.execute(f"BEGIN ISOLATION LEVEL {level}")
-                yield cursor
-                conn.execute("COMMIT")
-        except BaseException:
-            idle = _psycopg().pq.TransactionStatus.IDLE
-            if not conn.closed and conn.info.transaction_status != idle:
-                conn.execute("ROLLBACK")
-            raise
+        with self._connection() as conn:
+            try:
+                with conn.pipeline(), conn.cursor() as cursor:
+                    conn.execute(f"BEGIN ISOLATION LEVEL {level}")
+                    yield cursor
+                    conn.execute("COMMIT")
+            except BaseException:
+                idle = _psycopg().pq.TransactionStatus.IDLE
+                if not conn.closed and conn.info.transaction_status != idle:
+                    conn.execute("ROLLBACK")
+                raise
 
     def _writing(
         self,
@@ -1237,21 +1320,21 @@ class PostgresStore(FileStore):
         opened only to be asked about answers none of them.
         """
         self._opened()
-        with self._conn.cursor() as cursor:
+        with self._connection() as conn, conn.cursor() as cursor:
             cursor.execute(statement, list(params))
             return cursor.fetchall()
 
     def _one(self, statement: str, params: Sequence[object] = ()) -> tuple[Any, ...] | None:
         """The first row one statement returns, or None, as :meth:`_all` asks it."""
         self._opened()
-        with self._conn.cursor() as cursor:
+        with self._connection() as conn, conn.cursor() as cursor:
             cursor.execute(statement, list(params))
             return cursor.fetchone()
 
     def close(self) -> None:
         """Close every connection this store opened, from whichever thread asks.
 
-        All of them, unlike the SQLite backend, which can only close its own:
+        Idle and lent alike, unlike the SQLite backend, which can only close its own:
         sqlite3 refuses to let one thread touch another's connection at all,
         and psycopg does not. A connection left open here is one the server
         holds a backend process for, which is a resource at the far end rather
@@ -1264,9 +1347,9 @@ class PostgresStore(FileStore):
         with self._guard:
             self._closed = True
             connections, self._connections = self._connections, []
+            self._idle = []
         for conn in connections:
             conn.close()
-        self._local.conn = None
 
     # -- the schema and its version ---------------------------------------
 
@@ -1789,12 +1872,25 @@ class PostgresStore(FileStore):
         )
 
     def now(self, key: str = keys.ROOT, *, key_range: KeyRange = UNBOUNDED) -> str:
-        """The server's time, from the clock that stamps this store's writes.
+        """A watermark from the server's clock, held back to the oldest open transaction.
 
         One statement, and ``key`` does not change the answer: the whole store
         is stamped by the one server.
+
+        **Not simply the server's time**, because a write is stamped when its
+        transaction *began* (:data:`_STAMP`) and is invisible until it
+        commits. A write that began before a look and commits after it is one
+        the look could not see, stamped earlier than the look -- so a watermark
+        of the look's own time would let a later precondition pass over it.
+        Every such write belongs to a transaction open at the moment of the
+        look, so the watermark is the earliest of the server's time and the
+        start of every other open transaction on the database
+        (:data:`_WATERMARK`), and a stamp at or after it is a change. What that
+        costs is a refusal when a transaction was open and something changed
+        after it began, which is a refusal a caller recovers from by looking
+        again.
         """
-        row = self._one(f"SELECT {_STAMP}")
+        row = self._one(f"SELECT {_WATERMARK}")
         assert row is not None  # noqa: S101 - a SELECT without FROM returns a row
         return str(row[0])
 
@@ -2526,24 +2622,27 @@ class PostgresStore(FileStore):
         committed; at the other, a copy that fails part way leaves nothing,
         and the caller removes the file.
         """
-        conn = self._conn
         copy = sqlite3.connect(target)
         documents: list[str] = []
         archived = 0
         try:
-            conn.execute("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            try:
-                for rows in self._streamed(self._documents, "documents"):
-                    copy.executemany(f"INSERT INTO documents {_COLUMNS} VALUES {_PLACES}", rows)
-                    documents.extend(row[0] for row in rows)
-                for rows in self._streamed(self._archive, "archive"):
-                    copy.executemany(
-                        f"INSERT INTO {SQLITE_ARCHIVE} {_COLUMNS} VALUES {_PLACES}", rows
-                    )
-                    archived += len(rows)
-            finally:
-                if not conn.closed:
-                    conn.execute("ROLLBACK")
+            # One connection for the snapshot and both streams: the named
+            # cursors in `_streamed` live inside this transaction, and borrow
+            # the same connection because the lending is re-entrant.
+            with self._connection() as conn:
+                conn.execute("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                try:
+                    for rows in self._streamed(self._documents, "documents"):
+                        copy.executemany(f"INSERT INTO documents {_COLUMNS} VALUES {_PLACES}", rows)
+                        documents.extend(row[0] for row in rows)
+                    for rows in self._streamed(self._archive, "archive"):
+                        copy.executemany(
+                            f"INSERT INTO {SQLITE_ARCHIVE} {_COLUMNS} VALUES {_PLACES}", rows
+                        )
+                        archived += len(rows)
+                finally:
+                    if not conn.closed:
+                        conn.execute("ROLLBACK")
             copy.commit()
             # Out of WAL, which the SQLite backend opens its stores in, so the
             # backup is the one file it looks like: a copy meant to be carried
@@ -2560,7 +2659,7 @@ class PostgresStore(FileStore):
         A named cursor is a server-side one, which only lives inside a
         transaction -- the snapshot's, here. ``name`` is the cursor's.
         """
-        with self._conn.cursor(name=f"outrage_backup_{name}") as cursor:
+        with self._connection() as conn, conn.cursor(name=f"outrage_backup_{name}") as cursor:
             cursor.execute(f"SELECT {_COLUMNS[1:-1]} FROM {table}")
             while rows := cursor.fetchmany(AUDIT_CHUNK):
                 yield rows
@@ -2903,6 +3002,7 @@ __all__ = [
     "DEFAULT_SERVICE_FILE",
     "MIGRATIONS",
     "MIN_SCHEMA_VERSION",
+    "POOL_IDLE",
     "READAHEAD",
     "RETRY_PAUSE",
     "SCHEMA_TABLE",
